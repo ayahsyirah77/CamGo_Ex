@@ -146,9 +146,29 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
       // Trigger automated WhatsApp message template to notify business owner
       const rawWa = selectedPartner.whatsappNumber || selectedPartner.contactPhone || '+60123456789';
       const waNumber = rawWa.replace(/[^0-9]/g, '');
-      const waText = encodeURIComponent(
-        `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${bookingId}:\n- Package: ${selectedPackage.name} (${selectedPackage.cc})\n- Renter: ${renterName} (${renterPhone})\n- Pickup Hub: ${pickupTownship} @ ${pickupTime}\n- Dates: ${startDate} to ${endDate} (${daysCount} days)\n- Helmets: ${helmetsAddon} units\n- Phone Mount: ${includePhoneMount ? 'Yes (+RM10)' : 'No'}\n- Total: RM ${totalRm}\nPlease confirm availability!`
-      );
+
+      const addOnsList: string[] = [];
+      if (helmetsAddon > 0) {
+        addOnsList.push(`${helmetsAddon} Helmet(s)`);
+      }
+      if (includePhoneMount) {
+        addOnsList.push('Phone Mount (+RM10)');
+      }
+      const addOnsText = addOnsList.length > 0 ? addOnsList.join(', ') : 'None';
+
+      const messageSummary = `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${bookingId}:
+
+🏍️ Bike Model: ${selectedPackage.name} (${selectedPackage.cc})
+📍 Pickup Township: ${pickupTownship} @ ${pickupTime}
+📅 Rental Period: ${startDate} to ${endDate} (${daysCount} Days)
+👤 Customer Name: ${renterName || 'Highland Explorer'}
+📞 Phone: ${renterPhone || '+60123456789'}
+🛠️ Add-ons: ${addOnsText}
+💰 Grand Total: RM${totalRm}
+
+Please confirm availability!`;
+
+      const waText = encodeURIComponent(messageSummary);
       const waUrl = `https://wa.me/${waNumber}?text=${waText}`;
       try {
         window.open(waUrl, '_blank');
@@ -344,9 +364,29 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                   {(() => {
                     const rawWa = selectedPartner.whatsappNumber || selectedPartner.contactPhone || '+60123456789';
                     const waNumber = rawWa.replace(/[^0-9]/g, '');
-                    const waText = encodeURIComponent(
-                      `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${successBooking.id}:\n- Package: ${successBooking.packageName}\n- Renter: ${successBooking.renterName} (${successBooking.renterPhone})\n- Pickup Hub: ${successBooking.pickupTownship} @ ${successBooking.pickupTime}\n- Dates: ${successBooking.startDate} to ${successBooking.endDate} (${successBooking.days} days)\n- Total: RM ${successBooking.totalRm}\nPlease confirm availability!`
-                    );
+
+                    const addOnsList: string[] = [];
+                    if (successBooking.helmetsAddon > 0) {
+                      addOnsList.push(`${successBooking.helmetsAddon} Helmet(s)`);
+                    }
+                    if (successBooking.includePhoneMount) {
+                      addOnsList.push('Phone Mount (+RM10)');
+                    }
+                    const addOnsText = addOnsList.length > 0 ? addOnsList.join(', ') : 'None';
+
+                    const messageSummary = `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${successBooking.id}:
+
+🏍️ Bike Model: ${successBooking.packageName}
+📍 Pickup Township: ${successBooking.pickupTownship} @ ${successBooking.pickupTime}
+📅 Rental Period: ${successBooking.startDate} to ${successBooking.endDate} (${successBooking.days} Days)
+👤 Customer Name: ${successBooking.renterName}
+📞 Phone: ${successBooking.renterPhone}
+🛠️ Add-ons: ${addOnsText}
+💰 Grand Total: RM${successBooking.totalRm}
+
+Please confirm availability!`;
+
+                    const waText = encodeURIComponent(messageSummary);
                     const waUrl = `https://wa.me/${waNumber}?text=${waText}`;
                     return (
                       <a

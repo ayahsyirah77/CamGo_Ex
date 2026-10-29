@@ -232,6 +232,10 @@ export default function App() {
       setActiveCapsuleModal('traffic');
     };
     window.addEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
+    const handleOpenMotorbikeRental = () => {
+      setIsMotorbikeRentalOpen(true);
+    };
+    window.addEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
 
     return () => {
       window.removeEventListener('places-updated', handlePlacesUpdated);
@@ -243,6 +247,7 @@ export default function App() {
       window.removeEventListener('hazard-alerts-updated', handleHazardsUpdated);
       window.removeEventListener('open-emergency-card', handleOpenEmergencyCard);
       window.removeEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
+      window.removeEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
       unsubUser();
       unsubLounge();
     };

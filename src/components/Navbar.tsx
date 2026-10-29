@@ -31,6 +31,7 @@ import {
   Calendar,
   Store,
   LogOut,
+  Bike,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -438,6 +439,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             animate="visible"
             className="hidden lg:flex items-center gap-1 text-xs font-medium text-stone-200"
           >
+            {/* Standalone Motorbike & Scooter Rental Marketplace Link */}
+            <motion.div variants={itemVariants}>
+              <button
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('open-motorbike-rental'));
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 hover:text-white transition-all cursor-pointer shadow-sm text-xs font-bold"
+              >
+                <Bike className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Scooter Rental Hub</span>
+              </button>
+            </motion.div>
+
             {/* Directories Mega Menu */}
             <motion.div
               variants={itemVariants}
@@ -1038,27 +1054,26 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-blue-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-                  {/* 2. Directories & Masjid / Surau Link */}
-                  <div className="space-y-1">
+                    {/* Motorbike & Scooter Rental Marketplace */}
                     <button
                       onClick={() => {
                         setIsMobileMenuOpen(false);
-                        onOpenDirectoriesModal();
+                        if (typeof window !== 'undefined') {
+                          window.dispatchEvent(new CustomEvent('open-motorbike-rental'));
+                        }
                       }}
-                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
+                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 hover:text-white border border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
                     >
-                      <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                        <Compass className="w-4 h-4 text-emerald-400" />
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <Bike className="w-4 h-4 text-emerald-400" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors">
-                          Directories
+                        <span className="text-xs font-bold text-emerald-200 block group-hover:text-white transition-colors">
+                          Motorbike &amp; Scooter Rental Hub
                         </span>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
+                      <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
                     </button>
-
-                  </div>
 
                   {/* 3. Hub */}
                   <button
