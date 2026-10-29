@@ -147,19 +147,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     return false;
   };
 
-  // Deduplication check (filtering by ID) in rendering loop
-  const uniquePlacesMap = new Map<string, Place>();
-  for (const p of places) {
-    if (p && p.id && !uniquePlacesMap.has(p.id)) {
-      uniquePlacesMap.set(p.id, p);
-    }
-  }
-  const dedupedPlaces = Array.from(uniquePlacesMap.values());
-
-  const filteredPlaces = dedupedPlaces.filter((p) => {
-    // Completely remove motorbike and scooter rentals from general directory listings
-    if (p.category === 'transport' && p.subCategory === 'car_bike_rentals') return false;
-
+  // Use the places prop directly
+  const filteredPlaces = places.filter((p) => {
     if (!isCategoryMatch(p.category, selectedCategory)) return false;
     if (selectedSubCategory && p.subCategory !== selectedSubCategory) return false;
     if (selectedTown !== 'all' && p.township !== selectedTown) return false;
