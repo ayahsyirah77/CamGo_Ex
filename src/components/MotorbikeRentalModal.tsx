@@ -144,11 +144,17 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
       setSuccessBooking(newBooking);
 
       // Trigger automated WhatsApp message template to notify business owner
-      const waNumber = selectedPartner.whatsappNumber.replace(/[^0-9]/g, '');
+      const rawWa = selectedPartner.whatsappNumber || selectedPartner.contactPhone || '+60123456789';
+      const waNumber = rawWa.replace(/[^0-9]/g, '');
       const waText = encodeURIComponent(
         `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${bookingId}:\n- Package: ${selectedPackage.name} (${selectedPackage.cc})\n- Renter: ${renterName} (${renterPhone})\n- Pickup Hub: ${pickupTownship} @ ${pickupTime}\n- Dates: ${startDate} to ${endDate} (${daysCount} days)\n- Helmets: ${helmetsAddon} units\n- Phone Mount: ${includePhoneMount ? 'Yes (+RM10)' : 'No'}\n- Total: RM ${totalRm}\nPlease confirm availability!`
       );
-      window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank');
+      const waUrl = `https://wa.me/${waNumber}?text=${waText}`;
+      try {
+        window.open(waUrl, '_blank');
+      } catch (e) {
+        console.warn('WhatsApp auto-open popup warning:', e);
+      }
     } catch (err) {
       console.error('Failed to submit motorbike booking:', err);
     } finally {
@@ -321,14 +327,35 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                   </div>
                   <h3 className="text-xl font-bold text-white">Booking Request Saved &amp; Sent!</h3>
                   <p className="text-xs text-stone-300">
-                    Your reservation record has been successfully saved to Firestore (<code className="text-emerald-400 font-mono">motorbike_rentals</code>) under <code className="text-teal-400 font-mono">camgo-prod</code>. WhatsApp chat has been opened with <span className="font-bold text-white">{selectedPartner.businessName}</span>.
+                    Your reservation record has been successfully saved to Firestore (<code className="text-emerald-400 font-mono">motorbike_rentals</code>). WhatsApp chat has been opened with <span className="font-bold text-white">{selectedPartner.businessName}</span>.
                   </p>
+                  
+                  {(() => {
+                    const rawWa = selectedPartner.whatsappNumber || selectedPartner.contactPhone || '+60123456789';
+                    const waNumber = rawWa.replace(/[^0-9]/g, '');
+                    const waText = encodeURIComponent(
+                      `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${successBooking.id}:\n- Package: ${successBooking.packageName}\n- Renter: ${successBooking.renterName} (${successBooking.renterPhone})\n- Pickup Hub: ${successBooking.pickupTownship} @ ${successBooking.pickupTime}\n- Dates: ${successBooking.startDate} to ${successBooking.endDate} (${successBooking.days} days)\n- Total: RM ${successBooking.totalRm}\nPlease confirm availability!`
+                    );
+                    const waUrl = `https://wa.me/${waNumber}?text=${waText}`;
+                    return (
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg"
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>Open WhatsApp Chat with {selectedPartner.businessName}</span>
+                      </a>
+                    );
+                  })()}
+
                   <button
                     onClick={() => {
                       setIsBookingModalOpen(false);
                       setSuccessBooking(null);
                     }}
-                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-all cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all cursor-pointer"
                   >
                     Done / Return to Marketplace
                   </button>

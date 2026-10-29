@@ -1559,12 +1559,29 @@ class FirebaseStorageService {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
         // Filter out residual mock vendors if any exist in cache
-        const mockIds = ['big-red-strawberry-farm', 'boh-sungei-palas', 'flora-park-kea-farm', 'highland-steamboat-tanahrata', 'cameron-lavender-tringkap'];
-        const cleaned = parsed.filter((v: any) => !mockIds.includes(v.id));
-        if (cleaned.length !== parsed.length) {
-          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cleaned));
+        const mockIds = ['big-red-strawberry-farm', 'boh-sungei-palas', 'flora-park-kea-farm', 'highland-steamboat-tanahrata', 'cameron-lavender-tringkap', 'moto-partner-1', 'moto-partner-2', 'moto-partner-3'];
+        const cleaned = parsed.filter((v: any) => v && v.id && !mockIds.includes(v.id) && !mockIds.includes(v.businessName?.toLowerCase()));
+        
+        // Deduplicate by ID and normalized business name
+        const uniqueMap = new Map<string, VendorListing>();
+        for (const item of cleaned) {
+          if (!item || !item.businessName) continue;
+          const normName = item.businessName.toLowerCase().trim();
+          const existingKey = Array.from(uniqueMap.keys()).find(k => k === item.id || k === normName);
+          if (!existingKey) {
+            uniqueMap.set(item.id, item);
+            uniqueMap.set(normName, item);
+          } else {
+            uniqueMap.set(existingKey, item);
+            uniqueMap.set(item.id, item);
+          }
         }
-        return cleaned;
+        const finalUnique = Array.from(new Set(uniqueMap.values()));
+
+        if (finalUnique.length !== parsed.length) {
+          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
+        }
+        return finalUnique;
       }
       return [];
     } catch {
@@ -1578,13 +1595,32 @@ class FirebaseStorageService {
 
   public async saveVendorListing(listing: VendorListing): Promise<VendorListing[]> {
     const listings = this.getVendorListings();
-    const index = listings.findIndex((l) => l.id === listing.id);
+    const normName = listing.businessName.toLowerCase().trim();
+    const index = listings.findIndex(
+      (l) => l.id === listing.id || l.businessName.toLowerCase().trim() === normName
+    );
+
     if (index >= 0) {
-      listings[index] = listing;
+      listings[index] = {
+        ...listings[index],
+        ...listing,
+        id: listings[index].id,
+      };
     } else {
       listings.push(listing);
     }
-    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(listings));
+
+    // Deduplicate array before saving
+    const uniqueMap = new Map<string, VendorListing>();
+    for (const item of listings) {
+      if (!item || !item.businessName) continue;
+      const nName = item.businessName.toLowerCase().trim();
+      uniqueMap.set(item.id, item);
+      uniqueMap.set(nName, item);
+    }
+    const finalUnique = Array.from(new Set(uniqueMap.values()));
+
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
 
     // Cross-Sync to Main Directory Places (Create or Update)
     const mainPlaces = this.getPlaces();
@@ -1660,12 +1696,12 @@ class FirebaseStorageService {
     }
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: listings }));
+      window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: finalUnique }));
       window.dispatchEvent(new CustomEvent('places-updated', { detail: updatedPlaces }));
     }
 
     this.notify();
-    return listings;
+    return finalUnique;
   }
 
   public async deleteVendorListing(id: string): Promise<VendorListing[]> {
