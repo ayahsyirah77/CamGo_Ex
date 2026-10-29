@@ -7,8 +7,6 @@ import React, { useState } from 'react';
 import { Place, MainCategory, SubCategory, Township, Language, FarmTicket } from '../types';
 import { firebaseService } from '../services/firebase';
 import { getTranslation } from '../services/i18n';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import {
   isCurrentlyOpen,
   formatTimeTo12Hour,
@@ -149,24 +147,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     return false;
   };
 
-  // 2. Real-time Firestore Listener
-  const [livePlaces, setLivePlaces] = useState<Place[]>(places);
-  const [isLoading, setIsLoading] = useState(true);
-
-  React.useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'places'), (snap) => {
-      const fetched = snap.docs.map(d => d.data() as Place);
-      setLivePlaces(fetched);
-      setIsLoading(false);
-    }, (err) => {
-      console.error('Firestore listener error:', err);
-      setIsLoading(false);
-    });
-    return unsub;
-  }, []);
-
-  // Use livePlaces for filtering
-  const filteredPlaces = livePlaces.filter((p) => {
+  // Use the places prop directly
+  const filteredPlaces = places.filter((p) => {
     if (!isCategoryMatch(p.category, selectedCategory)) return false;
     if (selectedSubCategory && p.subCategory !== selectedSubCategory) return false;
     if (selectedTown !== 'all' && p.township !== selectedTown) return false;
@@ -181,14 +163,6 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
 
     return true;
   });
-
-  if (isLoading) {
-    return (
-      <div className="p-12 text-center rounded-3xl bg-stone-900/40 border border-white/5">
-        <p className="text-stone-400 text-sm">Loading verified highland places...</p>
-      </div>
-    );
-  }
 
   console.log('[Debug] DirectorySection filteredPlaces:', filteredPlaces);
 

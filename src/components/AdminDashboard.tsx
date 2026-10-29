@@ -2321,7 +2321,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Modal: Add/Edit Gallery Photo */}
+     {/* Modal: Add/Edit Gallery Photo */}
       {showGalleryModal &&
         renderModal(
           <div
@@ -2402,23 +2402,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-stone-300 block mb-1">Location</label>
-                    <input
-                      type="text"
+                    <label className="text-xs font-bold text-stone-300 block mb-1">Location Township</label>
+                    <select
                       value={galleryTownship}
                       onChange={(e) => setGalleryTownship(e.target.value as Township)}
                       className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
-                    />
+                    >
+                      {[
+                        'Ringlet',
+                        'Bertam Valley',
+                        'Tanah Rata',
+                        'Brinchang',
+                        'Kea Farm',
+                        'Tringkap',
+                        'Kuala Terla',
+                        'Kampung Raja',
+                        'Blue Valley'
+                      ].map((town) => (
+                        <option key={town} value={town}>{town}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-stone-300 block mb-1">Upload New Image</label>
+              <div>
+                  <label className="text-xs font-bold text-stone-300 block mb-1">Image (Paste URL or Upload File)</label>
+                  <input
+                    type="url"
+                    value={galleryImageUrl}
+                    onChange={(e) => setGalleryImageUrl(e.target.value)}
+                    placeholder="https://images.unsplash.com/... (Paste image URL)"
+                    className="w-full px-3 py-2 mb-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                  />
                   <input
                     type="file"
                     accept="image/*"
                     onChange={(e) => handleImageUpload(e, setGalleryImageUrl)}
-                    className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none text-stone-400 cursor-pointer"
                   />
                 </div>
 
@@ -2430,7 +2450,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         src={galleryImageUrl}
                         alt="Preview"
                         className="w-full h-full object-cover"
-                      />
+                    />
                     </div>
                   </div>
                 )}
@@ -2453,20 +2473,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       setEditingGalleryId(null);
                     }}
                     className="flex-1 py-2.5 rounded-xl bg-stone-800 text-xs text-stone-300 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 text-white font-bold text-xs cursor-pointer"
-                  >
-                    {editingGalleryId ? 'Update Photo' : 'Save Photo'}
-                  </button>
-                </div>
-              </form>
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-600 text-white font-bold text-xs cursor-pointer"
+              >
+                {editingGalleryId ? 'Update Photo' : 'Save Photo'}
+              </button>
             </div>
-          </div>
-        )}
+          </form>
+        </div>
+      </div>
+    )}
 
       {/* Modal: Event */}
       {showAddEventModal &&
