@@ -310,7 +310,14 @@ class FirebaseStorageService {
       // 10. Real-time Motorbike Partners Listener
       onSnapshot(collection(db, 'motorbike_partners'), (snap) => {
         const cloudPartners = snap.docs.map((d) => d.data() as MotorbikeRentalPartner);
-        this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(cloudPartners));
+        if (cloudPartners.length > 0) {
+          this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(cloudPartners));
+        } else {
+          const current = this.getMotorbikePartners();
+          if (!current || current.length === 0) {
+            this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(INITIAL_MOTORBIKE_PARTNERS));
+          }
+        }
         this.notify();
       }, (err) => console.warn('Realtime motorbike partners listener warning:', err));
 
@@ -1936,13 +1943,21 @@ class FirebaseStorageService {
 
   public getMotorbikePartners(): MotorbikeRentalPartner[] {
     const data = localStorage.getItem('camgo_motorbike_partners');
+    const mockIds = ['moto-partner-1', 'moto-partner-2', 'moto-partner-3'];
     if (!data) {
       this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(INITIAL_MOTORBIKE_PARTNERS));
       return INITIAL_MOTORBIKE_PARTNERS;
     }
     try {
       const parsed = JSON.parse(data);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MOTORBIKE_PARTNERS;
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter((p: any) => !mockIds.includes(p.id));
+        if (cleaned.length !== parsed.length) {
+          this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(cleaned));
+        }
+        return cleaned;
+      }
+      return INITIAL_MOTORBIKE_PARTNERS;
     } catch {
       return INITIAL_MOTORBIKE_PARTNERS;
     }

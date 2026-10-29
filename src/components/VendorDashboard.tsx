@@ -394,8 +394,29 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     try {
       const updated = { ...activeVendor, updatedAt: new Date().toISOString() };
       await firebaseService.saveVendorListing(updated);
+
+      const currentBikePartners = firebaseService.getMotorbikePartners();
+      const existingPartner = currentBikePartners.find(p => p.id === activeVendor.id);
+      if (existingPartner || activeVendor.category === 'transport' || activeVendor.subCategory === 'car_bike_rentals' || activeVendor.businessName?.toLowerCase().includes('bike') || activeVendor.businessName?.toLowerCase().includes('scooter') || activeVendor.businessName?.toLowerCase().includes('rental')) {
+        const partnerToSync: MotorbikeRentalPartner = {
+          id: activeVendor.id,
+          businessName: activeVendor.businessName,
+          township: activeVendor.township,
+          imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+          operatingStatus: activeVendor.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
+          fleetAvailability: (motorbikeFleetStatus === 'not_applicable' ? 'high' : motorbikeFleetStatus) as any,
+          contactPhone: activeVendor.contactPhone || '+60123456789',
+          whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone || '+60123456789',
+          packages: existingPartner ? existingPartner.packages : [],
+        };
+        await firebaseService.saveMotorbikePartner(partnerToSync);
+        if (typeof setMotorbikePartners === 'function') {
+          setMotorbikePartners(firebaseService.getMotorbikePartners());
+        }
+      }
+
       refreshVendorData();
-      setSaveNotification(`Saved all changes for "${activeVendor.businessName}" to cloud!`);
+      setSaveNotification(`Saved all changes for "${activeVendor.businessName}" to cloud & marketplace!`);
       setTimeout(() => setSaveNotification(null), 3500);
     } catch (e: any) {
       setSaveNotification(`Error saving listing: ${e.message}`);
@@ -1636,7 +1657,17 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     <label className="block text-xs font-medium text-stone-300 mb-1">Primary Category</label>
                     <select
                       value={activeVendor.category}
-                      onChange={(e) => setActiveVendor({ ...activeVendor, category: e.target.value as MainCategory })}
+                      onChange={(e) => {
+                        const newCat = e.target.value as MainCategory;
+                        let defaultSub: SubCategory = 'recreation_leisure';
+                        if (newCat === 'transport') defaultSub = 'car_bike_rentals';
+                        else if (newCat === 'food') defaultSub = 'dining';
+                        else if (newCat === 'travel_tourism') defaultSub = 'attractions_sightseeing';
+                        else if (newCat === 'accommodation') defaultSub = 'hotels_resorts';
+                        else if (newCat === 'services_utilities') defaultSub = 'plumbing_electrical';
+                        else if (newCat === 'shopping') defaultSub = 'fresh_markets_produce';
+                        setActiveVendor({ ...activeVendor, category: newCat, subCategory: defaultSub });
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
                     >
                       <option value="services_utilities">Services & Utilities</option>
@@ -1646,6 +1677,74 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       <option value="transport">Transport & Mobility Services</option>
                       <option value="local_services">Local Services & Amenities</option>
                       <option value="shopping">Shopping & Local Produce</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-stone-300 mb-1">Sub-Category</label>
+                    <select
+                      value={activeVendor.subCategory || 'car_bike_rentals'}
+                      onChange={(e) => setActiveVendor({ ...activeVendor, subCategory: e.target.value as SubCategory })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      {activeVendor.category === 'transport' && (
+                        <>
+                          <option value="car_bike_rentals">Car & Bike Rentals</option>
+                          <option value="taxi_ehailing">Taxi & E-Hailing</option>
+                          <option value="auto_repair_roadside">Auto Repair & Roadside</option>
+                          <option value="fuel_ev_charging">Fuel & EV Charging</option>
+                        </>
+                      )}
+                      {activeVendor.category === 'food' && (
+                        <>
+                          <option value="dining">Dining & Restaurants</option>
+                          <option value="steamboats">Steamboats & BBQ</option>
+                          <option value="cafes">Cafes & Teahouses</option>
+                          <option value="night_markets_street">Night Market & Street Food</option>
+                        </>
+                      )}
+                      {activeVendor.category === 'travel_tourism' && (
+                        <>
+                          <option value="attractions_sightseeing">Attractions & Sightseeing</option>
+                          <option value="agrotourism_farms">Agrotourism & Strawberry Farms</option>
+                          <option value="outdoor_adventure">Outdoor Adventure & Hiking</option>
+                          <option value="tour_agencies_guides">Tour Agencies & Guides</option>
+                        </>
+                      )}
+                      {activeVendor.category === 'accommodation' && (
+                        <>
+                          <option value="hotels_resorts">Hotels & Resorts</option>
+                          <option value="guesthouses">Guesthouses</option>
+                          <option value="chalets">Chalets & Cottages</option>
+                          <option value="homestay">Homestay</option>
+                          <option value="camping_glamping">Camping & Glamping</option>
+                        </>
+                      )}
+                      {activeVendor.category === 'services_utilities' && (
+                        <>
+                          <option value="plumbing_electrical">Plumbing & Electrical</option>
+                          <option value="locksmith_access">Locksmith & Security</option>
+                          <option value="carpentry_construction">Carpentry & Construction</option>
+                          <option value="laundry_dry_cleaning">Laundry & Dry Cleaning</option>
+                        </>
+                      )}
+                      {activeVendor.category === 'local_services' && (
+                        <>
+                          <option value="health_wellness">Health & Wellness</option>
+                          <option value="banking_financial">Banking & Financial</option>
+                          <option value="logistics_freight">Logistics & Freight</option>
+                        </>
+                      )}
+                      {activeVendor.category === 'shopping' && (
+                        <>
+                          <option value="fresh_markets_produce">Fresh Markets & Produce</option>
+                          <option value="souvenirs_handicrafts">Souvenirs & Handicrafts</option>
+                          <option value="convenience_groceries">Convenience & Groceries</option>
+                        </>
+                      )}
+                      {!['transport', 'food', 'travel_tourism', 'accommodation', 'services_utilities', 'local_services', 'shopping'].includes(activeVendor.category) && (
+                        <option value={activeVendor.subCategory || 'recreation_leisure'}>{activeVendor.subCategory || 'General / Recreation'}</option>
+                      )}
                     </select>
                   </div>
 
@@ -2525,11 +2624,21 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     </select>
                   </div>
 
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-stone-300 mb-1">Category *</label>
                     <select
                       value={newBizCategory}
-                      onChange={(e) => setNewBizCategory(e.target.value as MainCategory)}
+                      onChange={(e) => {
+                        const cat = e.target.value as MainCategory;
+                        setNewBizCategory(cat);
+                        if (cat === 'transport') setNewBizSubCategory('car_bike_rentals');
+                        else if (cat === 'food') setNewBizSubCategory('dining');
+                        else if (cat === 'travel_tourism') setNewBizSubCategory('attractions_sightseeing');
+                        else if (cat === 'accommodation') setNewBizSubCategory('hotels_resorts');
+                        else if (cat === 'services_utilities') setNewBizSubCategory('plumbing_electrical');
+                        else if (cat === 'shopping') setNewBizSubCategory('fresh_markets_produce');
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
                     >
                       <option value="services_utilities">Services & Utilities</option>
@@ -2541,6 +2650,72 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       <option value="shopping">Shopping & Local Produce</option>
                     </select>
                   </div>
+
+                  <div>
+                    <label className="block text-stone-300 mb-1">Sub-Category *</label>
+                    <select
+                      value={newBizSubCategory}
+                      onChange={(e) => setNewBizSubCategory(e.target.value as SubCategory)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
+                    >
+                      {newBizCategory === 'transport' && (
+                        <>
+                          <option value="car_bike_rentals">Car & Bike Rentals</option>
+                          <option value="taxi_ehailing">Taxi & E-Hailing</option>
+                          <option value="auto_repair_roadside">Auto Repair & Roadside</option>
+                          <option value="fuel_ev_charging">Fuel & EV Charging</option>
+                        </>
+                      )}
+                      {newBizCategory === 'food' && (
+                        <>
+                          <option value="dining">Dining & Restaurants</option>
+                          <option value="steamboats">Steamboats & BBQ</option>
+                          <option value="cafes">Cafes & Teahouses</option>
+                          <option value="night_markets_street">Night Market & Street Food</option>
+                        </>
+                      )}
+                      {newBizCategory === 'travel_tourism' && (
+                        <>
+                          <option value="attractions_sightseeing">Attractions & Sightseeing</option>
+                          <option value="agrotourism_farms">Agrotourism & Strawberry Farms</option>
+                          <option value="outdoor_adventure">Outdoor Adventure & Hiking</option>
+                          <option value="tour_agencies_guides">Tour Agencies & Guides</option>
+                        </>
+                      )}
+                      {newBizCategory === 'accommodation' && (
+                        <>
+                          <option value="hotels_resorts">Hotels & Resorts</option>
+                          <option value="guesthouses">Guesthouses</option>
+                          <option value="chalets">Chalets & Cottages</option>
+                          <option value="homestay">Homestay</option>
+                          <option value="camping_glamping">Camping & Glamping</option>
+                        </>
+                      )}
+                      {newBizCategory === 'services_utilities' && (
+                        <>
+                          <option value="plumbing_electrical">Plumbing & Electrical</option>
+                          <option value="locksmith_access">Locksmith & Security</option>
+                          <option value="carpentry_construction">Carpentry & Construction</option>
+                          <option value="laundry_dry_cleaning">Laundry & Dry Cleaning</option>
+                        </>
+                      )}
+                      {newBizCategory === 'local_services' && (
+                        <>
+                          <option value="health_wellness">Health & Wellness</option>
+                          <option value="banking_financial">Banking & Financial</option>
+                          <option value="logistics_freight">Logistics & Freight</option>
+                        </>
+                      )}
+                      {newBizCategory === 'shopping' && (
+                        <>
+                          <option value="fresh_markets_produce">Fresh Markets & Produce</option>
+                          <option value="souvenirs_handicrafts">Souvenirs & Handicrafts</option>
+                          <option value="convenience_groceries">Convenience & Groceries</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
                 </div>
 
                 <div>

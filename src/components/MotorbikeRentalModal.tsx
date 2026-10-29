@@ -56,13 +56,30 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const cached = firebaseService.getMotorbikePartners();
+    if (cached && cached.length > 0) {
+      setPartners(cached);
+      setIsLoading(false);
+    }
+
     if (isOpen) {
       const unsub = onSnapshot(collection(db, 'motorbike_partners'), (snap) => {
         const fetched = snap.docs.map(d => d.data() as MotorbikeRentalPartner);
-        setPartners(fetched);
+        if (fetched.length > 0) {
+          setPartners(fetched);
+        } else {
+          const fallback = firebaseService.getMotorbikePartners();
+          if (fallback.length > 0) {
+            setPartners(fallback);
+          }
+        }
         setIsLoading(false);
       }, (err) => {
         console.error('Firestore listener error:', err);
+        const fallback = firebaseService.getMotorbikePartners();
+        if (fallback.length > 0) {
+          setPartners(fallback);
+        }
         setIsLoading(false);
       });
       return unsub;
