@@ -1,0 +1,240 @@
+{
+  "entities": {
+    "TrafficAlert": {
+      "title": "TrafficAlert",
+      "description": "Information about traffic status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "location": { "type": "string" },
+        "status": { "type": "string", "enum": ["smooth", "moderate", "heavy", "closed", "congested"] }
+      },
+      "required": ["id", "location", "status"]
+    },
+    "HazardAlert": {
+      "title": "HazardAlert",
+      "description": "Information about hazard status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string", "enum": ["low", "medium", "high", "moderate", "critical"] },
+        "type": { "type": "string", "enum": ["landslide", "road_closure", "hazard"] },
+        "source": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "title", "description", "severity", "type", "timestamp"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "Live event information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "title", "date"]
+    },
+    "TownshipHub": {
+      "title": "TownshipHub",
+      "description": "Township hub information and key facilities",
+      "type": "object",
+      "properties": {
+        "township": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "clinicsOrHospitals": { "type": "string" },
+        "policeStation": { "type": "string" },
+        "publicToilet": { "type": "string" },
+        "gasStation": { "type": "string" }
+      },
+      "required": ["township", "description"]
+    },
+    "Place": {
+      "title": "Place",
+      "description": "Directory place record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "township": { "type": "string" }
+      },
+      "required": ["id", "name", "category", "township"]
+    },
+    "BeaconSession": {
+      "title": "BeaconSession",
+      "description": "Group Beacon live coordinates tracking session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "durationHours": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "ended"] }
+      },
+      "required": ["id", "code", "createdAt", "expiresAt", "status"]
+    },
+    "VendorListing": {
+      "title": "VendorListing",
+      "description": "Self-service vendor profile listing for local business management",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "businessName": { "type": "string" },
+        "ssmNumber": { "type": "string" },
+        "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
+        "category": { "type": "string" },
+        "township": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "realTimeStatus": { "type": "string", "enum": ["open", "sold_out", "closed_roadworks", "busy"] },
+        "diyHarvestStatus": { "type": "string", "enum": ["picking_open", "farm_open_no_picking", "closed_season"] },
+        "parkingStatus": { "type": "string", "enum": ["private_available", "street_busy", "valet_only"] },
+        "tier": { "type": "string", "enum": ["free_trial", "monthly_pro", "annual_pro", "pay_per_feature"] }
+      },
+      "required": ["id", "ownerUid", "businessName", "category", "township", "verificationStatus", "realTimeStatus", "tier"]
+    },
+    "VendorVoucher": {
+      "title": "VendorVoucher",
+      "description": "Promotional deal or discount voucher issued by vendor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "vendorId": { "type": "string" },
+        "title": { "type": "string" },
+        "code": { "type": "string" },
+        "discountPercentage": { "type": "number" },
+        "validUntil": { "type": "string" }
+      },
+      "required": ["id", "vendorId", "title", "code"]
+    },
+    "GalleryItem": {
+      "title": "GalleryItem",
+      "description": "Highland photo gallery item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["id", "title", "imageUrl"]
+    },
+    "EmergencyCard": {
+      "title": "EmergencyCard",
+      "description": "User emergency medical card and ICE contacts",
+      "type": "object",
+      "properties": {
+        "fullLegalName": { "type": "string" },
+        "dateOfBirth": { "type": "string" },
+        "bloodType": { "type": "string" },
+        "severeAllergies": { "type": "string" },
+        "chronicConditions": { "type": "string" },
+        "currentMedications": { "type": "string" }
+      },
+      "required": ["fullLegalName", "dateOfBirth", "bloodType"]
+    },
+    "EmergencyDispatchRecord": {
+      "title": "EmergencyDispatchRecord",
+      "description": "Log of dispatched SOS emergency alerts with GPS location",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipientPhone": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "recipientPhone", "status"]
+    },
+    "FarmTicket": {
+      "title": "FarmTicket",
+      "description": "Farm and attraction ticket pricing and inclusions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "township": { "type": "string" },
+        "isFree": { "type": "boolean" },
+        "adultPriceRm": { "type": "number" },
+        "childPriceRm": { "type": "number" },
+        "openingHours": { "type": "string" },
+        "inclusions": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["attraction", "farm", "tea_plantation", "museum"] }
+      },
+      "required": ["id", "name", "township", "isFree", "adultPriceRm", "childPriceRm", "openingHours", "category"]
+    },
+    "AiChatSession": {
+      "title": "AiChatSession",
+      "description": "CamGo AI Chat session log record in camgo-prod",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastSender": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "projectId": { "type": "string" }
+      },
+      "required": ["id", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "traffic_alerts/{alertId}": {
+      "schema": { "$ref": "TrafficAlert" },
+      "description": "Collection of traffic alerts"
+    },
+    "hazard_alerts/{alertId}": {
+      "schema": { "$ref": "HazardAlert" },
+      "description": "Collection of hazard alerts"
+    },
+    "events/{eventId}": {
+      "schema": { "$ref": "Event" },
+      "description": "Collection of live events"
+    },
+    "township_hubs/{hubId}": {
+      "schema": { "$ref": "TownshipHub" },
+      "description": "Collection of township hubs"
+    },
+    "places/{placeId}": {
+      "schema": { "$ref": "Place" },
+      "description": "Collection of places"
+    },
+    "vendor_listings/{vendorId}": {
+      "schema": { "$ref": "VendorListing" },
+      "description": "Collection of self-service vendor profile listings"
+    },
+    "vendor_vouchers/{voucherId}": {
+      "schema": { "$ref": "VendorVoucher" },
+      "description": "Collection of vendor promotional vouchers"
+    },
+    "gallery/{galleryId}": {
+      "schema": { "$ref": "GalleryItem" },
+      "description": "Collection of gallery items"
+    },
+    "emergency_cards/{userId}": {
+      "schema": { "$ref": "EmergencyCard" },
+      "description": "User emergency medical cards"
+    },
+    "sos_dispatches/{dispatchId}": {
+      "schema": { "$ref": "EmergencyDispatchRecord" },
+      "description": "Dispatched emergency GPS alerts log"
+    },
+    "farm_tickets/{ticketId}": {
+      "schema": { "$ref": "FarmTicket" },
+      "description": "Collection of farm and attraction tickets"
+    },
+    "beacon_sessions/{sessionId}": {
+      "schema": { "$ref": "BeaconSession" },
+      "description": "Temporary live location tracking sessions for traveling groups and hiking parties"
+    },
+    "ai_chats/{chatId}": {
+      "schema": { "$ref": "AiChatSession" },
+      "description": "CamGo AI Chat conversation sessions and logs in camgo-prod"
+    }
+  }
+}

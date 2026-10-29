@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #111814;
+  }
+  h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+/* Glassmorphism custom styling */
+.glass-panel {
+  background: rgba(18, 24, 21, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.glass-pill {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.glass-card-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-card-hover:hover {
+  transform: translateY(-3px);
+  border-color: rgba(52, 211, 153, 0.35);
+  box-shadow: 0 14px 30px -10px rgba(16, 185, 129, 0.18);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0c0f0d;
+}
+::-webkit-scrollbar-thumb {
+  background: #27382d;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #059669;
+}
+
+/* Leaflet dark theme tweaks */
+.leaflet-container {
+  background: #111814 !important;
+  font-family: inherit;
+  width: 100% !important;
+  height: 100% !important;
+}
+.leaflet-popup-content-wrapper {
+  background: rgba(18, 24, 21, 0.95) !important;
+  color: #f5f5f4 !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(52, 211, 153, 0.25) !important;
+  box-shadow: 0 20px 30px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(12px);
+}
+.leaflet-popup-tip {
+  background: rgba(18, 24, 21, 0.95) !important;
+}
+
+/* TomTom Traffic Pulse & Hotspot Beacons */
+@keyframes trafficBeaconPing {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  75%, 100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+.animate-traffic-ping {
+  animation: trafficBeaconPing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.traffic-polyline-glow {
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.5));
+}
+
+/* Leaflet tile & marker protection - MUST NEVER be overridden by generic img rules */
+.leaflet-container img,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+  max-width: none !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+}
+.leaflet-tile {
+  width: 256px !important;
+  height: 256px !important;
+  display: block !important;
+}
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+  width: auto !important;
+  height: auto !important;
+  display: block !important;
+}
+
+/* ==========================================================================
+   Mobile-Only Layout Architecture, Dynamic Text Fitting & Strict Containment
+   Applied strictly to mobile viewport (< 640px), keeping PC & tablet untouched
+   ========================================================================== */
+@media (max-width: 639px) {
+  /* 1. Mobile-First & Flexible Layout Architecture */
+  html,
+  body,
+  #root {
+    width: 100% !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Root & section containers containment */
+  main,
+  section,
+  header,
+  footer,
+  .mobile-root-container {
+    width: 100% !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+    padding-left: clamp(1rem, 4vw, 1.5rem);
+    padding-right: clamp(1rem, 4vw, 1.5rem);
+  }
+
+  /* 2. Dynamic Text Fitting & Typography Layout
+     Ensure all text containers have max-width: 100%, box-sizing: border-box, and overflow-wrap: break-word.
+     Set word-break: normal so words are fully preserved on the same line and single letters do not wrap onto new lines. */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  p,
+  span,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  a,
+  label,
+  button,
+  li,
+  input,
+  textarea,
+  select,
+  .text-container,
+  .font-heading {
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    word-break: normal;
+    hyphens: manual;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  .font-heading {
+    font-size: clamp(1.15rem, 4.2vw, 1.85rem);
+    line-height: 1.35;
+  }
+
+  h1 {
+    font-size: clamp(1.4rem, 5.5vw, 2.1rem);
+    line-height: 1.3;
+  }
+
+  p,
+  .card-body-text {
+    font-size: clamp(0.85rem, 2.5vw, 0.975rem);
+    line-height: 1.5;
+  }
+
+  /* 3. Container Alignment & Spacing Rules - protect horizontal headers and rows */
+  .card-container,
+  .glass-card-hover:not(.flex-row):not([class*="flex-row"]) {
+    display: flex;
+    flex-direction: column;
+    min-height: fit-content;
+    box-sizing: border-box;
+    gap: 0.75rem;
+  }
+
+  /* Multi-card grids auto-fit on mobile */
+  .multi-card-grid,
+  .grid {
+    gap: 1rem;
+  }
+
+  /* 4. Component Alignment & Positioning */
+  .flex-align-stretch {
+    align-items: stretch;
+  }
+
+  .flex-align-center {
+    align-items: center;
+  }
+
+  /* Action buttons inside cards cleanly pushed to the bottom */
+  .card-action-container,
+  .mt-auto {
+    margin-top: auto;
+  }
+
+  /* Ensure destination/card images use width: 100%, height: auto, object-fit: cover with explicit aspect ratio
+     CRITICAL: EXCLUDE Leaflet tiles and markers, AND avatars/circular images so they are not distorted */
+  img:not(.leaflet-tile):not(.leaflet-marker-icon):not(.leaflet-marker-shadow):not(.leaflet-container img):not([class*="rounded-full"]):not([class*="aspect-square"]):not([class*="h-"]):not([class*="w-"]) {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+    display: block;
+  }
+
+  /* Protect circular avatars on mobile so they stay perfectly circular (1:1) */
+  img[class*="rounded-full"],
+  .rounded-full img {
+    aspect-ratio: 1 / 1 !important;
+    object-fit: cover !important;
+    border-radius: 9999px !important;
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "CamGo - Cameron Highlands Travel & Live Guide",
+  "description": "Live weather forecasts, real-time traffic & hazard alerts, interactive maps with satellite/terrain views, immersive lightbox gallery, community lounge, AI travel assistance, and comprehensive directories for Cameron Highlands.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

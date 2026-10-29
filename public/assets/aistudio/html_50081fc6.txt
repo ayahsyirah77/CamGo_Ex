@@ -1,0 +1,97 @@
+<div class="gallery">
+	<ul class="cards">
+		<li class="card">0</li>
+		<li class="card">1</li>
+		<li class="card">2</li>
+		<li class="card">3</li>
+		<li class="card">4</li>
+		<li class="card">5</li>
+		<li class="card">6</li>
+		<li class="card">7</li>
+		<li class="card">8</li>
+		<li class="card">9</li>
+		<li class="card">10</li>
+		<li class="card">11</li>
+		<li class="card">12</li>
+		<li class="card">13</li>
+		<li class="card">14</li>
+		<li class="card">15</li>
+		<li class="card">16</li>
+		<li class="card">17</li>
+		<li class="card">18</li>
+		<li class="card">19</li>
+		<li class="card">20</li>
+		<li class="card">21</li>
+		<li class="card">22</li>
+		<li class="card">23</li>
+		<li class="card">24</li>
+		<li class="card">25</li>
+		<li class="card">26</li>
+		<li class="card">27</li>
+		<li class="card">28</li>
+		<li class="card">29</li>
+		<li class="card">30</li>
+	</ul>
+	<div class="actions"><button class="prev">&#x25C0; Prev</button><button class="next">Next &#x25B6;</button></div>
+</div><button class="refresh-btn" onclick="refreshCards()">Refresh Background</button>
+<div class="instruction">
+	<ul>Scroll the cards by<br />any of the following:<br /><br />
+		<li>Action Buttons</li>
+		<li>Mouse Wheel</li>
+		<li>Up/Down Arrows</li>
+		<li>Page-Up/Down</li>
+	</ul>
+</div>
+
+<!--// PUG
+
+.gallery
+	ul.cards
+		li.card 0
+		li.card 1
+		li.card 2
+		li.card 3
+		li.card 4
+		li.card 5
+		li.card 6
+		li.card 7
+		li.card 8
+		li.card 9
+		li.card 10
+		li.card 11
+		li.card 12
+		li.card 13
+		li.card 14
+		li.card 15
+		li.card 16
+		li.card 17
+		li.card 18
+		li.card 19
+		li.card 20
+		li.card 21
+		li.card 22
+		li.card 23
+		li.card 24
+		li.card 25
+		li.card 26
+		li.card 27
+		li.card 28
+		li.card 29
+		li.card 30
+	.actions
+		button.prev &#x25C0; Prev
+		button.next Next &#x25B6;
+button.refresh-btn(onclick="refreshCards()") Refresh Background
+.instruction
+	ul
+		| Scroll the cards by
+		br
+		| any of the following:
+		br
+		br
+		li Action Buttons
+		li Mouse Wheel
+		li Up/Down Arrows
+		li Page-Up/Down
+
+//-->
