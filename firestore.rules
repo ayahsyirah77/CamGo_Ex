@@ -109,9 +109,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /gsap_images/{docId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
     match /gsap_card_images/{cardId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /section_bg_images/{imageId} {

@@ -181,6 +181,17 @@
         "projectId": { "type": "string" }
       },
       "required": ["id", "updatedAt"]
+    },
+    "GsapImage": {
+      "title": "GsapImage",
+      "description": "Background image for GSAP looping gallery cards",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "imageUrl"]
     }
   },
   "firestore": {
@@ -235,6 +246,14 @@
     "ai_chats/{chatId}": {
       "schema": { "$ref": "AiChatSession" },
       "description": "CamGo AI Chat conversation sessions and logs in camgo-prod"
+    },
+    "gsap_images/{docId}": {
+      "schema": { "$ref": "GsapImage" },
+      "description": "Collection of GSAP gallery card background images"
+    },
+    "gsap_card_images/{cardId}": {
+      "schema": { "$ref": "GsapImage" },
+      "description": "Collection of GSAP gallery card background images"
     }
   }
 }

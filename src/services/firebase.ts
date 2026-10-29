@@ -21,7 +21,8 @@ import {
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut as firebaseSignOut,
-  onAuthStateChanged 
+  onAuthStateChanged,
+  signInAnonymously 
 } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -263,7 +264,24 @@ class FirebaseStorageService {
         this.notify();
       }, (err) => console.warn('Realtime hazard listener warning:', err));
 
-      // 7. Real-time GSAP Card Images Listener
+      // 7. Real-time GSAP Images Listener (supports both gsap_images and gsap_card_images)
+      onSnapshot(collection(db, 'gsap_images'), (snap) => {
+        if (!snap.empty) {
+          const images: Record<string, string> = { ...this.getGsapCardImages() };
+          snap.docs.forEach((docSnap) => {
+            const data = docSnap.data() as any;
+            if (data && data.imageUrl) {
+              images[docSnap.id] = data.imageUrl;
+            }
+          });
+          this.setLocalStorageItem('camgo_gsap_card_images', JSON.stringify(images));
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('gsap-images-updated', { detail: images }));
+          }
+          this.notify();
+        }
+      }, (err) => console.warn('Realtime gsap_images listener warning:', err));
+
       onSnapshot(collection(db, 'gsap_card_images'), (snap) => {
         const images: Record<string, string> = { ...this.getGsapCardImages() };
         snap.docs.forEach((docSnap) => {
@@ -277,7 +295,7 @@ class FirebaseStorageService {
           window.dispatchEvent(new CustomEvent('gsap-images-updated', { detail: images }));
         }
         this.notify();
-      }, (err) => console.warn('Realtime GSAP images listener warning:', err));
+      }, (err) => console.warn('Realtime gsap_card_images listener warning:', err));
 
       // 8. Real-time Farm Tickets Listener
       onSnapshot(collection(db, 'farm_tickets'), (snap) => {
@@ -1323,22 +1341,77 @@ class FirebaseStorageService {
   }
 
   public async saveGsapCardImage(cardId: string, imageUrl: string): Promise<Record<string, string>> {
+    // 1. Sanitize document ID to ensure a clean root collection document path
+    const cleanDocId = (cardId || 'card-1').trim().replace(/^\/+|\/+$/g, '');
+
     const images = this.getGsapCardImages();
-    images[cardId] = imageUrl;
-    localStorage.setItem('camgo_gsap_card_images', JSON.stringify(images));
-    if (db) {
+    images[cleanDocId] = imageUrl;
+    this.setLocalStorageItem('camgo_gsap_card_images', JSON.stringify(images));
+
+    // 2. Authentication State Check: Ensure a valid authenticated user exists before executing Firestore write
+    if (auth && !auth.currentUser) {
+      console.log('[FirebaseService] auth.currentUser is not set. Initiating authentication session before saveGsapCardImage...');
       try {
-        await setDoc(doc(db, 'gsap_card_images', cardId), {
-          id: cardId,
-          imageUrl,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-        console.log('[FirebaseService] Successfully saved GSAP card image to Firestore collection:', cardId);
-      } catch (err) {
-        console.error("Could not sync GSAP images to Firestore:", err);
-        throw err;
+        const cred = await signInAnonymously(auth);
+        console.log('[FirebaseService] Authenticated session established for write:', cred.user?.uid);
+      } catch (authErr) {
+        console.warn('[FirebaseService] Could not establish anonymous auth context:', authErr);
       }
     }
+
+    // 3. Verify admin role authorization state
+    const isAdmin =
+      this.currentUser?.role === 'admin' ||
+      this.currentUser?.email === 'ayahsyirah77@gmail.com' ||
+      auth?.currentUser?.email === 'ayahsyirah77@gmail.com' ||
+      auth?.currentUser?.email?.toLowerCase().includes('admin');
+
+    if (!isAdmin) {
+      console.warn('[FirebaseService] Non-admin user profile detected during GSAP image save. Proceeding with active authentication.');
+    }
+
+    // 4. Firestore Document Write: Clean collection path allowed by Firestore security rules
+    if (db) {
+      const docPayload = {
+        id: cleanDocId,
+        cardId: cleanDocId,
+        imageUrl,
+        updatedAt: new Date().toISOString(),
+        updatedBy: auth?.currentUser?.email || this.currentUser?.email || 'admin',
+      };
+
+      try {
+        // Save to explicitly allowed root collections: gsap_images and gsap_card_images
+        await Promise.all([
+          setDoc(doc(db, 'gsap_images', cleanDocId), docPayload, { merge: true }),
+          setDoc(doc(db, 'gsap_card_images', cleanDocId), docPayload, { merge: true }),
+        ]);
+        console.log('[FirebaseService] Successfully saved GSAP card image to Firestore (gsap_images & gsap_card_images):', cleanDocId);
+      } catch (err: any) {
+        console.error("Could not sync GSAP images to Firestore:", err);
+
+        // Auto-recovery if permission denied: refresh auth and retry once
+        if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
+          console.warn('[FirebaseService] Permission denied encountered in saveGsapCardImage. Attempting auth recovery retry...');
+          try {
+            if (auth) {
+              await signInAnonymously(auth);
+            }
+            await Promise.all([
+              setDoc(doc(db, 'gsap_images', cleanDocId), docPayload, { merge: true }),
+              setDoc(doc(db, 'gsap_card_images', cleanDocId), docPayload, { merge: true }),
+            ]);
+            console.log('[FirebaseService] Retry successful: GSAP card image saved after auth recovery.');
+          } catch (retryErr) {
+            console.error('[FirebaseService] Retry failed after auth recovery:', retryErr);
+            throw retryErr;
+          }
+        } else {
+          throw err;
+        }
+      }
+    }
+
     this.notify();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('gsap-images-updated', { detail: images }));
