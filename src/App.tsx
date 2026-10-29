@@ -237,6 +237,12 @@ export default function App() {
     };
     window.addEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
 
+    // Auto-open Find My Party Beacon if URL has beacon or party query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('beacon') || urlParams.get('party')) {
+      setIsFindMyPartyOpen(true);
+    }
+
     return () => {
       window.removeEventListener('places-updated', handlePlacesUpdated);
       window.removeEventListener('gallery-updated', handleGalleryUpdated);

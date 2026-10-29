@@ -31,9 +31,12 @@ import {
   Layers,
   ArrowUpRight,
   ExternalLink,
+  QrCode,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import {
   calculateHaversineDistance,
@@ -101,6 +104,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [preGeneratedCode, setPreGeneratedCode] = useState<string>(() => generateBeaconCode());
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Live Location & Tracking state
   const [isSharing, setIsSharing] = useState<boolean>(false);
@@ -301,6 +308,87 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     return unsubscribe;
   };
 
+  // Helper: Silently ensure valid Firebase Auth context to avoid permission errors
+  const ensureFirebaseAuth = async () => {
+    try {
+      if (!auth.currentUser) {
+        await signInAnonymously(auth);
+      }
+    } catch (authErr) {
+      console.warn('[Beacon] Anonymous auth notice:', authErr);
+    }
+  };
+
+  // Auto-generate QR code image whenever active code or pre-generated code updates
+  const activeQrCode = session?.code || preGeneratedCode;
+  useEffect(() => {
+    if (!activeQrCode) return;
+    let isMounted = true;
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : 'https://camgo.app';
+    const shareUrl = `${baseUrl}?beacon=${activeQrCode}`;
+
+    QRCode.toDataURL(shareUrl, {
+      width: 320,
+      margin: 2,
+      color: {
+        dark: '#064e3b', // Deep Cameron emerald
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'M',
+    })
+      .then((url) => {
+        if (isMounted) setQrCodeDataUrl(url);
+      })
+      .catch((err) => {
+        console.error('Failed to generate QR Code:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeQrCode]);
+
+  // Check URL search parameters for shared invite link (?beacon=CAMGO-TRIP-xxx)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const beaconParam = params.get('beacon') || params.get('party');
+      if (beaconParam && !session) {
+        setJoinCodeInput(beaconParam.trim().toUpperCase());
+      }
+    }
+  }, [session]);
+
+  // Copy direct share link
+  const handleCopyShareLink = () => {
+    const code = session?.code || preGeneratedCode;
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : 'https://camgo.app';
+    const shareUrl = `${baseUrl}?beacon=${code}`;
+    navigator.clipboard.writeText(shareUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  // Share via WhatsApp
+  const handleShareWhatsApp = () => {
+    const code = session?.code || preGeneratedCode;
+    const name = session?.name || newSessionName || 'Cameron Highlands Group';
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : 'https://camgo.app';
+    const shareUrl = `${baseUrl}?beacon=${code}`;
+    const text = `🌲 Join our "${name}" live Group Beacon in Cameron Highlands!\n\n📍 Real-time GPS sync & compass\n🔑 Code: ${code}\n🔗 Instant Link: ${shareUrl}`;
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, '_blank');
+  };
+
   // Create new session
   const handleCreateSession = async () => {
     if (!memberName.trim()) {
@@ -310,7 +398,9 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
     setLoading(true);
     setErrorMsg(null);
-    const newCode = generateBeaconCode();
+    await ensureFirebaseAuth();
+
+    const newCode = (preGeneratedCode || generateBeaconCode()).trim().toUpperCase();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + expiryHours * 3600 * 1000).toISOString();
 
@@ -354,9 +444,26 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       setIsSharing(true);
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, newCode);
       subscribeToSession(newCode);
+      setShowQrModal(true); // Open scannable QR code & WhatsApp share immediately
     } catch (err: any) {
       console.error('Failed to create beacon session:', err);
-      setErrorMsg(err.message || 'Failed to create beacon session.');
+      if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
+        // Automatically attempt anonymous auth recovery
+        try {
+          await signInAnonymously(auth);
+          await setDoc(doc(db, 'beacon_sessions', newCode), newSessionData);
+          setSession(newSessionData);
+          setIsSharing(true);
+          localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, newCode);
+          subscribeToSession(newCode);
+          setShowQrModal(true);
+          return;
+        } catch (retryErr: any) {
+          setErrorMsg(retryErr.message || 'Permission denied. Please verify your connection.');
+        }
+      } else {
+        setErrorMsg(err.message || 'Failed to create beacon session.');
+      }
     } finally {
       setLoading(false);
     }
@@ -375,11 +482,22 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
     setLoading(true);
     setErrorMsg(null);
+    await ensureFirebaseAuth();
     const code = joinCodeInput.trim().toUpperCase();
 
     try {
       const sessionRef = doc(db, 'beacon_sessions', code);
-      const snap = await getDoc(sessionRef);
+      let snap;
+      try {
+        snap = await getDoc(sessionRef);
+      } catch (authErr: any) {
+        if (authErr?.code === 'permission-denied' || authErr?.message?.includes('permission')) {
+          await signInAnonymously(auth);
+          snap = await getDoc(sessionRef);
+        } else {
+          throw authErr;
+        }
+      }
 
       if (!snap.exists()) {
         setErrorMsg(
@@ -969,6 +1087,57 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                         : 'Generate a private invite code (e.g. CAMGO-TRIP-882) to share with your travel companions.'}
                     </p>
 
+                    {/* Prominent Auto-Generated Code & QR Preview upfront */}
+                    <div className="p-3 rounded-xl bg-stone-950/80 border border-emerald-500/30 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold flex items-center gap-1">
+                          <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                          <span>{language === 'bm' ? 'Kod Dijana Automatik:' : 'Auto-Generated Code:'}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPreGeneratedCode(generateBeaconCode())}
+                          className="px-2 py-0.5 rounded-md bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-emerald-300 border border-white/10 text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Generate new code"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>{language === 'bm' ? 'Jana Lain' : 'Regenerate'}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-mono font-black text-emerald-300 tracking-wider px-2.5 py-1 rounded-lg bg-stone-900 border border-emerald-500/40 select-all truncate">
+                          {preGeneratedCode}
+                        </span>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(preGeneratedCode);
+                              setCopiedCode(true);
+                              setTimeout(() => setCopiedCode(false), 2000);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                            title="Copy code"
+                          >
+                            {copiedCode ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedCode ? (language === 'bm' ? 'Disalin' : 'Copied') : (language === 'bm' ? 'Salin' : 'Copy')}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setShowQrModal(true)}
+                            className="px-2 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            title="Preview scannable QR code"
+                          >
+                            <QrCode className="w-3 h-3" />
+                            <span>QR</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-[11px] font-semibold text-stone-400 mb-1">
                         {language === 'bm' ? 'Nama Kumpulan / Lawatan' : 'Group / Trip Name'}
@@ -1028,14 +1197,21 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                     </div>
                     <p className="text-xs text-stone-300 leading-relaxed">
                       {language === 'bm'
-                        ? 'Ada kod daripada rakan? Masukkan kod 6-digit atau format CAMGO-TRIP-xxx untuk menyertai.'
-                        : 'Have an invite code from your companion? Enter it below to sync live coordinates.'}
+                        ? 'Ada kod atau imbas QR daripada rakan? Masukkan kod untuk menyegerakkan lokasi live.'
+                        : 'Have an invite code or scanned a QR from your companion? Enter it below to sync live coordinates.'}
                     </p>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-stone-400 mb-1">
-                        {language === 'bm' ? 'Kod Jemputan Kumpulan' : 'Session Invite Code'}
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-stone-400">
+                          {language === 'bm' ? 'Kod Jemputan Kumpulan' : 'Session Invite Code'}
+                        </label>
+                        {joinCodeInput && (
+                          <span className="text-[9px] font-mono text-sky-400 bg-sky-950/60 border border-sky-500/30 px-1.5 py-0.5 rounded">
+                            {language === 'bm' ? 'Diisi Auto' : 'Auto-detected'}
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={joinCodeInput}
@@ -1103,11 +1279,19 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                     </button>
                     <button
                       onClick={handleShareSession}
-                      className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer text-xs flex items-center gap-1"
+                      className="p-1.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors cursor-pointer text-xs flex items-center gap-1"
                       title="Share Invite"
                     >
                       <Share2 className="w-3.5 h-3.5" />
                       <span className="text-[11px] font-medium hidden sm:inline">{language === 'bm' ? 'Kongsi' : 'Share'}</span>
+                    </button>
+                    <button
+                      onClick={() => setShowQrModal(true)}
+                      className="p-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
+                      title="Show QR Code"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{language === 'bm' ? 'Kod QR' : 'QR Code'}</span>
                     </button>
                   </div>
                 </div>
@@ -1614,6 +1798,98 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* QR CODE & INSTANT SHARE MODAL POPUP */}
+        {showQrModal && (
+          <div 
+            className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150"
+            onClick={() => setShowQrModal(false)}
+          >
+            <div 
+              className="w-full max-w-sm rounded-3xl bg-stone-900 border border-emerald-500/40 p-5 sm:p-6 shadow-2xl relative text-center space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setShowQrModal(false)}
+                className="absolute top-4 right-4 p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+                aria-label="Close QR Modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="space-y-1 pt-1">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto mb-2">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-stone-100 font-heading">
+                  {language === 'bm' ? 'Imbas Kod QR Suar' : 'Scan Group Beacon QR Code'}
+                </h3>
+                <p className="text-xs text-stone-400">
+                  {language === 'bm'
+                    ? 'Arahkan kamera telefon untuk menyertai penjejakan lokasi kumpulan secara automatik.'
+                    : 'Point any phone camera to instantly join this live tracking party.'}
+                </p>
+              </div>
+
+              {/* QR Image */}
+              <div className="p-3 bg-white rounded-2xl shadow-xl border-2 border-emerald-500/30 w-fit mx-auto">
+                {qrCodeDataUrl ? (
+                  <img
+                    src={qrCodeDataUrl}
+                    alt={`QR Code for ${session?.code || preGeneratedCode}`}
+                    className="w-48 h-48 object-contain rounded-lg"
+                  />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center bg-stone-100 text-stone-400">
+                    <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+                  </div>
+                )}
+              </div>
+
+              {/* Monospace Code Pill */}
+              <div className="p-2.5 rounded-xl bg-stone-950 border border-white/10 flex items-center justify-between gap-2">
+                <div className="text-left min-w-0">
+                  <span className="text-[10px] uppercase font-mono text-stone-400 block">
+                    {language === 'bm' ? 'Kod Sesi' : 'Session Code'}
+                  </span>
+                  <span className="text-sm font-mono font-black text-emerald-400 select-all truncate block">
+                    {session?.code || preGeneratedCode}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(session?.code || preGeneratedCode);
+                    setCopiedCode(true);
+                    setTimeout(() => setCopiedCode(false), 2000);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center gap-1 border border-white/10 cursor-pointer shrink-0 transition-colors"
+                >
+                  {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedCode ? (language === 'bm' ? 'Disalin' : 'Copied') : (language === 'bm' ? 'Salin' : 'Copy')}</span>
+                </button>
+              </div>
+
+              {/* Share Actions */}
+              <div className="space-y-2 pt-1">
+                <button
+                  onClick={handleShareWhatsApp}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>{language === 'bm' ? 'Kongsi ke WhatsApp' : 'Share via WhatsApp'}</span>
+                </button>
+
+                <button
+                  onClick={handleCopyShareLink}
+                  className="w-full py-2 px-4 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 border border-white/10 transition-all cursor-pointer"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLink ? (language === 'bm' ? 'Pautan Disalin!' : 'Link Copied!') : (language === 'bm' ? 'Salin Pautan Penuh' : 'Copy Direct Share Link')}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -132,7 +132,7 @@ service cloud.firestore {
     match /beacon_sessions/{sessionId} {
       allow read, write: if true;
       
-      match /members/{memberId} {
+      match /{allSubpaths=**} {
         allow read, write: if true;
       }
     }
