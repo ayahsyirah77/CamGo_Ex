@@ -232,6 +232,10 @@ export default function App() {
       setActiveCapsuleModal('traffic');
     };
     window.addEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
+    const handleOpenMotorbikeRental = () => {
+      setIsMotorbikeRentalOpen(true);
+    };
+    window.addEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
 
     return () => {
       window.removeEventListener('places-updated', handlePlacesUpdated);
@@ -243,6 +247,7 @@ export default function App() {
       window.removeEventListener('hazard-alerts-updated', handleHazardsUpdated);
       window.removeEventListener('open-emergency-card', handleOpenEmergencyCard);
       window.removeEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
+      window.removeEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
       unsubUser();
       unsubLounge();
     };
@@ -374,34 +379,73 @@ export default function App() {
           />
         </section>
 
-        {/* Dedicated Cameron Highlands Experience Hub Link Banner */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10">
-          <div
-            onClick={() => setIsMotorbikeRentalOpen(true)}
-            className="group relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-950 via-stone-900 to-teal-950 border border-emerald-500/40 p-5 sm:p-8 shadow-2xl hover:border-emerald-400 transition-all duration-300 cursor-pointer flex flex-col sm:flex-row items-center justify-between gap-5 sm:gap-6 text-center sm:text-left"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.15),transparent_50%)] pointer-events-none" />
-            
-            <div className="flex flex-col sm:flex-row items-center gap-3.5 sm:gap-4 z-10 text-center sm:text-left w-full sm:w-auto">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform mx-auto sm:mx-0">
-                <Bike className="w-7 h-7" />
+        {/* Experience Hub Cards: Motorbike Rental Marketplace & Intelligent Map Navigator */}
+        <section className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mb-6 sm:mb-10">
+          <div className="grid grid-cols-2 gap-2 sm:gap-6">
+            {/* Card 1: Motorbike & Scooter Rental Marketplace */}
+            <div
+              onClick={() => setIsMotorbikeRentalOpen(true)}
+              className="group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-emerald-950/90 via-stone-900 to-teal-950/90 border border-emerald-500/40 p-2.5 sm:p-6 shadow-2xl hover:border-emerald-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.15),transparent_50%)] pointer-events-none" />
+              
+              <div className="space-y-1.5 sm:space-y-3 z-10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">
+                    Rental Hub
+                  </span>
+                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                    <Bike className="w-3 h-3 sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-emerald-300 transition-colors leading-tight sm:leading-snug">
+                    Motorbike &amp; Scooter
+                  </h3>
+                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
+                    Fleet rentals in Tanah Rata, Brinchang &amp; Kea Farm with direct WhatsApp booking.
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1 flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto">
-                <span className="text-[10px] sm:text-xs font-mono font-bold uppercase tracking-widest text-emerald-400 block text-center sm:text-left w-full">
-                  Cameron Highlands Experience Hub
-                </span>
-                <h3 className="text-lg sm:text-2xl font-heading font-black text-white group-hover:text-emerald-300 transition-colors leading-snug sm:leading-tight text-center sm:text-left w-full">
-                  Motorbike &amp; Scooter Rental Marketplace
-                </h3>
-                <p className="text-xs sm:text-sm text-stone-300 max-w-xl text-center sm:text-left mx-auto sm:mx-0">
-                  Explore Tanah Rata, Brinchang, and Kea Farm on two wheels. Compare live fleet availability, select packages, and book instantly with WhatsApp notification!
-                </p>
+
+              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-emerald-400 group-hover:text-emerald-300">
+                <span>Rentals Hub</span>
+                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
               </div>
             </div>
 
-            <div className="z-10 w-full sm:w-auto px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-950/80 flex items-center justify-center gap-2 shrink-0 transition-transform group-hover:translate-x-1">
-              <span>Explore Rental Hub</span>
-              <ArrowRight className="w-4 h-4" />
+            {/* Card 2: Intelligent Map Navigator */}
+            <div
+              onClick={() => setIsMapModalOpen(true)}
+              className="group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-cyan-950/90 via-stone-900 to-blue-950/90 border border-cyan-500/40 p-2.5 sm:p-6 shadow-2xl hover:border-cyan-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(6,182,212,0.15),transparent_50%)] pointer-events-none" />
+              
+              <div className="space-y-1.5 sm:space-y-3 z-10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">
+                    Live GPS Map
+                  </span>
+                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                    <Navigation className="w-3 h-3 sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-cyan-300 transition-colors leading-tight sm:leading-snug">
+                    Map Navigator
+                  </h3>
+                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
+                    Interactive GPS map, live traffic telemetry, hazard alerts &amp; route optimizer.
+                  </p>
+                </div>
+              </div>
+
+              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-cyan-400 group-hover:text-cyan-300">
+                <span>Open Map</span>
+                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
+              </div>
             </div>
           </div>
         </section>

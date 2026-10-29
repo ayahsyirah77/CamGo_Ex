@@ -189,23 +189,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const updated: VendorListing = {
       ...listing,
       verificationStatus: 'verified',
+      isBookingEnabled: true,
       profileHealthScore: 100,
       updatedAt: new Date().toISOString(),
     };
     await firebaseService.saveVendorListing(updated);
     setVendorListingsState(firebaseService.getVendorListings());
-    addActivity(`Approved SSM verification & granted Verified Badge for "${listing.businessName}"`);
+    addActivity(`Approved SSM verification & activated booking for "${listing.businessName}"`);
   };
 
   const handleRejectVendor = async (listing: VendorListing) => {
     const updated: VendorListing = {
       ...listing,
       verificationStatus: 'rejected',
+      isBookingEnabled: false,
       updatedAt: new Date().toISOString(),
     };
     await firebaseService.saveVendorListing(updated);
     setVendorListingsState(firebaseService.getVendorListings());
     addActivity(`Rejected SSM verification for "${listing.businessName}"`);
+  };
+
+  const handleToggleBookingActivation = async (listing: VendorListing) => {
+    const currentStatus = listing.isBookingEnabled ?? (listing.verificationStatus === 'verified');
+    const newStatus = !currentStatus;
+    const updated: VendorListing = {
+      ...listing,
+      isBookingEnabled: newStatus,
+      verificationStatus: newStatus ? 'verified' : listing.verificationStatus,
+      updatedAt: new Date().toISOString(),
+    };
+    await firebaseService.saveVendorListing(updated);
+    setVendorListingsState(firebaseService.getVendorListings());
+    addActivity(`Toggled Booking Activation for "${listing.businessName}" to ${newStatus ? 'ENABLED' : 'DISABLED'}`);
   };
 
   const handleDeleteVendor = async (listingId: string, businessName: string) => {
@@ -1407,18 +1423,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-stone-900 z-10">
                   <tr className="border-b border-white/10 text-stone-400">
-                    <th className="py-2.5">Business Name & Township</th>
-                    <th>SSM & MDCH Reg No.</th>
+                    <th className="py-2.5">Business Name &amp; Township</th>
+                    <th>SSM &amp; MDCH Reg No.</th>
                     <th>Owner Email / WhatsApp</th>
                     <th>Doc Preview</th>
                     <th>Status</th>
+                    <th>Booking Activation</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {vendorListingsState.filter(v => vendorFilter === 'all' || v.verificationStatus === vendorFilter).length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-stone-500 italic">
+                      <td colSpan={7} className="py-8 text-center text-stone-500 italic">
                         No vendor submissions match the "{vendorFilter}" filter.
                       </td>
                     </tr>
@@ -1473,6 +1490,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {vendor.verificationStatus === 'verified' && <ShieldCheck className="w-3 h-3 text-emerald-400" />}
                               <span className="capitalize">{vendor.verificationStatus}</span>
                             </span>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleBookingActivation(vendor)}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer shadow-sm ${
+                                (vendor.isBookingEnabled ?? (vendor.verificationStatus === 'verified'))
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40'
+                                  : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40'
+                              }`}
+                              title="Click to toggle Marketplace Booking Activation for this vendor"
+                            >
+                              {(vendor.isBookingEnabled ?? (vendor.verificationStatus === 'verified')) ? (
+                                <>
+                                  <CheckCircle className="w-3 h-3 text-emerald-300" />
+                                  <span>Booking Active</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="w-3 h-3 text-amber-400" />
+                                  <span>Booking Disabled</span>
+                                </>
+                              )}
+                            </button>
                           </td>
                           <td className="text-right py-3">
                             <div className="flex items-center justify-end gap-1.5">

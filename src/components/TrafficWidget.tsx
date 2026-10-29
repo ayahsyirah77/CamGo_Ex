@@ -332,29 +332,29 @@ export const TrafficWidget: React.FC<TrafficWidgetProps> = ({
 
         <div className="grid grid-cols-1 gap-3">
           {/* Corridor 1: FT 185 Simpang Pulai */}
-          <div className="p-4 rounded-2xl bg-stone-900/90 border border-emerald-500/30 hover:border-emerald-500/60 transition-all space-y-2.5">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-stone-900/90 border border-emerald-500/30 hover:border-emerald-500/60 transition-all space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 font-mono font-bold text-xs border border-emerald-500/30 shrink-0">
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 font-mono font-bold text-[10px] sm:text-xs border border-emerald-500/30 shrink-0">
                 FT 185
               </span>
-              <span className="text-[11px] font-bold text-emerald-400 truncate text-right">
+              <span className="text-[10px] sm:text-[11px] font-bold text-emerald-400 truncate text-right">
                 {isBm ? 'Disyorkan: Utara / Penang' : 'Recommended: North / Penang'}
               </span>
             </div>
-            <h4 className="font-heading font-extrabold text-stone-100 text-sm">
+            <h4 className="font-heading font-extrabold text-stone-100 text-xs sm:text-sm leading-snug">
               Simpang Pulai – Pos Slim Pass
             </h4>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-[10px] sm:text-xs">
               <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                <span className="text-[10px] text-stone-400 block">{isBm ? 'Kelajuan Cerun' : 'Ascent Speed'}</span>
+                <span className="text-[9px] sm:text-[10px] text-stone-400 block">{isBm ? 'Kelajuan Cerun' : 'Ascent Speed'}</span>
                 <span className="font-bold text-stone-100 text-xs sm:text-sm">~42 km/h</span>
               </div>
               <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                <span className="text-[10px] text-stone-400 block">{isBm ? 'Kondisi Jalan' : 'Road Condition'}</span>
+                <span className="text-[9px] sm:text-[10px] text-stone-400 block">{isBm ? 'Kondisi Jalan' : 'Road Condition'}</span>
                 <span className="font-bold text-emerald-400 text-xs sm:text-sm truncate block">{isBm ? 'Beralun Lebar' : 'Sweeping & Wide'}</span>
               </div>
             </div>
-            <p className="text-[11px] text-stone-400 leading-relaxed">
+            <p className="text-[10px] sm:text-[11px] text-stone-400 leading-relaxed">
               {isBm
                 ? 'Laluan moden berbanding Tapah. Ada lorong memotong bertingkat. Berhati-hati dengan lori sayur perlahan.'
                 : 'Modern sweeping road compared to Tapah. Multiple dedicated crawler passing lanes.'}
@@ -369,29 +369,29 @@ export const TrafficWidget: React.FC<TrafficWidgetProps> = ({
           </div>
 
           {/* Corridor 2: FT 59 Tapah */}
-          <div className="p-4 rounded-2xl bg-stone-900/90 border border-amber-500/30 hover:border-amber-500/60 transition-all space-y-2.5">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-stone-900/90 border border-amber-500/30 hover:border-amber-500/60 transition-all space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs border border-amber-500/30 shrink-0">
+              <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-[10px] sm:text-xs border border-amber-500/30 shrink-0">
                 FT 59
               </span>
-              <span className="text-[11px] font-bold text-amber-400 truncate text-right">
+              <span className="text-[10px] sm:text-[11px] font-bold text-amber-400 truncate text-right">
                 {isBm ? 'Laluan Pemandangan Indah' : 'Scenic Heritage Route'}
               </span>
             </div>
-            <h4 className="font-heading font-extrabold text-stone-100 text-sm">
+            <h4 className="font-heading font-extrabold text-stone-100 text-xs sm:text-sm leading-snug">
               Tapah – Lata Iskandar – Ringlet
             </h4>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-[10px] sm:text-xs">
               <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                <span className="text-[10px] text-stone-400 block">{isBm ? 'Kelajuan Cerun' : 'Ascent Speed'}</span>
+                <span className="text-[9px] sm:text-[10px] text-stone-400 block">{isBm ? 'Kelajuan Cerun' : 'Ascent Speed'}</span>
                 <span className="font-bold text-amber-300 text-xs sm:text-sm">~20-30 km/h</span>
               </div>
               <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                <span className="text-[10px] text-stone-400 block">{isBm ? 'Selekoh' : 'Corners'}</span>
+                <span className="text-[9px] sm:text-[10px] text-stone-400 block">{isBm ? 'Selekoh' : 'Corners'}</span>
                 <span className="font-bold text-amber-300 text-xs sm:text-sm truncate block">300+ Hairpins</span>
               </div>
             </div>
-            <p className="text-[11px] text-stone-400 leading-relaxed">
+            <p className="text-[10px] sm:text-[11px] text-stone-400 leading-relaxed">
               {isBm
                 ? 'Laluan tertua dengan persinggahan Air Terjun Lata Iskandar. Jalan sempit, mudah mabuk perjalanan dan kabus petang.'
                 : 'Winding route via Lata Iskandar Waterfall. Narrow switchbacks with reduced visibility in rain.'}
@@ -406,29 +406,29 @@ export const TrafficWidget: React.FC<TrafficWidgetProps> = ({
           </div>
 
           {/* Corridor 3: FT 102 Central Spine Road */}
-          <div className="p-4 rounded-2xl bg-stone-900/90 border border-cyan-500/30 hover:border-cyan-500/60 transition-all space-y-2.5">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-stone-900/90 border border-cyan-500/30 hover:border-cyan-500/60 transition-all space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="px-2 py-0.5 rounded-lg bg-cyan-500/20 text-cyan-300 font-mono font-bold text-xs border border-cyan-500/30 shrink-0">
+              <span className="px-2 py-0.5 rounded-lg bg-cyan-500/20 text-cyan-300 font-mono font-bold text-[10px] sm:text-xs border border-cyan-500/30 shrink-0">
                 FT 102
               </span>
-              <span className="text-[11px] font-bold text-cyan-400 truncate text-right">
+              <span className="text-[10px] sm:text-[11px] font-bold text-cyan-400 truncate text-right">
                 {isBm ? 'Paling Pantas / Bebas Jam' : 'Fastest / Zero Congestion'}
               </span>
             </div>
-            <h4 className="font-heading font-extrabold text-stone-100 text-sm">
+            <h4 className="font-heading font-extrabold text-stone-100 text-xs sm:text-sm leading-snug">
               Sungai Koyan – Pos Betau (CSR)
             </h4>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-[10px] sm:text-xs">
               <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                <span className="text-[10px] text-stone-400 block">{isBm ? 'Kelajuan Purata' : 'Avg Speed'}</span>
+                <span className="text-[9px] sm:text-[10px] text-stone-400 block">{isBm ? 'Kelajuan Purata' : 'Avg Speed'}</span>
                 <span className="font-bold text-cyan-300 text-xs sm:text-sm">~80-90 km/h</span>
               </div>
               <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                <span className="text-[10px] text-stone-400 block">{isBm ? 'Kelewatan' : 'Delay Risk'}</span>
+                <span className="text-[9px] sm:text-[10px] text-stone-400 block">{isBm ? 'Kelewatan' : 'Delay Risk'}</span>
                 <span className="font-bold text-emerald-400 text-xs sm:text-sm truncate block">0 min</span>
               </div>
             </div>
-            <p className="text-[11px] text-stone-400 leading-relaxed">
+            <p className="text-[10px] sm:text-[11px] text-stone-400 leading-relaxed">
               {isBm
                 ? 'Lebuh raya moden berbilang lorong dari Raub/Gua Musang terus ke Ringlet. Pintasan terbaik mengelak kesesakan Lebuhraya PLUS.'
                 : 'State-of-the-art dual-carriageway bypass from Raub/Gua Musang directly entering southern Ringlet.'}

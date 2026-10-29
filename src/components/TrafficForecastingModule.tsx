@@ -462,31 +462,52 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
 
       {/* Expanded View: Centered Modal */}
       {!isMinimized && (
-        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto glass-panel rounded-3xl p-6 bg-stone-900 border border-emerald-500/30 shadow-2xl relative">
-            <button
-              onClick={() => setIsMinimized(true)}
-              className="absolute top-5 right-5 p-1.5 rounded-full bg-stone-800 text-stone-400 hover:text-white cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md overflow-hidden animate-in fade-in duration-200">
+          <div className="w-full max-w-5xl h-[94vh] sm:h-[90vh] bg-stone-900 rounded-2xl sm:rounded-3xl border border-emerald-500/40 shadow-2xl flex flex-col overflow-hidden relative">
+            
+            {/* Sticky Header with visible close X button */}
+            <div className="sticky top-0 z-50 flex items-center justify-between p-3.5 sm:p-5 border-b border-white/10 bg-stone-900/98 backdrop-blur-md shrink-0">
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                  <Car className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-xs sm:text-base font-heading font-black text-stone-100 truncate">
+                    {language === 'bm' ? 'Telemetri & Ramalan Trafik' : 'Real-Time & Predictive Highway Telemetry'}
+                  </h3>
+                  <p className="text-[10px] sm:text-xs text-emerald-400 font-mono font-bold truncate">
+                    {language === 'bm' ? 'Enjin Ramalan Trafik Cameron Highlands' : 'Cameron Highlands Traffic Forecaster Engine'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsMinimized(true)}
+                className="p-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-white/15 cursor-pointer transition-all shadow-lg active:scale-95 flex items-center justify-center shrink-0"
+                aria-label="Close modal"
+              >
+                <X className="w-5 h-5 text-emerald-400" />
+              </button>
+            </div>
+
+            {/* Scrollable Content Body */}
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-6 scrollbar-thin">
               {/* Header & TomTom API Integration Status Banner */}
-              <div className="glass-panel p-6 sm:p-7 rounded-3xl border border-emerald-500/30 shadow-2xl bg-gradient-to-br from-stone-900 via-stone-950 to-stone-900 relative overflow-hidden">
+              <div className="glass-panel p-4 sm:p-7 rounded-2xl sm:rounded-3xl border border-emerald-500/30 shadow-2xl bg-gradient-to-br from-stone-900 via-stone-950 to-stone-900 relative overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        <Car className="w-5 h-5 animate-pulse" />
+                      <span className="p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        <Car className="w-4 h-4 animate-pulse" />
                       </span>
-                      <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                      <span className="text-[10px] sm:text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
                         Real-Time &amp; Predictive Highway Telemetry
                       </span>
                     </div>
-                    <h2 className="text-xl sm:text-2xl md:text-3xl font-heading font-extrabold text-stone-100 tracking-tight mt-2">
+                    <h2 className="text-sm sm:text-2xl font-heading font-extrabold text-stone-100 tracking-tight mt-1.5">
                       Long-Distance Highway &amp; Mountain Traffic Forecaster
                     </h2>
-                    <p className="text-xs sm:text-sm text-stone-300 max-w-2xl mt-1">
+                    <p className="text-[11px] sm:text-sm text-stone-300 max-w-2xl mt-1">
                       {language === 'bm'
                         ? 'Analisis pintar laluan lebuh raya seluruh Malaysia ke Cameron Highlands. Bandingkan 3 koridor masuk utama, cari bandar pelepasan anda, dan semak ramalan cuaca & kesesakan.'
                         : 'Intelligent corridor analyzer for drivers traveling from across Malaysia to Cameron Highlands. Search and type your departure city, compare 3 gateway corridors, and check mountain climb delays.'}

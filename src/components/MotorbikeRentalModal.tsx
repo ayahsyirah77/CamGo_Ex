@@ -56,17 +56,39 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const refreshPartners = () => {
+      const data = firebaseService.getMotorbikePartners();
+      setPartners(data);
+      setIsLoading(false);
+    };
+
+    refreshPartners();
+
+    const handleUpdate = () => refreshPartners();
+    window.addEventListener('motorbike-partners-updated', handleUpdate);
+    window.addEventListener('vendor-listings-updated', handleUpdate);
+
+    let unsub: (() => void) | undefined;
     if (isOpen) {
-      const unsub = onSnapshot(collection(db, 'motorbike_partners'), (snap) => {
-        const fetched = snap.docs.map(d => d.data() as MotorbikeRentalPartner);
-        setPartners(fetched);
+      unsub = onSnapshot(collection(db, 'motorbike_partners'), (snap) => {
+        if (!snap.empty) {
+          const fetched = snap.docs.map(d => d.data() as MotorbikeRentalPartner);
+          setPartners(fetched);
+        } else {
+          refreshPartners();
+        }
         setIsLoading(false);
       }, (err) => {
-        console.error('Firestore listener error:', err);
-        setIsLoading(false);
+        console.warn('Firestore motorbike partners listener warning:', err);
+        refreshPartners();
       });
-      return unsub;
     }
+
+    return () => {
+      window.removeEventListener('motorbike-partners-updated', handleUpdate);
+      window.removeEventListener('vendor-listings-updated', handleUpdate);
+      if (unsub) unsub();
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -127,11 +149,37 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
       setSuccessBooking(newBooking);
 
       // Trigger automated WhatsApp message template to notify business owner
-      const waNumber = selectedPartner.whatsappNumber.replace(/[^0-9]/g, '');
-      const waText = encodeURIComponent(
-        `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${bookingId}:\n- Package: ${selectedPackage.name} (${selectedPackage.cc})\n- Renter: ${renterName} (${renterPhone})\n- Pickup Hub: ${pickupTownship} @ ${pickupTime}\n- Dates: ${startDate} to ${endDate} (${daysCount} days)\n- Helmets: ${helmetsAddon} units\n- Phone Mount: ${includePhoneMount ? 'Yes (+RM10)' : 'No'}\n- Total: RM ${totalRm}\nPlease confirm availability!`
-      );
-      window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank');
+      const rawWa = selectedPartner.whatsappNumber || selectedPartner.contactPhone || '+60123456789';
+      const waNumber = rawWa.replace(/[^0-9]/g, '');
+
+      const addOnsList: string[] = [];
+      if (helmetsAddon > 0) {
+        addOnsList.push(`${helmetsAddon} Helmet(s)`);
+      }
+      if (includePhoneMount) {
+        addOnsList.push('Phone Mount (+RM10)');
+      }
+      const addOnsText = addOnsList.length > 0 ? addOnsList.join(', ') : 'None';
+
+      const messageSummary = `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${bookingId}:
+
+🏍️ Bike Model: ${selectedPackage.name} (${selectedPackage.cc})
+📍 Pickup Township: ${pickupTownship} @ ${pickupTime}
+📅 Rental Period: ${startDate} to ${endDate} (${daysCount} Days)
+👤 Customer Name: ${renterName || 'Highland Explorer'}
+📞 Phone: ${renterPhone || '+60123456789'}
+🛠️ Add-ons: ${addOnsText}
+💰 Grand Total: RM${totalRm}
+
+Please confirm availability!`;
+
+      const waText = encodeURIComponent(messageSummary);
+      const waUrl = `https://wa.me/${waNumber}?text=${waText}`;
+      try {
+        window.open(waUrl, '_blank');
+      } catch (e) {
+        console.warn('WhatsApp auto-open popup warning:', e);
+      }
     } catch (err) {
       console.error('Failed to submit motorbike booking:', err);
     } finally {
@@ -190,8 +238,17 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
 
         {/* Partners Grid */}
         {isLoading && <div className="text-center py-12 text-stone-400 text-sm">Loading rental partners...</div>}
-        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ${isLoading ? 'hidden' : ''}`}>
-          {partners.map((partner) => (
+        {(() => {
+          const uniquePartnersMap = new Map<string, MotorbikeRentalPartner>();
+          for (const p of partners) {
+            if (p && p.id && !uniquePartnersMap.has(p.id)) {
+              uniquePartnersMap.set(p.id, p);
+            }
+          }
+          const dedupedPartners = Array.from(uniquePartnersMap.values());
+          return (
+            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ${isLoading ? 'hidden' : ''}`}>
+              {dedupedPartners.map((partner) => (
             <div
               key={partner.id}
               className="rounded-2xl bg-stone-900/90 border border-white/10 overflow-hidden shadow-xl hover:border-emerald-500/40 transition-all flex flex-col"
@@ -241,18 +298,20 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                       Available Rental Packages:
                     </span>
                     <button
-                      onClick={() => handleOpenBooking(partner, partner.packages[0] || {
-                        id: 'default',
-                        name: 'Standard Scooter',
-                        cc: '125cc',
-                        dailyRateRm: 60,
-                        imageUrl: partner.imageUrl,
-                        helmetsIncluded: 2,
-                      })}
-                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                      onClick={() => {
+                        handleOpenBooking(partner, partner.packages[0] || {
+                          id: 'default',
+                          name: 'Standard Scooter',
+                          cc: '125cc',
+                          dailyRateRm: 60,
+                          imageUrl: partner.imageUrl,
+                          helmetsIncluded: 2,
+                        });
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white"
                     >
                       <Bike className="w-3.5 h-3.5" />
-                      <span>Book Scooter / Bike</span>
+                      <span>Book Now</span>
                     </button>
                   </div>
 
@@ -268,9 +327,19 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                             {pkg.cc} • {pkg.helmetsIncluded} Helmets Included {pkg.packageDetails ? `• ${pkg.packageDetails}` : ''}
                           </div>
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-xs font-bold text-emerald-400 font-mono">RM {pkg.dailyRateRm}</div>
-                          <div className="text-[9px] text-stone-500">per day</div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right">
+                            <div className="text-xs font-bold text-emerald-400 font-mono">RM {pkg.dailyRateRm}</div>
+                            <div className="text-[9px] text-stone-500">per day</div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              handleOpenBooking(partner, pkg);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all cursor-pointer shadow flex items-center gap-1"
+                          >
+                            <span>Book Now</span>
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -279,7 +348,9 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
               </div>
             </div>
           ))}
-        </div>
+            </div>
+          );
+        })()}
 
         {/* Booking Form Modal Overlay */}
         {isBookingModalOpen && selectedPartner && selectedPackage && (
@@ -304,14 +375,55 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                   </div>
                   <h3 className="text-xl font-bold text-white">Booking Request Saved &amp; Sent!</h3>
                   <p className="text-xs text-stone-300">
-                    Your reservation record has been successfully saved to Firestore (<code className="text-emerald-400 font-mono">motorbike_rentals</code>) under <code className="text-teal-400 font-mono">camgo-prod</code>. WhatsApp chat has been opened with <span className="font-bold text-white">{selectedPartner.businessName}</span>.
+                    Your reservation record has been successfully saved to Firestore (<code className="text-emerald-400 font-mono">motorbike_rentals</code>). WhatsApp chat has been opened with <span className="font-bold text-white">{selectedPartner.businessName}</span>.
                   </p>
+                  
+                  {(() => {
+                    const rawWa = selectedPartner.whatsappNumber || selectedPartner.contactPhone || '+60123456789';
+                    const waNumber = rawWa.replace(/[^0-9]/g, '');
+
+                    const addOnsList: string[] = [];
+                    if (successBooking.helmetsAddon > 0) {
+                      addOnsList.push(`${successBooking.helmetsAddon} Helmet(s)`);
+                    }
+                    if (successBooking.includePhoneMount) {
+                      addOnsList.push('Phone Mount (+RM10)');
+                    }
+                    const addOnsText = addOnsList.length > 0 ? addOnsList.join(', ') : 'None';
+
+                    const messageSummary = `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${successBooking.id}:
+
+🏍️ Bike Model: ${successBooking.packageName}
+📍 Pickup Township: ${successBooking.pickupTownship} @ ${successBooking.pickupTime}
+📅 Rental Period: ${successBooking.startDate} to ${successBooking.endDate} (${successBooking.days} Days)
+👤 Customer Name: ${successBooking.renterName}
+📞 Phone: ${successBooking.renterPhone}
+🛠️ Add-ons: ${addOnsText}
+💰 Grand Total: RM${successBooking.totalRm}
+
+Please confirm availability!`;
+
+                    const waText = encodeURIComponent(messageSummary);
+                    const waUrl = `https://wa.me/${waNumber}?text=${waText}`;
+                    return (
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg"
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>Open WhatsApp Chat with {selectedPartner.businessName}</span>
+                      </a>
+                    );
+                  })()}
+
                   <button
                     onClick={() => {
                       setIsBookingModalOpen(false);
                       setSuccessBooking(null);
                     }}
-                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-all cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all cursor-pointer"
                   >
                     Done / Return to Marketplace
                   </button>

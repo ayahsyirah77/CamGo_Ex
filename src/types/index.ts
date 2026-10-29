@@ -428,7 +428,8 @@ export interface VendorListing {
   googleMapsUrl?: string;
   coordinates: Coordinates;
   
-  // Real-Time Operational Flags
+  // Real-Time Operational Flags & Admin Activation
+  isBookingEnabled?: boolean;
   realTimeStatus: VendorRealTimeStatus;
   diyHarvestStatus?: DiyHarvestStatus;
   parkingStatus: ParkingStatus;
@@ -569,6 +570,9 @@ export interface MotorbikeRentalPartner {
   contactPhone: string;
   whatsappNumber: string;
   packages: MotorbikePackage[];
+  isBookingEnabled?: boolean;
+  verificationStatus?: VendorVerificationStatus;
+  ownerEmail?: string;
 }
 
 export interface MotorbikeBookingRecord {

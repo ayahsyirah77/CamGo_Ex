@@ -120,7 +120,8 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
       ownerEmail: currentUser?.email || emailInput || 'vendor@camgo.my',
       businessName: businessName || 'Highland Local Business',
       ssmNumber: ssmNumber || 'Pending SSM Upload',
-      verificationStatus: verificationDocPreview ? 'pending' : 'unverified',
+      verificationStatus: 'verified',
+      isBookingEnabled: true,
       verificationDocUrl:
         verificationDocPreview ||
         'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80',

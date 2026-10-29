@@ -1799,31 +1799,31 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             </div>
           )}
 
-          <div className="flex items-center gap-1 mt-1.5 overflow-x-auto pb-0.5 text-[9px] scrollbar-none">
-            <span className="text-stone-400 shrink-0">Gateways:</span>
+          <div className="flex items-center gap-1 mt-1 overflow-x-auto pb-0.5 text-[8.5px] scrollbar-none">
+            <span className="text-stone-400 shrink-0 font-bold">Gateways:</span>
             <button
               onClick={() => handleSelectTrafficNav(TRAFFIC_NAV_ITEMS[0])}
-              className="px-2 py-0.5 rounded-lg bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 shrink-0 font-bold"
+              className="px-1.5 py-0.5 rounded-md bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/30 shrink-0 font-bold transition-all"
             >
-              FT 185 Simpang Pulai
+              Simpang Pulai
             </button>
             <button
               onClick={() => handleSelectTrafficNav(TRAFFIC_NAV_ITEMS[1])}
-              className="px-2 py-0.5 rounded-lg bg-amber-950/80 text-amber-300 border border-amber-500/30 shrink-0 font-bold"
+              className="px-1.5 py-0.5 rounded-md bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-500/30 shrink-0 font-bold transition-all"
             >
-              FT 59 Tapah
+              Tapah
             </button>
             <button
               onClick={() => handleSelectTrafficNav(TRAFFIC_NAV_ITEMS[2])}
-              className="px-2 py-0.5 rounded-lg bg-cyan-950/80 text-cyan-300 border border-cyan-500/30 shrink-0 font-bold"
+              className="px-1.5 py-0.5 rounded-md bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/30 shrink-0 font-bold transition-all"
             >
-              FT 102 Sg Koyan
+              Sg Koyan
             </button>
             <button
               onClick={handleScrollToForecaster}
-              className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white shrink-0 font-bold"
+              className="px-1.5 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white shrink-0 font-bold transition-all"
             >
-              Forecaster Tools ↓
+              Forecaster ↓
             </button>
           </div>
         </div>
