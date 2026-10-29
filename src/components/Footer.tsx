@@ -158,14 +158,7 @@ export const Footer: React.FC<FooterProps> = ({
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </li>
-              <li>
-                <button
-                  onClick={onOpenAdmin}
-                  className="hover:text-emerald-300 flex items-center gap-1 text-left cursor-pointer"
-                >
-                  <span>Admin Access Portal</span>
-                </button>
-              </li>
+
             </ul>
           </div>
 

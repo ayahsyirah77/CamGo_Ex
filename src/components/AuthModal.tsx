@@ -174,35 +174,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           </button>
 
-          {/* Admin Option */}
-          <button
-            type="button"
-            onClick={() => {
-              setAccountType('admin');
-              setErrorMsg(null);
-            }}
-            className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer text-center ${
-              accountType === 'admin'
-                ? 'bg-gradient-to-b from-rose-600 to-rose-700 text-white shadow-lg shadow-rose-950/60 font-bold border border-rose-400/40'
-                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
-            }`}
-          >
-            <div
-              className={`p-2 rounded-xl ${
-                accountType === 'admin' ? 'bg-white/20 text-white' : 'bg-stone-800 text-rose-400'
-              }`}
-            >
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-xs font-heading font-extrabold block">
-                {isBm ? 'Akaun Admin' : 'Admin'}
-              </span>
-              <span className="text-[10px] opacity-80 block font-normal leading-tight">
-                {isBm ? 'Master Admin' : 'System Admin'}
-              </span>
-            </div>
-          </button>
+
         </div>
 
         {/* Dynamic Context Notice based on selected account type */}

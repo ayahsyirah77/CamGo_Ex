@@ -63,7 +63,7 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
 
   const [businessName, setBusinessName] = useState('');
   const [ssmNumber, setSsmNumber] = useState('');
-  const [category, setCategory] = useState<MainCategory>('attraction');
+  const [category, setCategory] = useState<MainCategory>('services_utilities');
   const [subCategory, setSubCategory] = useState<SubCategory>('agritourism_plantations');
   const [township, setTownship] = useState<Township>('Brinchang');
   const [address, setAddress] = useState('');
@@ -515,13 +515,13 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
                     onChange={(e) => setCategory(e.target.value as MainCategory)}
                     className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
                   >
+                    <option value="services_utilities">Services & Utilities</option>
                     <option value="food">Food & Beverages</option>
                     <option value="travel_tourism">Travel & Highland Tourism</option>
                     <option value="accommodation">Accommodation</option>
                     <option value="transport">Transport & Mobility Services</option>
                     <option value="local_services">Local Services & Amenities</option>
                     <option value="shopping">Shopping & Local Produce</option>
-                    <option value="services_utilities">Services & Utilities</option>
                   </select>
                 </div>
 

@@ -539,7 +539,8 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
   }, []);
 
   const allPlaces = useMemo(() => {
-    return livePlaces && livePlaces.length > 0 ? livePlaces : firebaseService.getPlaces();
+    const list = livePlaces && livePlaces.length > 0 ? livePlaces : firebaseService.getPlaces();
+    return list.filter(p => p.includeInPlanner === true);
   }, [livePlaces]);
 
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);

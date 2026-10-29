@@ -84,16 +84,7 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
               ? 'Terokai pekan-pekan tanah tinggi, pautan agensi kerajaan dan peluang kerjaya.'
               : 'Discover highlands townships, municipal authorities, emergency contacts, and classifieds.'}
           </p>
-          {onOpenVendorPortal && (
-            <button
-              onClick={onOpenVendorPortal}
-              className="mt-2.5 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-950/50 hover:bg-amber-900/70 border border-amber-500/40 text-amber-300 hover:text-white text-xs font-bold transition-all shadow-md cursor-pointer group"
-            >
-              <Store className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-              <span>{language === 'bm' ? 'Buka Portal Peniaga & Rakan Niaga (Akses Admin)' : 'Business Vendor Portal • Listing & Operations (Admin)'}</span>
-              <ArrowRight className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-1 transition-transform" />
-            </button>
-          )}
+
         </div>
 
         {/* 4 Main Portal Tabs (Single line, strictly fits container on mobile, no word wrapping) */}

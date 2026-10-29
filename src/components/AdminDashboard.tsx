@@ -55,6 +55,7 @@ import {
   Clock,
   Copy,
   Check,
+  Navigation,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -238,6 +239,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isOpenNow, setIsOpenNow] = useState(true);
   const [isOpen24Hours, setIsOpen24Hours] = useState(false);
   const [isPlaceClosed, setIsPlaceClosed] = useState(false);
+  const [placeIncludeInPlanner, setPlaceIncludeInPlanner] = useState(false);
 
   const DAYS_OF_WEEK: DayOfWeek[] = [
     'Monday',
@@ -589,8 +591,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditingPlaceId(null);
     setPlaceName('');
     setPlaceNameBm('');
-    setPlaceCategory('attraction');
-    setPlaceSubCategory('agrotourism_plantations');
+    setPlaceCategory('services_utilities');
+    setPlaceSubCategory('plumbing_electrical');
     setPlaceTownship('Brinchang');
     setPlaceDescription('');
     setPlaceDescriptionBm('');
@@ -611,6 +613,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setHasCheckTimes(false);
     setPlaceCheckIn('14:00');
     setPlaceCheckOut('12:00');
+    setPlaceIncludeInPlanner(false);
     setShowAddPlaceModal(true);
   };
 
@@ -619,7 +622,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setPlaceName(place.name || '');
     setPlaceNameBm(place.nameBm || place.name || '');
     setPlaceCategory(place.category);
-    setPlaceSubCategory(place.subCategory || 'agrotourism_plantations');
+    setPlaceSubCategory(place.subCategory || 'agritourism_plantations');
     setPlaceTownship(place.township);
     setPlaceDescription(place.description || '');
     setPlaceDescriptionBm(place.descriptionBm || place.description || '');
@@ -684,6 +687,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setPlaceCheckOut('12:00');
     }
 
+    setPlaceIncludeInPlanner(place.includeInPlanner ?? false);
     setShowAddPlaceModal(true);
   };
 // 🔥 DIRECT CLOUD FIRESTORE SAVE PLACE HANDLER 🔥
@@ -734,6 +738,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           .map((t) => t.trim())
           .filter(Boolean),
         imageUrl: placeImageUrl,
+        includeInPlanner: placeIncludeInPlanner,
         trafficStatus: existingPlace?.trafficStatus ?? 'smooth',
       };
 
@@ -749,7 +754,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
 
       // Save via firebaseService to ensure local cache updates immediately
-      await firebaseService.savePlace(savedPlace as Place);
+      await firebaseService.savePlace(savedPlace as unknown as Place, false);
       addActivity(`Saved place to cloud: ${savedPlace.name} (${savedPlace.township})`);
       onRefreshData();
       setShowAddPlaceModal(false);
@@ -1935,14 +1940,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onChange={(e) => handleCategoryChange(e.target.value as MainCategory)}
                       className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
                     >
+                      <option value="services_utilities">Services & Utilities</option>
                       <option value="food">Food & Beverages</option>
                       <option value="travel_tourism">Travel & Highland Tourism</option>
                       <option value="accommodation">Accommodation</option>
                       <option value="transport">Transport & Mobility Services</option>
                       <option value="local_services">Local Services & Amenities</option>
                       <option value="shopping">Shopping & Local Produce</option>
-                      <option value="services_utilities">Services & Utilities</option>
-                      <option value="masjid_surau">Masjid & Surau</option>
                     </select>
                   </div>
                   <div>
@@ -2266,6 +2270,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Itinerary Planner Visibility Toggle */}
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-stone-800/40 border border-emerald-500/20 group hover:border-emerald-500/40 transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2.5 rounded-xl transition-colors ${placeIncludeInPlanner ? 'bg-emerald-500/20 text-emerald-400' : 'bg-stone-700 text-stone-500'}`}>
+                      <Navigation className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-stone-100">Show in Itinerary Planner</h4>
+                      <p className="text-[10px] text-stone-400">If enabled, this place will appear as a selectable activity in the AI Itinerary Planner.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPlaceIncludeInPlanner(!placeIncludeInPlanner)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${placeIncludeInPlanner ? 'bg-emerald-600' : 'bg-stone-700'}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${placeIncludeInPlanner ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

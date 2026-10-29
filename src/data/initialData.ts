@@ -29,6 +29,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 1420,
     tags: ['Ladang Teh', 'Teh Tarik', 'Pemandangan Panorama'],
     imageUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
     trafficStatus: 'moderate',
   },
   {
@@ -49,6 +50,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 890,
     tags: ['Taman Bunga', 'Spot Bergambar', 'Kea Farm'],
     imageUrl: 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
     trafficStatus: 'heavy',
   },
   {
@@ -69,6 +71,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 970,
     tags: ['Hutan Awan', 'Eko-Pelancongan', 'Gunung Brinchang'],
     imageUrl: 'https://images.unsplash.com/photo-1511497584788-87676104235f?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
     trafficStatus: 'smooth',
   },
   {
@@ -89,6 +92,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 310,
     tags: ['Pemandu Pelancong', 'Safari 4x4', 'Mossy Forest Tour'],
     imageUrl: 'https://images.unsplash.com/photo-1533105079780-92b9be482077?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 
   // 2. Food & Beverages
@@ -110,6 +114,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 640,
     tags: ['Stimbot Arang', 'Halal Option', 'Kea Farm Veggies'],
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'lord-baeden-powell-cafe',
@@ -129,6 +134,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 520,
     tags: ['Skon Inggeris', 'Teh Petang', 'Suasana Kolonial'],
     imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'golden-hills-night-market-food',
@@ -147,6 +153,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 1850,
     tags: ['Pasar Malam', 'Makan Jalanan', 'Strawberi Goreng'],
     imageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 
   // 3. Accommodation
@@ -168,6 +175,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 1120,
     tags: ['Hotel Mewah', 'Resort Tudor', 'Tanah Rata'],
     imageUrl: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'smokehouse-hotel-chalets',
@@ -187,6 +195,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 780,
     tags: ['Chalet Inggeris', 'Taman Bunga', 'Unggun Api'],
     imageUrl: 'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'golden-hills-homestay-apt',
@@ -206,6 +215,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 410,
     tags: ['Homestay Keluarga', 'Dekat Pasar Malam', '3 Bilik'],
     imageUrl: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 
   // 4. Transport & Mobility Services
@@ -227,6 +237,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 320,
     tags: ['Sewa Kereta', 'Sewa Motosikal', 'Tanah Rata'],
     imageUrl: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'petronas-ringlet-ev',
@@ -246,6 +257,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 290,
     tags: ['Pengecas EV', 'Stesen Minyak 24j', 'Ringlet'],
     imageUrl: 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 
   // 5. Local Services & Amenities
@@ -267,6 +279,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 450,
     tags: ['Hospital Kecemasan', 'Farmasi 24j', 'Tanah Rata'],
     imageUrl: 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'maybank-tanah-rata-atm',
@@ -286,6 +299,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 380,
     tags: ['ATM Maybank', 'Penukaran Wang', 'Tanah Rata'],
     imageUrl: 'https://images.unsplash.com/photo-1601597111158-2fceff292cdc?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 
   // 6. Shopping & Local Produce
@@ -306,6 +320,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 2210,
     tags: ['Sayur Segar', 'Pasar Kea Farm', 'Madu Wild'],
     imageUrl: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'cameron-souvenir-handicraft-hub',
@@ -325,6 +340,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 310,
     tags: ['Cenderamata', 'Kraf Orang Asli', 'Kea Farm Souvenirs'],
     imageUrl: 'https://images.unsplash.com/photo-1528459801416-a9e53bbf4e17?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 
   // 7. Services & Utilities
@@ -346,6 +362,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 180,
     tags: ['Paip & Elektrik 24j', 'Pembaikan Pemanas Air', 'Tanah Rata'],
     imageUrl: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'cameron-lpg-cooking-gas-delivery',
@@ -365,6 +382,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 210,
     tags: ['Penghantaran Tong Gas', 'LPG Steamboat', 'Brinchang'],
     imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 
   // 8. Places of Worship / Masjid & Surau
@@ -386,6 +404,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 820,
     tags: ['Masjid', 'Solat Jumaat', 'Tanah Rata', 'Masjid Daerah', 'Wuduk Selesa'],
     imageUrl: 'https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'masjid-tengku-ahmad-brinchang',
@@ -405,6 +424,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 650,
     tags: ['Masjid', 'Solat Jumaat', 'Brinchang', 'Pusat Bandar'],
     imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'masjid-kayu-al-hidayah-tanah-rata',
@@ -423,6 +443,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 390,
     tags: ['Masjid Kayu', 'Tanah Rata', 'Surau Selesa', 'Pine Forest'],
     imageUrl: 'https://images.unsplash.com/photo-1519817650390-64a93db51149?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'surau-al-falah-kea-farm',
@@ -441,6 +462,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 420,
     tags: ['Surau', 'Kea Farm', 'Pasar Sayur', 'Flora Park', 'Solat Mudah'],
     imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'surau-barrington-golden-hills',
@@ -459,6 +481,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 510,
     tags: ['Surau', 'Golden Hills', 'Pasar Malam', 'Barrington Square'],
     imageUrl: 'https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'masjid-ringlet',
@@ -477,6 +500,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 310,
     tags: ['Masjid', 'Solat Jumaat', 'Ringlet', 'Pintu Masuk Selatan'],
     imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
   {
     id: 'masjid-kampung-raja',
@@ -495,6 +519,7 @@ export const INITIAL_PLACES: Place[] = [
     reviewsCount: 290,
     tags: ['Masjid', 'Solat Jumaat', 'Kampung Raja', 'Pintu Masuk Simpang Pulai'],
     imageUrl: 'https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?auto=format&fit=crop&w=800&q=80',
+    includeInPlanner: true,
   },
 ];
 export const INITIAL_WEATHER: WeatherData[] = [

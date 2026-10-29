@@ -6,27 +6,40 @@
       // Suppress Vite HMR WebSocket connection warnings in AI Studio preview environment
       (function() {
         var origConsoleError = console.error;
+        var origConsoleWarn = console.warn;
+        
+        var isViteError = function(msg) {
+          if (!msg) return false;
+          var str = String(msg);
+          return str.indexOf('WebSocket') !== -1 || 
+                 str.indexOf('@vite/client') !== -1 || 
+                 str.indexOf('HMR') !== -1 ||
+                 str.indexOf('failed to connect to server') !== -1;
+        };
+
         console.error = function() {
           var args = Array.prototype.slice.call(arguments);
-          var str = args.map(function(arg) {
-            return String(arg && (arg.message || arg.stack || arg));
-          }).join(' ');
-          if (str.indexOf('WebSocket') !== -1 || str.indexOf('@vite/client') !== -1) {
-            return;
-          }
+          if (args.some(isViteError)) return;
           origConsoleError.apply(console, args);
         };
+        
+        console.warn = function() {
+          var args = Array.prototype.slice.call(arguments);
+          if (args.some(isViteError)) return;
+          origConsoleWarn.apply(console, args);
+        };
+
         window.addEventListener('error', function (event) {
-          var msg = String(event && (event.message || (event.error && event.error.message) || ''));
-          if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('@vite/client') !== -1) {
+          if (isViteError(event.message) || isViteError(event.error && event.error.message)) {
             event.stopImmediatePropagation();
             event.preventDefault();
             return true;
           }
         }, true);
+        
         window.addEventListener('unhandledrejection', function (event) {
-          var reason = String(event && (event.reason ? (event.reason.message || event.reason) : ''));
-          if (reason.indexOf('WebSocket') !== -1 || reason.indexOf('@vite/client') !== -1) {
+          var reason = event.reason ? (event.reason.message || event.reason) : '';
+          if (isViteError(reason)) {
             event.stopImmediatePropagation();
             event.preventDefault();
             return true;

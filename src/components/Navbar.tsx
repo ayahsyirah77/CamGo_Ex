@@ -732,18 +732,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <span>{language === 'bm' ? 'Tiket & Harga Ladang' : 'Farm Tickets & Pricing'}</span>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        setPortalsOpen(false);
-                        if (onOpenVendorPortal) onOpenVendorPortal();
-                      }}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-emerald-600/20 text-left text-xs font-bold text-amber-300 hover:text-white transition-all cursor-pointer group"
-                    >
-                      <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500 group-hover:text-black transition-colors">
-                        <Store className="w-3.5 h-3.5" />
-                      </div>
-                      <span>{language === 'bm' ? 'Portal Peniaga & Rakan Niaga' : 'Business Vendor Portal'}</span>
-                    </button>
+
                   </div>
                 </div>
               )}
@@ -848,6 +837,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span>{language === 'bm' ? 'Papan Pemuka Pelawat & Tempatan' : 'Traveler & Local Dashboard'}</span>
                       </button>
 
+                      <button
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          if (onOpenVendorPortal) onOpenVendorPortal();
+                        }}
+                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-stone-200 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <Briefcase className="w-4 h-4 text-emerald-400" />
+                        <span>Business Vendor Portal</span>
+                      </button>
+
                       {(currentUser.email === 'ayahsyirah77@gmail.com' || currentUser.role === 'admin') && (
                         <button
                           onClick={() => {
@@ -863,22 +863,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">Admin</span>
                         </button>
                       )}
-
-                      <button
-                        onClick={() => {
-                          setUserDropdownOpen(false);
-                          if (onOpenVendorPortal) onOpenVendorPortal();
-                        }}
-                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-amber-300 hover:text-amber-200 flex items-center justify-between transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Store className="w-4 h-4 text-amber-400" />
-                          <span>{language === 'bm' ? 'Portal Peniaga (Vendor)' : 'Business Vendor Portal'}</span>
-                        </div>
-                        {(currentUser.email === 'ayahsyirah77@gmail.com' || currentUser.role === 'admin') && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold">Full Access</span>
-                        )}
-                      </button>
 
                       <div className="border-t border-white/10 pt-1 mt-1">
                         <button

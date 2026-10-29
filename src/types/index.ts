@@ -161,6 +161,7 @@ export interface Place {
   wazeUrl?: string;
   googleMapsUrl?: string;
   isSponsored?: boolean;
+  includeInPlanner?: boolean;
   createdAt?: string;
 }
 
@@ -420,6 +421,7 @@ export interface VendorListing {
   description: string;
   operatingHours: OperatingHours;
   coverImage: string;
+  logoUrl?: string;
   galleryImages: string[];
   menuPdfOrUrl?: string;
   wazeUrl?: string;
@@ -579,10 +581,12 @@ export interface MotorbikeBookingRecord {
   renterEmail: string;
   renterPhone: string;
   pickupTownship: Township;
+  pickupTime: string;
   startDate: string;
   endDate: string;
   days: number;
   helmetsAddon: number;
+  includePhoneMount: boolean;
   totalRm: number;
   status: 'pending' | 'confirmed' | 'completed';
   createdAt: string;

@@ -1717,10 +1717,13 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             className="bg-stone-800 text-[10px] font-semibold text-stone-200 px-1.5 py-1.5 rounded-xl outline-none border border-white/10 cursor-pointer truncate"
           >
             <option value="all">{getTranslation(language, 'map_filter_all')}</option>
-            <option value="accommodation">Stay</option>
+            <option value="services_utilities">Services</option>
             <option value="food">Food</option>
-            <option value="attraction">Attraction</option>
-            <option value="business">Business</option>
+            <option value="travel_tourism">Tourism</option>
+            <option value="accommodation">Stay</option>
+            <option value="transport">Transport</option>
+            <option value="local_services">Amenities</option>
+            <option value="shopping">Shopping</option>
           </select>
 
           <select

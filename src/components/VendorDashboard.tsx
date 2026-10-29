@@ -91,7 +91,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   onOpenAdmin,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'directory' | 'promotions' | 'analytics' | 'billing' | 'motorbikes'
+    'overview' | 'directory' | 'promotions' | 'analytics' | 'billing' | 'motorbikes' | 'reservations'
   >('overview');
 
   // Vendor Listing State
@@ -135,9 +135,10 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
   // New Listing Form State (for Admin Add)
   const [newBizName, setNewBizName] = useState('');
+  const [newBizLogo, setNewBizLogo] = useState('');
   const [newBizTownship, setNewBizTownship] = useState<Township>('Brinchang');
-  const [newBizCategory, setNewBizCategory] = useState<MainCategory>('travel_tourism');
-  const [newBizSubCategory, setNewBizSubCategory] = useState<SubCategory>('agrotourism_farms');
+  const [newBizCategory, setNewBizCategory] = useState<MainCategory>('services_utilities');
+  const [newBizSubCategory, setNewBizSubCategory] = useState<SubCategory>('plumbing_electrical');
   const [newBizPhone, setNewBizPhone] = useState('+6012');
   const [newBizAddress, setNewBizAddress] = useState('');
 
@@ -436,6 +437,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       description: `Verified ${newBizTownship} business offering highland experiences.`,
       operatingHours: { from: '08:30', to: '18:00', isOpen: true },
       coverImage: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+      logoUrl: newBizLogo || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=200&q=80',
       galleryImages: [
         'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
       ],
@@ -454,8 +456,27 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     };
 
     await firebaseService.saveVendorListing(newListing);
+
+    // Sync to Motorbike Rental Marketplace if applicable
+    if (newBizCategory === 'transport' || newBizSubCategory === 'car_bike_rentals') {
+      const partnerToSync: MotorbikeRentalPartner = {
+        id: newListing.id,
+        businessName: newListing.businessName,
+        township: newListing.township,
+        imageUrl: newListing.coverImage || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+        operatingStatus: 'open',
+        fleetAvailability: 'high',
+        contactPhone: newListing.contactPhone,
+        whatsappNumber: newListing.whatsappNumber,
+        packages: [],
+      };
+      await firebaseService.saveMotorbikePartner(partnerToSync);
+      setMotorbikePartners(firebaseService.getMotorbikePartners());
+    }
+
     setShowAddListingModal(false);
     setNewBizName('');
+    setNewBizLogo('');
     setNewBizAddress('');
     refreshVendorData();
     setActiveVendor(newListing);
@@ -854,6 +875,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               { id: 'promotions', label: 'Deals', icon: Ticket },
               { id: 'analytics', label: 'Analytics', icon: BarChart3 },
               { id: 'billing', label: 'Team', icon: Settings },
+              { id: 'reservations', label: 'Reservations', icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -952,6 +974,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 { id: 'promotions', label: 'Deals & Marketing', icon: Ticket },
                 { id: 'analytics', label: 'Customer Analytics', icon: BarChart3 },
                 { id: 'billing', label: 'Team & Billing', icon: Settings },
+                { id: 'reservations', label: 'Incoming Reservations', icon: Calendar },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -1482,7 +1505,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           )}
 
           {/* TAB 2: DIRECTORY LISTING MANAGEMENT (FULL EDITING SUITE) */}
-          {activeTab === 'directory' && activeVendor && (
+          {activeTab === 'directory' && (
+            activeVendor ? (
             <div className="space-y-6">
               <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 pb-3">
@@ -1599,19 +1623,29 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   </div>
 
                   <div>
+                    <label className="block text-xs font-medium text-stone-300 mb-1">Business Logo URL</label>
+                    <input
+                      type="text"
+                      value={activeVendor.logoUrl || ''}
+                      onChange={(e) => setActiveVendor({ ...activeVendor, logoUrl: e.target.value })}
+                      placeholder="https://example.com/logo.png"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-stone-300 mb-1">Primary Category</label>
                     <select
                       value={activeVendor.category}
                       onChange={(e) => setActiveVendor({ ...activeVendor, category: e.target.value as MainCategory })}
                       className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
                     >
-                      <option value="travel_tourism">Travel &amp; Highland Tourism</option>
-                      <option value="food">Food &amp; Beverages</option>
+                      <option value="services_utilities">Services & Utilities</option>
+                      <option value="food">Food & Beverages</option>
+                      <option value="travel_tourism">Travel & Highland Tourism</option>
                       <option value="accommodation">Accommodation</option>
-                      <option value="transport">Transport &amp; Mobility</option>
-                      <option value="shopping">Shopping &amp; Local Produce</option>
-                      <option value="local_services">Local Services &amp; Amenities</option>
-                      <option value="services_utilities">Services &amp; Utilities</option>
+                      <option value="transport">Transport & Mobility Services</option>
+                      <option value="local_services">Local Services & Amenities</option>
+                      <option value="shopping">Shopping & Local Produce</option>
                     </select>
                   </div>
 
@@ -2105,6 +2139,42 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 </div>
               </div>
             </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-5 bg-stone-900/40 rounded-3xl border border-stone-800">
+                <div className="w-20 h-20 rounded-full bg-stone-800 flex items-center justify-center text-stone-600">
+                  <Store className="w-10 h-10" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black text-white font-heading">No Business Selected</h3>
+                  <p className="text-stone-400 max-w-sm mx-auto text-sm">
+                    {isUserAdmin 
+                      ? "As an administrator, you can manage all listings. Please select a business from the sidebar to view its directory profile."
+                      : "You don't have any businesses associated with your account yet. Create your first listing to get started."}
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={() => setShowAddListingModal(true)}
+                    className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center gap-2 transition-all active:scale-95"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Create New Listing</span>
+                  </button>
+                  {isUserAdmin && onOpenAdmin && (
+                    <button
+                      onClick={() => {
+                        onClose();
+                        onOpenAdmin();
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-white font-bold text-xs border border-stone-700 flex items-center gap-2 transition-all"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>Admin Control Room</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
           )}
 
           {/* TAB 3: PROMOTIONS & MARKETING SUITE */}
@@ -2370,6 +2440,38 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               </div>
             </div>
           )}
+
+          {activeTab === 'reservations' && (
+            <div className="space-y-6">
+              <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  Incoming Motorbike Reservations
+                </h3>
+                <div className="space-y-2">
+                  {motorbikeBookings
+                    .filter((b) => b.partnerId === activeVendor?.id)
+                    .map((booking) => (
+                      <div key={booking.id} className="p-3 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-bold text-white block">{booking.renterName}</span>
+                          <span className="text-[10px] text-stone-400">{booking.packageName} • {booking.startDate} to {booking.endDate}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-emerald-400 font-bold block">RM {booking.totalRm}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase ${booking.status === 'pending' ? 'bg-amber-900 text-amber-200' : 'bg-emerald-900 text-emerald-200'}`}>{booking.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  {motorbikeBookings.filter((b) => b.partnerId === activeVendor?.id).length === 0 && (
+                    <div className="p-6 rounded-2xl bg-stone-900/50 border border-dashed border-stone-800 text-center text-xs text-stone-400">
+                      No incoming motorbike reservations.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       </motion.div>
 
@@ -2430,10 +2532,13 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       onChange={(e) => setNewBizCategory(e.target.value as MainCategory)}
                       className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
                     >
-                      <option value="travel_tourism">Travel &amp; Tourism</option>
-                      <option value="food">Food &amp; Dining</option>
+                      <option value="services_utilities">Services & Utilities</option>
+                      <option value="food">Food & Beverages</option>
+                      <option value="travel_tourism">Travel & Highland Tourism</option>
                       <option value="accommodation">Accommodation</option>
-                      <option value="shopping">Shopping</option>
+                      <option value="transport">Transport & Mobility Services</option>
+                      <option value="local_services">Local Services & Amenities</option>
+                      <option value="shopping">Shopping & Local Produce</option>
                     </select>
                   </div>
                 </div>
@@ -2448,6 +2553,16 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   />
                 </div>
 
+                <div>
+                  <label className="block text-stone-300 mb-1">Business Logo URL</label>
+                  <input
+                    type="text"
+                    value={newBizLogo}
+                    onChange={(e) => setNewBizLogo(e.target.value)}
+                    placeholder="https://example.com/logo.png"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
+                  />
+                </div>
                 <div>
                   <label className="block text-stone-300 mb-1">Street Address</label>
                   <input

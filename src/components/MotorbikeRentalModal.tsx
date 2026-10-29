@@ -45,9 +45,11 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
   const [renterEmail, setRenterEmail] = useState(currentUser?.email || '');
   const [renterPhone, setRenterPhone] = useState(currentUser?.contactNumber || '+601');
   const [pickupTownship, setPickupTownship] = useState<Township>('Tanah Rata');
+  const [pickupTime, setPickupTime] = useState('10:00');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]);
   const [helmetsAddon, setHelmetsAddon] = useState(2);
+  const [includePhoneMount, setIncludePhoneMount] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<MotorbikeBookingRecord | null>(null);
 
@@ -90,7 +92,8 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
 
   const daysCount = calculateDays();
   const dailyRate = selectedPackage?.dailyRateRm || 70;
-  const totalRm = dailyRate * daysCount + helmetsAddon * 10 * daysCount; // RM10 per extra helmet/day if needed
+  const mountFee = includePhoneMount ? 10 : 0;
+  const totalRm = dailyRate * daysCount + helmetsAddon * 10 * daysCount + mountFee; // RM10 per extra helmet/day if needed, + phone mount fee
 
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,10 +112,12 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
         renterEmail: renterEmail || 'traveler@camgo.my',
         renterPhone: renterPhone || '+60123456789',
         pickupTownship,
+        pickupTime,
         startDate,
         endDate,
         days: daysCount,
         helmetsAddon,
+        includePhoneMount,
         totalRm,
         status: 'pending',
         createdAt: new Date().toISOString(),
@@ -124,7 +129,7 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
       // Trigger automated WhatsApp message template to notify business owner
       const waNumber = selectedPartner.whatsappNumber.replace(/[^0-9]/g, '');
       const waText = encodeURIComponent(
-        `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${bookingId}:\n- Package: ${selectedPackage.name} (${selectedPackage.cc})\n- Renter: ${renterName} (${renterPhone})\n- Pickup Hub: ${pickupTownship}\n- Dates: ${startDate} to ${endDate} (${daysCount} days)\n- Helmets: ${helmetsAddon} units\n- Total: RM ${totalRm}\nPlease confirm availability!`
+        `Salam ${selectedPartner.businessName}! New Scooter Booking Request #${bookingId}:\n- Package: ${selectedPackage.name} (${selectedPackage.cc})\n- Renter: ${renterName} (${renterPhone})\n- Pickup Hub: ${pickupTownship} @ ${pickupTime}\n- Dates: ${startDate} to ${endDate} (${daysCount} days)\n- Helmets: ${helmetsAddon} units\n- Phone Mount: ${includePhoneMount ? 'Yes (+RM10)' : 'No'}\n- Total: RM ${totalRm}\nPlease confirm availability!`
       );
       window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank');
     } catch (err) {
@@ -421,6 +426,25 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                       </select>
                     </div>
                     <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-300">Pickup Time</label>
+                      <input
+                        type="time"
+                        required
+                        value={pickupTime}
+                        onChange={(e) => setPickupTime(e.target.value)}
+                        className="w-full bg-stone-950 border border-white/10 rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-1">
+                      <label className="flex items-center gap-2 text-xs font-bold text-stone-300 cursor-pointer">
+                          <input type="checkbox" checked={includePhoneMount} onChange={(e) => setIncludePhoneMount(e.target.checked)} className="rounded border-white/10 bg-stone-950 text-emerald-600 focus:ring-emerald-500" />
+                          Include Handlebar Phone Mount (+RM10 flat fee)
+                      </label>
+                  </div>
+
+                  <div className="space-y-1">
                       <label className="text-xs font-bold text-stone-300">Helmet Add-ons</label>
                       <select
                         value={helmetsAddon}
@@ -432,7 +456,6 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                         <option value={4}>4 Helmets (+RM 20/day)</option>
                       </select>
                     </div>
-                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">

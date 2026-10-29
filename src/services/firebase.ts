@@ -666,7 +666,7 @@ class FirebaseStorageService {
     return places;
   }
 
-  public async savePlace(newPlace: Place): Promise<Place[]> {
+  public async savePlace(newPlace: Place, shouldSyncToVendor: boolean = true): Promise<Place[]> {
     const places = this.getPlaces();
     const existingIdx = places.findIndex((p) => p.id === newPlace.id);
     let updated: Place[];
@@ -679,46 +679,51 @@ class FirebaseStorageService {
     this.places = updated;
     localStorage.setItem(STORAGE_KEYS.PLACES, JSON.stringify(updated));
 
-    // Sync back to vendor_listings if matching listing exists or when creating new vendor/place
-    const vendorListings = this.getVendorListings();
-    const vendorIdx = vendorListings.findIndex(
-      (v) => v.id === newPlace.id || v.businessName.toLowerCase().trim() === newPlace.name.toLowerCase().trim()
-    );
+    let updatedVendorListings: VendorListing[] = [];
+    let vendorUpdated = false;
 
-    let updatedVendorListings = [...vendorListings];
-    if (vendorIdx >= 0) {
-      const existingVendor = vendorListings[vendorIdx];
-      const syncedVendor: VendorListing = {
-        ...existingVendor,
-        businessName: newPlace.name,
-        category: newPlace.category,
-        subCategory: newPlace.subCategory || existingVendor.subCategory,
-        township: newPlace.township,
-        address: newPlace.location || existingVendor.address,
-        contactPhone: newPlace.contact || existingVendor.contactPhone,
-        description: newPlace.description || existingVendor.description,
-        operatingHours: newPlace.operatingHours || existingVendor.operatingHours,
-        realTimeStatus: newPlace.realTimeStatus || existingVendor.realTimeStatus,
-        diyHarvestStatus: newPlace.diyHarvestStatus || existingVendor.diyHarvestStatus,
-        parkingStatus: newPlace.parkingStatus || existingVendor.parkingStatus,
-        roomAvailabilityStatus: newPlace.roomAvailabilityStatus || existingVendor.roomAvailabilityStatus,
-        verificationStatus: newPlace.verificationStatus || existingVendor.verificationStatus,
-        dietaryTags: newPlace.dietaryTags || existingVendor.dietaryTags,
-        coverImage: newPlace.imageUrl || existingVendor.coverImage,
-        coordinates: newPlace.coordinates || existingVendor.coordinates,
-        updatedAt: new Date().toISOString(),
-      };
-      updatedVendorListings[vendorIdx] = syncedVendor;
-      this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(updatedVendorListings));
+    if (shouldSyncToVendor) {
+      const vendorListings = this.getVendorListings();
+      const vendorIdx = vendorListings.findIndex(
+        (v) => v.id === newPlace.id || v.businessName.toLowerCase().trim() === newPlace.name.toLowerCase().trim()
+      );
 
-      if (db) {
-        try {
-          const cleanVendor = Object.fromEntries(
-            Object.entries(syncedVendor).filter(([_, v]) => v !== undefined)
-          );
-          await setDoc(doc(db, 'vendor_listings', syncedVendor.id), cleanVendor);
-        } catch (e) {
-          console.warn('Error syncing updated vendor listing to Firestore:', e);
+      updatedVendorListings = [...vendorListings];
+      if (vendorIdx >= 0) {
+        vendorUpdated = true;
+        const existingVendor = vendorListings[vendorIdx];
+        const syncedVendor: VendorListing = {
+          ...existingVendor,
+          businessName: newPlace.name,
+          category: newPlace.category,
+          subCategory: newPlace.subCategory || existingVendor.subCategory,
+          township: newPlace.township,
+          address: newPlace.location || existingVendor.address,
+          contactPhone: newPlace.contact || existingVendor.contactPhone,
+          description: newPlace.description || existingVendor.description,
+          operatingHours: newPlace.operatingHours || existingVendor.operatingHours,
+          realTimeStatus: newPlace.realTimeStatus || existingVendor.realTimeStatus,
+          diyHarvestStatus: newPlace.diyHarvestStatus || existingVendor.diyHarvestStatus,
+          parkingStatus: newPlace.parkingStatus || existingVendor.parkingStatus,
+          roomAvailabilityStatus: newPlace.roomAvailabilityStatus || existingVendor.roomAvailabilityStatus,
+          verificationStatus: newPlace.verificationStatus || existingVendor.verificationStatus,
+          dietaryTags: newPlace.dietaryTags || existingVendor.dietaryTags,
+          coverImage: newPlace.imageUrl || existingVendor.coverImage,
+          coordinates: newPlace.coordinates || existingVendor.coordinates,
+          updatedAt: new Date().toISOString(),
+        };
+        updatedVendorListings[vendorIdx] = syncedVendor;
+        this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(updatedVendorListings));
+
+        if (db) {
+          try {
+            const cleanVendor = Object.fromEntries(
+              Object.entries(syncedVendor).filter(([_, v]) => v !== undefined)
+            );
+            await setDoc(doc(db, 'vendor_listings', syncedVendor.id), cleanVendor);
+          } catch (e) {
+            console.warn('Error syncing updated vendor listing to Firestore:', e);
+          }
         }
       }
     }
@@ -738,7 +743,7 @@ class FirebaseStorageService {
     this.notify();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('places-updated', { detail: updated }));
-      if (vendorIdx >= 0) {
+      if (vendorUpdated) {
         window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: updatedVendorListings }));
       }
     }
@@ -776,8 +781,13 @@ class FirebaseStorageService {
   public async saveGalleryItem(item: GalleryItem): Promise<GalleryItem[]> {
     const items = this.getGallery();
     const updated = [item, ...items.filter(i => i.id !== item.id)];
-    localStorage.setItem(STORAGE_KEYS.GALLERY, JSON.stringify(updated));
+    this.setLocalStorageItem(STORAGE_KEYS.GALLERY, JSON.stringify(updated));
     
+    // Dispatch immediate event for snappy UI
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gallery-updated', { detail: updated }));
+    }
+
     // Sync directly to Firestore
     if (db) {
       try {
@@ -790,13 +800,20 @@ class FirebaseStorageService {
         console.error("Error saving gallery item to Firestore:", e);
       }
     }
+    this.notify();
     return updated;
   }
 
   public async deleteGalleryItem(id: string): Promise<GalleryItem[]> {
+    console.log('[FirebaseService] Deleting gallery item:', id);
     const items = this.getGallery().filter((item) => item.id !== id);
-    localStorage.setItem(STORAGE_KEYS.GALLERY, JSON.stringify(items));
+    this.setLocalStorageItem(STORAGE_KEYS.GALLERY, JSON.stringify(items));
     
+    // Dispatch immediate event for snappy UI
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gallery-updated', { detail: items }));
+    }
+
     // Delete directly from Firestore
     if (db) {
       try {
@@ -806,6 +823,7 @@ class FirebaseStorageService {
         console.error("Error deleting gallery item from Firestore:", e);
       }
     }
+    this.notify();
     return items;
   }
 
