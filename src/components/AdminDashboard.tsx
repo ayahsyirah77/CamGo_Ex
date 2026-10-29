@@ -748,15 +748,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         Object.entries(rawPlace).filter(([_, v]) => v !== undefined)
       );
 
-      // Save directly to Firestore Cloud Database
-      await setDoc(doc(db, 'places', targetId), savedPlace);
+      // Save via firebaseService to ensure local cache updates immediately
+      await firebaseService.savePlace(savedPlace as Place);
       addActivity(`Saved place to cloud: ${savedPlace.name} (${savedPlace.township})`);
       onRefreshData();
       setShowAddPlaceModal(false);
       setEditingPlaceId(null);
     } catch (err: any) {
-      console.error('Error saving place to Firestore:', err);
-      window.alert('Failed to save place to Firestore: ' + (err?.message || 'Unknown error'));
+      console.error('Error saving place:', err);
+      window.alert('Failed to save place: ' + (err?.message || 'Unknown error'));
     }
   };
 
@@ -807,15 +807,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         photographer: existingItem?.photographer || currentUser?.displayName || 'Admin Curator',
       };
 
-      // Save directly to Firestore Cloud Database
-      await setDoc(doc(db, 'gallery', targetId), savedItem);
+      // Save via firebaseService
+      await firebaseService.saveGalleryItem(savedItem);
       addActivity(`Saved gallery photo to cloud: ${savedItem.title} (${savedItem.township})`);
       onRefreshData();
       setShowGalleryModal(false);
       setEditingGalleryId(null);
     } catch (err: any) {
-      console.error('Error saving gallery item to Firestore:', err);
-      window.alert('Failed to save gallery item to Firestore: ' + (err?.message || 'Unknown error'));
+      console.error('Error saving gallery item:', err);
+      window.alert('Failed to save gallery item: ' + (err?.message || 'Unknown error'));
     }
   };
 
@@ -836,8 +836,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         description: eventDesc,
       };
 
-      // Save directly to Firestore Cloud Database
-      await setDoc(doc(db, 'events', targetId), newEvent);
+      // Save via firebaseService
+      await firebaseService.saveEvent(newEvent);
       addActivity(`Created event on cloud: ${newEvent.title} (${newEvent.township})`);
       onRefreshData();
       setShowAddEventModal(false);
@@ -1579,7 +1579,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               type="button"
                               onClick={async () => {
                                 if (window.confirm(`Delete "${p.name}"?`)) {
-                                  await deleteDoc(doc(db, 'places', p.id));
+                                  await firebaseService.deletePlace(p.id);
+                                  addActivity(`Deleted place: ${p.name}`);
                                   onRefreshData();
                                 }
                               }}
@@ -1658,7 +1659,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               type="button"
                               onClick={async () => {
                                 if (window.confirm(`Delete photo "${item.title}"?`)) {
-                                  await deleteDoc(doc(db, 'gallery', item.id));
+                                  await firebaseService.deleteGalleryItem(item.id);
+                                  addActivity(`Deleted gallery photo: ${item.title}`);
                                   onRefreshData();
                                 }
                               }}

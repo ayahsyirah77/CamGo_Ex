@@ -192,8 +192,8 @@ class FirebaseStorageService {
     try {
       // 1. Real-time Places Listener
       getDocs(collection(db, 'places')).then(snap => {
-        if (!snap.empty) {
-          const cloudPlaces = snap.docs.map((d) => d.data() as Place);
+        const cloudPlaces = snap.docs.map((d) => d.data() as Place);
+        if (cloudPlaces.length > 0) {
           this.places = cloudPlaces;
           this.setLocalStorageItem(STORAGE_KEYS.PLACES, JSON.stringify(cloudPlaces));
           this.notify();
@@ -201,150 +201,124 @@ class FirebaseStorageService {
       });
       onSnapshot(collection(db, 'places'), (snap) => {
         console.log('[Debug] Places listener fired, docs:', snap.size);
-        if (!snap.empty) {
-          const cloudPlaces = snap.docs.map((d) => d.data() as Place);
-          this.places = cloudPlaces;
-          this.setLocalStorageItem(STORAGE_KEYS.PLACES, JSON.stringify(cloudPlaces));
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('places-updated', { detail: cloudPlaces }));
-          }
-          this.notify();
+        const cloudPlaces = snap.docs.map((d) => d.data() as Place);
+        this.places = cloudPlaces;
+        this.setLocalStorageItem(STORAGE_KEYS.PLACES, JSON.stringify(cloudPlaces));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('places-updated', { detail: cloudPlaces }));
         }
+        this.notify();
       }, (err) => console.warn('Realtime places listener warning:', err));
 
       // 2. Real-time Gallery Listener
       onSnapshot(collection(db, 'gallery'), (snap) => {
-        if (!snap.empty) {
-          const cloudGallery = snap.docs.map((d) => d.data() as GalleryItem);
-          this.setLocalStorageItem(STORAGE_KEYS.GALLERY, JSON.stringify(cloudGallery));
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('gallery-updated', { detail: cloudGallery }));
-          }
-          this.notify();
+        const cloudGallery = snap.docs.map((d) => d.data() as GalleryItem);
+        this.setLocalStorageItem(STORAGE_KEYS.GALLERY, JSON.stringify(cloudGallery));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('gallery-updated', { detail: cloudGallery }));
         }
+        this.notify();
       }, (err) => console.warn('Realtime gallery listener warning:', err));
 
       // 3. Real-time Township Hubs Listener
       onSnapshot(collection(db, 'township_hubs'), (snap) => {
-        if (!snap.empty) {
-          const cloudHubs: Record<string, TownshipHubInfo> = {};
-          snap.docs.forEach((docSnap) => {
-            const hub = docSnap.data() as TownshipHubInfo;
-            if (hub && hub.township) {
-              cloudHubs[hub.township] = hub;
-            }
-          });
-          this.setLocalStorageItem(STORAGE_KEYS.TOWNSHIP_HUBS, JSON.stringify(cloudHubs));
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('township-hub-updated'));
+        const cloudHubs: Record<string, TownshipHubInfo> = {};
+        snap.docs.forEach((docSnap) => {
+          const hub = docSnap.data() as TownshipHubInfo;
+          if (hub && hub.township) {
+            cloudHubs[hub.township] = hub;
           }
-          this.notify();
+        });
+        this.setLocalStorageItem(STORAGE_KEYS.TOWNSHIP_HUBS, JSON.stringify(cloudHubs));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('township-hub-updated'));
         }
+        this.notify();
       }, (err) => console.warn('Realtime township hubs listener warning:', err));
 
       // 4. Real-time Events Listener
       onSnapshot(collection(db, 'events'), (snap) => {
-        if (!snap.empty) {
-          const cloudEvents = snap.docs.map((d) => d.data() as EventNotification);
-          this.setLocalStorageItem(STORAGE_KEYS.EVENTS, JSON.stringify(cloudEvents));
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('events-updated', { detail: cloudEvents }));
-          }
-          this.notify();
+        const cloudEvents = snap.docs.map((d) => d.data() as EventNotification);
+        this.setLocalStorageItem(STORAGE_KEYS.EVENTS, JSON.stringify(cloudEvents));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('events-updated', { detail: cloudEvents }));
         }
+        this.notify();
       }, (err) => console.warn('Realtime events listener warning:', err));
 
       // 5. Real-time Traffic Alerts Listener
       onSnapshot(collection(db, 'traffic_alerts'), (snap) => {
-        if (!snap.empty) {
-          const cloudTraffic = snap.docs.map((d) => d.data() as TrafficAlert);
-          this.setLocalStorageItem(STORAGE_KEYS.TRAFFIC, JSON.stringify(cloudTraffic));
-          this.notify();
-        }
+        const cloudTraffic = snap.docs.map((d) => d.data() as TrafficAlert);
+        this.setLocalStorageItem(STORAGE_KEYS.TRAFFIC, JSON.stringify(cloudTraffic));
+        this.notify();
       }, (err) => console.warn('Realtime traffic listener warning:', err));
 
       // 6. Real-time Hazard Alerts Listener
       onSnapshot(collection(db, 'hazard_alerts'), (snap) => {
-        if (!snap.empty) {
-          const cloudHazards = snap.docs.map((d) => d.data() as HazardAlert);
-          this.setLocalStorageItem(STORAGE_KEYS.HAZARDS, JSON.stringify(cloudHazards));
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('hazard-alerts-updated', { detail: cloudHazards }));
-          }
-          this.notify();
+        const cloudHazards = snap.docs.map((d) => d.data() as HazardAlert);
+        this.setLocalStorageItem(STORAGE_KEYS.HAZARDS, JSON.stringify(cloudHazards));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('hazard-alerts-updated', { detail: cloudHazards }));
         }
+        this.notify();
       }, (err) => console.warn('Realtime hazard listener warning:', err));
 
       // 7. Real-time GSAP Card Images Listener
       onSnapshot(collection(db, 'gsap_card_images'), (snap) => {
-        if (!snap.empty) {
-          const images: Record<string, string> = { ...this.getGsapCardImages() };
-          snap.docs.forEach((docSnap) => {
-            const data = docSnap.data() as any;
-            if (data && data.imageUrl) {
-              images[docSnap.id] = data.imageUrl;
-            }
-          });
-          this.setLocalStorageItem('camgo_gsap_card_images', JSON.stringify(images));
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('gsap-images-updated', { detail: images }));
+        const images: Record<string, string> = { ...this.getGsapCardImages() };
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (data && data.imageUrl) {
+            images[docSnap.id] = data.imageUrl;
           }
-          this.notify();
+        });
+        this.setLocalStorageItem('camgo_gsap_card_images', JSON.stringify(images));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('gsap-images-updated', { detail: images }));
         }
+        this.notify();
       }, (err) => console.warn('Realtime GSAP images listener warning:', err));
 
       // 8. Real-time Farm Tickets Listener
       onSnapshot(collection(db, 'farm_tickets'), (snap) => {
-        if (!snap.empty) {
-          const cloudTickets = snap.docs.map((d) => d.data() as FarmTicket);
-          this.setLocalStorageItem(STORAGE_KEYS.TICKETS, JSON.stringify(cloudTickets));
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('farm-tickets-updated', { detail: cloudTickets }));
-          }
-          this.notify();
+        const cloudTickets = snap.docs.map((d) => d.data() as FarmTicket);
+        this.setLocalStorageItem(STORAGE_KEYS.TICKETS, JSON.stringify(cloudTickets));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('farm-tickets-updated', { detail: cloudTickets }));
         }
+        this.notify();
       }, (err) => console.warn('Realtime tickets listener warning:', err));
 
       // 9. Real-time Vendor Listings Listener
       getDocs(collection(db, 'vendor_listings')).then(snap => {
-        if (!snap.empty) {
-          const cloudListings = snap.docs.map((d) => d.data() as VendorListing);
-          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
-          this.notify();
-        }
+        const cloudListings = snap.docs.map((d) => d.data() as VendorListing);
+        this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
+        this.notify();
       });
       onSnapshot(collection(db, 'vendor_listings'), (snap) => {
         console.log('[Debug] Vendor listings listener fired, docs:', snap.size);
-        if (!snap.empty) {
-          const cloudListings = snap.docs.map((d) => d.data() as VendorListing);
-          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
-          const enrichedPlaces = this.getPlaces();
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: cloudListings }));
-            window.dispatchEvent(new CustomEvent('places-updated', { detail: enrichedPlaces }));
-          }
-          this.notify();
-        } else {
-          console.log('[Debug] Vendor listings collection is empty');
+        const cloudListings = snap.docs.map((d) => d.data() as VendorListing);
+        this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
+        const enrichedPlaces = this.getPlaces();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: cloudListings }));
+          window.dispatchEvent(new CustomEvent('places-updated', { detail: enrichedPlaces }));
         }
+        this.notify();
       }, (err) => console.error('Realtime vendor listings listener error:', err));
 
       // 10. Real-time Motorbike Partners Listener
       onSnapshot(collection(db, 'motorbike_partners'), (snap) => {
-        if (!snap.empty) {
-          const cloudPartners = snap.docs.map((d) => d.data() as MotorbikeRentalPartner);
-          this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(cloudPartners));
-          this.notify();
-        }
+        const cloudPartners = snap.docs.map((d) => d.data() as MotorbikeRentalPartner);
+        this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(cloudPartners));
+        this.notify();
       }, (err) => console.warn('Realtime motorbike partners listener warning:', err));
 
       // 11. Real-time Motorbike Bookings Listener
       onSnapshot(collection(db, 'motorbike_rentals'), (snap) => {
-        if (!snap.empty) {
-          const cloudBookings = snap.docs.map((d) => d.data() as MotorbikeBookingRecord);
-          this.setLocalStorageItem('camgo_motorbike_bookings', JSON.stringify(cloudBookings));
-          this.notify();
-        }
+        const cloudBookings = snap.docs.map((d) => d.data() as MotorbikeBookingRecord);
+        this.setLocalStorageItem('camgo_motorbike_bookings', JSON.stringify(cloudBookings));
+        this.notify();
       }, (err) => console.warn('Realtime motorbike bookings listener warning:', err));
 
     } catch (e) {
