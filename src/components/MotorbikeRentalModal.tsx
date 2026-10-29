@@ -213,8 +213,17 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
 
         {/* Partners Grid */}
         {isLoading && <div className="text-center py-12 text-stone-400 text-sm">Loading rental partners...</div>}
-        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ${isLoading ? 'hidden' : ''}`}>
-          {partners.map((partner) => (
+        {(() => {
+          const uniquePartnersMap = new Map<string, MotorbikeRentalPartner>();
+          for (const p of partners) {
+            if (p && p.id && !uniquePartnersMap.has(p.id)) {
+              uniquePartnersMap.set(p.id, p);
+            }
+          }
+          const dedupedPartners = Array.from(uniquePartnersMap.values());
+          return (
+            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ${isLoading ? 'hidden' : ''}`}>
+              {dedupedPartners.map((partner) => (
             <div
               key={partner.id}
               className="rounded-2xl bg-stone-900/90 border border-white/10 overflow-hidden shadow-xl hover:border-emerald-500/40 transition-all flex flex-col"
@@ -302,7 +311,9 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
               </div>
             </div>
           ))}
-        </div>
+            </div>
+          );
+        })()}
 
         {/* Booking Form Modal Overlay */}
         {isBookingModalOpen && selectedPartner && selectedPackage && (
