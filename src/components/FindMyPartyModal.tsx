@@ -260,6 +260,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   // Firestore real-time listener for current session
   const subscribeToSession = (codeToJoin: string) => {
     const formattedCode = codeToJoin.trim().toUpperCase();
+    if (!formattedCode) {
+      console.warn('Attempted to subscribe to empty session code');
+      return () => {};
+    }
     setLoading(true);
     setErrorMsg(null);
 

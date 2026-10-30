@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Place, MainCategory, SubCategory, Township, Language, FarmTicket } from '../types';
 import { firebaseService } from '../services/firebase';
 import { getTranslation } from '../services/i18n';
@@ -61,6 +62,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTown, setSelectedTown] = useState<Township | 'all'>('all');
+  const [selectedPlacePopup, setSelectedPlacePopup] = useState<Place | null>(null);
   const [scheduleModalPlace, setScheduleModalPlace] = useState<Place | null>(null);
   const [farmTickets, setFarmTickets] = useState<FarmTicket[]>(() => firebaseService.getFarmTickets());
 
@@ -72,6 +74,16 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     window.addEventListener('farm-tickets-updated', handleTicketUpdate);
     return () => window.removeEventListener('farm-tickets-updated', handleTicketUpdate);
   }, []);
+
+  React.useEffect(() => {
+    if (selectedPlacePopup) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+  }, [selectedPlacePopup]);
 
   console.log('[Debug] DirectorySection props.places:', places);
 
@@ -246,8 +258,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
 
       {/* Subcategory & Township Filters Row */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-stone-900/80 border border-white/5">
-        {/* Subcategories */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* Subcategories (Desktop Pills) */}
+        <div className="hidden sm:flex flex-wrap items-center gap-1.5">
           <button
             onClick={() => onSelectCategory(selectedCategory, undefined)}
             className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
@@ -274,10 +286,51 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
           ))}
         </div>
 
-        {/* Town Select Filter */}
-        <div className="flex items-center gap-2 text-xs text-stone-400">
+        {/* Mobile Subcategory Dropdown & Town Select Filter Row */}
+        <div className="flex sm:hidden items-center justify-between gap-2 w-full text-xs text-stone-400">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <Filter className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <select
+              value={selectedSubCategory || 'all'}
+              onChange={(e) => {
+                const val = e.target.value;
+                onSelectCategory(selectedCategory, val === 'all' ? undefined : (val as SubCategory));
+              }}
+              className="bg-stone-800 text-stone-200 px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer w-full truncate"
+            >
+              <option value="all">{language === 'bm' ? 'Semua Sub-Kategori' : 'All Types'}</option>
+              {currentSubList.map((sub) => (
+                <option key={sub.key} value={sub.key}>
+                  {sub.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <select
+              value={selectedTown}
+              onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
+              className="bg-stone-800 text-stone-200 px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer"
+            >
+              <option value="all">{language === 'bm' ? 'Semua Pekan' : 'All Towns'}</option>
+              <option value="Tanah Rata">Tanah Rata</option>
+              <option value="Brinchang">Brinchang</option>
+              <option value="Kea Farm">Kea Farm</option>
+              <option value="Ringlet">Ringlet</option>
+              <option value="Kampung Raja">Kampung Raja</option>
+              <option value="Tringkap">Tringkap</option>
+              <option value="Kuala Terla">Kuala Terla</option>
+              <option value="Bertam Valley">Bertam Valley</option>
+              <option value="Blue Valley">Blue Valley</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Town Select Filter (Desktop) */}
+        <div className="hidden sm:flex items-center gap-2 text-xs text-stone-400">
           <Filter className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline font-semibold text-stone-200">Town:</span>
+          <span className="font-semibold text-stone-200">Town:</span>
           <select
             value={selectedTown}
             onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
@@ -338,7 +391,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-2.5">
           {filteredPlaces.map((place) => {
             const isBookmarked = bookmarkedIds.includes(place.id);
             const openStatus = isCurrentlyOpen(place.operatingHours);
@@ -346,185 +399,57 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
             return (
               <div
                 key={place.id}
-                className="glass-card-hover group rounded-3xl overflow-hidden bg-stone-900/80 border border-white/5 flex flex-col justify-between"
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'instant' });
+                  setSelectedPlacePopup(place);
+                }}
+                className="glass-card-hover no-mobile-clamp group p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-stone-900/90 border border-white/10 hover:border-emerald-500/50 hover:bg-stone-850 flex flex-col justify-between gap-1.5 sm:gap-2 cursor-pointer transition-all shadow-md min-h-[78px] sm:min-h-[88px] text-left relative overflow-hidden"
               >
-                {/* Photo & Badge */}
-                <div className="h-48 relative overflow-hidden bg-stone-950">
-                  <img
-                    src={place.imageUrl}
-                    alt={place.name}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/20 to-transparent" />
-
-                  {/* Elevation & Open Status */}
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                    <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-[10px] font-mono font-bold text-emerald-400 border border-white/10">
-                      {place.elevation} ASL
-                    </span>
+                {/* Top Row: Live Status Dot + Township badge & Bookmark */}
+                <div className="flex items-center justify-between gap-1.5 w-full">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase ${
-                        openStatus
-                          ? 'bg-emerald-500/80 text-white'
-                          : 'bg-stone-800/90 text-stone-400'
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        openStatus ? 'bg-emerald-500 animate-pulse' : 'bg-stone-600'
                       }`}
-                    >
-                      {openStatus ? getTranslation(language, 'open_now') : getTranslation(language, 'closed')}
+                      title={openStatus ? 'Open Now' : 'Closed'}
+                    />
+                    <span className="text-[9px] sm:text-[10px] text-emerald-400 font-mono font-medium truncate max-w-[80px] min-[380px]:max-w-none">
+                      {place.township}
                     </span>
                   </div>
 
-                  {/* Bookmark Button */}
                   <button
-                    onClick={() => onToggleBookmark(place.id)}
-                    className="absolute top-3 right-3 p-2 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/10 text-white cursor-pointer transition-colors"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleBookmark(place.id);
+                    }}
+                    className="p-0.5 -mr-1 rounded-md text-stone-400 hover:text-white transition-colors shrink-0"
                     title={isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}
                   >
                     <Bookmark
-                      className={`w-4 h-4 ${
-                        isBookmarked ? 'fill-emerald-400 text-emerald-400' : 'text-stone-300'
+                      className={`w-3 h-3 ${
+                        isBookmarked ? 'fill-emerald-400 text-emerald-400' : 'text-stone-400'
                       }`}
                     />
                   </button>
-
-                  {/* Rating Tag */}
-                  <div className="absolute bottom-3 left-3 flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-lg bg-black/70 backdrop-blur-md text-xs font-bold text-amber-400">
-                      ★ {place.rating}
-                    </span>
-                    <span className="text-[11px] text-stone-300">
-                      ({place.reviewsCount} {language === 'bm' ? 'ulasan' : 'reviews'})
-                    </span>
-                  </div>
                 </div>
 
-                {/* Details */}
-                <div className="p-5 flex-1 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-1">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{place.township}</span>
-                      {place.priceRange && (
-                        <>
-                          <span>•</span>
-                          <span className="text-emerald-400 font-medium">{place.priceRange}</span>
-                        </>
-                      )}
-                    </div>
+                {/* Business Name - compact, crisp, readable 2 lines */}
+                <h4 className="no-mobile-clamp !text-[11px] sm:!text-xs font-semibold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 !leading-tight break-words my-auto">
+                  {language === 'bm' ? place.nameBm || place.name : place.name}
+                </h4>
 
-                    <h4 className="text-lg font-bold text-stone-100 group-hover:text-emerald-300 transition-colors flex items-center justify-between gap-2">
-                      <span>{language === 'bm' ? place.nameBm || place.name : place.name}</span>
-                      {(() => {
-                        const ticket = farmTickets.find(t => 
-                          t.name.toLowerCase().includes(place.name.toLowerCase()) || 
-                          place.name.toLowerCase().includes(t.name.toLowerCase())
-                        );
-                        if (!ticket) return null;
-                        return (
-                          <span className="flex flex-col items-end shrink-0">
-                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${ticket.isFree ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
-                              {ticket.isFree ? 'FREE' : `RM ${ticket.adultPriceRm}`}
-                            </span>
-                          </span>
-                        );
-                      })()}
-                    </h4>
-
-                    <p className="text-xs text-stone-300 mt-2 line-clamp-2 leading-relaxed">
-                      {language === 'bm' ? place.descriptionBm : place.description}
-                    </p>
-
-                    {/* Live Vendor Operational Status Badges */}
-                    <div className="mt-2.5">
-                      <OperationalStatusBadges
-                        realTimeStatus={place.realTimeStatus}
-                        diyHarvestStatus={place.diyHarvestStatus}
-                        parkingStatus={place.parkingStatus}
-                        roomAvailabilityStatus={place.roomAvailabilityStatus}
-                        language={language}
-                        compact
-                      />
-                    </div>
-
-                    {/* Tags */}
-                    <div className="flex flex-wrap gap-1.5 mt-2.5">
-                      {place.tags.slice(0, 3).map((tag, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-0.5 rounded-md bg-stone-800 text-[10px] text-stone-400"
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Footer Action: View on Map & Traffic */}
-                  <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between gap-2">
-                    <div className="flex flex-col gap-1 text-[11px] text-stone-400 font-mono">
-                      {(() => {
-                        const todaySched = getTodayDaySchedule(place.operatingHours);
-                        const hasWeekly = !!(place.operatingHours.weeklySchedule && place.operatingHours.weeklySchedule.length > 0);
-                        const todayName = getTodayDayName();
-
-                        return (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <Clock className="w-3 h-3 text-stone-500 shrink-0" />
-                            {place.operatingHours.isOpen24Hours ? (
-                              <span>{language === 'bm' ? '24 Jam' : '24 Hours'}</span>
-                            ) : todaySched ? (
-                              todaySched.isOpen ? (
-                                <span className="text-stone-300">
-                                  {todayName.slice(0, 3)}: {formatTimeTo12Hour(todaySched.from)} – {formatTimeTo12Hour(todaySched.to)}
-                                </span>
-                              ) : (
-                                <span className="text-rose-400 font-semibold">
-                                  {todayName.slice(0, 3)}: {language === 'bm' ? 'Tutup' : 'Closed'}
-                                </span>
-                              )
-                            ) : (
-                              <span>
-                                {place.operatingHours.from} - {place.operatingHours.to}
-                              </span>
-                            )}
-
-                            {hasWeekly && (
-                              <button
-                                type="button"
-                                onClick={() => setScheduleModalPlace(place)}
-                                className="text-[10px] text-emerald-400 hover:text-emerald-300 hover:underline font-sans cursor-pointer bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20"
-                                title="View 7-day schedule"
-                              >
-                                {language === 'bm' ? 'Jadual 7 Hari' : '7-Day Hours'}
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      {place.checkIn || place.checkOut ? (
-                        <div className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1.5">
-                          <span>{language === 'bm' ? 'Masuk' : 'In'}: {place.checkIn || '14:00'}</span>
-                          <span>•</span>
-                          <span>{language === 'bm' ? 'Keluar' : 'Out'}: {place.checkOut || '12:00'}</span>
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-stone-600 font-semibold flex items-center gap-1.5 opacity-40 select-none">
-                          <span>{language === 'bm' ? 'Masuk' : 'In'}: --:--</span>
-                          <span>•</span>
-                          <span>{language === 'bm' ? 'Keluar' : 'Out'}: --:--</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => onSelectPlaceForMap(place)}
-                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-950 flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{language === 'bm' ? 'Peta & Trafik' : 'Map & AI Route'}</span>
-                      <ArrowUpRight className="w-3 h-3" />
-                    </button>
-                  </div>
+                {/* Bottom Row: Star Rating & Details trigger */}
+                <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-stone-400 font-mono pt-1 border-t border-white/5">
+                  <span className="text-amber-400 font-semibold flex items-center gap-0.5">
+                    ★ {place.rating}
+                  </span>
+                  <span className="text-[9px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5">
+                    <span>{language === 'bm' ? 'Lihat' : 'Details'}</span>
+                    <ArrowUpRight className="w-2.5 h-2.5" />
+                  </span>
                 </div>
               </div>
             );
@@ -532,71 +457,246 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         </div>
       )}
 
-      {/* 7-Day Weekly Operating Schedule Modal */}
-      {scheduleModalPlace && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-stone-900 border border-white/10 rounded-3xl p-6 shadow-2xl relative">
-            <button
-              onClick={() => setScheduleModalPlace(null)}
-              className="absolute top-4 right-4 p-2 text-stone-400 hover:text-white rounded-full bg-stone-800/80 cursor-pointer"
+      {/* Detailed Place Pop-up Modal (Image 2 style) */}
+      {selectedPlacePopup &&
+        createPortal(
+          <div 
+            className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+            onClick={() => setSelectedPlacePopup(null)}
+          >
+            <div 
+              className="w-full max-w-xl bg-stone-900 border border-emerald-500/40 rounded-3xl overflow-hidden shadow-2xl relative max-h-[90vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
             >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-4 h-4 text-emerald-400" />
-              <h3 className="font-bold text-base text-stone-100">
-                {language === 'bm' ? 'Waktu Operasi Mingguan' : 'Weekly Operating Schedule'}
-              </h3>
-            </div>
-            <p className="text-xs text-stone-400 mb-4">{scheduleModalPlace.name}</p>
+              {/* Top Cover Image & Floating Badges */}
+              <div className="h-56 sm:h-64 relative overflow-hidden bg-stone-950 shrink-0">
+                <img
+                  src={selectedPlacePopup.imageUrl}
+                  alt={selectedPlacePopup.name}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-stone-900 via-stone-900/30 to-transparent" />
 
-            <div className="space-y-2">
-              {scheduleModalPlace.operatingHours.weeklySchedule?.map((day) => {
-                const isToday = day.day === getTodayDayName();
-                return (
-                  <div
-                    key={day.day}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-mono border transition-colors ${
-                      isToday
-                        ? 'bg-emerald-500/10 border-emerald-500/30 font-semibold'
-                        : 'bg-stone-800/60 border-white/5 text-stone-300'
+                {/* Elevation & Open Status */}
+                <div className="absolute top-4 left-4 flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full bg-black/75 backdrop-blur-md text-xs font-mono font-bold text-emerald-400 border border-white/10 shadow-lg">
+                    {selectedPlacePopup.elevation} ASL
+                  </span>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase shadow-lg ${
+                      isCurrentlyOpen(selectedPlacePopup.operatingHours)
+                        ? 'bg-emerald-500/90 text-white'
+                        : 'bg-stone-800/90 text-stone-300'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className={isToday ? 'text-emerald-400 font-bold' : 'text-stone-200'}>
-                        {day.day}
+                    {isCurrentlyOpen(selectedPlacePopup.operatingHours) ? getTranslation(language, 'open_now') : getTranslation(language, 'closed')}
+                  </span>
+                </div>
+
+                {/* Bookmark Button */}
+                <button
+                  onClick={() => onToggleBookmark(selectedPlacePopup.id)}
+                  className="absolute top-4 right-4 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white cursor-pointer transition-colors shadow-lg"
+                >
+                  <Bookmark
+                    className={`w-5 h-5 ${
+                      bookmarkedIds.includes(selectedPlacePopup.id) ? 'fill-emerald-400 text-emerald-400' : 'text-stone-200'
+                    }`}
+                  />
+                </button>
+
+                {/* Close Button */}
+                <button
+                  onClick={() => setSelectedPlacePopup(null)}
+                  className="absolute top-4 right-16 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white cursor-pointer transition-colors shadow-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                {/* Rating Tag */}
+                <div className="absolute bottom-4 left-4 flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md text-sm font-bold text-amber-400 border border-white/10 shadow-lg">
+                    ★ {selectedPlacePopup.rating}
+                  </span>
+                  <span className="text-xs text-stone-200 font-medium">
+                    ({selectedPlacePopup.reviewsCount} {language === 'bm' ? 'ulasan' : 'reviews'})
+                  </span>
+                </div>
+              </div>
+
+              {/* Modal Body Content */}
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-1 font-medium">
+                    <MapPin className="w-4 h-4 text-emerald-400" />
+                    <span>{selectedPlacePopup.township}</span>
+                    {selectedPlacePopup.priceRange && (
+                      <>
+                        <span>•</span>
+                        <span className="text-emerald-400 font-semibold">{selectedPlacePopup.priceRange}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <h3 className="text-xl sm:text-2xl font-heading font-extrabold text-emerald-400 tracking-tight">
+                    {language === 'bm' ? selectedPlacePopup.nameBm || selectedPlacePopup.name : selectedPlacePopup.name}
+                  </h3>
+
+                  <p className="text-xs sm:text-sm text-stone-300 mt-2.5 leading-relaxed">
+                    {language === 'bm' ? selectedPlacePopup.descriptionBm : selectedPlacePopup.description}
+                  </p>
+
+                  {/* Operational Status Badges */}
+                  <div className="mt-3">
+                    <OperationalStatusBadges
+                      realTimeStatus={selectedPlacePopup.realTimeStatus}
+                      diyHarvestStatus={selectedPlacePopup.diyHarvestStatus}
+                      parkingStatus={selectedPlacePopup.parkingStatus}
+                      roomAvailabilityStatus={selectedPlacePopup.roomAvailabilityStatus}
+                      language={language}
+                    />
+                  </div>
+
+                  {/* Tags */}
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {selectedPlacePopup.tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="px-2.5 py-1 rounded-lg bg-stone-800 text-xs text-stone-300 border border-white/5 font-mono"
+                      >
+                        #{tag}
                       </span>
-                      {isToday && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-sans uppercase font-bold">
-                          Today
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-col gap-1 text-xs text-stone-300 font-mono">
+                    {(() => {
+                      const todaySched = getTodayDaySchedule(selectedPlacePopup.operatingHours);
+                      const hasWeekly = !!(selectedPlacePopup.operatingHours.weeklySchedule && selectedPlacePopup.operatingHours.weeklySchedule.length > 0);
+                      const todayName = getTodayDayName();
+
+                      return (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+                          {selectedPlacePopup.operatingHours.isOpen24Hours ? (
+                            <span>{language === 'bm' ? '24 Jam' : '24 Hours'}</span>
+                          ) : todaySched ? (
+                            todaySched.isOpen ? (
+                              <span className="text-stone-200 font-medium">
+                                {todayName}: {formatTimeTo12Hour(todaySched.from)} – {formatTimeTo12Hour(todaySched.to)}
+                              </span>
+                            ) : (
+                              <span className="text-rose-400 font-semibold">
+                                {todayName}: {language === 'bm' ? 'Tutup' : 'Closed'}
+                              </span>
+                            )
+                          ) : (
+                            <span>
+                              {selectedPlacePopup.operatingHours.from} - {selectedPlacePopup.operatingHours.to}
+                            </span>
+                          )}
+
+                          {hasWeekly && (
+                            <button
+                              type="button"
+                              onClick={() => setScheduleModalPlace(selectedPlacePopup)}
+                              className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline font-sans cursor-pointer bg-emerald-500/15 px-2 py-0.5 rounded-lg border border-emerald-500/30 font-bold ml-2"
+                            >
+                              {language === 'bm' ? 'Jadual 7 Hari' : '7-Day Hours'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setSelectedPlacePopup(null);
+                      onSelectPlaceForMap(selectedPlacePopup);
+                    }}
+                    className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Sparkles className="w-4 h-4 text-emerald-200" />
+                    <span>Map &amp; AI Route</span>
+                    <ArrowUpRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* 7-Day Weekly Operating Schedule Modal */}
+      {scheduleModalPlace &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-stone-900 border border-white/10 rounded-3xl p-6 shadow-2xl relative">
+              <button
+                onClick={() => setScheduleModalPlace(null)}
+                className="absolute top-4 right-4 p-2 text-stone-400 hover:text-white rounded-full bg-stone-800/80 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-bold text-base text-stone-100">
+                  {language === 'bm' ? 'Waktu Operasi Mingguan' : 'Weekly Operating Schedule'}
+                </h3>
+              </div>
+              <p className="text-xs text-stone-400 mb-4">{scheduleModalPlace.name}</p>
+
+              <div className="space-y-2">
+                {scheduleModalPlace.operatingHours.weeklySchedule?.map((day) => {
+                  const isToday = day.day === getTodayDayName();
+                  return (
+                    <div
+                      key={day.day}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-mono border transition-colors ${
+                        isToday
+                          ? 'bg-emerald-500/10 border-emerald-500/30 font-semibold'
+                          : 'bg-stone-800/60 border-white/5 text-stone-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={isToday ? 'text-emerald-400 font-bold' : 'text-stone-200'}>
+                          {day.day}
+                        </span>
+                        {isToday && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-sans uppercase font-bold">
+                            Today
+                          </span>
+                        )}
+                      </div>
+                      {day.isOpen ? (
+                        <span className="text-stone-300">
+                          {formatTimeTo12Hour(day.from)} – {formatTimeTo12Hour(day.to)}
+                        </span>
+                      ) : (
+                        <span className="text-rose-400 font-bold px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
+                          CLOSED
                         </span>
                       )}
                     </div>
-                    {day.isOpen ? (
-                      <span className="text-stone-300">
-                        {formatTimeTo12Hour(day.from)} – {formatTimeTo12Hour(day.to)}
-                      </span>
-                    ) : (
-                      <span className="text-rose-400 font-bold px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
-                        CLOSED
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
 
-            <div className="mt-5 pt-3 border-t border-white/10 flex justify-end">
-              <button
-                onClick={() => setScheduleModalPlace(null)}
-                className="px-4 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold cursor-pointer"
-              >
-                Close
-              </button>
+              <div className="mt-5 pt-3 border-t border-white/10 flex justify-end">
+                <button
+                  onClick={() => setScheduleModalPlace(null)}
+                  className="px-4 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* 7-Day Weekly Operating Schedule Modal */}
     </div>

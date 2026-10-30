@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet-draw';
 import { Place, Township, MainCategory, Language } from '../types';
 import { firebaseService } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
@@ -429,6 +430,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // AI Traffic Analysis State
   const [analyzingTraffic, setAnalyzingTraffic] = useState(false);
   const [trafficResult, setTrafficResult] = useState<TrafficAnalysisResult | null>(null);
+  
+  // Offline Map State
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const drawControlRef = useRef<L.Control.Draw | null>(null);
 
   // Street View 360 Panorama Modal State
   const [streetViewOpen, setStreetViewOpen] = useState(false);
@@ -1245,6 +1250,34 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       // Render Live Colored TomTom Traffic Overlay & Hotspots
       renderColoredTrafficOverlay(map);
+
+      // Add Draw Control for region selection
+      const drawnItems = new L.FeatureGroup();
+      map.addLayer(drawnItems);
+      const drawControl = new L.Control.Draw({
+        edit: { featureGroup: drawnItems },
+        draw: {
+          polygon: {} as any,
+          marker: false,
+          circle: false,
+          rectangle: {} as any,
+          polyline: false,
+          circlemarker: false,
+        },
+      });
+      map.addControl(drawControl);
+      drawControlRef.current = drawControl;
+
+      map.on(L.Draw.Event.CREATED, (e: any) => {
+        const layer = e.layer;
+        drawnItems.addLayer(layer);
+        
+        // Handle region selected
+        if (window.confirm('Download map data for this region?')) {
+          console.log('Downloading map data for region:', layer.toGeoJSON());
+          window.alert('Map download started. (Demo mode: no actual tiles downloaded)');
+        }
+      });
 
       mapInstanceRef.current = map;
     }

@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+@import "leaflet-draw/dist/leaflet.draw.css";
 
 @layer base {
   body {
@@ -176,13 +178,13 @@
     hyphens: manual;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6,
-  .font-heading {
+  h1:not(.no-mobile-clamp),
+  h2:not(.no-mobile-clamp),
+  h3:not(.no-mobile-clamp),
+  h4:not(.no-mobile-clamp),
+  h5:not(.no-mobile-clamp),
+  h6:not(.no-mobile-clamp),
+  .font-heading:not(.no-mobile-clamp) {
     font-size: clamp(1.15rem, 4.2vw, 1.85rem);
     line-height: 1.35;
   }
@@ -199,8 +201,8 @@
   }
 
   /* 3. Container Alignment & Spacing Rules - protect horizontal headers and rows */
-  .card-container,
-  .glass-card-hover:not(.flex-row):not([class*="flex-row"]) {
+  .card-container:not(.no-mobile-clamp),
+  .glass-card-hover:not(.flex-row):not([class*="flex-row"]):not(.no-mobile-clamp) {
     display: flex;
     flex-direction: column;
     min-height: fit-content;
@@ -210,7 +212,7 @@
 
   /* Multi-card grids auto-fit on mobile */
   .multi-card-grid,
-  .grid {
+  .grid:not(.no-mobile-clamp) {
     gap: 1rem;
   }
 
