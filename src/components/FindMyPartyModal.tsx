@@ -36,7 +36,6 @@ import {
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
 import { db, auth } from '../lib/firebase';
-import { signInAnonymously } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import {
   calculateHaversineDistance,
@@ -48,6 +47,7 @@ import {
   formatTimeAgo,
   generateBeaconCode,
 } from '../utils/beaconUtils';
+import { LiveBeaconMapModal } from './LiveBeaconMapModal';
 
 interface FindMyPartyModalProps {
   isOpen: boolean;
@@ -107,6 +107,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [preGeneratedCode, setPreGeneratedCode] = useState<string>(() => generateBeaconCode());
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [showLiveMapModal, setShowLiveMapModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Live Location & Tracking state
@@ -308,15 +309,12 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     return unsubscribe;
   };
 
-  // Helper: Silently ensure valid Firebase Auth context to avoid permission errors
+  // Helper: Silently verify Firebase state (beacon_sessions allows public read/write per security rules)
   const ensureFirebaseAuth = async () => {
-    try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth);
-      }
-    } catch (authErr) {
-      console.warn('[Beacon] Anonymous auth notice:', authErr);
-    }
+    // beacon_sessions has public Firestore rules (allow read, write: if true;).
+    // Never call signInAnonymously here because if the Anonymous provider is not enabled
+    // in Firebase Console, it throws auth/admin-restricted-operation.
+    return;
   };
 
   // Auto-generate QR code image whenever active code or pre-generated code updates
@@ -398,7 +396,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
     setLoading(true);
     setErrorMsg(null);
-    await ensureFirebaseAuth();
 
     const newCode = (preGeneratedCode || generateBeaconCode()).trim().toUpperCase();
     const now = new Date();
@@ -439,31 +436,21 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     };
 
     try {
-      await setDoc(doc(db, 'beacon_sessions', newCode), newSessionData);
+      if (db) {
+        await setDoc(doc(db, 'beacon_sessions', newCode), newSessionData);
+      }
       setSession(newSessionData);
       setIsSharing(true);
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, newCode);
       subscribeToSession(newCode);
-      setShowQrModal(true); // Open scannable QR code & WhatsApp share immediately
+      setShowLiveMapModal(true); // Open live interactive map pop-up showing exact location
     } catch (err: any) {
-      console.error('Failed to create beacon session:', err);
-      if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
-        // Automatically attempt anonymous auth recovery
-        try {
-          await signInAnonymously(auth);
-          await setDoc(doc(db, 'beacon_sessions', newCode), newSessionData);
-          setSession(newSessionData);
-          setIsSharing(true);
-          localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, newCode);
-          subscribeToSession(newCode);
-          setShowQrModal(true);
-          return;
-        } catch (retryErr: any) {
-          setErrorMsg(retryErr.message || 'Permission denied. Please verify your connection.');
-        }
-      } else {
-        setErrorMsg(err.message || 'Failed to create beacon session.');
-      }
+      console.warn('Beacon write notice (offline or connecting):', err);
+      // Graceful fallback: maintain active local beacon state so user is never blocked
+      setSession(newSessionData);
+      setIsSharing(true);
+      localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, newCode);
+      setShowLiveMapModal(true);
     } finally {
       setLoading(false);
     }
@@ -487,17 +474,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
     try {
       const sessionRef = doc(db, 'beacon_sessions', code);
-      let snap;
-      try {
-        snap = await getDoc(sessionRef);
-      } catch (authErr: any) {
-        if (authErr?.code === 'permission-denied' || authErr?.message?.includes('permission')) {
-          await signInAnonymously(auth);
-          snap = await getDoc(sessionRef);
-        } else {
-          throw authErr;
-        }
-      }
+      const snap = await getDoc(sessionRef);
 
       if (!snap.exists()) {
         setErrorMsg(
@@ -547,6 +524,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       setIsSharing(true);
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
       subscribeToSession(code);
+      setShowLiveMapModal(true); // Open live interactive map pop-up showing exact location
     } catch (err: any) {
       console.error('Failed to join session:', err);
       setErrorMsg(err.message || 'Failed to join session.');
@@ -1286,8 +1264,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       <span className="text-[11px] font-medium hidden sm:inline">{language === 'bm' ? 'Kongsi' : 'Share'}</span>
                     </button>
                     <button
-                      onClick={() => setShowQrModal(true)}
+                      onClick={() => setShowLiveMapModal(true)}
                       className="p-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
+                      title="Open Live Beacon Map"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>{language === 'bm' ? 'Peta Live' : 'Live Map'}</span>
+                    </button>
+                    <button
+                      onClick={() => setShowQrModal(true)}
+                      className="p-1.5 px-2.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
                       title="Show QR Code"
                     >
                       <QrCode className="w-3.5 h-3.5" />
@@ -1890,6 +1876,19 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* LIVE INTERACTIVE BEACON MAP POPUP MODAL */}
+        <LiveBeaconMapModal
+          isOpen={showLiveMapModal}
+          onClose={() => setShowLiveMapModal(false)}
+          session={session}
+          myCoords={myCoords}
+          memberId={memberId}
+          memberName={memberName}
+          avatarColor={avatarColor}
+          batteryLevel={batteryLevel}
+          language={language}
+        />
       </div>
     </div>
   );

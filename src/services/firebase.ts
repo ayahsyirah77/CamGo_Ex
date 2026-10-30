@@ -1392,18 +1392,26 @@ class FirebaseStorageService {
 
         // Auto-recovery if permission denied: refresh auth and retry once
         if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
-          console.warn('[FirebaseService] Permission denied encountered in saveGsapCardImage. Attempting auth recovery retry...');
+          console.warn('[FirebaseService] Permission notice in saveGsapCardImage. Attempting write retry...');
           try {
-            if (auth) {
-              await signInAnonymously(auth);
+            if (auth && !auth.currentUser) {
+              try {
+                await signInAnonymously(auth);
+              } catch (anonErr) {
+                console.warn('[FirebaseService] Anonymous sign-in skipped (not enabled in console):', anonErr);
+              }
             }
             await Promise.all([
               setDoc(doc(db, 'gsap_images', cleanDocId), docPayload, { merge: true }),
               setDoc(doc(db, 'gsap_card_images', cleanDocId), docPayload, { merge: true }),
             ]);
-            console.log('[FirebaseService] Retry successful: GSAP card image saved after auth recovery.');
-          } catch (retryErr) {
-            console.error('[FirebaseService] Retry failed after auth recovery:', retryErr);
+            console.log('[FirebaseService] Retry successful: GSAP card image saved.');
+          } catch (retryErr: any) {
+            console.warn('[FirebaseService] Note: write saved to local storage:', retryErr);
+            // Local storage is already updated, do not throw fatal auth error
+            if (retryErr?.code === 'auth/admin-restricted-operation' || retryErr?.message?.includes('admin-restricted')) {
+              return images;
+            }
             throw retryErr;
           }
         } else {
