@@ -69,7 +69,7 @@ import {
   MotorbikeFleetStatus,
   MotorbikePackage,
 } from '../types';
-import { firebaseService, UserProfile } from '../services/firebase';
+import { firebaseService, UserProfile, isMockMotorbikePartner } from '../services/firebase';
 
 interface VendorDashboardProps {
   isOpen: boolean;
@@ -402,17 +402,28 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
       const currentBikePartners = firebaseService.getMotorbikePartners();
       const existingPartner = currentBikePartners.find(p => p.id === activeVendor.id);
-      if (existingPartner || activeVendor.category === 'transport' || activeVendor.subCategory === 'car_bike_rentals' || activeVendor.businessName?.toLowerCase().includes('bike') || activeVendor.businessName?.toLowerCase().includes('scooter') || activeVendor.businessName?.toLowerCase().includes('rental')) {
+      const vName = (activeVendor.businessName || '').toLowerCase();
+      const isMotorbikeVendor =
+        !isMockMotorbikePartner(activeVendor) && (
+          (activeVendor.motorbikePackages && activeVendor.motorbikePackages.length > 0) ||
+          vName.includes('motorbike') ||
+          vName.includes('motorcycle') ||
+          vName.includes('scooter') ||
+          vName.includes('sewa motor') ||
+          vName.includes('sewa skuter')
+        );
+
+      if (existingPartner || isMotorbikeVendor) {
         const partnerToSync: MotorbikeRentalPartner = {
           id: activeVendor.id,
           businessName: activeVendor.businessName,
           township: activeVendor.township,
-          imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+          imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
           operatingStatus: activeVendor.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
           fleetAvailability: (motorbikeFleetStatus === 'not_applicable' ? 'high' : motorbikeFleetStatus) as any,
           contactPhone: activeVendor.contactPhone || '+60123456789',
           whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone || '+60123456789',
-          packages: existingPartner ? existingPartner.packages : [],
+          packages: existingPartner ? existingPartner.packages : (activeVendor.motorbikePackages || []),
         };
         await firebaseService.saveMotorbikePartner(partnerToSync);
         if (typeof setMotorbikePartners === 'function') {
@@ -484,13 +495,23 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
     await firebaseService.saveVendorListing(newListing);
 
-    // Sync to Motorbike Rental Marketplace if applicable
-    if (newBizCategory === 'transport' || newBizSubCategory === 'car_bike_rentals') {
+    // Sync to Motorbike Rental Marketplace if explicitly a bike/scooter operator
+    const newNameLower = (newListing.businessName || '').toLowerCase();
+    const isExplicitBikeVendor =
+      !isMockMotorbikePartner(newListing) && (
+        newNameLower.includes('bike') ||
+        newNameLower.includes('motorcycle') ||
+        newNameLower.includes('scooter') ||
+        newNameLower.includes('sewa motor') ||
+        newNameLower.includes('sewa skuter')
+      );
+
+    if (isExplicitBikeVendor) {
       const partnerToSync: MotorbikeRentalPartner = {
         id: newListing.id,
         businessName: newListing.businessName,
         township: newListing.township,
-        imageUrl: newListing.coverImage || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+        imageUrl: newListing.coverImage || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
         operatingStatus: 'open',
         fleetAvailability: 'high',
         contactPhone: newListing.contactPhone,

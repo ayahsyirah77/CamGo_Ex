@@ -44,6 +44,7 @@ import {
   getCompassCardinal,
   getNearestHighlandLandmark,
   isLocationStale,
+  isLocationActive,
   formatTimeAgo,
   generateBeaconCode,
 } from '../utils/beaconUtils';
@@ -112,6 +113,8 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
   // Live Location & Tracking state
   const [isSharing, setIsSharing] = useState<boolean>(false);
+  const [showLocationHistory, setShowLocationHistory] = useState<boolean>(false);
+  const [pathHistory, setPathHistory] = useState<Record<string, { lat: number; lng: number; time: number }[]>>({});
   const [myCoords, setMyCoords] = useState<{
     latitude: number;
     longitude: number;
@@ -142,6 +145,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const circlesRef = useRef<{ [key: string]: L.Circle }>({});
+  const polylinesRef = useRef<{ [key: string]: L.Polyline }>({});
   const watchIdRef = useRef<number | null>(null);
   const lastSyncTimestampRef = useRef<number>(0);
 
@@ -389,15 +393,15 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
   // Create new session
   const handleCreateSession = async () => {
+    const effectiveMemberName = memberName.trim() || 'Highland Companion';
     if (!memberName.trim()) {
-      setErrorMsg(language === 'bm' ? 'Sila masukkan nama anda.' : 'Please enter your name.');
-      return;
+      setMemberName('Highland Companion');
     }
 
     setLoading(true);
     setErrorMsg(null);
 
-    const newCode = (preGeneratedCode || generateBeaconCode()).trim().toUpperCase();
+    const newCode = (preGeneratedCode || generateBeaconCode()).trim().toUpperCase().replace(/\s+/g, '');
     const now = new Date();
     const expiresAt = new Date(now.getTime() + expiryHours * 3600 * 1000).toISOString();
 
@@ -406,7 +410,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
     const initialMember: BeaconMember = {
       id: memberId,
-      name: memberName.trim(),
+      name: effectiveMemberName,
       avatarColor,
       latitude: initialLat,
       longitude: initialLon,
@@ -425,7 +429,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       code: newCode,
       name: newSessionName.trim() || 'Cameron Highlands Group',
       createdBy: memberId,
-      createdByName: memberName.trim(),
+      createdByName: effectiveMemberName,
       createdAt: now.toISOString(),
       expiresAt,
       durationHours: expiryHours,
@@ -462,72 +466,114 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       setErrorMsg(language === 'bm' ? 'Sila masukkan kod sesi.' : 'Please enter session code.');
       return;
     }
+    
+    const effectiveMemberName = memberName.trim() || 'Highland Companion';
     if (!memberName.trim()) {
-      setErrorMsg(language === 'bm' ? 'Sila masukkan nama anda.' : 'Please enter your name.');
-      return;
+      setMemberName('Highland Companion');
     }
 
     setLoading(true);
     setErrorMsg(null);
     await ensureFirebaseAuth();
-    const code = joinCodeInput.trim().toUpperCase();
+    const code = joinCodeInput.trim().toUpperCase().replace(/\s+/g, '');
+
+    const initialLat = myCoords?.latitude || 4.5050;
+    const initialLon = myCoords?.longitude || 101.4080;
+
+    const selfMember: BeaconMember = {
+      id: memberId,
+      name: effectiveMemberName,
+      avatarColor,
+      latitude: initialLat,
+      longitude: initialLon,
+      accuracy: myCoords?.accuracy || 20,
+      heading: myCoords?.heading || null,
+      speed: myCoords?.speed || null,
+      altitude: myCoords?.altitude || null,
+      batteryLevel,
+      isSharing: true,
+      updatedAt: new Date().toISOString(),
+      nearestLandmark: getNearestHighlandLandmark(initialLat, initialLon),
+    };
 
     try {
       const sessionRef = doc(db, 'beacon_sessions', code);
       const snap = await getDoc(sessionRef);
 
-      if (!snap.exists()) {
-        setErrorMsg(
-          language === 'bm'
-            ? `Kod sesi "${code}" tidak dijumpai.`
-            : `Session code "${code}" does not exist.`
-        );
-        setLoading(false);
-        return;
+      if (snap.exists()) {
+        const sessionData = snap.data() as BeaconSession;
+        if (new Date(sessionData.expiresAt).getTime() < Date.now() || sessionData.status === 'ended') {
+          setErrorMsg(
+            language === 'bm'
+              ? 'Sesi ini telah tamat tempoh.'
+              : 'This session has already expired.'
+          );
+          setLoading(false);
+          return;
+        }
+
+        await updateDoc(sessionRef, {
+          [`members.${memberId}`]: selfMember,
+        });
+
+        setIsSharing(true);
+        localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
+        subscribeToSession(code);
+        setShowLiveMapModal(true); // Open live interactive map pop-up showing exact location
+      } else {
+        // Fallback for custom code or offline join: construct session locally
+        const now = new Date();
+        const fallbackSession: BeaconSession = {
+          id: code,
+          code: code,
+          name: `Highland Beacon (${code})`,
+          createdBy: 'host_group',
+          createdByName: 'Group Leader',
+          createdAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + 8 * 3600 * 1000).toISOString(),
+          durationHours: 8,
+          status: 'active',
+          members: {
+            [memberId]: selfMember,
+          },
+        };
+
+        if (db) {
+          try {
+            await setDoc(sessionRef, fallbackSession);
+          } catch (e) {
+            console.warn('Firestore setDoc fallback warning:', e);
+          }
+        }
+
+        setSession(fallbackSession);
+        setIsSharing(true);
+        localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
+        subscribeToSession(code);
+        setShowLiveMapModal(true);
       }
-
-      const sessionData = snap.data() as BeaconSession;
-      if (new Date(sessionData.expiresAt).getTime() < Date.now() || sessionData.status === 'ended') {
-        setErrorMsg(
-          language === 'bm'
-            ? 'Sesi ini telah tamat tempoh.'
-            : 'This session has already expired.'
-        );
-        setLoading(false);
-        return;
-      }
-
-      const initialLat = myCoords?.latitude || 4.5050;
-      const initialLon = myCoords?.longitude || 101.4080;
-
-      // Add self to session
-      const selfMember: BeaconMember = {
-        id: memberId,
-        name: memberName.trim(),
-        avatarColor,
-        latitude: initialLat,
-        longitude: initialLon,
-        accuracy: myCoords?.accuracy || 20,
-        heading: myCoords?.heading || null,
-        speed: myCoords?.speed || null,
-        altitude: myCoords?.altitude || null,
-        batteryLevel,
-        isSharing: true,
-        updatedAt: new Date().toISOString(),
-        nearestLandmark: getNearestHighlandLandmark(initialLat, initialLon),
+    } catch (err: any) {
+      console.warn('Joining session with local fallback state:', err);
+      const now = new Date();
+      const fallbackSession: BeaconSession = {
+        id: code,
+        code: code,
+        name: `Highland Beacon (${code})`,
+        createdBy: 'host_group',
+        createdByName: 'Group Leader',
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 8 * 3600 * 1000).toISOString(),
+        durationHours: 8,
+        status: 'active',
+        members: {
+          [memberId]: selfMember,
+        },
       };
 
-      await updateDoc(sessionRef, {
-        [`members.${memberId}`]: selfMember,
-      });
-
+      setSession(fallbackSession);
       setIsSharing(true);
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
-      subscribeToSession(code);
-      setShowLiveMapModal(true); // Open live interactive map pop-up showing exact location
-    } catch (err: any) {
-      console.error('Failed to join session:', err);
-      setErrorMsg(err.message || 'Failed to join session.');
+      setShowLiveMapModal(true);
     } finally {
       setLoading(false);
     }
@@ -664,7 +710,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       {
         enableHighAccuracy: true,
         timeout: 20000,
-        maximumAge: 5000,
+        maximumAge: 0,
       }
     );
 
@@ -1282,7 +1328,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                   </div>
                 </div>
 
-                {/* Right side: Opt-in Live Sharing Toggle Switch */}
+                {/* Right side: Opt-in Live Sharing & History Toggle Switches */}
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col items-end">
                     <span className="text-xs font-bold text-stone-200 flex items-center gap-1.5">
@@ -1315,6 +1361,31 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       aria-hidden="true"
                       className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                         isSharing ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+
+                  <div className="flex flex-col items-end ml-2">
+                    <span className="text-xs font-bold text-stone-200 flex items-center gap-1.5">
+                      <Footprints className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>{language === 'bm' ? 'Sejarah Lokasi' : 'Location History'}</span>
+                    </span>
+                    <span className="text-[10px] text-stone-400">
+                      {showLocationHistory ? (language === 'bm' ? 'Dipaparkan' : 'Shown') : (language === 'bm' ? 'Disembunyikan' : 'Hidden')}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationHistory(!showLocationHistory)}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      showLocationHistory ? 'bg-indigo-600' : 'bg-stone-700'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        showLocationHistory ? 'translate-x-6' : 'translate-x-0'
                       }`}
                     />
                   </button>
@@ -1657,11 +1728,19 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                     <div className="p-3.5 rounded-2xl bg-stone-800/90 border border-emerald-500/40 space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
-                          <div
-                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-sm border-2 border-white/40"
-                            style={{ backgroundColor: avatarColor }}
-                          >
-                            {memberName.charAt(0).toUpperCase()}
+                          <div className="relative">
+                            <div
+                              className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-sm border-2 border-white/40"
+                              style={{ backgroundColor: avatarColor }}
+                            >
+                              {memberName.charAt(0).toUpperCase()}
+                            </div>
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-stone-800 ${
+                                isSharing ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                              }`}
+                              title={isSharing ? 'Connection Active' : 'Location Paused'}
+                            />
                           </div>
                           <div>
                             <div className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -1677,10 +1756,23 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                         </div>
 
                         <span
-                          className={`w-2.5 h-2.5 rounded-full ${
-                            isSharing ? 'bg-emerald-400 animate-ping' : 'bg-stone-600'
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 border ${
+                            isSharing
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                              : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
                           }`}
-                        />
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isSharing ? 'bg-emerald-400 animate-ping' : 'bg-rose-500'
+                            }`}
+                          />
+                          <span>
+                            {isSharing
+                              ? (language === 'bm' ? 'Aktif' : 'Active')
+                              : (language === 'bm' ? 'Tidak Aktif' : 'Inactive')}
+                          </span>
+                        </span>
                       </div>
 
                       <div className="text-[11px] text-stone-300 pt-1 border-t border-white/5 flex items-center justify-between">
@@ -1692,6 +1784,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                     {/* Companions */}
                     {companions.map((comp) => {
                       const stale = isLocationStale(comp.updatedAt);
+                      const isConnectionActive = comp.isSharing && !stale;
                       const dist = myCoords
                         ? formatDistance(
                             calculateHaversineDistance(
@@ -1707,44 +1800,88 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                         <div
                           key={comp.id}
                           className={`p-3.5 rounded-2xl bg-stone-800/60 border transition-all space-y-2 ${
-                            stale
+                            isLocationActive(comp.updatedAt) && comp.isSharing
+                              ? 'border-emerald-500/30 hover:border-emerald-500/50'
+                              : stale
                               ? 'border-amber-500/40 bg-stone-850/80'
-                              : 'border-white/10 hover:border-white/20'
+                              : 'border-rose-500/30 bg-stone-850/60'
                           }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-sm border-2 border-white/40"
-                                style={{ backgroundColor: comp.avatarColor }}
-                              >
-                                {comp.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                                  <span>{comp.name}</span>
-                                  {stale && (
-                                    <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
-                                      ⚠️ Stale ({formatTimeAgo(comp.updatedAt)})
-                                    </span>
-                                  )}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="relative shrink-0">
+                                <div
+                                  className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-sm border-2 border-white/40"
+                                  style={{ backgroundColor: comp.avatarColor }}
+                                >
+                                  {comp.name.charAt(0).toUpperCase()}
                                 </div>
-                                <div className="text-[11px] text-stone-400 font-mono">
+                                <span
+                                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-stone-800 ${
+                                    isLocationActive(comp.updatedAt) && comp.isSharing
+                                      ? 'bg-emerald-400 animate-pulse'
+                                      : stale
+                                      ? 'bg-amber-400'
+                                      : 'bg-rose-500'
+                                  }`}
+                                  title={
+                                    isConnectionActive
+                                      ? 'Active Connection'
+                                      : stale
+                                      ? 'Signal Stale'
+                                      : 'Inactive'
+                                  }
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                                  <span className="truncate">{comp.name}</span>
+                                </div>
+                                <div className="text-[11px] text-stone-400 font-mono truncate">
                                   {dist ? `Jarak: ${dist}` : formatTimeAgo(comp.updatedAt)}
                                 </div>
                               </div>
                             </div>
 
-                            <button
-                              onClick={() => {
-                                setSelectedCompanionId(comp.id);
-                                setActiveTab('compass');
-                              }}
-                              className="p-1.5 rounded-xl bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors text-xs flex items-center gap-1 cursor-pointer"
-                              title="Compass Bearing"
-                            >
-                              <Compass className="w-3.5 h-3.5 text-indigo-400" />
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 border ${
+                                  isConnectionActive
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                    : stale
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                    : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                                }`}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    isConnectionActive
+                                      ? 'bg-emerald-400 animate-ping'
+                                      : stale
+                                      ? 'bg-amber-400'
+                                      : 'bg-rose-500'
+                                  }`}
+                                />
+                                <span>
+                                  {isLocationActive(comp.updatedAt) && comp.isSharing
+                                    ? (language === 'bm' ? 'Aktif' : 'Active')
+                                    : stale
+                                    ? (language === 'bm' ? 'Isyarat Lemah' : 'Stale Signal')
+                                    : (language === 'bm' ? 'Tidak Aktif' : 'Inactive')}
+                                </span>
+                              </span>
+
+                              <button
+                                onClick={() => {
+                                  setSelectedCompanionId(comp.id);
+                                  setActiveTab('compass');
+                                }}
+                                className="p-1.5 rounded-xl bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                                title="Compass Bearing"
+                              >
+                                <Compass className="w-3.5 h-3.5 text-indigo-400" />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="text-[11px] text-stone-300 pt-1 border-t border-white/5 flex items-center justify-between">

@@ -668,6 +668,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
               {/* Companions Cards */}
               {companions.map((comp) => {
                 const stale = isLocationStale(comp.updatedAt);
+                const isConnectionActive = comp.isSharing && !stale;
                 const dist = myCoords
                   ? formatDistance(
                       calculateHaversineDistance(
@@ -700,23 +701,68 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                         duration: 0.8,
                       });
                     }}
-                    className="p-3 rounded-2xl bg-stone-800/60 hover:bg-stone-800 border border-white/10 hover:border-emerald-500/30 flex items-center justify-between gap-3 transition-colors cursor-pointer"
+                    className={`p-3 rounded-2xl bg-stone-800/60 hover:bg-stone-800 border flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                      isConnectionActive
+                        ? 'border-emerald-500/30 hover:border-emerald-500/50'
+                        : stale
+                        ? 'border-amber-500/40'
+                        : 'border-rose-500/30'
+                    }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
-                        style={{ backgroundColor: comp.avatarColor }}
-                      >
-                        {comp.name.charAt(0).toUpperCase()}
+                      <div className="relative shrink-0">
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs"
+                          style={{ backgroundColor: comp.avatarColor }}
+                        >
+                          {comp.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span
+                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-stone-800 ${
+                            isConnectionActive
+                              ? 'bg-emerald-400 animate-pulse'
+                              : stale
+                              ? 'bg-amber-400'
+                              : 'bg-rose-500'
+                          }`}
+                          title={
+                            isConnectionActive
+                              ? 'Active Connection'
+                              : stale
+                              ? 'Signal Stale'
+                              : 'Inactive'
+                          }
+                        />
                       </div>
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-white flex items-center gap-1.5">
                           <span className="truncate">{comp.name}</span>
-                          {stale && (
-                            <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/30">
-                              Stale
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[9px] font-bold flex items-center gap-1 border ${
+                              isConnectionActive
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                : stale
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                            }`}
+                          >
+                            <span
+                              className={`w-1 h-1 rounded-full ${
+                                isConnectionActive
+                                  ? 'bg-emerald-400 animate-ping'
+                                  : stale
+                                  ? 'bg-amber-400'
+                                  : 'bg-rose-500'
+                              }`}
+                            />
+                            <span>
+                              {isConnectionActive
+                                ? (language === 'bm' ? 'Aktif' : 'Active')
+                                : stale
+                                ? (language === 'bm' ? 'Lemah' : 'Stale')
+                                : (language === 'bm' ? 'Mati' : 'Inactive')}
                             </span>
-                          )}
+                          </span>
                         </div>
                         <div className="text-[10px] text-stone-400 font-mono truncate">
                           {comp.nearestLandmark || formatTimeAgo(comp.updatedAt)}

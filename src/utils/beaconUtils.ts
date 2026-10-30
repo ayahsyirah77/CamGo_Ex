@@ -133,6 +133,15 @@ export function isLocationStale(updatedAt: string, thresholdMs: number = 3 * 60 
 }
 
 /**
+ * Check if a location is active (e.g., <= 30 seconds update)
+ */
+export function isLocationActive(updatedAt: string): boolean {
+  const pingTime = new Date(updatedAt).getTime();
+  if (isNaN(pingTime)) return false;
+  return Date.now() - pingTime <= 30 * 1000;
+}
+
+/**
  * Format relative time (e.g., "Just now", "2 mins ago", "15 mins ago")
  */
 export function formatTimeAgo(updatedAt: string): string {

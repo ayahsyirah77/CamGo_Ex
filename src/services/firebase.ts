@@ -146,6 +146,39 @@ export function sanitizeEmergencyCard(raw?: Partial<EmergencyCard> | null): Emer
   };
 }
 
+export const MOCK_VENDOR_IDS = [
+  'moto-partner-1',
+  'moto-partner-2',
+  'moto-partner-3',
+  'big-red-strawberry-farm',
+  'boh-sungei-palas',
+  'flora-park-kea-farm',
+  'highland-steamboat-tanahrata',
+  'cameron-lavender-tringkap',
+  'cameron-highlands-car-rental',
+  'highland-mobility',
+];
+
+export function isMockMotorbikePartner(partner: any): boolean {
+  if (!partner) return true;
+  const id = (partner.id || '').toLowerCase();
+  const name = (partner.businessName || '').toLowerCase();
+  if (MOCK_VENDOR_IDS.includes(id) || MOCK_VENDOR_IDS.includes(name)) return true;
+  if (id.startsWith('moto-partner') || id.startsWith('mock-') || id.startsWith('test-') || id.startsWith('seed-')) return true;
+  if (name.includes('mock') || name.includes('sample') || name.includes('highland mobility')) return true;
+  return false;
+}
+
+export function isMockVendorListing(vendor: any): boolean {
+  if (!vendor) return true;
+  const id = (vendor.id || '').toLowerCase();
+  const name = (vendor.businessName || '').toLowerCase();
+  if (MOCK_VENDOR_IDS.includes(id) || MOCK_VENDOR_IDS.includes(name)) return true;
+  if (id.startsWith('moto-partner') || id.startsWith('mock-') || id.startsWith('test-') || id.startsWith('seed-')) return true;
+  if (name.includes('mock') || name.includes('sample') || name.includes('highland mobility')) return true;
+  return false;
+}
+
 class FirebaseStorageService {
   private currentUser: UserProfile | null = null;
   private listeners: (() => void)[] = [];
@@ -309,13 +342,26 @@ class FirebaseStorageService {
 
       // 9. Real-time Vendor Listings Listener
       getDocs(collection(db, 'vendor_listings')).then(snap => {
-        const cloudListings = snap.docs.map((d) => d.data() as VendorListing);
+        const cloudListings = snap.docs
+          .map((d) => d.data() as VendorListing)
+          .filter((v) => !isMockVendorListing(v));
         this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
         this.notify();
       });
       onSnapshot(collection(db, 'vendor_listings'), (snap) => {
         console.log('[Debug] Vendor listings listener fired, docs:', snap.size);
-        const cloudListings = snap.docs.map((d) => d.data() as VendorListing);
+        const cloudListings = snap.docs
+          .map((d) => d.data() as VendorListing)
+          .filter((v) => !isMockVendorListing(v));
+
+        // Purge mock listings from Firestore if detected
+        snap.docs.forEach((docSnap) => {
+          const v = docSnap.data() as VendorListing;
+          if (isMockVendorListing(v)) {
+            deleteDoc(doc(db, 'vendor_listings', docSnap.id)).catch(() => {});
+          }
+        });
+
         this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
         const enrichedPlaces = this.getPlaces();
         if (typeof window !== 'undefined') {
@@ -327,10 +373,19 @@ class FirebaseStorageService {
 
       // 10. Real-time Motorbike Partners Listener
       onSnapshot(collection(db, 'motorbike_partners'), (snap) => {
-        const cloudPartners = snap.docs.map((d) => d.data() as MotorbikeRentalPartner);
-        if (cloudPartners.length > 0) {
-          this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(cloudPartners));
-        }
+        const cloudPartners = snap.docs
+          .map((d) => d.data() as MotorbikeRentalPartner)
+          .filter((p) => !isMockMotorbikePartner(p));
+
+        // Purge mock motorbike partners from Firestore if detected
+        snap.docs.forEach((docSnap) => {
+          const p = docSnap.data() as MotorbikeRentalPartner;
+          if (isMockMotorbikePartner(p)) {
+            deleteDoc(doc(db, 'motorbike_partners', docSnap.id)).catch(() => {});
+          }
+        });
+
+        this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(cloudPartners));
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('motorbike-partners-updated', { detail: cloudPartners }));
         }
@@ -1638,8 +1693,7 @@ class FirebaseStorageService {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
         // Filter out residual mock vendors if any exist in cache
-        const mockIds = ['big-red-strawberry-farm', 'boh-sungei-palas', 'flora-park-kea-farm', 'highland-steamboat-tanahrata', 'cameron-lavender-tringkap', 'moto-partner-1', 'moto-partner-2', 'moto-partner-3'];
-        const cleaned = parsed.filter((v: any) => v && v.id && !mockIds.includes(v.id) && !mockIds.includes(v.businessName?.toLowerCase()));
+        const cleaned = parsed.filter((v: any) => v && v.id && !isMockVendorListing(v));
         
         // Deduplicate by ID and normalized business name
         const uniqueMap = new Map<string, VendorListing>();
@@ -1706,20 +1760,24 @@ class FirebaseStorageService {
 
     this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
 
-    // Auto-Sync to Motorbike Partners if transport/car_bike_rentals
-    const isTransportBikeVendor =
-      listing.category === 'transport' ||
-      listing.subCategory === 'car_bike_rentals' ||
-      listing.businessName?.toLowerCase().includes('bike') ||
-      listing.businessName?.toLowerCase().includes('scooter') ||
-      listing.businessName?.toLowerCase().includes('rental');
+    // Auto-Sync to Motorbike Partners ONLY if genuinely a motorbike/scooter vendor with verified packages
+    const vName = (listing.businessName || '').toLowerCase();
+    const isSpecificMotorbikeVendor =
+      !isMockVendorListing(listing) && (
+        (listing.category === 'transport' && listing.subCategory === 'car_bike_rentals' && listing.motorbikePackages && listing.motorbikePackages.length > 0) ||
+        vName.includes('motorbike') ||
+        vName.includes('motorcycle') ||
+        vName.includes('scooter') ||
+        vName.includes('sewa motor') ||
+        vName.includes('sewa skuter')
+      );
 
-    if (isTransportBikeVendor) {
+    if (isSpecificMotorbikeVendor) {
       const partnerObj: MotorbikeRentalPartner = {
         id: listing.id,
         businessName: listing.businessName,
         township: listing.township,
-        imageUrl: listing.coverImage || listing.logoUrl || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+        imageUrl: listing.coverImage || listing.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
         operatingStatus: listing.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
         fleetAvailability: (listing.motorbikeFleetStatus === 'not_applicable' || !listing.motorbikeFleetStatus ? 'high' : listing.motorbikeFleetStatus) as any,
         contactPhone: listing.contactPhone,
@@ -2089,69 +2147,54 @@ class FirebaseStorageService {
 
   public getMotorbikePartners(): MotorbikeRentalPartner[] {
     const data = localStorage.getItem('camgo_motorbike_partners');
-    const mockIds = ['moto-partner-1', 'moto-partner-2', 'moto-partner-3', 'big-red-strawberry-farm', 'boh-sungei-palas'];
     let cachedPartners: MotorbikeRentalPartner[] = [];
 
     if (data) {
       try {
         const parsed = JSON.parse(data);
         if (Array.isArray(parsed)) {
-          cachedPartners = parsed.filter((p: any) => p && p.id && !mockIds.includes(p.id));
+          cachedPartners = parsed.filter((p: any) => p && p.id && !isMockMotorbikePartner(p));
         }
       } catch {}
     }
 
     const partnersMap = new Map<string, MotorbikeRentalPartner>();
     for (const p of cachedPartners) {
-      partnersMap.set(p.id, p);
+      if (!isMockMotorbikePartner(p)) {
+        partnersMap.set(p.id, p);
+      }
     }
 
-    // Auto-populate all vendor listings registered under Transport & Mobility (car_bike_rentals)
+    // Auto-populate ONLY genuine vendor listings registered specifically for motorbike/scooter rentals
     const vendorListings = this.getVendorListings();
     for (const v of vendorListings) {
-      if (!v) continue;
-      const isTransportBikeVendor =
-        v.category === 'transport' ||
-        v.subCategory === 'car_bike_rentals' ||
-        v.businessName?.toLowerCase().includes('bike') ||
-        v.businessName?.toLowerCase().includes('scooter') ||
-        v.businessName?.toLowerCase().includes('rental');
+      if (!v || isMockVendorListing(v)) continue;
+      
+      const vName = (v.businessName || '').toLowerCase();
+      const isSpecificMotorbikeVendor =
+        (v.category === 'transport' && v.subCategory === 'car_bike_rentals' && v.motorbikePackages && v.motorbikePackages.length > 0) ||
+        vName.includes('motorbike') ||
+        vName.includes('motorcycle') ||
+        vName.includes('scooter') ||
+        vName.includes('sewa motor') ||
+        vName.includes('sewa skuter');
 
-      if (isTransportBikeVendor) {
+      if (isSpecificMotorbikeVendor) {
         const existing = partnersMap.get(v.id);
-        const defaultPackages: MotorbikePackage[] = v.motorbikePackages && v.motorbikePackages.length > 0
+        const actualPackages: MotorbikePackage[] = (v.motorbikePackages && v.motorbikePackages.length > 0)
           ? v.motorbikePackages
-          : [
-              {
-                id: `pkg-${v.id}-1`,
-                name: 'Standard Scooter',
-                cc: '125cc',
-                dailyRateRm: 60,
-                imageUrl: v.coverImage || 'https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=600&q=80',
-                helmetsIncluded: 2,
-                packageDetails: 'Automatic transmission, 2 helmets included',
-              },
-              {
-                id: `pkg-${v.id}-2`,
-                name: 'Maxi Scooter / ADV',
-                cc: '155cc',
-                dailyRateRm: 85,
-                imageUrl: v.coverImage || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=600&q=80',
-                helmetsIncluded: 2,
-                packageDetails: 'Premium 155cc scooter with phone holder',
-              },
-            ];
+          : (existing?.packages && existing.packages.length > 0 ? existing.packages : []);
 
         const partnerObj: MotorbikeRentalPartner = {
           id: v.id,
           businessName: v.businessName,
           township: v.township,
-          imageUrl: v.coverImage || v.logoUrl || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+          imageUrl: v.coverImage || v.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
           operatingStatus: v.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
           fleetAvailability: (v.motorbikeFleetStatus === 'not_applicable' || !v.motorbikeFleetStatus ? 'high' : v.motorbikeFleetStatus) as any,
           contactPhone: v.contactPhone,
           whatsappNumber: v.whatsappNumber || v.contactPhone,
-          packages: existing?.packages && existing.packages.length > 0 ? existing.packages : defaultPackages,
+          packages: actualPackages,
           isBookingEnabled: v.isBookingEnabled !== undefined ? v.isBookingEnabled : (v.verificationStatus === 'verified'),
           verificationStatus: v.verificationStatus,
           ownerEmail: v.ownerEmail,
@@ -2161,7 +2204,7 @@ class FirebaseStorageService {
       }
     }
 
-    const finalPartners = Array.from(partnersMap.values());
+    const finalPartners = Array.from(partnersMap.values()).filter((p) => !isMockMotorbikePartner(p));
     this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(finalPartners));
     return finalPartners;
   }

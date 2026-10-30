@@ -1988,6 +1988,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <option value="transport">Transport & Mobility Services</option>
                       <option value="local_services">Local Services & Amenities</option>
                       <option value="shopping">Shopping & Local Produce</option>
+                      <option value="masjid_surau">Masjid & Surau</option>
                     </select>
                   </div>
                   <div>

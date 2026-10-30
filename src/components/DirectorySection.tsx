@@ -244,34 +244,6 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         </button>
       </div>
 
-      {/* Main Category Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        {mainCategories.map((cat) => {
-          const isActive = selectedCategory === cat.key;
-          return (
-            <button
-              key={cat.key}
-              onClick={() => onSelectCategory(cat.key)}
-              className={`p-3 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
-                isActive
-                  ? 'bg-emerald-950/40 border-emerald-500/50 shadow-lg shadow-emerald-950/50 text-white'
-                  : 'bg-stone-900/70 border-white/5 hover:border-white/15 text-stone-400 hover:text-white'
-              }`}
-            >
-              <span className="text-2xl">{cat.icon}</span>
-              <div>
-                <span className="text-xs sm:text-sm font-bold block">
-                  {getTranslation(language, cat.labelKey)}
-                </span>
-                <span className="text-[10px] text-stone-500 font-mono">
-                  {places.filter((p) => p.category === cat.key).length} listings
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
       {/* Subcategory & Township Filters Row */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-stone-900/80 border border-white/5">
         {/* Subcategories */}
@@ -305,6 +277,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         {/* Town Select Filter */}
         <div className="flex items-center gap-2 text-xs text-stone-400">
           <Filter className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline font-semibold text-stone-200">Town:</span>
           <select
             value={selectedTown}
             onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
@@ -317,9 +290,43 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
             <option value="Ringlet">Ringlet</option>
             <option value="Kampung Raja">Kampung Raja</option>
             <option value="Tringkap">Tringkap</option>
+            <option value="Kuala Terla">Kuala Terla</option>
+            <option value="Bertam Valley">Bertam Valley</option>
+            <option value="Blue Valley">Blue Valley</option>
           </select>
         </div>
       </div>
+
+      {/* Main Category Tabs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        {mainCategories.map((cat) => {
+          const isActive = selectedCategory === cat.key;
+          return (
+            <button
+              key={cat.key}
+              onClick={() => onSelectCategory(cat.key)}
+              className={`p-3 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
+                isActive
+                  ? 'bg-emerald-950/40 border-emerald-500/50 shadow-lg shadow-emerald-950/50 text-white'
+                  : 'bg-stone-900/70 border-white/5 hover:border-white/15 text-stone-400 hover:text-white'
+              }`}
+            >
+              <span className="text-2xl">{cat.icon}</span>
+              <div>
+                <span className="text-xs sm:text-sm font-bold block">
+                  {getTranslation(language, cat.labelKey)}
+                </span>
+                <span className="text-[10px] text-stone-500 font-mono">
+                  {places.filter((p) => p.category === cat.key).length} listings
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+
+
 
       {/* Places Cards Grid */}
       {filteredPlaces.length === 0 ? (
