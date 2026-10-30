@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Language } from '../types';
 import { getTranslation } from '../services/i18n';
 import {
@@ -180,6 +181,7 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
   >('simpang-pulai');
 
   const selectedCorridorId = externalCorridorId || internalCorridorId;
+  const [selectedCorridorPopup, setSelectedCorridorPopup] = useState<CorridorDetail | null>(null);
 
   const handleSelectCorridor = (id: 'simpang-pulai' | 'tapah' | 'sungai-koyan') => {
     setInternalCorridorId(id);
@@ -706,8 +708,72 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
                   </span>
                 </div>
 
-                {/* 3 Corridor Selector Tabs */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Mobile View: Ultra-Compact Minimalist Cards (Mirroring Directory Result Cards) */}
+                <div className="grid md:hidden no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 gap-2">
+                  {corridors.map((corridor) => {
+                    const isSelected = corridor.id === selectedCorridorId;
+                    return (
+                      <div
+                        key={corridor.id}
+                        onClick={() => {
+                          handleSelectCorridor(corridor.id);
+                          setSelectedCorridorPopup(corridor);
+                        }}
+                        className={`glass-card-hover no-mobile-clamp group p-2.5 rounded-xl bg-stone-900/90 border flex flex-col justify-between gap-1.5 cursor-pointer transition-all shadow-md min-h-[78px] text-left relative overflow-hidden ${
+                          isSelected
+                            ? 'border-emerald-400 bg-stone-900 ring-1 ring-emerald-500/30'
+                            : 'border-white/10 hover:border-emerald-500/50 hover:bg-stone-850'
+                        }`}
+                      >
+                        {/* Top Row: Live Status Dot + Corridor Code + Delay */}
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                corridor.status === 'heavy'
+                                  ? 'bg-rose-500 animate-pulse'
+                                  : corridor.status === 'moderate'
+                                  ? 'bg-amber-500'
+                                  : 'bg-emerald-500'
+                              }`}
+                            />
+                            <span className="text-[9px] text-emerald-400 font-mono font-bold truncate">
+                              {corridor.code}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[8.5px] font-mono font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                              corridor.currentDelayMinutes > 0
+                                ? 'bg-rose-500/20 text-rose-300'
+                                : 'bg-emerald-500/20 text-emerald-300'
+                            }`}
+                          >
+                            +{corridor.currentDelayMinutes}m
+                          </span>
+                        </div>
+
+                        {/* Corridor Name */}
+                        <h4 className="no-mobile-clamp !text-[11px] font-semibold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 !leading-tight break-words my-auto">
+                          {corridor.name}
+                        </h4>
+
+                        {/* Bottom Row: Distance & Time Breakdown + Details trigger */}
+                        <div className="flex items-center justify-between text-[9px] text-stone-400 font-mono pt-1 border-t border-white/5">
+                          <span className="text-stone-300 font-medium truncate max-w-[70px]">
+                            {corridor.totalDistanceKm}km • {corridor.baseDriveMinutes + corridor.currentDelayMinutes}m
+                          </span>
+                          <span className="text-[9px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5 shrink-0">
+                            <span>{language === 'bm' ? 'Lihat' : 'Details'}</span>
+                            <ArrowUpRight className="w-2.5 h-2.5" />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop View: Full 3 Corridor Comparison Switcher */}
+                <div className="hidden md:grid grid-cols-1 md:grid-cols-3 gap-4">
                   {corridors.map((corridor) => {
                     const isSelected = corridor.id === selectedCorridorId;
                     return (
@@ -1081,6 +1147,178 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
           </div>
         </div>
       )}
+
+      {/* Detailed Modal Pop-up for Corridor Comparison (Rich Mobile Pop-up) */}
+      {selectedCorridorPopup &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+            onClick={() => setSelectedCorridorPopup(null)}
+          >
+            <div
+              className="w-full max-w-xl bg-stone-900 border border-emerald-500/40 rounded-3xl overflow-hidden shadow-2xl relative max-h-[90vh] flex flex-col my-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Sticky Top Header with Route Code, Status & Close */}
+              <div className="sticky top-0 z-30 flex items-center justify-between p-3.5 sm:p-4 bg-stone-900/95 border-b border-white/10 backdrop-blur-md">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-mono font-bold border border-emerald-500/30">
+                    {selectedCorridorPopup.code}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                      selectedCorridorPopup.status === 'heavy'
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        : selectedCorridorPopup.status === 'moderate'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        selectedCorridorPopup.status === 'heavy'
+                          ? 'bg-rose-500'
+                          : selectedCorridorPopup.status === 'moderate'
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
+                    />
+                    <span>
+                      {selectedCorridorPopup.status === 'heavy'
+                        ? 'Heavy Bottleneck'
+                        : selectedCorridorPopup.status === 'moderate'
+                        ? 'Moderate Crawl'
+                        : 'Smooth Flow'}
+                    </span>
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedCorridorPopup(null)}
+                  className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer transition-all shadow-md flex items-center gap-1.5 text-xs min-h-[44px] min-w-[44px] justify-center"
+                  aria-label="Close corridor modal"
+                >
+                  <X className="w-5 h-5" />
+                  <span className="font-mono">{language === 'bm' ? 'Tutup' : 'Close'}</span>
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto touch-pan-y p-4 sm:p-6 space-y-4">
+                {/* Gateway Title Banner */}
+                <div>
+                  <h3 className="text-xl sm:text-2xl font-heading font-black text-stone-100">
+                    {selectedCorridorPopup.name}
+                  </h3>
+                  <p className="text-xs text-stone-400 flex items-center gap-1.5 mt-1">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>{selectedCorridorPopup.startPoint}</span>
+                  </p>
+                </div>
+
+                {/* 4 Stat Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="p-2.5 rounded-xl bg-stone-950/80 border border-white/5 space-y-0.5">
+                    <span className="text-[10px] text-stone-500 uppercase block font-mono">Total Distance</span>
+                    <span className="text-sm font-bold text-stone-100">{selectedCorridorPopup.totalDistanceKm} km</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-stone-950/80 border border-white/5 space-y-0.5">
+                    <span className="text-[10px] text-stone-500 uppercase block font-mono">Drive Time</span>
+                    <span className="text-sm font-bold text-emerald-400">
+                      {selectedCorridorPopup.baseDriveMinutes + selectedCorridorPopup.currentDelayMinutes} mins
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-stone-950/80 border border-white/5 space-y-0.5">
+                    <span className="text-[10px] text-stone-500 uppercase block font-mono">Current Delay</span>
+                    <span className="text-sm font-bold text-rose-400">+{selectedCorridorPopup.currentDelayMinutes} mins</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-stone-950/80 border border-white/5 space-y-0.5">
+                    <span className="text-[10px] text-stone-500 uppercase block font-mono">Elevation Climb</span>
+                    <span className="text-sm font-bold text-amber-300">+{selectedCorridorPopup.avgElevationGainM}m</span>
+                  </div>
+                </div>
+
+                {/* Segment Breakdown */}
+                <div className="p-3.5 rounded-2xl bg-stone-950/90 border border-white/10 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Segment Breakdown</span>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 rounded-xl bg-stone-900 border border-white/5 space-y-1">
+                      <span className="text-[10px] font-bold text-cyan-400 uppercase">1. Flatland Expressway</span>
+                      <p className="font-semibold text-stone-200">{selectedCorridorPopup.flatlandKm} km @ {selectedCorridorPopup.flatlandSpeedKmh} km/h</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-stone-900 border border-white/5 space-y-1">
+                      <span className="text-[10px] font-bold text-amber-400 uppercase">2. Mountain Climb Pass</span>
+                      <p className="font-semibold text-stone-200">{selectedCorridorPopup.mountainKm} km @ {selectedCorridorPopup.mountainSpeedKmh} km/h</p>
+                      <span className="text-[10px] text-stone-400 block">{selectedCorridorPopup.gradientCurveRating}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Environmental & Cost Factors */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="p-3 rounded-xl bg-stone-950/60 border border-white/5 space-y-1.5">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wider font-bold block">Safety & Hazard</span>
+                    <div className="flex items-center justify-between text-stone-300">
+                      <span>Landslide Risk:</span>
+                      <span className={`font-bold ${selectedCorridorPopup.landslideRisk === 'Low' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {selectedCorridorPopup.landslideRisk}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-stone-300">
+                      <span>Fog / Mist Score:</span>
+                      <span className="font-bold text-stone-200">{selectedCorridorPopup.fogVisibilityScore}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-stone-950/60 border border-white/5 space-y-1.5">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wider font-bold block">Cost & Tolls</span>
+                    <div className="flex items-center justify-between text-stone-300">
+                      <span>Est. Fuel Cost:</span>
+                      <span className="font-bold text-emerald-400">RM{selectedCorridorPopup.fuelEstMyr.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-stone-300">
+                      <span>Toll Charges:</span>
+                      <span className="font-bold text-stone-200">RM{selectedCorridorPopup.tollCostMyr.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Best Recommended For */}
+                <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-xs text-stone-300 space-y-1">
+                  <strong className="text-emerald-400 font-bold block">Recommended Driver Profile:</strong>
+                  <p className="leading-relaxed text-stone-300">{selectedCorridorPopup.recommendedFor}</p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={() => {
+                      handleSelectCorridor(selectedCorridorPopup.id);
+                      setSelectedCorridorPopup(null);
+                    }}
+                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Select & Compare This Corridor</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onSelectCorridorOnMap?.(selectedCorridorPopup.id);
+                      setSelectedCorridorPopup(null);
+                    }}
+                    className="w-full py-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs flex items-center justify-center gap-2 border border-white/10 transition-colors cursor-pointer"
+                  >
+                    <Navigation className="w-4 h-4 text-emerald-400" />
+                    <span>View Corridor on Map</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

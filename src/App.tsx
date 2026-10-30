@@ -64,6 +64,7 @@ import { VendorOnboardingModal } from './components/VendorOnboardingModal';
 import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { FindMyPartyModal } from './components/FindMyPartyModal';
 import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
+import { ClassifiedsModal } from './components/ClassifiedsModal';
 import {
   Sparkles,
   Compass,
@@ -124,6 +125,7 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isDirectoriesModalOpen, setIsDirectoriesModalOpen] = useState(false);
   const [isPortalsModalOpen, setIsPortalsModalOpen] = useState(false);
+  const [isClassifiedsModalOpen, setIsClassifiedsModalOpen] = useState(false);
   const [isItineraryOpen, setIsItineraryOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [isMasjidModalOpen, setIsMasjidModalOpen] = useState(false);
@@ -237,6 +239,11 @@ export default function App() {
     };
     window.addEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
 
+    const handleOpenClassifiedsModal = () => {
+      setIsClassifiedsModalOpen(true);
+    };
+    window.addEventListener('open-classifieds-modal', handleOpenClassifiedsModal);
+
     // Auto-open Find My Party Beacon if URL has beacon or party query parameter
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('beacon') || urlParams.get('party')) {
@@ -254,6 +261,7 @@ export default function App() {
       window.removeEventListener('open-emergency-card', handleOpenEmergencyCard);
       window.removeEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
       window.removeEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
+      window.removeEventListener('open-classifieds-modal', handleOpenClassifiedsModal);
       unsubUser();
       unsubLounge();
     };
@@ -322,12 +330,14 @@ export default function App() {
           setIsPortalsModalOpen(true);
           navigateToSection('portals-section');
         }}
+        onOpenClassifiedsModal={() => setIsClassifiedsModalOpen(true)}
         onOpenItinerary={() => setIsItineraryOpen(true)}
         onOpenMap={() => setIsMapModalOpen(true)}
         onOpenChat={() => {
           setHasNewChat(false);
           setIsChatOpen(true);
         }}
+        hasNewChat={hasNewChat}
         onOpenGalleryModal={() => setIsGalleryModalOpen(true)}
         onOpenVendorPortal={handleOpenVendorPortal}
         onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
@@ -450,6 +460,41 @@ export default function App() {
 
               <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-cyan-400 group-hover:text-cyan-300">
                 <span>Open Map</span>
+                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
+              </div>
+            </div>
+
+            {/* Card 3: Visual Split Itinerary & Trip Planner */}
+            <div
+              onClick={() => setIsItineraryOpen(true)}
+              className="col-span-2 group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-amber-950/90 via-stone-900 to-emerald-950/90 border border-amber-500/40 p-2.5 sm:p-5 shadow-2xl hover:border-amber-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.15),transparent_50%)] pointer-events-none" />
+              
+              <div className="space-y-1.5 sm:space-y-3 z-10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-amber-400">
+                    {language === 'bm' ? 'Perancang Jadual' : 'Itinerary Planner'}
+                  </span>
+                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                    <Route className="w-3 h-3 sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-amber-300 transition-colors leading-tight sm:leading-snug">
+                    {language === 'bm' ? 'Jadual Perjalanan Pintar' : 'Itinerary Planner'}
+                  </h3>
+                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
+                    {language === 'bm'
+                      ? 'Rancang jadual harian automatik, elak kesesakan masa puncak, bajet & susun masa percutian.'
+                      : 'Personalized day-by-day split route planner, crowd bypass schedules, budgets & time slots.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-amber-400 group-hover:text-amber-300">
+                <span>{language === 'bm' ? 'Buka Jadual' : 'Open Planner'}</span>
                 <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
               </div>
             </div>
@@ -951,6 +996,19 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Dedicated Classifieds & Job Postings Modal */}
+      <ClassifiedsModal
+        isOpen={isClassifiedsModalOpen}
+        onClose={() => setIsClassifiedsModalOpen(false)}
+        language={language}
+        currentUser={currentUser}
+        onOpenPostClassified={() => {
+          setIsClassifiedsModalOpen(false);
+          setUserDashboardInitialTab('classifieds');
+          setIsUserDashboardOpen(true);
+        }}
+      />
       {/* Interactive Gallery Modal Popup (click outside to close) */}
       {isGalleryModalOpen && (
         <div

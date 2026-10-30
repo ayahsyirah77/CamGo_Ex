@@ -46,8 +46,10 @@ interface NavbarProps {
   onNavigateSection: (sectionId: string) => void;
   onOpenDirectoriesModal?: () => void;
   onOpenPortalsModal?: () => void;
+  onOpenClassifiedsModal?: () => void;
   onOpenItinerary?: () => void;
   onOpenChat?: () => void;
+  hasNewChat?: boolean;
   onOpenMap?: () => void;
   onOpenGalleryModal?: () => void;
   onOpenVendorPortal?: () => void;
@@ -71,8 +73,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onNavigateSection,
   onOpenDirectoriesModal = () => onNavigateSection('directories-section'),
   onOpenPortalsModal = () => onNavigateSection('portals-section'),
+  onOpenClassifiedsModal,
   onOpenItinerary,
   onOpenChat,
+  hasNewChat,
   onOpenMap,
   onOpenGalleryModal,
   onOpenVendorPortal,
@@ -90,12 +94,23 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [portalsOpen, setPortalsOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Header Search Bar States
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Live Classifieds Count State synced in real-time
+  const [jobsCount, setJobsCount] = useState<number>(() => firebaseService.getJobs().length);
+
+  useEffect(() => {
+    const handleJobsUpdated = (e: any) => {
+      const jobs = e?.detail || firebaseService.getJobs();
+      setJobsCount(jobs.length);
+    };
+    window.addEventListener('jobs-updated', handleJobsUpdated);
+    return () => window.removeEventListener('jobs-updated', handleJobsUpdated);
+  }, []);
 
   // Close search dropdown and user menu on outside click
   useEffect(() => {
@@ -748,6 +763,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <span>{language === 'bm' ? 'Tiket & Harga Ladang' : 'Farm Tickets & Pricing'}</span>
                     </button>
 
+                    <button
+                      onClick={() => {
+                        setPortalsOpen(false);
+                        if (onOpenClassifiedsModal) onOpenClassifiedsModal();
+                      }}
+                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-amber-600/20 text-left text-xs font-bold text-stone-200 hover:text-white transition-all cursor-pointer group"
+                    >
+                      <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500 group-hover:text-black transition-colors">
+                        <Briefcase className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex-1 min-w-0 flex items-center justify-between">
+                        <span>{language === 'bm' ? 'Iklan & Jawatan Kosong' : 'Classifieds & Job Postings'}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 font-bold">
+                          {jobsCount}
+                        </span>
+                      </div>
+                    </button>
+
 
                   </div>
                 </div>
@@ -803,6 +836,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{getTranslation(language, 'nav_gallery')}</span>
             </motion.button>
 
+            {/* Live Chat Lounge */}
+            <motion.button
+              variants={itemVariants}
+              onClick={() => {
+                if (onOpenChat) onOpenChat();
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/35 text-emerald-300 hover:text-white transition-all cursor-pointer relative shadow-sm"
+              title="Cameron Highlands Live Community Lounge"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="font-bold">{language === 'bm' ? 'Sembang Komuniti' : 'Live Lounge'}</span>
+              {hasNewChat && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute -top-0.5 -right-0.5" />
+              )}
+            </motion.button>
           </motion.div>
 
           {/* Right Action Container: User Profile & PWA Install (Aligned with Nav Links) */}
@@ -1054,27 +1102,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-blue-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-                    {/* Motorbike & Scooter Rental Marketplace */}
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        if (typeof window !== 'undefined') {
-                          window.dispatchEvent(new CustomEvent('open-motorbike-rental'));
-                        }
-                      }}
-                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 hover:text-white border border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
-                    >
-                      <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                        <Bike className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-bold text-emerald-200 block group-hover:text-white transition-colors">
-                          Motorbike &amp; Scooter Rental Hub
-                        </span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
-                    </button>
-
                   {/* Directories Modal Link */}
                   <button
                     onClick={() => {
@@ -1113,6 +1140,33 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-teal-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
+                  {/* Dedicated Classifieds & Job Postings Link */}
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      if (onOpenClassifiedsModal) onOpenClassifiedsModal();
+                    }}
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-amber-950/25 hover:bg-amber-900/40 text-stone-200 hover:text-white border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer text-left group shadow-md"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/35 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Briefcase className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-200 group-hover:text-amber-100 block transition-colors">
+                          Classifieds &amp; Job Postings
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">
+                          {jobsCount}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-stone-400 block truncate">
+                        {language === 'bm' ? 'Iklan komuniti, jawatan & servis' : 'Community listings, jobs & services'}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+
                   {/* 4. Map */}
                   <button
                     onClick={() => {
@@ -1132,28 +1186,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-cyan-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-
-                  
-                  {/* 5. Itinerary */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenItinerary) onOpenItinerary();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Route className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors">
-                        Itinerary Planner
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* 6. Gallery */}
+                  {/* 5. Gallery */}
                   <button
                     onClick={() => {
                       setIsMobileMenuOpen(false);
@@ -1174,48 +1207,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-rose-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* 7. Chat */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenChat) {
-                        onOpenChat();
-                      } else {
-                        onNavigateSection('interactive-gallery');
-                      }
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-amber-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <MessageSquare className="w-4 h-4 text-amber-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-amber-300 transition-colors">
-                        Chat
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* 8. AI Guide */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      onOpenAi();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 hover:text-white border border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Sparkles className="w-4 h-4 text-emerald-300 animate-spin duration-3000" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-emerald-200 block group-hover:text-white transition-colors">
-                        AI Guide
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
                   {/* 9. Business Vendor Portal */}

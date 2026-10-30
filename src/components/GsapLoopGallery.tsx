@@ -368,8 +368,8 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
           })}
         </div>
 
-        {/* Action Buttons */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-4">
+        {/* Action Buttons - Hidden in mobile view, available on desktop */}
+        <div className="hidden sm:flex absolute bottom-6 left-1/2 -translate-x-1/2 z-30 items-center gap-4">
           <button
             onClick={() => setActiveIndex((prev) => (prev - 1 + cardsList.length) % cardsList.length)}
             className="w-12 h-12 rounded-2xl bg-stone-900/90 hover:bg-emerald-600 text-emerald-400 hover:text-white font-heading text-lg border border-emerald-500/30 shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95"
@@ -705,13 +705,15 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({ items = 
                   />
                   <button 
                     onClick={handlePrev}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-stone-900/80 text-white hover:bg-emerald-600 cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-stone-900/80 text-white hover:bg-emerald-600 cursor-pointer min-h-[44px] min-w-[44px] items-center justify-center"
+                    aria-label="Previous slide"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <button 
                     onClick={handleNext}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-stone-900/80 text-white hover:bg-emerald-600 cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-stone-900/80 text-white hover:bg-emerald-600 cursor-pointer min-h-[44px] min-w-[44px] items-center justify-center"
+                    aria-label="Next slide"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>

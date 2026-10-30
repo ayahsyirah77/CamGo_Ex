@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Place, Language, JobClassified, Township, ItineraryPlan } from '../types';
+import { INITIAL_JOBS } from '../data/initialData';
 import { UserProfile, firebaseService } from '../services/firebase';
 import { CamLogo } from './CamLogo';
 import {
@@ -375,6 +376,44 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [showJobModal, setShowJobModal] = useState(false);
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
 
+  // Sync real-time when new classifieds are posted
+  useEffect(() => {
+    const handleJobsUpdated = (e: any) => {
+      const updated = e?.detail || firebaseService.getJobs();
+      setUserJobs(updated);
+    };
+    window.addEventListener('jobs-updated', handleJobsUpdated);
+    return () => window.removeEventListener('jobs-updated', handleJobsUpdated);
+  }, []);
+
+  // Filter out all mock classifieds from user account view so only the user's authentic postings appear
+  const isMockClassified = (job: JobClassified): boolean => {
+    return (
+      job.id === 'job-1' ||
+      job.id === 'job-2' ||
+      job.id === 'job-3' ||
+      job.id === 'job-4' ||
+      job.id === 'job-5' ||
+      job.id === 'job-6' ||
+      INITIAL_JOBS.some((mock) => mock.id === job.id) ||
+      job.company === 'Highland Eco Adventures' ||
+      job.company === 'Boh Sungei Palas Tea House' ||
+      job.company === 'Independent Driver (Ahmad)' ||
+      job.company === 'Kea Farm Greenhouse' ||
+      job.company === 'Highland Sparkle Cleaners' ||
+      job.company === 'Golden Valley Restaurant'
+    );
+  };
+
+  const myAccountClassifieds = userJobs.filter((job) => {
+    if (isMockClassified(job)) return false;
+    if (job.isUserCreated) return true;
+    if (job.authorEmail && currentUser?.email && job.authorEmail.toLowerCase() === currentUser.email.toLowerCase()) return true;
+    if (currentUser?.email && job.contact && job.contact.toLowerCase().includes(currentUser.email.toLowerCase())) return true;
+    if (currentUser?.displayName && job.company && job.company.toLowerCase() === currentUser.displayName.toLowerCase()) return true;
+    return true;
+  });
+
   const [jobTitle, setJobTitle] = useState('');
   const [jobCompany, setJobCompany] = useState('');
   const [jobTownship, setJobTownship] = useState<Township>('Tanah Rata');
@@ -386,12 +425,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const handleOpenAddJob = () => {
     setEditingJobId(null);
     setJobTitle('');
-    setJobCompany(currentUser.displayName);
+    setJobCompany(currentUser.displayName || 'Highland Community Member');
     setJobTownship('Tanah Rata');
     setJobType('Job Offer');
     setJobSalary('RM 2,000 / month');
     setJobDescription('');
-    setJobContact(currentUser.email);
+    setJobContact(currentUser.email || '');
     setShowJobModal(true);
   };
 
@@ -410,7 +449,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const handleSaveJob = (e: React.FormEvent) => {
     e.preventDefault();
     const newJob: JobClassified = {
-      id: editingJobId || ('job-' + Date.now().toString(36)),
+      id: editingJobId || ('job-usr-' + Date.now().toString(36)),
       title: jobTitle,
       company: jobCompany,
       township: jobTownship,
@@ -420,6 +459,9 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       description: jobDescription,
       contact: jobContact,
       postedDate: new Date().toISOString().split('T')[0],
+      isUserCreated: true,
+      authorEmail: currentUser.email,
+      authorName: currentUser.displayName,
     };
 
     const updated = firebaseService.saveJob(newJob);
@@ -642,7 +684,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                           <span>My Job &amp; Classifieds</span>
                         </div>
                         <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono">
-                          {userJobs.length}
+                          {myAccountClassifieds.length}
                         </span>
                       </button>
 
@@ -847,12 +889,16 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                   <Briefcase className="w-4 h-4" />
                 </div>
                 <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-mono font-bold">
-                  {userJobs.length}
+                  {myAccountClassifieds.length}
                 </span>
               </div>
               <div>
                 <p className="text-xs font-bold text-white leading-tight">Job &amp; Classifieds</p>
-                <p className="text-[10px] text-stone-400 mt-0.5 leading-snug">Community listings</p>
+                <p className="text-[10px] text-stone-400 mt-0.5 leading-snug">
+                  {myAccountClassifieds.length === 0
+                    ? '0 postings'
+                    : `${myAccountClassifieds.length} active ${myAccountClassifieds.length === 1 ? 'posting' : 'postings'}`}
+                </p>
               </div>
             </button>
 
@@ -956,27 +1002,17 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             Edit Profile & Photo
           </button>
 
-          {/* My Job & Classifieds: Active for local, Greyed out (Disabled) for visitor */}
-          {isLocalUser ? (
-            <button
-              onClick={() => setActiveTab('classifieds')}
-              className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-                activeTab === 'classifieds'
-                  ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-stone-400 hover:text-white'
-              }`}
-            >
-              My Job & Classifieds ({userJobs.length})
-            </button>
-          ) : (
-            <div
-              className="px-4 py-2 rounded-xl bg-stone-950/60 text-stone-500 border border-white/5 flex items-center gap-1.5 opacity-60 cursor-not-allowed select-none"
-              title="Requires Local Resident role"
-            >
-              <Lock className="w-3.5 h-3.5 text-amber-500/80" />
-              <span>My Job & Classifieds 🔒 (Disabled)</span>
-            </div>
-          )}
+          {/* My Job & Classifieds: Fully active for account management */}
+          <button
+            onClick={() => setActiveTab('classifieds')}
+            className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'classifieds'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-stone-400 hover:text-white'
+            }`}
+          >
+            My Job &amp; Classifieds ({myAccountClassifieds.length})
+          </button>
 
           {/* My Saved Places: Active for visitor, Greyed out (Disabled) for local */}
           {!isLocalUser ? (
@@ -2084,56 +2120,82 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {userJobs.map((job) => (
-                <div
-                  key={job.id}
-                  className="glass-card-hover rounded-3xl p-5 bg-stone-900/80 border border-white/5 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
-                        {job.type}
-                      </span>
-                      <span className="text-xs font-mono font-bold text-amber-400">
-                        {job.salary}
-                      </span>
-                    </div>
-
-                    <h4 className="text-base font-bold text-stone-100">{job.title}</h4>
-                    <div className="text-xs text-stone-400 mt-0.5 flex items-center gap-1.5">
-                      <span>{job.company}</span>
-                      <span>•</span>
-                      <span className="text-emerald-400">{job.township}</span>
-                    </div>
-
-                    <p className="text-xs text-stone-300 mt-2.5 leading-relaxed">
-                      {job.description}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3 text-xs">
-                    <span className="text-stone-500 font-mono text-[11px]">{job.contact}</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleOpenEditJob(job)}
-                        className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
-                        title="Edit Posting"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteJob(job.id)}
-                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 cursor-pointer"
-                        title="Delete Posting"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+            {myAccountClassifieds.length === 0 ? (
+              <div className="p-8 sm:p-12 text-center rounded-3xl bg-stone-900/60 border border-white/5 space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 mx-auto flex items-center justify-center">
+                  <Briefcase className="w-7 h-7" />
                 </div>
-              ))}
-            </div>
+                <div className="space-y-1.5">
+                  <h5 className="text-base font-bold text-stone-100">
+                    {language === 'bm' ? 'Tiada Iklan Diterbitkan Lagi' : 'No Active Classified Postings'}
+                  </h5>
+                  <p className="text-xs text-stone-400 max-w-md mx-auto leading-relaxed">
+                    {language === 'bm'
+                      ? 'Akaun anda belum mempunyai sebarang iklan aktif. Tekan "Post New Classified" untuk memuat naik tawaran kerja, mencari kerja, servis atau barangan jualan.'
+                      : 'You do not have any active classified postings in your account. Click "Post New Classified" above to submit job offers, jobs wanted, services, or items for sale.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenAddJob}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/60 transition-transform active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{language === 'bm' ? 'Terbitkan Iklan Pertama' : 'Post Your First Classified'}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {myAccountClassifieds.map((job) => (
+                  <div
+                    key={job.id}
+                    className="glass-card-hover rounded-3xl p-5 bg-stone-900/80 border border-white/5 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
+                          {job.type}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-amber-400">
+                          {job.salary}
+                        </span>
+                      </div>
+
+                      <h4 className="text-base font-bold text-stone-100">{job.title}</h4>
+                      <div className="text-xs text-stone-400 mt-0.5 flex items-center gap-1.5">
+                        <span>{job.company}</span>
+                        <span>•</span>
+                        <span className="text-emerald-400">{job.township}</span>
+                      </div>
+
+                      <p className="text-xs text-stone-300 mt-2.5 leading-relaxed">
+                        {job.description}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3 text-xs">
+                      <span className="text-stone-500 font-mono text-[11px] truncate max-w-[180px]">{job.contact}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenEditJob(job)}
+                          className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                          title="Edit Posting"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteJob(job.id)}
+                          className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                          title="Delete Posting"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Modal: Add/Edit Classified */}
             {showJobModal && (

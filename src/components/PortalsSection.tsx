@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Township, Language, JobClassified, TownshipHubInfo } from '../types';
 import { TOWNSHIP_PORTALS, OFFICIAL_PORTALS } from '../data/initialData';
 import { firebaseService } from '../services/firebase';
@@ -47,6 +47,15 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
   const [jobCategoryFilter, setJobCategoryFilter] = useState<string>('All');
   const [selectedJob, setSelectedJob] = useState<JobClassified | null>(null);
   const [applySent, setApplySent] = useState(false);
+
+  useEffect(() => {
+    const handleJobsUpdated = (e: any) => {
+      const updated = e?.detail || firebaseService.getJobs();
+      setJobs(updated);
+    };
+    window.addEventListener('jobs-updated', handleJobsUpdated);
+    return () => window.removeEventListener('jobs-updated', handleJobsUpdated);
+  }, []);
 
   const categoriesList = [
     'All',

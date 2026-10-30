@@ -306,6 +306,9 @@ export interface JobClassified {
   description: string;
   contact: string;
   postedDate?: string;
+  isUserCreated?: boolean;
+  authorEmail?: string;
+  authorName?: string;
 }
 
 export interface ItineraryActivity {
