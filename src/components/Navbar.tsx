@@ -49,7 +49,6 @@ interface NavbarProps {
   onOpenClassifiedsModal?: () => void;
   onOpenItinerary?: () => void;
   onOpenChat?: () => void;
-  hasNewChat?: boolean;
   onOpenMap?: () => void;
   onOpenGalleryModal?: () => void;
   onOpenVendorPortal?: () => void;
@@ -76,7 +75,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenClassifiedsModal,
   onOpenItinerary,
   onOpenChat,
-  hasNewChat,
   onOpenMap,
   onOpenGalleryModal,
   onOpenVendorPortal,
@@ -836,21 +834,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{getTranslation(language, 'nav_gallery')}</span>
             </motion.button>
 
-            {/* Live Chat Lounge */}
-            <motion.button
-              variants={itemVariants}
-              onClick={() => {
-                if (onOpenChat) onOpenChat();
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/35 text-emerald-300 hover:text-white transition-all cursor-pointer relative shadow-sm"
-              title="Cameron Highlands Live Community Lounge"
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="font-bold">{language === 'bm' ? 'Sembang Komuniti' : 'Live Lounge'}</span>
-              {hasNewChat && (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute -top-0.5 -right-0.5" />
-              )}
-            </motion.button>
           </motion.div>
 
           {/* Right Action Container: User Profile & PWA Install (Aligned with Nav Links) */}

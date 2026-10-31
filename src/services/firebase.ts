@@ -936,7 +936,7 @@ class FirebaseStorageService {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch {
         // fallback
       }
@@ -964,7 +964,64 @@ class FirebaseStorageService {
   }
 
   private async seedInitialLoungePosts() {
-    // Mock lounge posts removed per user request
+    if (!db) return;
+    try {
+      const initialPosts: (LoungePost & { createdAt: number })[] = [
+        {
+          id: 'post-live-seed-1',
+          authorName: 'Cikgu Razak (Local Guide)',
+          authorRole: 'Guide',
+          authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80',
+          content: 'Salam semua pengunjung! Laluan Tapah - Ringlet pagi ini lancar dan berkabus nyaman. Pandu berhemah di selekoh Lata Iskandar. Sesiapa nak info terkini keadaan jalan boleh tanya di sini!',
+          timestamp: '2 hours ago',
+          tag: 'Traffic',
+          upvotes: 18,
+          repliesCount: 1,
+          createdAt: Date.now() - 7200000,
+          replies: [
+            {
+              id: 'rep-live-seed-1',
+              authorName: 'Sarah Wong',
+              authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80',
+              content: 'Terima kasih info Cikgu! Simpang Pulai pun lancar, cuaca nyaman.',
+              timestamp: '1 hour ago',
+            },
+          ],
+        },
+        {
+          id: 'post-live-seed-2',
+          authorName: 'Chloe Liew',
+          authorRole: 'Visitor',
+          authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
+          content: 'Suhu sejuk 16°C petang ni! Kalau craving steamboat sup herba atau tom yam panas di Brinchang, boleh layari pautan lokasi: https://maps.google.com/?q=Cameron+Highlands+Steamboat',
+          timestamp: '3 hours ago',
+          tag: 'Food',
+          upvotes: 12,
+          repliesCount: 0,
+          createdAt: Date.now() - 10800000,
+          replies: [],
+        },
+        {
+          id: 'post-live-seed-3',
+          authorName: 'Aiman Farhan',
+          authorRole: 'Visitor',
+          authorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80',
+          content: 'Peringatan mesra untuk yang nak naik Mossy Forest: jangan lupa booking slot permit awal di portal Jabatan Perhutanan Pahang! Pakai kasut getah bertapak grip sebab laluan basah.',
+          timestamp: '5 hours ago',
+          tag: 'Tips',
+          upvotes: 25,
+          repliesCount: 0,
+          createdAt: Date.now() - 18000000,
+          replies: [],
+        },
+      ];
+
+      for (const p of initialPosts) {
+        await setDoc(doc(db, 'lounge', p.id), p);
+      }
+    } catch (e) {
+      console.warn("Could not seed initial lounge posts to Firestore:", e);
+    }
   }
 
   private initLoungeRealtimeListener() {

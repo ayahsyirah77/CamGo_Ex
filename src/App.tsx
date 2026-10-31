@@ -337,7 +337,6 @@ export default function App() {
           setHasNewChat(false);
           setIsChatOpen(true);
         }}
-        hasNewChat={hasNewChat}
         onOpenGalleryModal={() => setIsGalleryModalOpen(true)}
         onOpenVendorPortal={handleOpenVendorPortal}
         onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}

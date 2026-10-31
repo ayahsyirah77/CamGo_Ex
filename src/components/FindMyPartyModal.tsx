@@ -363,17 +363,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       const params = new URLSearchParams(window.location.search);
       const beaconParam = params.get('beacon') || params.get('party');
       if (beaconParam && !session) {
-        const code = beaconParam.trim().toUpperCase();
-        setJoinCodeInput(code);
-        if (memberName.trim()) {
-          const timer = setTimeout(() => {
-            handleJoinSession(code);
-          }, 400);
-          return () => clearTimeout(timer);
-        }
+        setJoinCodeInput(beaconParam.trim().toUpperCase());
       }
     }
-  }, [session, memberName]);
+  }, [session]);
 
   // Copy direct share link
   const handleCopyShareLink = () => {
@@ -472,9 +465,8 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   };
 
   // Join existing session
-  const handleJoinSession = async (overrideCode?: string) => {
-    const codeToUse = overrideCode || joinCodeInput;
-    if (!codeToUse.trim()) {
+  const handleJoinSession = async () => {
+    if (!joinCodeInput.trim()) {
       setErrorMsg(language === 'bm' ? 'Sila masukkan kod sesi.' : 'Please enter session code.');
       return;
     }
@@ -487,7 +479,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     setLoading(true);
     setErrorMsg(null);
     await ensureFirebaseAuth();
-    const code = codeToUse.trim().toUpperCase().replace(/\s+/g, '');
+    const code = joinCodeInput.trim().toUpperCase().replace(/\s+/g, '');
 
     const initialLat = myCoords?.latitude || 4.5050;
     const initialLon = myCoords?.longitude || 101.4080;
@@ -524,31 +516,23 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           return;
         }
 
-        // Safely merge new member into existing session members using setDoc with merge: true
-        await setDoc(
-          sessionRef,
-          {
-            members: {
-              ...(sessionData.members || {}),
-              [memberId]: selfMember,
-            },
-          },
-          { merge: true }
-        );
+        await updateDoc(sessionRef, {
+          [`members.${memberId}`]: selfMember,
+        });
 
         setIsSharing(true);
         localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
         subscribeToSession(code);
         setShowLiveMapModal(true); // Open live interactive map pop-up showing exact location
       } else {
-        // If session doc doesn't exist yet, initialize it cleanly with merge: true
+        // Fallback for custom code or offline join: construct session locally
         const now = new Date();
-        const newSessionData: BeaconSession = {
+        const fallbackSession: BeaconSession = {
           id: code,
           code: code,
           name: `Highland Beacon (${code})`,
-          createdBy: memberId,
-          createdByName: effectiveMemberName,
+          createdBy: 'host_group',
+          createdByName: 'Group Leader',
           createdAt: now.toISOString(),
           expiresAt: new Date(now.getTime() + 8 * 3600 * 1000).toISOString(),
           durationHours: 8,
@@ -560,13 +544,13 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
         if (db) {
           try {
-            await setDoc(sessionRef, newSessionData, { merge: true });
+            await setDoc(sessionRef, fallbackSession);
           } catch (e) {
-            console.warn('Firestore setDoc merge fallback warning:', e);
+            console.warn('Firestore setDoc fallback warning:', e);
           }
         }
 
-        setSession(newSessionData);
+        setSession(fallbackSession);
         setIsSharing(true);
         localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
         subscribeToSession(code);
@@ -579,8 +563,8 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         id: code,
         code: code,
         name: `Highland Beacon (${code})`,
-        createdBy: memberId,
-        createdByName: effectiveMemberName,
+        createdBy: 'host_group',
+        createdByName: 'Group Leader',
         createdAt: now.toISOString(),
         expiresAt: new Date(now.getTime() + 8 * 3600 * 1000).toISOString(),
         durationHours: 8,
@@ -1276,7 +1260,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                   </div>
 
                   <button
-                    onClick={() => handleJoinSession()}
+                    onClick={handleJoinSession}
                     disabled={loading}
                     className="w-full py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-950/60 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
