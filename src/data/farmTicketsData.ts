@@ -1,4 +1,4 @@
-import { OperatingHours, Township } from '../types';
+import { MainCategory, OperatingHours, SubCategory, Township } from '../types';
 
 export interface FarmTicketInfo {
   id: string;
@@ -10,7 +10,8 @@ export interface FarmTicketInfo {
   operatingHours: OperatingHours;
   inclusions: string[];
   description: string;
-  category: 'attraction' | 'farm' | 'tea_plantation' | 'museum';
+  category: MainCategory | 'attraction' | 'farm' | 'tea_plantation' | 'museum' | string;
+  subCategory?: SubCategory | string;
 }
 
 export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
@@ -24,7 +25,8 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     operatingHours: { from: '09:00', to: '19:00', isOpen: true },
     inclusions: ['Scenic Flower Terraces', 'Hobbit House Photo Zones', 'Café Access', 'Walking Trails'],
     description: 'Vast hilltop flower garden with panoramic valley views and floral stairways.',
-    category: 'attraction',
+    category: 'travel_tourism',
+    subCategory: 'attractions_sightseeing',
   },
   {
     id: 'sheep-sanctuary',
@@ -36,7 +38,8 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     operatingHours: { from: '09:00', to: '17:30', isOpen: true },
     inclusions: ['1x Animal Feed Pack', 'Pen Interaction', 'Highland Meadow Views', 'Souvenir Counter'],
     description: 'Interactive sheep farm located right next to Kea Farm market square.',
-    category: 'farm',
+    category: 'travel_tourism',
+    subCategory: 'agrotourism_farms',
   },
   {
     id: 'lavender-garden',
@@ -48,7 +51,8 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     operatingHours: { from: '09:00', to: '18:00', isOpen: true },
     inclusions: ['Lavender Fields Walk', 'Strawberry Picking Access', 'Photo Props', 'Souvenir & Ice Cream Shop'],
     description: 'Colorful terraced garden featuring lavender fields and honey bee exhibits.',
-    category: 'attraction',
+    category: 'travel_tourism',
+    subCategory: 'agrotourism_farms',
   },
   {
     id: 'boh-tea-centre',
@@ -73,7 +77,8 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     },
     inclusions: ['Tea Factory Exhibition', 'Cliffside Café Balcony', 'Scenic Plantation Walkway'],
     description: 'Iconic mountaintop tea plantation and heritage interpretation center.',
-    category: 'tea_plantation',
+    category: 'travel_tourism',
+    subCategory: 'agrotourism_farms',
   },
   {
     id: 'cactus-valley',
@@ -85,7 +90,8 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     operatingHours: { from: '08:00', to: '18:00', isOpen: true },
     inclusions: ['Extensive Cactus & Succulent Collection', 'Flower Nursery', 'Orchard Walk'],
     description: 'Multilevel hilltop garden housing thousands of cacti and tropical plants.',
-    category: 'attraction',
+    category: 'travel_tourism',
+    subCategory: 'agrotourism_farms',
   },
   {
     id: 'time-tunnel-museum',
@@ -97,7 +103,8 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     operatingHours: { from: '09:00', to: '18:00', isOpen: true },
     inclusions: ['Retro Memorabilia Galleries', 'Old Cameron Highlands Photo Exhibits', 'Vintage Toy Displays'],
     description: 'First memorabilia museum showcasing local history and nostalgic artifacts.',
-    category: 'museum',
+    category: 'travel_tourism',
+    subCategory: 'attractions_sightseeing',
   },
   {
     id: 'mossy-forest',
@@ -109,7 +116,8 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     operatingHours: { from: '08:00', to: '16:00', isOpen: true },
     inclusions: ['Elevated Wooden Boardwalk', 'Guided Eco Interpretation', 'Cloud Forest Summit View'],
     description: 'Prehistoric tropical cloud forest blanketed in thick moss and mist.',
-    category: 'attraction',
+    category: 'travel_tourism',
+    subCategory: 'outdoor_adventure',
   },
   {
     id: 'parit-waterfall',
@@ -121,6 +129,7 @@ export const POPULAR_FARM_TICKETS: FarmTicketInfo[] = [
     operatingHours: { from: '00:00', to: '23:59', isOpen: true, isOpen24Hours: true },
     inclusions: ['Self-Guided Jungle Trekking', 'Waterfall Access', 'Stream Crossings'],
     description: 'Historic public recreation park and trailhead nexus for local hiking routes.',
-    category: 'attraction',
+    category: 'travel_tourism',
+    subCategory: 'outdoor_adventure',
   },
 ];

@@ -484,7 +484,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     },
     inclusions: [],
     description: '',
-    category: 'attraction'
+    category: 'travel_tourism',
+    subCategory: 'attractions_sightseeing'
   });
 
   const handleOpenAddTicket = () => {
@@ -503,7 +504,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       },
       inclusions: [],
       description: '',
-      category: 'attraction'
+      category: 'travel_tourism',
+      subCategory: 'attractions_sightseeing'
     });
   };
 
@@ -517,6 +519,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         to: finalTicket.operatingHours.to || '18:00',
         isOpen: finalTicket.operatingHours.isOpen ?? true
       }));
+    }
+    if (!finalTicket.subCategory) {
+      const subOpts = subCategoryOptions[(finalTicket.category as MainCategory) || 'travel_tourism'];
+      finalTicket.subCategory = subOpts && subOpts.length > 0 ? subOpts[0].key : 'attractions_sightseeing';
     }
     setTicketForm(finalTicket);
   };
@@ -547,7 +553,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       },
       inclusions: [],
       description: '',
-      category: 'attraction'
+      category: 'travel_tourism',
+      subCategory: 'attractions_sightseeing'
     });
   };
 
@@ -3175,28 +3182,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-400 mb-1 ml-1 uppercase">Township</label>
+                        <select
+                          value={ticketForm.township}
+                          onChange={(e) => setTicketForm({ ...ticketForm, township: e.target.value as Township })}
+                          className="w-full px-3 py-2.5 rounded-xl bg-stone-900 border border-white/10 text-xs text-stone-100 outline-none focus:border-rose-500 transition-colors"
+                        >
+                          {ALL_9_TOWNSHIPS.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold text-stone-400 mb-1 ml-1 uppercase">Township</label>
+                          <label className="block text-[10px] font-bold text-stone-400 mb-1 ml-1 uppercase">Main Category</label>
                           <select
-                            value={ticketForm.township}
-                            onChange={(e) => setTicketForm({ ...ticketForm, township: e.target.value as Township })}
-                            className="w-full px-3 py-2.5 rounded-xl bg-stone-900 border border-white/10 text-sm text-stone-100 outline-none focus:border-rose-500 transition-colors"
+                            value={ticketForm.category || 'travel_tourism'}
+                            onChange={(e) => {
+                              const newCat = e.target.value as MainCategory;
+                              const availableSubs = subCategoryOptions[newCat] || [];
+                              const firstSub = availableSubs.length > 0 ? availableSubs[0].key : 'attractions_sightseeing';
+                              setTicketForm({
+                                ...ticketForm,
+                                category: newCat,
+                                subCategory: firstSub
+                              });
+                            }}
+                            className="w-full px-3 py-2.5 rounded-xl bg-stone-900 border border-white/10 text-xs text-stone-100 outline-none focus:border-rose-500 transition-colors"
                           >
-                            {ALL_9_TOWNSHIPS.map(t => <option key={t} value={t}>{t}</option>)}
+                            <option value="travel_tourism">Travel & Highland Tourism</option>
+                            <option value="attraction">Attraction & Sightseeing</option>
+                            <option value="food">Food & Beverage</option>
+                            <option value="accommodation">Accommodation</option>
+                            <option value="shopping">Shopping & Local Produce</option>
+                            <option value="transport">Transport & Mobility</option>
+                            <option value="local_services">Local Services & Amenities</option>
+                            <option value="services_utilities">Services & Utilities</option>
+                            <option value="business">Business & Produce</option>
+                            <option value="masjid_surau">Masjid & Surau</option>
                           </select>
                         </div>
+
                         <div>
-                          <label className="block text-[10px] font-bold text-stone-400 mb-1 ml-1 uppercase">Category</label>
+                          <label className="block text-[10px] font-bold text-stone-400 mb-1 ml-1 uppercase">Sub-Category</label>
                           <select
-                            value={ticketForm.category}
-                            onChange={(e) => setTicketForm({ ...ticketForm, category: e.target.value as any })}
-                            className="w-full px-3 py-2.5 rounded-xl bg-stone-900 border border-white/10 text-sm text-stone-100 outline-none focus:border-rose-500 transition-colors"
+                            value={ticketForm.subCategory || ''}
+                            onChange={(e) => setTicketForm({ ...ticketForm, subCategory: e.target.value as SubCategory })}
+                            className="w-full px-3 py-2.5 rounded-xl bg-stone-900 border border-white/10 text-xs text-stone-100 outline-none focus:border-rose-500 transition-colors"
                           >
-                            <option value="attraction">Attraction</option>
-                            <option value="farm">Farm</option>
-                            <option value="tea_plantation">Tea Plantation</option>
-                            <option value="museum">Museum</option>
+                            {(subCategoryOptions[(ticketForm.category as MainCategory) || 'travel_tourism'] || []).map((sub) => (
+                              <option key={sub.key} value={sub.key}>
+                                {sub.label}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       </div>
@@ -3283,10 +3321,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                          >
                            <div className="flex justify-between items-start mb-3">
                              <div>
-                               <div className="flex items-center gap-1.5 mb-1">
+                               <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${ticket.isFree ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
                                    {ticket.isFree ? 'FREE' : 'PAID'}
                                  </span>
+                                 {ticket.category && (
+                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300 border border-rose-500/20 uppercase">
+                                     {ticket.category.replace(/_/g, ' ')}
+                                   </span>
+                                 )}
+                                 {ticket.subCategory && (
+                                   <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 uppercase">
+                                     {ticket.subCategory.replace(/_/g, ' ')}
+                                   </span>
+                                 )}
                                </div>
                                <h5 className="text-sm font-bold text-stone-100 leading-tight">{ticket.name}</h5>
                                <p className="text-[10px] text-stone-400 flex items-center gap-1 mt-0.5">

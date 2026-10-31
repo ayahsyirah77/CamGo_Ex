@@ -391,7 +391,8 @@ export interface FarmTicket {
   inclusions: string[];
   description: string;
   descriptionBm?: string;
-  category: 'attraction' | 'farm' | 'tea_plantation' | 'museum';
+  category: MainCategory | 'attraction' | 'farm' | 'tea_plantation' | 'museum' | string;
+  subCategory?: SubCategory | string;
   imageUrl?: string;
   location?: string;
 }
