@@ -390,7 +390,10 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
           {mainCategories.map((cat) => {
             const isActive = selectedCategory === cat.key;
-            const catPlaceCount = places.filter((p) => p.category === cat.key).length;
+            // Exclude motorbike rentals from the count for transport category
+            const catPlaceCount = places.filter((p) => 
+              p.category === cat.key && !(p.category === 'transport' && p.subCategory === 'car_bike_rentals')
+            ).length;
             return (
               <button
                 key={cat.key}
