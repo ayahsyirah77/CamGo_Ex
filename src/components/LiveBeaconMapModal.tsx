@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   ExternalLink,
   RefreshCw,
+  Route,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
@@ -65,6 +66,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const circlesRef = useRef<{ [key: string]: L.Circle }>({});
+  const navPolylineRef = useRef<L.Polyline | null>(null);
 
   const [copiedCode, setCopiedCode] = useState(false);
   const [recenterToast, setRecenterToast] = useState<string | null>(null);
@@ -102,6 +104,10 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
         mapInstanceRef.current = null;
         markersRef.current = {};
         circlesRef.current = {};
+      }
+      if (navPolylineRef.current) {
+        navPolylineRef.current.remove();
+        navPolylineRef.current = null;
       }
       return;
     }
@@ -145,6 +151,10 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
         markersRef.current = {};
         circlesRef.current = {};
       }
+      if (navPolylineRef.current) {
+        navPolylineRef.current.remove();
+        navPolylineRef.current = null;
+      }
     };
   }, [isOpen]);
 
@@ -176,8 +186,16 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
       });
     }
 
-    effectiveMembers.forEach((member, index) => {
+    // Sort so creator (session.createdBy) is always designated Pin #1
+    const sortedMembers = [...effectiveMembers].sort((a, b) => {
+      if (a.id === session.createdBy) return -1;
+      if (b.id === session.createdBy) return 1;
+      return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+    });
+
+    sortedMembers.forEach((member, index) => {
       const isMe = member.id === memberId;
+      const isHost = member.id === session.createdBy;
       const pinNumber = index + 1;
       const stale = isLocationStale(member.updatedAt);
       const isActivelySharing = member.isSharing;
@@ -193,14 +211,14 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           }
           <div class="relative transition-transform duration-200 group-hover:scale-110 drop-shadow-xl">
             <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M20 0C8.954 0 0 8.954 0 20C0 33.5 20 48 20 48C20 48 40 33.5 40 20C40 8.954 31.046 0 20 0Z" fill="${pinColor}" stroke="#ffffff" stroke-width="2.5"/>
+              <path d="M20 0C8.954 0 0 8.954 0 20C0 33.5 20 48 20 48C20 48 40 33.5 40 20C40 8.954 31.046 0 20 0Z" fill="${pinColor}" stroke="${isHost ? '#fbbf24' : '#ffffff'}" stroke-width="${isHost ? '3.5' : '2.5'}"/>
               <circle cx="20" cy="18" r="13" fill="#ffffff"/>
-              <text x="20" y="23" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="11" fill="${pinColor}">${isMe ? 'YOU' : '#' + pinNumber}</text>
+              <text x="20" y="23" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="${isHost ? '13' : '11'}" fill="${pinColor}">${isMe ? 'YOU' : isHost ? '👑' : '#' + pinNumber}</text>
             </svg>
           </div>
-          <div class="mt-1 bg-stone-900/95 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/20 text-[10px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5 z-20">
+          <div class="mt-1 bg-stone-900/95 backdrop-blur-md px-2 py-0.5 rounded-md border ${isHost ? 'border-amber-400/60 ring-1 ring-amber-400/30' : 'border-white/20'} text-[10px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5 z-20">
             <span class="w-2 h-2 rounded-full" style="background-color: ${pinColor};"></span>
-            <span class="text-emerald-400 font-extrabold">Pin #${pinNumber}:</span>
+            <span class="${isHost ? 'text-amber-400 font-black' : 'text-emerald-400 font-extrabold'}">${isHost ? '👑 Host' : 'Pin #' + pinNumber}:</span>
             <span class="max-w-[75px] truncate">${member.name}</span>
             ${isMe ? '<span class="text-emerald-300 font-black">(You)</span>' : ''}
             ${stale ? '<span class="text-amber-400">⚠️</span>' : ''}
@@ -247,6 +265,27 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
         }
       }
     });
+
+    // Draw in-app live navigation route connecting user to Beacon Host
+    if (navPolylineRef.current) {
+      navPolylineRef.current.remove();
+      navPolylineRef.current = null;
+    }
+    const hostMember = sortedMembers.find((m) => m.id === session.createdBy);
+    if (map && myCoords && hostMember && hostMember.id !== memberId) {
+      navPolylineRef.current = L.polyline(
+        [
+          [myCoords.latitude, myCoords.longitude],
+          [hostMember.latitude, hostMember.longitude],
+        ],
+        {
+          color: '#10b981',
+          weight: 4,
+          dashArray: '8, 8',
+          opacity: 0.85,
+        }
+      ).addTo(map);
+    }
 
     // Cleanup departed markers
     const currentMemberIds = new Set(effectiveMembers.map((m) => m.id));

@@ -35,6 +35,7 @@ import {
   Locate,
   PlusCircle,
   KeyRound,
+  Route,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
@@ -68,18 +69,28 @@ const AVATAR_COLORS = [
   { name: 'Teal', value: '#14b8a6', ring: 'ring-teal-500' },
 ];
 
-const LOCAL_STORAGE_KEY_MEMBER_ID = 'camgo_party_member_id';
 const LOCAL_STORAGE_KEY_MEMBER_NAME = 'camgo_party_member_name';
 const LOCAL_STORAGE_KEY_MEMBER_COLOR = 'camgo_party_member_color';
+const SESSION_STORAGE_KEY_MEMBER_ID = 'camgo_party_session_member_id';
 
 export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   isOpen,
   onClose,
   language,
 }) => {
-  // Member profile state
+  // Member profile state:
+  // Use sessionStorage for memberId so each tab or browser connection gets a unique designated pin.
+  // This prevents invitation link testers in multiple tabs from overwriting each other in Firestore!
   const [memberId, setMemberId] = useState<string>(() => {
-    return localStorage.getItem(LOCAL_STORAGE_KEY_MEMBER_ID) || 'mem_' + Math.random().toString(36).substring(2, 9);
+    if (typeof window !== 'undefined') {
+      let id = sessionStorage.getItem(SESSION_STORAGE_KEY_MEMBER_ID);
+      if (!id) {
+        id = 'mem_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+        sessionStorage.setItem(SESSION_STORAGE_KEY_MEMBER_ID, id);
+      }
+      return id;
+    }
+    return 'mem_' + Math.random().toString(36).substring(2, 9);
   });
   const [memberName, setMemberName] = useState<string>(() => {
     return localStorage.getItem(LOCAL_STORAGE_KEY_MEMBER_NAME) || '';
@@ -138,6 +149,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const circlesRef = useRef<{ [key: string]: L.Circle }>({});
+  const navPolylineRef = useRef<L.Polyline | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastSyncTimestampRef = useRef<number>(0);
   const sessionUnsubRef = useRef<Unsubscribe | null>(null);
@@ -149,15 +161,18 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         sessionUnsubRef.current();
         sessionUnsubRef.current = null;
       }
+      if (navPolylineRef.current) {
+        navPolylineRef.current.remove();
+        navPolylineRef.current = null;
+      }
     };
   }, []);
 
   // Sync member profile with localStorage
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_MEMBER_ID, memberId);
     if (memberName) localStorage.setItem(LOCAL_STORAGE_KEY_MEMBER_NAME, memberName);
     localStorage.setItem(LOCAL_STORAGE_KEY_MEMBER_COLOR, avatarColor);
-  }, [memberId, memberName, avatarColor]);
+  }, [memberName, avatarColor]);
 
   // Read Battery status if available
   useEffect(() => {
@@ -232,13 +247,36 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     };
   }, [isOpen, activeTab]);
 
-  // Check saved session on mount or modal open
+  // State to track if arrived via invite link
+  const [invitationCode, setInvitationCode] = useState<string | null>(null);
+
+  // Check URL parameter or saved session on mount / modal open
   useEffect(() => {
     if (!isOpen) return;
 
-    const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
-    if (savedCode && !session) {
-      subscribeToSession(savedCode, true);
+    let beaconFromUrl: string | null = null;
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('beacon') || params.get('party');
+      if (raw) {
+        beaconFromUrl = raw.trim().toUpperCase().replace(/\s+/g, '');
+      }
+    }
+
+    if (beaconFromUrl) {
+      setInvitationCode(beaconFromUrl);
+      setJoinCodeInput(beaconFromUrl);
+      setEntryMode('join');
+
+      // If not already subscribed to this code, subscribe immediately to fetch creator & members
+      if (session?.code !== beaconFromUrl) {
+        subscribeToSession(beaconFromUrl, false);
+      }
+    } else {
+      const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
+      if (savedCode && !session) {
+        subscribeToSession(savedCode, true);
+      }
     }
 
     // Proactively get real initial GPS coordinates
@@ -259,18 +297,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       );
     }
   }, [isOpen]);
-
-  // Auto-fill code from URL search param (?beacon=CAMGO-TRIP-xxx)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const beaconParam = params.get('beacon') || params.get('party');
-      if (beaconParam && !session) {
-        setJoinCodeInput(beaconParam.trim().toUpperCase());
-        setEntryMode('join');
-      }
-    }
-  }, [session]);
 
   // Real-time Firestore session listener
   const subscribeToSession = (codeToJoin: string, silentIfMissing = false) => {
@@ -847,12 +873,13 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
     activeList.forEach((member, index) => {
       const isMe = member.id === memberId;
+      const isHost = member.id === session?.createdBy;
       const pinNumber = index + 1;
       const stale = isLocationStale(member.updatedAt);
       const isActivelySharing = member.isSharing;
       const pinColor = member.avatarColor || AVATAR_COLORS[index % AVATAR_COLORS.length].value;
 
-      // Unique Designated Teardrop SVG Pin Marker
+      // Unique Designated Teardrop SVG Pin Marker with Host crown
       const designatedPinSvg = `
         <div class="relative flex flex-col items-center justify-center cursor-pointer group" style="transform: translate(-50%, -100%);">
           ${
@@ -863,16 +890,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           <!-- Designated Pin SVG Marker -->
           <div class="relative transition-transform duration-200 group-hover:scale-110 drop-shadow-xl">
             <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M20 0C8.954 0 0 8.954 0 20C0 33.5 20 48 20 48C20 48 40 33.5 40 20C40 8.954 31.046 0 20 0Z" fill="${pinColor}" stroke="#ffffff" stroke-width="2.5"/>
+              <path d="M20 0C8.954 0 0 8.954 0 20C0 33.5 20 48 20 48C20 48 40 33.5 40 20C40 8.954 31.046 0 20 0Z" fill="${pinColor}" stroke="${isHost ? '#fbbf24' : '#ffffff'}" stroke-width="${isHost ? '3.5' : '2.5'}"/>
               <circle cx="20" cy="18" r="13" fill="#ffffff"/>
-              <text x="20" y="23" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="11" fill="${pinColor}">${isMe ? 'YOU' : '#' + pinNumber}</text>
+              <text x="20" y="23" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="${isHost ? '13' : '11'}" fill="${pinColor}">${isMe ? 'YOU' : isHost ? '👑' : '#' + pinNumber}</text>
             </svg>
           </div>
 
           <!-- Designated Tag with Name, Pin Number & Status -->
-          <div class="mt-1 bg-stone-900/95 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/20 text-[10px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5 z-20">
+          <div class="mt-1 bg-stone-900/95 backdrop-blur-md px-2 py-0.5 rounded-md border ${isHost ? 'border-amber-400/60 ring-1 ring-amber-400/30' : 'border-white/20'} text-[10px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5 z-20">
             <span class="w-2 h-2 rounded-full" style="background-color: ${pinColor};"></span>
-            <span class="text-emerald-400 font-extrabold">Pin #${pinNumber}:</span>
+            <span class="${isHost ? 'text-amber-400 font-black' : 'text-emerald-400 font-extrabold'}">${isHost ? '👑 Host' : 'Pin #' + pinNumber}:</span>
             <span class="max-w-[75px] truncate">${member.name}</span>
             ${isMe ? '<span class="text-emerald-300 font-black">(You)</span>' : ''}
             ${stale ? '<span class="text-amber-400">⚠️</span>' : ''}
@@ -919,6 +946,27 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       }
     });
 
+    // Draw in-app live navigation route connecting user to Beacon Host
+    if (navPolylineRef.current) {
+      navPolylineRef.current.remove();
+      navPolylineRef.current = null;
+    }
+    const hostMember = activeList.find((m) => m.id === session?.createdBy);
+    if (map && myCoords && hostMember && hostMember.id !== memberId) {
+      navPolylineRef.current = L.polyline(
+        [
+          [myCoords.latitude, myCoords.longitude],
+          [hostMember.latitude, hostMember.longitude],
+        ],
+        {
+          color: '#10b981',
+          weight: 4,
+          dashArray: '8, 8',
+          opacity: 0.85,
+        }
+      ).addTo(map);
+    }
+
     // Cleanup departed members
     Object.keys(markersRef.current).forEach((existingId) => {
       if (!currentMemberIds.has(existingId)) {
@@ -930,7 +978,79 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         }
       }
     });
-  }, [designatedMembers, myCoords, activeTab, memberId, memberName, avatarColor]);
+  }, [designatedMembers, myCoords, activeTab, memberId, memberName, avatarColor, session?.createdBy]);
+
+  // Identify Beacon Creator / Host
+  const creatorId = session?.createdBy;
+  const creatorMember = session?.members && creatorId ? session.members[creatorId] : null;
+  const isMeCreator = memberId === creatorId;
+  const creatorName = session?.createdByName || creatorMember?.name || 'Beacon Host';
+
+  // Live Navigation Metrics to Creator
+  let hostDistanceMeters: number | null = null;
+  let hostBearingDegrees: number | null = null;
+  let hostCardinal: string | null = null;
+
+  if (myCoords && creatorMember) {
+    hostDistanceMeters = calculateHaversineDistance(
+      myCoords.latitude,
+      myCoords.longitude,
+      creatorMember.latitude,
+      creatorMember.longitude
+    );
+    hostBearingDegrees = calculateBearing(
+      myCoords.latitude,
+      myCoords.longitude,
+      creatorMember.latitude,
+      creatorMember.longitude
+    );
+    hostCardinal = getCompassCardinal(hostBearingDegrees);
+  }
+
+  // Navigation action handlers to navigate directly to the beacon creator
+  const handleNavigateToHost = (app: 'google' | 'waze' | 'apple' = 'google') => {
+    if (!creatorMember) {
+      setLocateToast(
+        language === 'bm'
+          ? '⚠️ Koordinat pencipta suar belum tersedia'
+          : '⚠️ Host GPS fix not available yet'
+      );
+      setTimeout(() => setLocateToast(null), 3000);
+      return;
+    }
+    const lat = creatorMember.latitude;
+    const lon = creatorMember.longitude;
+    let url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+    if (app === 'waze') {
+      url = `https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`;
+    } else if (app === 'apple') {
+      url = `https://maps.apple.com/?daddr=${lat},${lon}&dirflg=d`;
+    }
+    window.open(url, '_blank');
+  };
+
+  const handleFocusHost = () => {
+    if (!creatorMember) return;
+    setActiveTab('map');
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([creatorMember.latitude, creatorMember.longitude], 17, {
+        animate: true,
+        duration: 0.8,
+      });
+    }
+    setSelectedCompanionId(creatorMember.id);
+  };
+
+  const handleShowRouteToHost = () => {
+    if (!creatorMember || !myCoords || !mapInstanceRef.current) return;
+    setActiveTab('map');
+    const bounds = L.latLngBounds([
+      [myCoords.latitude, myCoords.longitude],
+      [creatorMember.latitude, creatorMember.longitude],
+    ]);
+    mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 17 });
+    setSelectedCompanionId(creatorMember.id);
+  };
 
   // Selected companion calculations
   const companions = designatedMembers.filter((m) => m.id !== memberId);
@@ -1263,6 +1383,38 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
               {/* MODE B: JOIN BEACON */}
               {entryMode === 'join' && (
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-stone-850 to-stone-900 border border-sky-500/30 space-y-4">
+                  {/* Quick Join Invitation Card if session was loaded from invite link */}
+                  {session && !session.members[memberId] && (
+                    <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-stone-900 border-2 border-emerald-400/50 shadow-xl space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-2.5 w-2.5 relative">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                        </span>
+                        <span className="text-[11px] font-mono font-extrabold text-emerald-300 uppercase tracking-wider">
+                          {language === 'bm' ? 'Jemputan Suar Dikesan' : 'Party Invitation Detected'}
+                        </span>
+                      </div>
+                      <div>
+                        <h4 className="text-base font-extrabold text-white">{session.name}</h4>
+                        <p className="text-xs text-stone-300">
+                          {language === 'bm'
+                            ? `Dihoskan oleh ${session.createdByName || 'Ketua Kumpulan'} (Kod: ${session.code}). Tekan butang di bawah untuk menyertai secara terus.`
+                            : `Hosted by ${session.createdByName || 'Group Host'} (Code: ${session.code}). Tap below to join with your designated pin.`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleJoinSession}
+                        disabled={loading}
+                        className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                      >
+                        {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
+                        <span>{language === 'bm' ? 'Sertai Suar Kumpulan Sekarang' : 'Join Group Beacon Now'}</span>
+                      </button>
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <h3 className="text-sm font-bold text-stone-100 flex items-center gap-2">
                       <KeyRound className="w-4 h-4 text-sky-400" />
@@ -1312,6 +1464,87 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           ) : (
             /* ACTIVE SESSION VIEW (Real Users Only) */
             <div className="space-y-4">
+              {/* FEATURE: NAVIGATE TO BEACON CREATOR (HOST) */}
+              {!isMeCreator && creatorMember ? (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/95 via-teal-950/80 to-stone-900 border-2 border-emerald-500/60 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center text-stone-950 shadow-lg shrink-0 font-bold">
+                      <Navigation className="w-5 h-5 text-stone-950 stroke-[2.5]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-mono uppercase font-black px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/50">
+                          👑 BEACON HOST
+                        </span>
+                        <span className="text-xs text-stone-300 font-bold truncate">{creatorName}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-emerald-300 font-mono mt-0.5 flex-wrap">
+                        {hostDistanceMeters !== null && (
+                          <span className="font-extrabold text-white bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
+                            {formatDistance(hostDistanceMeters)}
+                          </span>
+                        )}
+                        {hostCardinal && (
+                          <span>Bearing {hostCardinal} ({hostBearingDegrees}°)</span>
+                        )}
+                        <span className="text-stone-300">• {creatorMember.nearestLandmark || 'Cameron Highlands'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* One-Click Navigation Buttons to Creator */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateToHost('google')}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all active:scale-95"
+                      title="Open Turn-by-Turn Navigation in Google Maps"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>Google Maps</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateToHost('waze')}
+                      className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                      title="Open in Waze"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Waze</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleShowRouteToHost}
+                      className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/15 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                      title="Center and fit visual route on map"
+                    >
+                      <Route className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{language === 'bm' ? 'Laluan Peta' : 'Fit Route'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : isMeCreator ? (
+                <div className="p-3 sm:p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xl">👑</span>
+                    <div>
+                      <span className="font-extrabold text-amber-300 block">
+                        {language === 'bm' ? 'Anda ialah Pencipta Suar (Host)' : 'You are the Beacon Host'}
+                      </span>
+                      <span className="text-stone-400 text-[11px]">
+                        {language === 'bm'
+                          ? 'Ahli kumpulan boleh menavigasi terus ke lokasi anda melalui Google Maps & Waze.'
+                          : 'Companions can navigate directly to your real GPS location via Google Maps & Waze.'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-xl bg-amber-400/20 text-amber-300 font-mono font-extrabold text-[10px] uppercase border border-amber-400/40 shrink-0">
+                    Pin #1 (Host)
+                  </span>
+                </div>
+              ) : null}
               {/* Session Control Banner */}
               <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-800 via-stone-850 to-stone-800 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3 shadow-xl">
                 <div className="space-y-1">
@@ -1558,11 +1791,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                             </div>
 
                             <div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-bold text-sm text-stone-100">{member.name}</span>
                                 {isMe && (
                                   <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                                     You
+                                  </span>
+                                )}
+                                {member.id === session?.createdBy && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 font-bold">
+                                    👑 Host
                                   </span>
                                 )}
                               </div>
@@ -1578,6 +1816,18 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                                 <Battery className="w-3.5 h-3.5 text-stone-400" />
                                 <span>{member.batteryLevel}%</span>
                               </div>
+                            )}
+
+                            {!isMe && member.id === session?.createdBy && (
+                              <button
+                                type="button"
+                                onClick={() => handleNavigateToHost('google')}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                                title="Navigate to Host in Google Maps"
+                              >
+                                <Navigation className="w-3 h-3" />
+                                <span>{language === 'bm' ? 'Pandu Arah' : 'Navigate'}</span>
+                              </button>
                             )}
 
                             <button
