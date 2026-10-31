@@ -95,24 +95,6 @@ export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
   updatedAt: new Date().toISOString(),
 };
 
-function isMockValue(val: any): boolean {
-  if (!val || typeof val !== 'string') return false;
-  const l = val.toLowerCase().trim();
-  return (
-    l.includes('hazry') ||
-    l.includes('osman') ||
-    l.includes('aisyah') ||
-    l.includes('farhan') ||
-    l.includes('4829102') ||
-    l.includes('3498811') ||
-    l.includes('1988-06-15') ||
-    l.includes('penicillin') ||
-    l.includes('salbutamol') ||
-    l.includes('asthma') ||
-    l.includes('shellfish')
-  );
-}
-
 export function sanitizeEmergencyCard(raw?: Partial<EmergencyCard> | null): EmergencyCard {
   if (!raw) {
     return { ...DEFAULT_EMERGENCY_CARD };
@@ -122,26 +104,26 @@ export function sanitizeEmergencyCard(raw?: Partial<EmergencyCard> | null): Emer
   const secondary = (raw.secondaryContact || {}) as any;
 
   return {
-    fullLegalName: isMockValue(raw.fullLegalName) ? '' : (raw.fullLegalName || ''),
-    preferredName: isMockValue(raw.preferredName) ? '' : (raw.preferredName || ''),
-    dateOfBirth: isMockValue(raw.dateOfBirth) ? '' : (raw.dateOfBirth || ''),
-    bloodType: (raw.bloodType === 'O+' && (isMockValue(raw.fullLegalName) || !raw.fullLegalName)) ? 'Unknown' : (raw.bloodType || 'Unknown'),
-    severeAllergies: isMockValue(raw.severeAllergies) ? '' : (raw.severeAllergies || ''),
-    chronicConditions: isMockValue(raw.chronicConditions) ? '' : (raw.chronicConditions || ''),
-    currentMedications: isMockValue(raw.currentMedications) ? '' : (raw.currentMedications || ''),
+    fullLegalName: typeof raw.fullLegalName === 'string' ? raw.fullLegalName : '',
+    preferredName: typeof raw.preferredName === 'string' ? raw.preferredName : '',
+    dateOfBirth: typeof raw.dateOfBirth === 'string' ? raw.dateOfBirth : '',
+    bloodType: typeof raw.bloodType === 'string' && raw.bloodType ? raw.bloodType : 'Unknown',
+    severeAllergies: typeof raw.severeAllergies === 'string' ? raw.severeAllergies : '',
+    chronicConditions: typeof raw.chronicConditions === 'string' ? raw.chronicConditions : '',
+    currentMedications: typeof raw.currentMedications === 'string' ? raw.currentMedications : '',
     primaryContact: {
       label: 'ICE 1',
-      name: isMockValue(primary.name) ? '' : (primary.name || ''),
-      relationship: isMockValue(primary.relationship) ? '' : (primary.relationship || ''),
-      phone: isMockValue(primary.phone) ? '' : (primary.phone || ''),
+      name: typeof primary.name === 'string' ? primary.name : '',
+      relationship: typeof primary.relationship === 'string' ? primary.relationship : '',
+      phone: typeof primary.phone === 'string' ? primary.phone : '',
     },
     secondaryContact: {
       label: 'ICE 2',
-      name: isMockValue(secondary.name) ? '' : (secondary.name || ''),
-      relationship: isMockValue(secondary.relationship) ? '' : (secondary.relationship || ''),
-      phone: isMockValue(secondary.phone) ? '' : (secondary.phone || ''),
+      name: typeof secondary.name === 'string' ? secondary.name : '',
+      relationship: typeof secondary.relationship === 'string' ? secondary.relationship : '',
+      phone: typeof secondary.phone === 'string' ? secondary.phone : '',
     },
-    designatedSosNumber: isMockValue(raw.designatedSosNumber) ? '' : (raw.designatedSosNumber || ''),
+    designatedSosNumber: typeof raw.designatedSosNumber === 'string' ? raw.designatedSosNumber : '',
     updatedAt: raw.updatedAt || new Date().toISOString(),
   };
 }
@@ -438,20 +420,82 @@ class FirebaseStorageService {
 
   private initFirebaseAuthListener() {
     if (auth) {
-      onAuthStateChanged(auth, (fbUser) => {
+      onAuthStateChanged(auth, async (fbUser) => {
         if (fbUser) {
-          const isAdmin = fbUser.email?.toLowerCase().includes('admin') || fbUser.email === 'admin@camgo.my' || fbUser.email === 'ayahsyirah77@gmail.com';
+          const isAdmin =
+            fbUser.email?.toLowerCase().includes('admin') ||
+            fbUser.email === 'admin@camgo.my' ||
+            fbUser.email === 'ayahsyirah77@gmail.com';
+
+          let existingProfile = this.currentUser;
+          if (!existingProfile) {
+            const saved = localStorage.getItem(STORAGE_KEYS.USER);
+            if (saved) {
+              try {
+                existingProfile = JSON.parse(saved);
+              } catch {}
+            }
+          }
+
+          let emergencyCard = existingProfile?.emergencyCard;
+
+          // Attempt to load live emergency card & user profile from Firestore cloud across PC & Mobile
+          if (db) {
+            try {
+              const [userSnap, cardSnap] = await Promise.all([
+                getDoc(doc(db, 'users', fbUser.uid)),
+                getDoc(doc(db, 'emergency_cards', fbUser.uid)),
+              ]);
+
+              const userData = userSnap.exists() ? userSnap.data() : null;
+              const cardData = cardSnap.exists() ? (cardSnap.data() as EmergencyCard) : null;
+
+              if (cardData) {
+                emergencyCard = sanitizeEmergencyCard(cardData);
+                this.setLocalStorageItem(STORAGE_KEYS.EMERGENCY_CARD, JSON.stringify(emergencyCard));
+              } else if (userData?.emergencyCard) {
+                emergencyCard = sanitizeEmergencyCard(userData.emergencyCard);
+                this.setLocalStorageItem(STORAGE_KEYS.EMERGENCY_CARD, JSON.stringify(emergencyCard));
+              }
+
+              const profile: UserProfile = {
+                uid: fbUser.uid,
+                email: fbUser.email || 'user@camgo.my',
+                displayName: userData?.displayName || fbUser.displayName || 'Highland Explorer',
+                fullName: userData?.fullName || existingProfile?.fullName || fbUser.displayName || '',
+                photoURL: fbUser.photoURL || userData?.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
+                role: isAdmin ? 'admin' : (userData?.role || 'user'),
+                bookmarks: userData?.bookmarks || existingProfile?.bookmarks || [],
+                createdAt: userData?.createdAt || existingProfile?.createdAt || new Date().toISOString(),
+                emergencyCard: emergencyCard || existingProfile?.emergencyCard,
+              };
+
+              this.currentUser = profile;
+              this.setLocalStorageItem(STORAGE_KEYS.USER, JSON.stringify(profile));
+              this.notify();
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('user-profile-updated', { detail: profile }));
+              }
+              return;
+            } catch (err) {
+              console.warn('Could not fetch cloud user profile during auth listener:', err);
+            }
+          }
+
+          // Fallback if offline
           const profile: UserProfile = {
             uid: fbUser.uid,
             email: fbUser.email || 'user@camgo.my',
             displayName: fbUser.displayName || 'Highland Explorer',
+            fullName: existingProfile?.fullName || fbUser.displayName || '',
             photoURL: fbUser.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
             role: isAdmin ? 'admin' : 'user',
-            bookmarks: this.currentUser?.bookmarks || [],
-            createdAt: new Date().toISOString(),
+            bookmarks: existingProfile?.bookmarks || [],
+            createdAt: existingProfile?.createdAt || new Date().toISOString(),
+            emergencyCard: emergencyCard || existingProfile?.emergencyCard,
           };
           this.currentUser = profile;
-          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(profile));
+          this.setLocalStorageItem(STORAGE_KEYS.USER, JSON.stringify(profile));
           this.notify();
         }
       });
@@ -1453,33 +1497,42 @@ class FirebaseStorageService {
   }
 
   public async saveEmergencyCard(card: EmergencyCard): Promise<EmergencyCard> {
+    const sanitized = sanitizeEmergencyCard(card);
     const updatedCard: EmergencyCard = {
-      ...card,
+      ...sanitized,
       updatedAt: new Date().toISOString(),
     };
 
-    localStorage.setItem(STORAGE_KEYS.EMERGENCY_CARD, JSON.stringify(updatedCard));
+    this.setLocalStorageItem(STORAGE_KEYS.EMERGENCY_CARD, JSON.stringify(updatedCard));
 
     if (this.currentUser) {
       this.currentUser = {
         ...this.currentUser,
         emergencyCard: updatedCard,
       };
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(this.currentUser));
+      this.setLocalStorageItem(STORAGE_KEYS.USER, JSON.stringify(this.currentUser));
     }
 
-    if (db && this.currentUser) {
-      try {
-        await Promise.race([
-          setDoc(doc(db, 'emergency_cards', this.currentUser.uid), updatedCard, { merge: true }),
-          new Promise((resolve) => setTimeout(resolve, 2000)),
-        ]);
-      } catch (err) {
-        console.warn('Could not sync emergency card to Firestore (using local cache):', err);
+    if (db) {
+      const targetUid = this.currentUser?.uid || auth?.currentUser?.uid;
+      if (targetUid) {
+        try {
+          await Promise.all([
+            setDoc(doc(db, 'emergency_cards', targetUid), updatedCard, { merge: true }),
+            setDoc(doc(db, 'users', targetUid), { emergencyCard: updatedCard }, { merge: true }),
+          ]);
+          console.log('[FirebaseService] Successfully saved Emergency Card to Firestore across collections for UID:', targetUid);
+        } catch (err) {
+          console.warn('Could not sync emergency card to Firestore (using local cache):', err);
+        }
       }
     }
 
     this.notify();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('emergency-card-updated', { detail: updatedCard }));
+      window.dispatchEvent(new CustomEvent('user-profile-updated', { detail: this.currentUser }));
+    }
     return updatedCard;
   }
 

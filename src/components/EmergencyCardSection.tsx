@@ -32,7 +32,16 @@ export const EmergencyCardSection: React.FC<EmergencyCardSectionProps> = ({
   const [copiedNote, setCopiedNote] = useState(false);
 
   useEffect(() => {
-    setCard(firebaseService.getEmergencyCard());
+    const handleUpdate = () => {
+      setCard(firebaseService.getEmergencyCard());
+    };
+    handleUpdate();
+    window.addEventListener('emergency-card-updated', handleUpdate);
+    window.addEventListener('user-profile-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('emergency-card-updated', handleUpdate);
+      window.removeEventListener('user-profile-updated', handleUpdate);
+    };
   }, []);
 
   const handleChange = (field: keyof EmergencyCard, value: any) => {
