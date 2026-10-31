@@ -65,6 +65,7 @@ import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { FindMyPartyModal } from './components/FindMyPartyModal';
 import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
+import { CurrencyConverterModal } from './components/CurrencyConverterModal';
 import {
   Sparkles,
   Compass,
@@ -137,6 +138,7 @@ export default function App() {
   const [isVendorOnboardingOpen, setIsVendorOnboardingOpen] = useState(false);
   const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
+  const [isCurrencyConverterOpen, setIsCurrencyConverterOpen] = useState(false);
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
     null | 'microclimate' | 'traffic' | 'hazard' | 'events'
   >(null);
@@ -244,6 +246,18 @@ export default function App() {
     };
     window.addEventListener('open-classifieds-modal', handleOpenClassifiedsModal);
 
+    const handleOpenCurrencyConverter = () => {
+      let user = firebaseService.getCurrentUser();
+      if (!user) {
+        firebaseService.signInWithEmail('traveler@camgo.my', 'Highland Explorer');
+        user = firebaseService.getCurrentUser();
+      }
+      setCurrentUser(user);
+      setUserDashboardInitialTab('online-payment');
+      setIsUserDashboardOpen(true);
+    };
+    window.addEventListener('open-currency-converter', handleOpenCurrencyConverter);
+
     // Auto-open Find My Party Beacon if URL has beacon or party query parameter
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('beacon') || urlParams.get('party')) {
@@ -262,10 +276,15 @@ export default function App() {
       window.removeEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
       window.removeEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
       window.removeEventListener('open-classifieds-modal', handleOpenClassifiedsModal);
+      window.removeEventListener('open-currency-converter', handleOpenCurrencyConverter);
       unsubUser();
       unsubLounge();
     };
   }, []);
+
+  const handleOpenCurrencyConverter = () => {
+    setIsCurrencyConverterOpen(true);
+  };
 
   const handleOpenVendorPortal = () => {
     setIsVendorDashboardOpen(true);
@@ -338,6 +357,7 @@ export default function App() {
           setIsChatOpen(true);
         }}
         onOpenGalleryModal={() => setIsGalleryModalOpen(true)}
+        onOpenCurrencyConverter={handleOpenCurrencyConverter}
         onOpenVendorPortal={handleOpenVendorPortal}
         onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
         places={places}
@@ -1111,6 +1131,13 @@ export default function App() {
         onClose={() => setIsMotorbikeRentalOpen(false)}
         language={language}
         currentUser={currentUser}
+      />
+
+      {/* Standalone Real-Time Traveler Currency Converter Modal */}
+      <CurrencyConverterModal
+        isOpen={isCurrencyConverterOpen}
+        onClose={() => setIsCurrencyConverterOpen(false)}
+        language={language}
       />
 
       {/* Back To Top Floating Action */}

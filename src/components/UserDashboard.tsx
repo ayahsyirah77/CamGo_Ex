@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { EmergencyCardSection } from './EmergencyCardSection';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
+import { CurrencyConverterWidget } from './CurrencyConverterWidget';
 
 
 
@@ -1122,6 +1123,9 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 Official Government &amp; Utility Gateways
               </span>
             </div>
+
+            {/* Real-Time Traveler Currency Conversion Tool */}
+            <CurrencyConverterWidget language={language} />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* PBTPay KPKT */}

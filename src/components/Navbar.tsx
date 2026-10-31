@@ -32,6 +32,7 @@ import {
   Store,
   LogOut,
   Bike,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -52,6 +53,7 @@ interface NavbarProps {
   hasNewChat?: boolean;
   onOpenMap?: () => void;
   onOpenGalleryModal?: () => void;
+  onOpenCurrencyConverter?: () => void;
   onOpenVendorPortal?: () => void;
   onOpenFarmMatrix?: () => void;
   places?: Place[];
@@ -79,6 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   hasNewChat,
   onOpenMap,
   onOpenGalleryModal,
+  onOpenCurrencyConverter,
   onOpenVendorPortal,
   onOpenFarmMatrix,
   places = [],
@@ -737,36 +740,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <span>{language === 'bm' ? 'Pusat Portal & Info' : 'Portal & Info Hub'}</span>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        setPortalsOpen(false);
-                        if (onOpenFarmMatrix) onOpenFarmMatrix();
-                      }}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-amber-600/20 text-left text-xs font-bold text-stone-200 hover:text-white transition-all cursor-pointer group"
-                    >
-                      <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500 group-hover:text-black transition-colors">
-                        <span>🎟️</span>
-                      </div>
-                      <span>{language === 'bm' ? 'Tiket & Harga Ladang' : 'Farm Tickets & Pricing'}</span>
-                    </button>
 
-                    <button
-                      onClick={() => {
-                        setPortalsOpen(false);
-                        if (onOpenClassifiedsModal) onOpenClassifiedsModal();
-                      }}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-amber-600/20 text-left text-xs font-bold text-stone-200 hover:text-white transition-all cursor-pointer group"
-                    >
-                      <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500 group-hover:text-black transition-colors">
-                        <Briefcase className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="flex-1 min-w-0 flex items-center justify-between">
-                        <span>{language === 'bm' ? 'Iklan & Jawatan Kosong' : 'Classifieds & Job Postings'}</span>
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 font-bold">
-                          {jobsCount}
-                        </span>
-                      </div>
-                    </button>
 
 
                   </div>
@@ -1113,32 +1087,35 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-teal-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-                  {/* Dedicated Classifieds & Job Postings Link */}
+                  {/* Classifieds & Job Postings */}
                   <button
                     onClick={() => {
                       setIsMobileMenuOpen(false);
-                      if (onOpenClassifiedsModal) onOpenClassifiedsModal();
+                      if (onOpenClassifiedsModal) {
+                        onOpenClassifiedsModal();
+                      } else {
+                        onNavigateSection('portals-section');
+                      }
                     }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-amber-950/25 hover:bg-amber-900/40 text-stone-200 hover:text-white border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer text-left group shadow-md"
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-amber-500/40 transition-all cursor-pointer text-left group shadow-md"
                   >
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/35 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                       <Briefcase className="w-4 h-4 text-amber-400" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-amber-200 group-hover:text-amber-100 block transition-colors">
-                          Classifieds &amp; Job Postings
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">
+                    <div className="flex-1 min-w-0 flex items-center justify-between">
+                      <span className="text-xs font-bold text-stone-100 block group-hover:text-amber-300 transition-colors">
+                        {language === 'bm' ? 'Kerja & Iklan' : 'Classifieds & Job Postings'}
+                      </span>
+                      {jobsCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/30">
                           {jobsCount}
                         </span>
-                      </div>
-                      <span className="text-[10px] text-stone-400 block truncate">
-                        {language === 'bm' ? 'Iklan komuniti, jawatan & servis' : 'Community listings, jobs & services'}
-                      </span>
+                      )}
                     </div>
-                    <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
+
+
 
                   {/* 4. Map */}
                   <button
@@ -1180,6 +1157,35 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-rose-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+
+                  {/* Real-Time Traveler Currency Converter (SGD -> MYR) */}
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      if (onOpenCurrencyConverter) {
+                        onOpenCurrencyConverter();
+                      } else {
+                        window.dispatchEvent(new CustomEvent('open-currency-converter'));
+                      }
+                    }}
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-gradient-to-r from-emerald-950/40 via-stone-900/80 to-teal-950/40 hover:from-emerald-900/60 hover:to-teal-900/60 text-stone-200 hover:text-white border border-emerald-500/30 hover:border-emerald-400/60 transition-all cursor-pointer text-left group shadow-md"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <ArrowRightLeft className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                          TRAVELER UTILITY
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-300">🇸🇬 SGD → MYR</span>
+                      </div>
+                      <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors leading-tight">
+                        Real-Time Traveler Currency Converter
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-emerald-500 group-hover:text-emerald-300 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
                   {/* 9. Business Vendor Portal */}

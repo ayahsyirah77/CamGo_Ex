@@ -37,40 +37,10 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
   onOpenFarmMatrix,
   onOpenVendorPortal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'townships' | 'official' | 'jobs' | 'tickets'>('townships');
+  const [activeTab, setActiveTab] = useState<'townships' | 'official'>('townships');
   
   // Township Modal Popup state
   const [selectedTownModal, setSelectedTownModal] = useState<any | null>(null);
-
-  // Jobs & Classifieds state
-  const [jobs, setJobs] = useState<JobClassified[]>(() => firebaseService.getJobs());
-  const [jobCategoryFilter, setJobCategoryFilter] = useState<string>('All');
-  const [selectedJob, setSelectedJob] = useState<JobClassified | null>(null);
-  const [applySent, setApplySent] = useState(false);
-
-  useEffect(() => {
-    const handleJobsUpdated = (e: any) => {
-      const updated = e?.detail || firebaseService.getJobs();
-      setJobs(updated);
-    };
-    window.addEventListener('jobs-updated', handleJobsUpdated);
-    return () => window.removeEventListener('jobs-updated', handleJobsUpdated);
-  }, []);
-
-  const categoriesList = [
-    'All',
-    'Job Offer',
-    'Job Wanted',
-    'Service Offered',
-    'Service Wanted',
-    'Item For Sale',
-    'Item Wanted',
-  ];
-
-  const filteredJobs = jobs.filter((j) => {
-    if (jobCategoryFilter === 'All') return true;
-    return j.type === jobCategoryFilter || j.category === jobCategoryFilter;
-  });
 
   const hubs = firebaseService.getTownshipHubs();
 
@@ -90,71 +60,38 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
           </h3>
           <p className="text-xs sm:text-sm text-stone-400">
             {language === 'bm'
-              ? 'Terokai pekan-pekan tanah tinggi, pautan agensi kerajaan dan peluang kerjaya.'
-              : 'Discover highlands townships, municipal authorities, emergency contacts, and classifieds.'}
+              ? 'Terokai pekan-pekan tanah tinggi dan pautan agensi kerajaan.'
+              : 'Discover highlands townships, municipal authorities, and emergency contacts.'}
           </p>
 
         </div>
 
-        {/* 4 Main Portal Tabs (Single line, strictly fits container on mobile, no word wrapping) */}
-        <div className="w-full sm:w-auto grid grid-cols-4 gap-0.5 sm:gap-1.5 p-1 rounded-2xl bg-stone-900/90 border border-white/10 text-center">
+        {/* 2 Main Portal Tabs */}
+        <div className="w-full sm:w-auto grid grid-cols-2 gap-1 sm:gap-1.5 p-1 rounded-2xl bg-stone-900/90 border border-white/10 text-center">
           <button
             onClick={() => setActiveTab('townships')}
-            className={`flex items-center justify-center gap-1 sm:gap-1.5 px-1 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap min-w-0 ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all cursor-pointer whitespace-nowrap min-w-0 ${
               activeTab === 'townships'
-                ? 'bg-emerald-600 text-white shadow-md'
+                ? 'bg-emerald-600 text-white shadow-md font-bold'
                 : 'text-stone-400 hover:text-white'
             }`}
           >
-            <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 hidden min-[360px]:inline-block" />
-            <span className="text-[8.5px] min-[360px]:text-[9.5px] min-[400px]:text-[10px] sm:text-xs font-bold tracking-tight truncate">
-              <span className="hidden sm:inline">1. {language === 'bm' ? 'Pekan-Pekan' : 'Townships'}</span>
-              <span className="sm:hidden">1. {language === 'bm' ? 'Pekan' : 'Towns'}</span>
+            <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="text-xs sm:text-sm font-bold tracking-tight truncate">
+              1. {language === 'bm' ? 'Pekan-Pekan' : 'Townships'}
             </span>
           </button>
           <button
             onClick={() => setActiveTab('official')}
-            className={`flex items-center justify-center gap-1 sm:gap-1.5 px-1 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap min-w-0 ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all cursor-pointer whitespace-nowrap min-w-0 ${
               activeTab === 'official'
-                ? 'bg-emerald-600 text-white shadow-md'
+                ? 'bg-emerald-600 text-white shadow-md font-bold'
                 : 'text-stone-400 hover:text-white'
             }`}
           >
-            <Building2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 hidden min-[360px]:inline-block" />
-            <span className="text-[8.5px] min-[360px]:text-[9.5px] min-[400px]:text-[10px] sm:text-xs font-bold tracking-tight truncate">
-              <span className="hidden sm:inline">2. {language === 'bm' ? 'Portal Rasmi' : 'Official Portals'}</span>
-              <span className="sm:hidden">2. {language === 'bm' ? 'Rasmi' : 'Official'}</span>
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab('jobs')}
-            className={`flex items-center justify-center gap-1 sm:gap-1.5 px-1 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap min-w-0 ${
-              activeTab === 'jobs'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-stone-400 hover:text-white'
-            }`}
-          >
-            <Briefcase className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 hidden min-[360px]:inline-block" />
-            <span className="text-[8.5px] min-[360px]:text-[9.5px] min-[400px]:text-[10px] sm:text-xs font-bold tracking-tight truncate">
-              <span className="hidden sm:inline">3. {language === 'bm' ? 'Kerja & Iklan' : 'Jobs & Classifieds'}</span>
-              <span className="sm:hidden">3. {language === 'bm' ? 'Kerja' : 'Jobs'}</span>
-            </span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('tickets');
-              onOpenFarmMatrix();
-            }}
-            className={`flex items-center justify-center gap-1 sm:gap-1.5 px-1 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap min-w-0 ${
-              activeTab === 'tickets'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-stone-400 hover:text-white'
-            }`}
-          >
-            <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 hidden min-[360px]:inline-block" />
-            <span className="text-[8.5px] min-[360px]:text-[9.5px] min-[400px]:text-[10px] sm:text-xs font-bold tracking-tight truncate">
-              <span className="hidden min-[420px]:inline">4. {language === 'bm' ? 'Tiket & Bajet' : 'Tickets & Budget'}</span>
-              <span className="min-[420px]:hidden">4. {language === 'bm' ? 'Tiket' : 'Tickets'}</span>
+            <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="text-xs sm:text-sm font-bold tracking-tight truncate">
+              2. {language === 'bm' ? 'Portal Rasmi' : 'Official Portals'}
             </span>
           </button>
         </div>
@@ -471,226 +408,6 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
               </a>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* 3. Jobs & Classifieds */}
-      {activeTab === 'jobs' && (
-        <div className="space-y-4" id="portal-jobs">
-          {/* Category Filter Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-            {categoriesList.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setJobCategoryFilter(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                  jobCategoryFilter === cat
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-stone-900 text-stone-400 hover:text-white border border-white/5'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredJobs.map((job) => (
-              <div
-                key={job.id}
-                className="glass-card-hover rounded-3xl p-5 bg-stone-900/80 border border-white/5 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
-                      {job.type || job.category}
-                    </span>
-                    <span className="text-xs font-mono font-bold text-amber-400">
-                      {job.salary}
-                    </span>
-                  </div>
-
-                  <h4 className="text-base font-bold text-stone-100">{job.title}</h4>
-                  <div className="text-xs text-stone-400 mt-0.5 flex items-center gap-1.5">
-                    <span>{job.company}</span>
-                    <span>•</span>
-                    <span className="text-emerald-400">{job.township}</span>
-                  </div>
-
-                  <p className="text-xs text-stone-300 mt-2.5 leading-relaxed">
-                    {job.description}
-                  </p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3 text-xs">
-                  <span className="text-stone-500 font-mono">{job.contact}</span>
-                  <button
-                    onClick={() => {
-                      setSelectedJob(job);
-                      setApplySent(false);
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors cursor-pointer"
-                  >
-                    {language === 'bm' ? 'Mohon / Hubungi' : 'Apply / Contact'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Job Apply Modal */}
-          {selectedJob && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-              <div className="glass-panel w-full max-w-md rounded-3xl p-6 bg-stone-900 border border-emerald-500/30">
-                <h4 className="text-lg font-bold text-stone-100 mb-1">{selectedJob.title}</h4>
-                <p className="text-xs text-stone-400 mb-4">{selectedJob.company} • {selectedJob.township}</p>
-
-                {applySent ? (
-                  <div className="p-6 text-center">
-                    <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-2" />
-                    <p className="text-sm font-bold text-stone-100">
-                      {language === 'bm' ? 'Permohonan Dihantar!' : 'Application Dispatched!'}
-                    </p>
-                    <p className="text-xs text-stone-400 mt-1">
-                      {language === 'bm'
-                        ? 'Majikan akan menghubungi anda melalui WhatsApp atau emel.'
-                        : 'The highland employer will reach out via contact details provided.'}
-                    </p>
-                    <button
-                      onClick={() => setSelectedJob(null)}
-                      className="mt-4 px-4 py-2 rounded-xl bg-stone-800 text-xs text-white"
-                    >
-                      Close
-                    </button>
-                  </div>
-                ) : (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      setApplySent(true);
-                    }}
-                    className="space-y-3"
-                  >
-                    <div>
-                      <label className="text-xs text-stone-300 block mb-1">Your Name</label>
-                      <input
-                        required
-                        type="text"
-                        placeholder="John Doe"
-                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-stone-300 block mb-1">WhatsApp / Phone</label>
-                      <input
-                        required
-                        type="tel"
-                        placeholder="+60 12-345 6789"
-                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-stone-300 block mb-1">Short Experience Note</label>
-                      <textarea
-                        rows={3}
-                        placeholder="Previous tour guide experience, driving license, etc..."
-                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedJob(null)}
-                        className="flex-1 py-2 rounded-xl bg-stone-800 text-xs text-stone-300 cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Send Application</span>
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 4. Tickets & Budget Matrix Overview */}
-      {activeTab === 'tickets' && (
-        <div className="space-y-4" id="portal-tickets">
-          <div className="glass-panel rounded-3xl p-4 sm:p-6 bg-stone-900/90 border border-emerald-500/30 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                  <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
-                </div>
-                <div>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30">
-                    ADMISSION &amp; BUDGET
-                  </span>
-                  <h4 className="text-base sm:text-xl font-bold text-stone-100 mt-1">
-                    {language === 'bm' ? 'Matriks Tiket & Bajet Lawatan' : 'Highlands Tickets & Budget Matrix'}
-                  </h4>
-                </div>
-              </div>
-
-              <button
-                onClick={onOpenFarmMatrix}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95"
-              >
-                <span>{language === 'bm' ? 'Buka Matriks Penuh' : 'Open Full Pricing Matrix'}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-stone-300 mt-3 leading-relaxed">
-              {language === 'bm'
-                ? 'Semak anggaran harga tiket kemasukan tarikan popular di Cameron Highlands untuk mengurus perbelanjaan percutian anda.'
-                : 'Compare admission fees and farm passes across Cameron Highlands to accurately plan your travel budget.'}
-            </p>
-
-            {/* Quick Price Cards */}
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {[
-                { name: 'BOH Tea Centre Sungei Palas', township: 'Brinchang', price: 'Free Entry', note: 'Factory tour & cafe' },
-                { name: 'Mossy Forest Boardwalk', township: 'Brinchang', price: 'RM 10 / RM 30', note: 'Permit & eco-walk' },
-                { name: 'The Sheep Sanctuary', township: 'Kea Farm', price: 'RM 12 - RM 15', note: 'Feed & petting sheep' },
-                { name: 'Cameron Flora Park', township: 'Kea Farm', price: 'RM 50', note: 'Scenic floral gardens' },
-                { name: 'Cactus Point & Valley', township: 'Brinchang', price: 'Free Entry', note: 'Cactus nursery & plants' },
-                { name: 'Big Red Strawberry Farm', township: 'Brinchang', price: 'Free Entry', note: 'Hydroponics & picking' },
-              ].map((item, idx) => (
-                <div key={idx} className="p-3 rounded-2xl bg-stone-950/80 border border-white/5 flex items-start justify-between gap-2">
-                  <div className="min-w-0 pr-2">
-                    <h5 className="text-xs font-bold text-stone-200 truncate">{item.name}</h5>
-                    <span className="text-[10px] text-stone-400 block truncate">{item.township} • {item.note}</span>
-                  </div>
-                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg shrink-0 ${
-                    item.price === 'Free Entry'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  }`}>
-                    {item.price}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-white/10 flex justify-center">
-              <button
-                onClick={onOpenFarmMatrix}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md cursor-pointer"
-              >
-                <span>{language === 'bm' ? 'Lihat Semua 20+ Tarikan & Kira Bajet' : 'Explore All 20+ Spots & Calculate Budget'}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

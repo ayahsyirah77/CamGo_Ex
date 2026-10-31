@@ -537,6 +537,15 @@ export interface BeaconMember {
   nearestLandmark?: string;
 }
 
+export interface BeaconChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderColor?: string;
+  text: string;
+  timestamp: string;
+}
+
 export interface BeaconSession {
   id: string;
   code: string;
@@ -548,6 +557,7 @@ export interface BeaconSession {
   durationHours: 2 | 8 | 24;
   status: 'active' | 'ended';
   members?: Record<string, BeaconMember>;
+  messages?: BeaconChatMessage[];
 }
 
 export type MotorbikeFleetStatus = 'high' | 'limited' | 'sold_out' | 'not_applicable';

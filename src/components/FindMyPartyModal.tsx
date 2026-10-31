@@ -36,6 +36,8 @@ import {
   PlusCircle,
   KeyRound,
   Route,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
@@ -131,7 +133,37 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members' | 'chat'>('map');
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const [sendingChat, setSendingChat] = useState<boolean>(false);
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'chat' && chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [activeTab, session?.messages?.length]);
+
+  const handleSendChatMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!session || !chatInputText.trim()) return;
+
+    const messageText = chatInputText.trim();
+    setChatInputText('');
+    setSendingChat(true);
+
+    const newMessage = {
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      senderId: memberId,
+      senderName: memberName || 'Highland Companion',
+      senderColor: avatarColor,
+      text: messageText,
+      timestamp: new Date().toISOString(),
+    };
+
+    await beaconService.sendBeaconChatMessage(session.code, newMessage);
+    setSendingChat(false);
+  };
 
   // Dynamic Map Container Height
   const [dynamicMapHeight, setDynamicMapHeight] = useState<number>(() => {
@@ -1169,7 +1201,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {/* Active Session vs Create/Join Modes */}
-          {!session ? (
+          {!session || (session && (!session.members || !session.members[memberId])) ? (
             <div className="max-w-xl mx-auto space-y-5 py-1">
               {/* Profile Card: Display Name & Designated Pin Color */}
               <div className="p-4 sm:p-5 rounded-2xl bg-stone-800/80 border border-white/10 space-y-3.5">
@@ -1384,7 +1416,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
               {entryMode === 'join' && (
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-stone-850 to-stone-900 border border-sky-500/30 space-y-4">
                   {/* Quick Join Invitation Card if session was loaded from invite link */}
-                  {session && !session.members[memberId] && (
+                  {session && (!session.members || !session.members[memberId]) && (
                     <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-stone-900 border-2 border-emerald-400/50 shadow-xl space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
                       <div className="flex items-center gap-2">
                         <span className="flex h-2.5 w-2.5 relative">
@@ -1666,6 +1698,24 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       {language === 'bm' ? 'Ahli Designated' : 'Designated Pins'} ({designatedMembers.length})
                     </span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('chat')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeTab === 'chat'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>{language === 'bm' ? 'Sembang' : 'Party Chat'}</span>
+                    {session?.messages && session.messages.length > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-emerald-400 text-black text-[10px] font-mono font-bold">
+                        {session.messages.length}
+                      </span>
+                    )}
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1848,6 +1898,93 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* TAB 4: REAL-TIME GROUP BEACON CHAT */}
+              {activeTab === 'chat' && (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-stone-950/80 border border-emerald-500/30 text-xs text-stone-300 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>
+                        {language === 'bm'
+                          ? `Sembang Kumpulan Suar (${session.code})`
+                          : `Live Party Coordination Chat (${session.code})`}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/30">
+                      Real-time Sync Active
+                    </span>
+                  </div>
+
+                  {/* Scrollable Chat Messages List */}
+                  <div className="h-64 sm:h-72 overflow-y-auto p-3 rounded-2xl bg-stone-950/90 border border-white/10 space-y-3 shadow-inner">
+                    {(!session.messages || session.messages.length === 0) ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-500 space-y-2">
+                        <MessageSquare className="w-8 h-8 text-stone-600" />
+                        <p className="text-xs font-medium text-stone-400">
+                          {language === 'bm'
+                            ? 'Belum ada mesej. Hantar mesej pertama untuk berkoordinasi dengan rakan suar anda!'
+                            : 'No messages yet. Send the first message to coordinate with your party companions!'}
+                        </p>
+                      </div>
+                    ) : (
+                      session.messages.map((msg) => {
+                        const isMe = msg.senderId === memberId;
+                        const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} space-y-1`}
+                          >
+                            <div className="flex items-center gap-1.5 text-[10px] text-stone-400">
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: msg.senderColor || '#10b981' }}
+                              />
+                              <span className="font-bold text-stone-200">
+                                {isMe ? (language === 'bm' ? 'Anda' : 'You') : msg.senderName}
+                              </span>
+                              <span>•</span>
+                              <span className="font-mono text-stone-500">{timeStr}</span>
+                            </div>
+
+                            <div
+                              className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-relaxed shadow-md ${
+                                isMe
+                                  ? 'bg-emerald-600 text-white rounded-tr-none'
+                                  : 'bg-stone-850 text-stone-100 border border-white/10 rounded-tl-none'
+                              }`}
+                            >
+                              {msg.text}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={chatBottomRef} />
+                  </div>
+
+                  {/* Message Input Box */}
+                  <form onSubmit={handleSendChatMessage} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={chatInputText}
+                      onChange={(e) => setChatInputText(e.target.value)}
+                      placeholder={language === 'bm' ? 'Tulis mesej kumpulan...' : 'Type party message...'}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-stone-900 border border-white/15 focus:border-emerald-400 text-xs text-stone-100 outline-none transition-all placeholder-stone-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInputText.trim() || sendingChat}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg active:scale-95 shrink-0"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{language === 'bm' ? 'Hantar' : 'Send'}</span>
+                    </button>
+                  </form>
                 </div>
               )}
             </div>

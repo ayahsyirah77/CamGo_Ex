@@ -208,6 +208,40 @@ class BeaconService {
     this.clearCachedSession();
   }
 
+  /**
+   * Sends a real-time group chat message tied to the beacon/party code
+   */
+  async sendBeaconChatMessage(
+    rawCode: string,
+    message: {
+      id: string;
+      senderId: string;
+      senderName: string;
+      senderColor?: string;
+      text: string;
+      timestamp: string;
+    }
+  ): Promise<void> {
+    const code = rawCode.trim().toUpperCase().replace(/\s+/g, '');
+    if (!code || !message.text.trim()) return;
+
+    try {
+      const sessionRef = doc(db, 'beacon_sessions', code);
+      const snap = await getDoc(sessionRef);
+      if (snap.exists()) {
+        const sessionData = snap.data() as BeaconSession;
+        const currentMessages = sessionData.messages || [];
+        const updatedMessages = [...currentMessages, message].slice(-100);
+
+        await updateDoc(sessionRef, {
+          messages: updatedMessages,
+        });
+      }
+    } catch (e) {
+      console.warn('[BeaconService] sendBeaconChatMessage fallback:', e);
+    }
+  }
+
   private cacheLocalSession(session: BeaconSession) {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, session.code);

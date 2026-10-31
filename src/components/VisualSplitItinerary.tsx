@@ -614,7 +614,15 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
     autoAddAsStop = false
   ) => {
     // Hardening: Prevent crash if coordinates are invalid
-    if (!locationObj || isNaN(locationObj.lat) || isNaN(locationObj.lng)) {
+    if (
+      !locationObj ||
+      typeof locationObj.lat !== 'number' ||
+      typeof locationObj.lng !== 'number' ||
+      isNaN(locationObj.lat) ||
+      isNaN(locationObj.lng) ||
+      !isFinite(locationObj.lat) ||
+      !isFinite(locationObj.lng)
+    ) {
       console.error('Invalid coordinates provided to handleSetUserLocation:', locationObj);
       return;
     }
@@ -671,7 +679,21 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
         .openPopup();
 
       userLocationMarkerRef.current = marker;
-      map.flyTo([locationObj.lat, locationObj.lng], 15, { duration: 1.2 });
+
+      try {
+        map.invalidateSize();
+        const size = map.getSize();
+        if (size && size.x > 0 && size.y > 0) {
+          map.flyTo([locationObj.lat, locationObj.lng], 15, { duration: 1.2 });
+        } else {
+          map.setView([locationObj.lat, locationObj.lng], 15);
+        }
+      } catch (flyErr) {
+        console.warn('Leaflet flyTo safely caught:', flyErr);
+        try {
+          map.setView([locationObj.lat, locationObj.lng], 15);
+        } catch (_) {}
+      }
     }
 
     if (autoAddAsStop) {
@@ -1130,8 +1152,21 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
   
         mapInstanceRef.current = map;
   
-        if (userLocation && !isNaN(userLocation.lat) && !isNaN(userLocation.lng)) {
-          handleSetUserLocation(userLocation);
+        if (
+          userLocation &&
+          typeof userLocation.lat === 'number' &&
+          typeof userLocation.lng === 'number' &&
+          !isNaN(userLocation.lat) &&
+          !isNaN(userLocation.lng) &&
+          isFinite(userLocation.lat) &&
+          isFinite(userLocation.lng)
+        ) {
+          setTimeout(() => {
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.invalidateSize();
+              handleSetUserLocation(userLocation);
+            }
+          }, 300);
         }
       }
     } catch (err) {
@@ -1430,8 +1465,20 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
     }
 
     if (latLngs.length > 0) {
-      const bounds = L.latLngBounds(latLngs);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      try {
+        map.invalidateSize();
+        const bounds = L.latLngBounds(latLngs);
+        if (bounds.isValid()) {
+          const size = map.getSize();
+          if (size && size.x > 0 && size.y > 0) {
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+          } else {
+            map.setView(bounds.getCenter(), 13);
+          }
+        }
+      } catch (fitErr) {
+        console.warn('fitBounds safely caught:', fitErr);
+      }
     }
   }, [enrichedActivities, selectedActivityId]);
 
@@ -1464,13 +1511,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
             <span>Save</span>
           </button>
 
-          {/* Hamburger Menu - Mobile Only */}
-          <button 
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="sm:hidden p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer active:scale-95"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+
           
           <button 
             onClick={onClose} 
@@ -1709,9 +1750,23 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
             <div className="mt-3 p-3 rounded-2xl bg-stone-900/90 border border-white/5 flex items-center justify-between text-xs">
               <div className="flex flex-col gap-1 min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-stone-300 font-medium">
-                    <Navigation className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Travel: <strong className="text-white font-mono">~{totalDrivingMins} mins</strong></span>
+                  <div className="flex items-center gap-2 text-stone-300 font-medium flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Navigation className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Travel: <strong className="text-white font-mono">~{totalDrivingMins} mins</strong></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTrafficAnchor('telemetry');
+                        setShowTrafficOverlay(true);
+                      }}
+                      className="px-2.5 py-0.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/40 text-emerald-300 hover:text-white font-mono text-[10px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer shadow-sm"
+                      title="Open Live Road Telemetry"
+                    >
+                      <Car className="w-3 h-3 text-emerald-400" />
+                      <span>Live Road Telemetry</span>
+                    </button>
                   </div>
                   
                   {/* Mobile Only Budget & Save Buttons */}

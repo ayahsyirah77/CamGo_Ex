@@ -315,11 +315,18 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
           const accuracy = Math.round(pos.coords.accuracy);
-          if (mapInstanceRef.current) {
-            mapInstanceRef.current.flyTo([lat, lon], 17, {
-              animate: true,
-              duration: 0.8,
-            });
+          if (mapInstanceRef.current && typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon) && isFinite(lat) && isFinite(lon)) {
+            try {
+              mapInstanceRef.current.invalidateSize();
+              const size = mapInstanceRef.current.getSize();
+              if (size && size.x > 0 && size.y > 0) {
+                mapInstanceRef.current.flyTo([lat, lon], 17, { animate: true, duration: 0.8 });
+              } else {
+                mapInstanceRef.current.setView([lat, lon], 17);
+              }
+            } catch (_) {
+              try { mapInstanceRef.current.setView([lat, lon], 17); } catch (e) {}
+            }
           }
           setRecenterToast(
             language === 'bm'
@@ -329,11 +336,18 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           setTimeout(() => setRecenterToast(null), 3000);
         },
         () => {
-          if (myCoords && mapInstanceRef.current) {
-            mapInstanceRef.current.flyTo([myCoords.latitude, myCoords.longitude], 17, {
-              animate: true,
-              duration: 0.8,
-            });
+          if (myCoords && mapInstanceRef.current && typeof myCoords.latitude === 'number' && typeof myCoords.longitude === 'number' && !isNaN(myCoords.latitude) && !isNaN(myCoords.longitude)) {
+            try {
+              mapInstanceRef.current.invalidateSize();
+              const size = mapInstanceRef.current.getSize();
+              if (size && size.x > 0 && size.y > 0) {
+                mapInstanceRef.current.flyTo([myCoords.latitude, myCoords.longitude], 17, { animate: true, duration: 0.8 });
+              } else {
+                mapInstanceRef.current.setView([myCoords.latitude, myCoords.longitude], 17);
+              }
+            } catch (_) {
+              try { mapInstanceRef.current.setView([myCoords.latitude, myCoords.longitude], 17); } catch (e) {}
+            }
             setRecenterToast(
               language === 'bm'
                 ? `Dipusatkan ke lokasi anda (±${myCoords.accuracy}m)`
@@ -347,11 +361,18 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
       return;
     }
 
-    if (myCoords && mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo([myCoords.latitude, myCoords.longitude], 17, {
-        animate: true,
-        duration: 0.8,
-      });
+    if (myCoords && mapInstanceRef.current && typeof myCoords.latitude === 'number' && typeof myCoords.longitude === 'number' && !isNaN(myCoords.latitude) && !isNaN(myCoords.longitude)) {
+      try {
+        mapInstanceRef.current.invalidateSize();
+        const size = mapInstanceRef.current.getSize();
+        if (size && size.x > 0 && size.y > 0) {
+          mapInstanceRef.current.flyTo([myCoords.latitude, myCoords.longitude], 17, { animate: true, duration: 0.8 });
+        } else {
+          mapInstanceRef.current.setView([myCoords.latitude, myCoords.longitude], 17);
+        }
+      } catch (_) {
+        try { mapInstanceRef.current.setView([myCoords.latitude, myCoords.longitude], 17); } catch (e) {}
+      }
     }
   };
 
@@ -359,16 +380,32 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   const handleFitAll = () => {
     if (!mapInstanceRef.current) return;
     const coords: [number, number][] = [];
-    if (myCoords) coords.push([myCoords.latitude, myCoords.longitude]);
+    if (myCoords && typeof myCoords.latitude === 'number' && typeof myCoords.longitude === 'number' && !isNaN(myCoords.latitude) && !isNaN(myCoords.longitude)) {
+      coords.push([myCoords.latitude, myCoords.longitude]);
+    }
     if (session?.members) {
       Object.values(session.members).forEach((m) => {
-        coords.push([m.latitude, m.longitude]);
+        if (m && typeof m.latitude === 'number' && typeof m.longitude === 'number' && !isNaN(m.latitude) && !isNaN(m.longitude)) {
+          coords.push([m.latitude, m.longitude]);
+        }
       });
     }
 
     if (coords.length > 0) {
-      const bounds = L.latLngBounds(coords);
-      mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
+      try {
+        mapInstanceRef.current.invalidateSize();
+        const bounds = L.latLngBounds(coords);
+        if (bounds.isValid()) {
+          const size = mapInstanceRef.current.getSize();
+          if (size && size.x > 0 && size.y > 0) {
+            mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
+          } else {
+            mapInstanceRef.current.setView(bounds.getCenter(), 14);
+          }
+        }
+      } catch (err) {
+        console.warn('fitBounds in LiveBeaconMapModal caught:', err);
+      }
       setRecenterToast(
         language === 'bm' ? 'Menyesuaikan semua ahli' : 'Viewing all group members'
       );
