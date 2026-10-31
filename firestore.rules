@@ -14,99 +14,130 @@ service cloud.firestore {
       );
     }
 
-    // Publicly readable collections
     match /township_hubs/{hubId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
     
     match /places/{placeId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
     
     match /gallery/{galleryId} {
-      allow read: if true;
-      allow write: if true; // Keeping write public as requested by existing code/errors
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
     
     match /traffic_alerts/{alertId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /hazard_alerts/{alertId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /vendor_listings/{listingId} {
       allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /motorbike_partners/{partnerId} {
       allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /motorbike_rentals/{rentalId} {
       allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /vendor_vouchers/{voucherId} {
-      allow read: if true;
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin() || (isSignedIn() && (resource == null || resource.data.ownerUid == request.auth.uid));
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /vendor_events/{eventId} {
-      allow read: if true;
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin() || (isSignedIn() && (resource == null || resource.data.ownerUid == request.auth.uid));
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /vendor_staff/{staffId} {
-      allow read: if true;
-      allow write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /farm_tickets/{ticketId} {
-      allow read: if true;
-      allow write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /events/{eventId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /jobs/{jobId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /lounge/{postId} {
-      allow read: if true;
-      allow write: if true;
-      
+      allow read, write: if true;
       match /{allSubpaths=**} {
         allow read, write: if true;
       }
     }
 
     match /emergency_cards/{userId} {
-      allow read: if true;
-      allow write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /sos_dispatches/{dispatchId} {
-      allow read: if isAdmin();
-      allow create: if true;
-      allow update, delete: if isAdmin();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /settings/{settingId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /gsap_images/{docId} {
@@ -124,23 +155,28 @@ service cloud.firestore {
     }
 
     match /section_bg_images/{imageId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /users/{userId} {
-      allow read: if true;
-      allow write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /itinerary/{itineraryId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
     }
 
     match /beacon_sessions/{sessionId} {
       allow read, write: if true;
-      
       match /{allSubpaths=**} {
         allow read, write: if true;
       }
@@ -148,13 +184,12 @@ service cloud.firestore {
 
     match /ai_chats/{chatId} {
       allow read, write: if true;
-      
       match /{allSubpaths=**} {
         allow read, write: if true;
       }
     }
 
-    // Default deny
+    // Default deny for unmatched documents
     match /{document=**} {
       allow read, write: if false;
     }

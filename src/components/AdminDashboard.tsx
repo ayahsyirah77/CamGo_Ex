@@ -1,7 +1,7 @@
 // AdminDashboard.tsx
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { updateAdminUser, deleteAdminUser } from '../services/firebase';
 // -------------------------------------------------
@@ -148,27 +148,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [liveUsers, setLiveUsers] = useState<any[]>([]);
   const [selectedUserForView, setSelectedUserForView] = useState<any | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchUsers = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'users'));
-        if (!isMounted) return;
-        const usersList = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setLiveUsers(usersList);
-      } catch (err) {
-        console.warn('Could not fetch users due to quota limits:', err);
-      }
-    };
-    fetchUsers();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+ useEffect(() => {
+  // onSnapshot opens a live connection to Firestore
+  const unsubscribe = onSnapshot(
+    collection(db, 'users'),
+    (querySnapshot: any) => {
+      const usersList = querySnapshot.docs.map((doc: any) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setLiveUsers(usersList); // Automatically updates UI instantly on change
+    },
+    (err: any) => {
+      console.warn('Could not fetch users due to quota limits or permissions:', err);
+    }
+  );
 
+  // Clean up the listener when the component unmounts to prevent memory leaks
+  return () => unsubscribe();
+}, []);
   const [vendorListingsState, setVendorListingsState] = useState<VendorListing[]>(() =>
     firebaseService.getVendorListings()
   );

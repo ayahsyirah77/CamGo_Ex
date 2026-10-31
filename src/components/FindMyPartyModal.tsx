@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import L from 'leaflet';
 import {
   Users,
@@ -32,11 +32,15 @@ import {
   ArrowUpRight,
   ExternalLink,
   QrCode,
+  Locate,
+  PlusCircle,
+  KeyRound,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
-import { db, auth } from '../lib/firebase';
-import { doc, getDoc, setDoc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { doc, updateDoc, Unsubscribe } from 'firebase/firestore';
+import { beaconService, LOCAL_STORAGE_KEY_SESSION } from '../services/beaconService';
 import {
   calculateHaversineDistance,
   formatDistance,
@@ -44,7 +48,6 @@ import {
   getCompassCardinal,
   getNearestHighlandLandmark,
   isLocationStale,
-  isLocationActive,
   formatTimeAgo,
   generateBeaconCode,
 } from '../utils/beaconUtils';
@@ -65,21 +68,9 @@ const AVATAR_COLORS = [
   { name: 'Teal', value: '#14b8a6', ring: 'ring-teal-500' },
 ];
 
-const LOCAL_STORAGE_KEY_SESSION = 'camgo_party_active_session_code';
 const LOCAL_STORAGE_KEY_MEMBER_ID = 'camgo_party_member_id';
 const LOCAL_STORAGE_KEY_MEMBER_NAME = 'camgo_party_member_name';
 const LOCAL_STORAGE_KEY_MEMBER_COLOR = 'camgo_party_member_color';
-
-// Preset locations in Cameron Highlands for demo/simulation walk
-const DEMO_WAYPOINTS = [
-  { name: 'Kea Farm Vegetable & Strawberry Market', lat: 4.5050, lon: 101.4080 },
-  { name: 'The Sheep Sanctuary & Bee Farm', lat: 4.5042, lon: 101.4075 },
-  { name: 'Flora Park Entrance & Steps', lat: 4.5085, lon: 101.4095 },
-  { name: 'Brinchang Golden Hills Night Market Stalls', lat: 4.4920, lon: 101.3855 },
-  { name: 'Boh Tea Sungai Palas Tea Centre Outlook', lat: 4.5173, lon: 101.4072 },
-  { name: 'Gunung Brinchang Trailhead Entrance', lat: 4.5180, lon: 101.3840 },
-  { name: 'Tanah Rata Town Square Park', lat: 4.4712, lon: 101.3800 },
-];
 
 export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   isOpen,
@@ -97,7 +88,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     return localStorage.getItem(LOCAL_STORAGE_KEY_MEMBER_COLOR) || AVATAR_COLORS[0].value;
   });
 
-  // Session state
+  // Entry Mode: 'create' or 'join'
+  const [entryMode, setEntryMode] = useState<'create' | 'join'>('create');
+
+  // Session state (Real users only - No mock users)
   const [session, setSession] = useState<BeaconSession | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState<string>('');
   const [newSessionName, setNewSessionName] = useState<string>('Cameron Highlands Group');
@@ -112,9 +106,9 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Live Location & Tracking state
-  const [isSharing, setIsSharing] = useState<boolean>(false);
-  const [showLocationHistory, setShowLocationHistory] = useState<boolean>(false);
-  const [pathHistory, setPathHistory] = useState<Record<string, { lat: number; lng: number; time: number }[]>>({});
+  const [isSharing, setIsSharing] = useState<boolean>(true);
+  const [locatingUser, setLocatingUser] = useState<boolean>(false);
+  const [locateToast, setLocateToast] = useState<string | null>(null);
   const [myCoords, setMyCoords] = useState<{
     latitude: number;
     longitude: number;
@@ -125,11 +119,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   } | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
-  const [simulationActive, setSimulationActive] = useState<boolean>(false);
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members'>('map');
 
-  // Dynamic Map Container Height (for mobile keyboard toggles, device orientation & viewport shifts)
+  // Dynamic Map Container Height
   const [dynamicMapHeight, setDynamicMapHeight] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       if (window.innerWidth >= 640) return 400;
@@ -145,74 +138,19 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const circlesRef = useRef<{ [key: string]: L.Circle }>({});
-  const polylinesRef = useRef<{ [key: string]: L.Polyline }>({});
   const watchIdRef = useRef<number | null>(null);
   const lastSyncTimestampRef = useRef<number>(0);
+  const sessionUnsubRef = useRef<Unsubscribe | null>(null);
 
-  // Dynamic ResizeObserver & window.resize / visualViewport listener
+  // Clean up Firestore listener on unmount
   useEffect(() => {
-    if (!isOpen) return;
-
-    const computeAndApplyHeight = () => {
-      if (typeof window === 'undefined') return;
-
-      const isDesktop = window.innerWidth >= 640;
-      if (isDesktop) {
-        setDynamicMapHeight(400);
-      } else {
-        // Measure visible viewport height (which shrinks dynamically when virtual keyboard opens)
-        const visibleHeight = window.visualViewport?.height || window.innerHeight;
-        
-        let calculatedHeight: number;
-        if (visibleHeight < 500) {
-          // Keyboard is open or small landscape mode
-          calculatedHeight = Math.max(170, Math.floor(visibleHeight * 0.32));
-        } else if (visibleHeight < 650) {
-          calculatedHeight = Math.max(200, Math.floor(visibleHeight * 0.36));
-        } else {
-          calculatedHeight = Math.min(320, Math.max(220, Math.floor(visibleHeight * 0.38)));
-        }
-
-        setDynamicMapHeight(calculatedHeight);
-      }
-
-      // Immediately inform Leaflet map instance to recalculate tiles & viewport bounds
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.invalidateSize();
-      }
-    };
-
-    computeAndApplyHeight();
-
-    // 1. ResizeObserver on the modal card
-    let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && modalCardRef.current) {
-      resizeObserver = new ResizeObserver(() => {
-        computeAndApplyHeight();
-      });
-      resizeObserver.observe(modalCardRef.current);
-    }
-
-    // 2. Window and visualViewport resize listeners for mobile keyboard toggling
-    window.addEventListener('resize', computeAndApplyHeight);
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', computeAndApplyHeight);
-    }
-
-    // Delayed re-checks as modal mount animations settle
-    const timer1 = setTimeout(computeAndApplyHeight, 150);
-    const timer2 = setTimeout(computeAndApplyHeight, 350);
-
     return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener('resize', computeAndApplyHeight);
-      if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', computeAndApplyHeight);
+      if (sessionUnsubRef.current) {
+        sessionUnsubRef.current();
+        sessionUnsubRef.current = null;
       }
-      clearTimeout(timer1);
-      clearTimeout(timer2);
     };
-  }, [isOpen, activeTab]);
+  }, []);
 
   // Sync member profile with localStorage
   useEffect(() => {
@@ -236,17 +174,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     }
   }, []);
 
-  // Check saved session on mount or modal open
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
-    if (savedCode && !session) {
-      subscribeToSession(savedCode);
-    }
-  }, [isOpen]);
-
-  // Lock body scroll when modal is open to ensure seamless mobile scrolling
+  // Lock body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
       const prevOverflow = document.body.style.overflow;
@@ -257,50 +185,150 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     }
   }, [isOpen]);
 
-  // Firestore real-time listener for current session
-  const subscribeToSession = (codeToJoin: string) => {
-    const formattedCode = codeToJoin.trim().toUpperCase();
-    if (!formattedCode) {
-      console.warn('Attempted to subscribe to empty session code');
-      return () => {};
+  // Dynamic ResizeObserver & window resize listener for map
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const computeAndApplyHeight = () => {
+      if (typeof window === 'undefined') return;
+
+      const isDesktop = window.innerWidth >= 640;
+      if (isDesktop) {
+        setDynamicMapHeight(400);
+      } else {
+        const visibleHeight = window.visualViewport?.height || window.innerHeight;
+        let calculatedHeight: number;
+        if (visibleHeight < 500) {
+          calculatedHeight = Math.max(170, Math.floor(visibleHeight * 0.32));
+        } else if (visibleHeight < 650) {
+          calculatedHeight = Math.max(200, Math.floor(visibleHeight * 0.36));
+        } else {
+          calculatedHeight = Math.min(320, Math.max(220, Math.floor(visibleHeight * 0.38)));
+        }
+        setDynamicMapHeight(calculatedHeight);
+      }
+
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    };
+
+    computeAndApplyHeight();
+    window.addEventListener('resize', computeAndApplyHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', computeAndApplyHeight);
     }
+
+    const t1 = setTimeout(computeAndApplyHeight, 150);
+    const t2 = setTimeout(computeAndApplyHeight, 350);
+
+    return () => {
+      window.removeEventListener('resize', computeAndApplyHeight);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', computeAndApplyHeight);
+      }
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isOpen, activeTab]);
+
+  // Check saved session on mount or modal open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
+    if (savedCode && !session) {
+      subscribeToSession(savedCode, true);
+    }
+
+    // Proactively get real initial GPS coordinates
+    if (!myCoords && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setMyCoords({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: Math.round(pos.coords.accuracy),
+            heading: pos.coords.heading,
+            speed: pos.coords.speed,
+            altitude: pos.coords.altitude ? Math.round(pos.coords.altitude) : null,
+          });
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 }
+      );
+    }
+  }, [isOpen]);
+
+  // Auto-fill code from URL search param (?beacon=CAMGO-TRIP-xxx)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const beaconParam = params.get('beacon') || params.get('party');
+      if (beaconParam && !session) {
+        setJoinCodeInput(beaconParam.trim().toUpperCase());
+        setEntryMode('join');
+      }
+    }
+  }, [session]);
+
+  // Real-time Firestore session listener
+  const subscribeToSession = (codeToJoin: string, silentIfMissing = false) => {
+    const formattedCode = codeToJoin.trim().toUpperCase().replace(/\s+/g, '');
+    if (!formattedCode) return () => {};
+
+    // Terminate existing listener to avoid leaking or having multiple active subscriptions
+    if (sessionUnsubRef.current) {
+      sessionUnsubRef.current();
+      sessionUnsubRef.current = null;
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
-    const sessionRef = doc(db, 'beacon_sessions', formattedCode);
-    const unsubscribe = onSnapshot(
-      sessionRef,
-      (docSnap) => {
+    const unsubscribe = beaconService.subscribeToSession(
+      formattedCode,
+      memberId,
+      (data) => {
         setLoading(false);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as BeaconSession;
-          // Check if session has expired
-          if (new Date(data.expiresAt).getTime() < Date.now() || data.status === 'ended') {
-            setErrorMsg(
-              language === 'bm'
-                ? 'Sesi penjejakan ini telah tamat tempoh.'
-                : 'This beacon session has expired.'
-            );
-            setSession(null);
-            localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
-            return;
-          }
+        setErrorMsg(null);
+        setSession(data);
+        localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, formattedCode);
 
-          setSession(data);
-          localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, formattedCode);
-
-          // If current user is recorded in members and isSharing is true, keep local state
-          if (data.members && data.members[memberId]) {
-            setIsSharing(data.members[memberId].isSharing);
-          }
-        } else {
-          setErrorMsg(
-            language === 'bm'
-              ? `Kod sesi "${formattedCode}" tidak dijumpai.`
-              : `Session code "${formattedCode}" not found. Verify code and try again.`
-          );
-          setSession(null);
-          localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
+        if (data.members && data.members[memberId]) {
+          setIsSharing(data.members[memberId].isSharing);
+        }
+      },
+      () => {
+        setLoading(false);
+        setErrorMsg(
+          language === 'bm'
+            ? 'Sesi penjejakan ini telah tamat tempoh.'
+            : 'This beacon session has expired.'
+        );
+        setSession(null);
+        beaconService.clearCachedSession();
+        if (sessionUnsubRef.current) {
+          sessionUnsubRef.current();
+          sessionUnsubRef.current = null;
+        }
+      },
+      (unfoundCode) => {
+        setLoading(false);
+        if (silentIfMissing) {
+          beaconService.clearCachedSession();
+          return;
+        }
+        setErrorMsg(
+          language === 'bm'
+            ? `Kod sesi "${unfoundCode}" tidak dijumpai. Sahkan kod daripada ketua kumpulan atau cipta suar baharu.`
+            : `Session code "${unfoundCode}" not found. Verify code with your host and try again.`
+        );
+        setSession(null);
+        beaconService.clearCachedSession();
+        if (sessionUnsubRef.current) {
+          sessionUnsubRef.current();
+          sessionUnsubRef.current = null;
         }
       },
       (err) => {
@@ -314,324 +342,11 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       }
     );
 
+    sessionUnsubRef.current = unsubscribe;
     return unsubscribe;
   };
 
-  // Helper: Silently verify Firebase state (beacon_sessions allows public read/write per security rules)
-  const ensureFirebaseAuth = async () => {
-    // beacon_sessions has public Firestore rules (allow read, write: if true;).
-    // Never call signInAnonymously here because if the Anonymous provider is not enabled
-    // in Firebase Console, it throws auth/admin-restricted-operation.
-    return;
-  };
-
-  // Auto-generate QR code image whenever active code or pre-generated code updates
-  const activeQrCode = session?.code || preGeneratedCode;
-  useEffect(() => {
-    if (!activeQrCode) return;
-    let isMounted = true;
-    const baseUrl =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}${window.location.pathname}`
-        : 'https://camgo.app';
-    const shareUrl = `${baseUrl}?beacon=${activeQrCode}`;
-
-    QRCode.toDataURL(shareUrl, {
-      width: 320,
-      margin: 2,
-      color: {
-        dark: '#064e3b', // Deep Cameron emerald
-        light: '#ffffff',
-      },
-      errorCorrectionLevel: 'M',
-    })
-      .then((url) => {
-        if (isMounted) setQrCodeDataUrl(url);
-      })
-      .catch((err) => {
-        console.error('Failed to generate QR Code:', err);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [activeQrCode]);
-
-  // Check URL search parameters for shared invite link (?beacon=CAMGO-TRIP-xxx)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const beaconParam = params.get('beacon') || params.get('party');
-      if (beaconParam && !session) {
-        setJoinCodeInput(beaconParam.trim().toUpperCase());
-      }
-    }
-  }, [session]);
-
-  // Copy direct share link
-  const handleCopyShareLink = () => {
-    const code = session?.code || preGeneratedCode;
-    const baseUrl =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}${window.location.pathname}`
-        : 'https://camgo.app';
-    const shareUrl = `${baseUrl}?beacon=${code}`;
-    navigator.clipboard.writeText(shareUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
-  };
-
-  // Share via WhatsApp
-  const handleShareWhatsApp = () => {
-    const code = session?.code || preGeneratedCode;
-    const name = session?.name || newSessionName || 'Cameron Highlands Group';
-    const baseUrl =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}${window.location.pathname}`
-        : 'https://camgo.app';
-    const shareUrl = `${baseUrl}?beacon=${code}`;
-    const text = `🌲 Join our "${name}" live Group Beacon in Cameron Highlands!\n\n📍 Real-time GPS sync & compass\n🔑 Code: ${code}\n🔗 Instant Link: ${shareUrl}`;
-    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-    window.open(waUrl, '_blank');
-  };
-
-  // Create new session
-  const handleCreateSession = async () => {
-    const effectiveMemberName = memberName.trim() || 'Highland Companion';
-    if (!memberName.trim()) {
-      setMemberName('Highland Companion');
-    }
-
-    setLoading(true);
-    setErrorMsg(null);
-
-    const newCode = (preGeneratedCode || generateBeaconCode()).trim().toUpperCase().replace(/\s+/g, '');
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + expiryHours * 3600 * 1000).toISOString();
-
-    const initialLat = myCoords?.latitude || 4.5050; // Default to Kea Farm
-    const initialLon = myCoords?.longitude || 101.4080;
-
-    const initialMember: BeaconMember = {
-      id: memberId,
-      name: effectiveMemberName,
-      avatarColor,
-      latitude: initialLat,
-      longitude: initialLon,
-      accuracy: myCoords?.accuracy || 15,
-      heading: myCoords?.heading || null,
-      speed: myCoords?.speed || null,
-      altitude: myCoords?.altitude || null,
-      batteryLevel,
-      isSharing: true,
-      updatedAt: now.toISOString(),
-      nearestLandmark: getNearestHighlandLandmark(initialLat, initialLon),
-    };
-
-    const newSessionData: BeaconSession = {
-      id: newCode,
-      code: newCode,
-      name: newSessionName.trim() || 'Cameron Highlands Group',
-      createdBy: memberId,
-      createdByName: effectiveMemberName,
-      createdAt: now.toISOString(),
-      expiresAt,
-      durationHours: expiryHours,
-      status: 'active',
-      members: {
-        [memberId]: initialMember,
-      },
-    };
-
-    try {
-      if (db) {
-        await setDoc(doc(db, 'beacon_sessions', newCode), newSessionData);
-      }
-      setSession(newSessionData);
-      setIsSharing(true);
-      localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, newCode);
-      subscribeToSession(newCode);
-      setShowLiveMapModal(true); // Open live interactive map pop-up showing exact location
-    } catch (err: any) {
-      console.warn('Beacon write notice (offline or connecting):', err);
-      // Graceful fallback: maintain active local beacon state so user is never blocked
-      setSession(newSessionData);
-      setIsSharing(true);
-      localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, newCode);
-      setShowLiveMapModal(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Join existing session
-  const handleJoinSession = async () => {
-    if (!joinCodeInput.trim()) {
-      setErrorMsg(language === 'bm' ? 'Sila masukkan kod sesi.' : 'Please enter session code.');
-      return;
-    }
-    
-    const effectiveMemberName = memberName.trim() || 'Highland Companion';
-    if (!memberName.trim()) {
-      setMemberName('Highland Companion');
-    }
-
-    setLoading(true);
-    setErrorMsg(null);
-    await ensureFirebaseAuth();
-    const code = joinCodeInput.trim().toUpperCase().replace(/\s+/g, '');
-
-    const initialLat = myCoords?.latitude || 4.5050;
-    const initialLon = myCoords?.longitude || 101.4080;
-
-    const selfMember: BeaconMember = {
-      id: memberId,
-      name: effectiveMemberName,
-      avatarColor,
-      latitude: initialLat,
-      longitude: initialLon,
-      accuracy: myCoords?.accuracy || 20,
-      heading: myCoords?.heading || null,
-      speed: myCoords?.speed || null,
-      altitude: myCoords?.altitude || null,
-      batteryLevel,
-      isSharing: true,
-      updatedAt: new Date().toISOString(),
-      nearestLandmark: getNearestHighlandLandmark(initialLat, initialLon),
-    };
-
-    try {
-      const sessionRef = doc(db, 'beacon_sessions', code);
-      const snap = await getDoc(sessionRef);
-
-      if (snap.exists()) {
-        const sessionData = snap.data() as BeaconSession;
-        if (new Date(sessionData.expiresAt).getTime() < Date.now() || sessionData.status === 'ended') {
-          setErrorMsg(
-            language === 'bm'
-              ? 'Sesi ini telah tamat tempoh.'
-              : 'This session has already expired.'
-          );
-          setLoading(false);
-          return;
-        }
-
-        await updateDoc(sessionRef, {
-          [`members.${memberId}`]: selfMember,
-        });
-
-        setIsSharing(true);
-        localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
-        subscribeToSession(code);
-        setShowLiveMapModal(true); // Open live interactive map pop-up showing exact location
-      } else {
-        // Fallback for custom code or offline join: construct session locally
-        const now = new Date();
-        const fallbackSession: BeaconSession = {
-          id: code,
-          code: code,
-          name: `Highland Beacon (${code})`,
-          createdBy: 'host_group',
-          createdByName: 'Group Leader',
-          createdAt: now.toISOString(),
-          expiresAt: new Date(now.getTime() + 8 * 3600 * 1000).toISOString(),
-          durationHours: 8,
-          status: 'active',
-          members: {
-            [memberId]: selfMember,
-          },
-        };
-
-        if (db) {
-          try {
-            await setDoc(sessionRef, fallbackSession);
-          } catch (e) {
-            console.warn('Firestore setDoc fallback warning:', e);
-          }
-        }
-
-        setSession(fallbackSession);
-        setIsSharing(true);
-        localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
-        subscribeToSession(code);
-        setShowLiveMapModal(true);
-      }
-    } catch (err: any) {
-      console.warn('Joining session with local fallback state:', err);
-      const now = new Date();
-      const fallbackSession: BeaconSession = {
-        id: code,
-        code: code,
-        name: `Highland Beacon (${code})`,
-        createdBy: 'host_group',
-        createdByName: 'Group Leader',
-        createdAt: now.toISOString(),
-        expiresAt: new Date(now.getTime() + 8 * 3600 * 1000).toISOString(),
-        durationHours: 8,
-        status: 'active',
-        members: {
-          [memberId]: selfMember,
-        },
-      };
-
-      setSession(fallbackSession);
-      setIsSharing(true);
-      localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, code);
-      setShowLiveMapModal(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Leave session
-  const handleLeaveSession = async () => {
-    if (!session) return;
-    const confirmLeave = window.confirm(
-      language === 'bm'
-        ? 'Adakah anda pasti mahu keluar dari kumpulan penjejakan ini?'
-        : 'Are you sure you want to leave this tracking group?'
-    );
-    if (!confirmLeave) return;
-
-    try {
-      const sessionRef = doc(db, 'beacon_sessions', session.code);
-      await updateDoc(sessionRef, {
-        [`members.${memberId}`]: deleteField(),
-      });
-    } catch (e) {
-      console.error('Error removing self from session:', e);
-    }
-
-    setSession(null);
-    setIsSharing(false);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
-  };
-
-  // End session for all (if creator)
-  const handleEndSession = async () => {
-    if (!session) return;
-    const confirmEnd = window.confirm(
-      language === 'bm'
-        ? 'Tamatkan sesi perkongsian lokasi ini untuk semua ahli?'
-        : 'End this live location session for all group members?'
-    );
-    if (!confirmEnd) return;
-
-    try {
-      const sessionRef = doc(db, 'beacon_sessions', session.code);
-      await updateDoc(sessionRef, {
-        status: 'ended',
-      });
-    } catch (e) {
-      console.error('Error ending session:', e);
-    }
-
-    setSession(null);
-    setIsSharing(false);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
-  };
-
-  // Sync coordinates to Firestore (Throttled to avoid excess network / database writes)
+  // Sync real coordinates to Firestore for the active session document
   const syncCoordinatesToFirestore = async (coords: {
     latitude: number;
     longitude: number;
@@ -643,10 +358,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     if (!session || !isSharing) return;
 
     const now = Date.now();
-    // Throttle to at most once every 3.5 seconds
-    if (now - lastSyncTimestampRef.current < 3500) {
-      return;
-    }
+    if (now - lastSyncTimestampRef.current < 3000) return;
     lastSyncTimestampRef.current = now;
 
     try {
@@ -654,25 +366,30 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       const landmark = getNearestHighlandLandmark(coords.latitude, coords.longitude);
 
       await updateDoc(sessionRef, {
-        [`members.${memberId}.latitude`]: coords.latitude,
-        [`members.${memberId}.longitude`]: coords.longitude,
-        [`members.${memberId}.accuracy`]: coords.accuracy,
-        [`members.${memberId}.heading`]: coords.heading,
-        [`members.${memberId}.speed`]: coords.speed,
-        [`members.${memberId}.altitude`]: coords.altitude,
-        [`members.${memberId}.batteryLevel`]: batteryLevel,
-        [`members.${memberId}.isSharing`]: true,
-        [`members.${memberId}.updatedAt`]: new Date().toISOString(),
-        [`members.${memberId}.nearestLandmark`]: landmark,
+        [`members.${memberId}`]: {
+          id: memberId,
+          name: memberName || 'Highland Companion',
+          avatarColor,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
+          heading: coords.heading,
+          speed: coords.speed,
+          altitude: coords.altitude,
+          batteryLevel,
+          isSharing: true,
+          updatedAt: new Date().toISOString(),
+          nearestLandmark: landmark,
+        },
       });
     } catch (e) {
-      console.error('Error updating live beacon coordinates in Firestore:', e);
+      console.warn('Sync coordinates warning:', e);
     }
   };
 
-  // Geolocation watchPosition handler
+  // Continuous Geolocation Watcher
   useEffect(() => {
-    if (!isSharing || simulationActive) {
+    if (!isSharing) {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
@@ -704,17 +421,19 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         syncCoordinatesToFirestore(coords);
       },
       (err) => {
-        console.warn('Geolocation watch error:', err.message);
-        setGpsError(
-          language === 'bm'
-            ? 'Gagal mendapatkan GPS. Pastikan izin lokasi dibenarkan.'
-            : 'Unable to retrieve GPS. Ensure location permissions are granted.'
-        );
+        // Only set error if permission is explicitly denied
+        if (err.code === 1) {
+          setGpsError(
+            language === 'bm'
+              ? 'Izin GPS ditolak dalam pelayar.'
+              : 'Location permission was denied in your browser settings.'
+          );
+        }
       },
       {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 0,
+        enableHighAccuracy: false,
+        timeout: 25000,
+        maximumAge: 10000,
       }
     );
 
@@ -726,33 +445,277 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         watchIdRef.current = null;
       }
     };
-  }, [isSharing, simulationActive, session?.code]);
+  }, [isSharing, session?.code]);
 
-  // Demo / Simulation Walker for Highlands Testing
-  useEffect(() => {
-    if (!simulationActive || !isSharing) return;
+  // Real "Locate Me" Feature: gets exact current GPS with automatic graceful fallback
+  const handleLocateMe = () => {
+    if (!('geolocation' in navigator)) {
+      setGpsError(
+        language === 'bm' ? 'Peranti anda tidak menyokong GPS.' : 'Geolocation is not supported by your browser.'
+      );
+      return;
+    }
 
-    let waypointIdx = 0;
-    const interval = setInterval(() => {
-      const base = DEMO_WAYPOINTS[waypointIdx % DEMO_WAYPOINTS.length];
-      // small jitter
-      const jitterLat = (Math.random() - 0.5) * 0.0003;
-      const jitterLon = (Math.random() - 0.5) * 0.0003;
+    setLocatingUser(true);
+    setGpsError(null);
+
+    const applyCoords = (pos: GeolocationPosition) => {
+      setLocatingUser(false);
       const coords = {
-        latitude: base.lat + jitterLat,
-        longitude: base.lon + jitterLon,
-        accuracy: 8,
-        heading: Math.floor(Math.random() * 360),
-        speed: 1.2,
-        altitude: 1540 + Math.floor(Math.random() * 30),
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: Math.round(pos.coords.accuracy),
+        heading: pos.coords.heading,
+        speed: pos.coords.speed,
+        altitude: pos.coords.altitude ? Math.round(pos.coords.altitude) : null,
       };
       setMyCoords(coords);
-      syncCoordinatesToFirestore(coords);
-      waypointIdx++;
-    }, 4500);
 
-    return () => clearInterval(interval);
-  }, [simulationActive, isSharing, session?.code]);
+      const landmark = getNearestHighlandLandmark(coords.latitude, coords.longitude);
+      setLocateToast(
+        `📍 ${language === 'bm' ? 'Lokasi anda dikesan' : 'Located'}: ${landmark} (±${coords.accuracy}m)`
+      );
+      setTimeout(() => setLocateToast(null), 4000);
+
+      // Center map smoothly on the user's real location
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.setView([coords.latitude, coords.longitude], 17, { animate: true });
+      }
+
+      // Push real coordinates to Firestore if session is active
+      if (session && isSharing) {
+        syncCoordinatesToFirestore(coords);
+      }
+    };
+
+    // First attempt: try high accuracy with 6s timeout
+    navigator.geolocation.getCurrentPosition(
+      applyCoords,
+      (err) => {
+        if (err.code === 1) {
+          // Explicit permission denied
+          setLocatingUser(false);
+          setGpsError(
+            language === 'bm'
+              ? 'Izin lokasi disekat. Sila benarkan akses GPS dalam tetapan pelayar.'
+              : 'Location permission denied. Please allow GPS access in your browser settings.'
+          );
+          return;
+        }
+
+        // Automatic progressive fallback to standard / cached network location
+        navigator.geolocation.getCurrentPosition(
+          applyCoords,
+          () => {
+            setLocatingUser(false);
+            // Default center on Cameron Highlands Kea Farm
+            const defaultCoords = {
+              latitude: 4.5050,
+              longitude: 101.4080,
+              accuracy: 45,
+              heading: null,
+              speed: null,
+              altitude: 1560,
+            };
+            setMyCoords(defaultCoords);
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.setView([defaultCoords.latitude, defaultCoords.longitude], 16, { animate: true });
+            }
+            setLocateToast(
+              language === 'bm'
+                ? '📍 Dipusatkan ke Cameron Highlands (Kea Farm)'
+                : '📍 Centered on Cameron Highlands (Kea Farm)'
+            );
+            setTimeout(() => setLocateToast(null), 3500);
+          },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 6000,
+        maximumAge: 10000,
+      }
+    );
+  };
+
+  // Create New Beacon Session
+  const handleCreateSession = async () => {
+    const effectiveMemberName = memberName.trim() || 'Highland Explorer';
+    if (!memberName.trim()) setMemberName('Highland Explorer');
+
+    setLoading(true);
+    setErrorMsg(null);
+
+    const targetCode = (preGeneratedCode || generateBeaconCode()).trim().toUpperCase().replace(/\s+/g, '');
+    const initialLat = myCoords?.latitude || 4.5050; // Default to Kea Farm if GPS warming up
+    const initialLon = myCoords?.longitude || 101.4080;
+
+    const initialMember: BeaconMember = {
+      id: memberId,
+      name: effectiveMemberName,
+      avatarColor,
+      latitude: initialLat,
+      longitude: initialLon,
+      accuracy: myCoords?.accuracy || 15,
+      heading: myCoords?.heading || null,
+      speed: myCoords?.speed || null,
+      altitude: myCoords?.altitude || null,
+      batteryLevel,
+      isSharing: true,
+      updatedAt: new Date().toISOString(),
+      nearestLandmark: getNearestHighlandLandmark(initialLat, initialLon),
+    };
+
+    try {
+      const createdSession = await beaconService.createSession(
+        targetCode,
+        initialMember,
+        newSessionName.trim() || `Cameron Highlands Group (${targetCode})`,
+        expiryHours
+      );
+
+      setSession(createdSession);
+      setIsSharing(true);
+      localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, targetCode);
+      subscribeToSession(targetCode);
+      setShowLiveMapModal(true);
+    } catch (err: any) {
+      console.error('Error creating beacon session:', err);
+      setErrorMsg(
+        language === 'bm' ? 'Gagal mencipta suar baharu. Sila cuba lagi.' : 'Failed to create new beacon. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Join Existing Beacon Session
+  const handleJoinSession = async () => {
+    const targetCode = joinCodeInput.trim().toUpperCase().replace(/\s+/g, '');
+    if (!targetCode) {
+      setErrorMsg(language === 'bm' ? 'Sila masukkan kod sesi.' : 'Please enter session code.');
+      return;
+    }
+
+    const effectiveMemberName = memberName.trim() || 'Highland Companion';
+    if (!memberName.trim()) setMemberName('Highland Companion');
+
+    setLoading(true);
+    setErrorMsg(null);
+
+    const initialLat = myCoords?.latitude || 4.5050;
+    const initialLon = myCoords?.longitude || 101.4080;
+
+    const selfMember: BeaconMember = {
+      id: memberId,
+      name: effectiveMemberName,
+      avatarColor,
+      latitude: initialLat,
+      longitude: initialLon,
+      accuracy: myCoords?.accuracy || 20,
+      heading: myCoords?.heading || null,
+      speed: myCoords?.speed || null,
+      altitude: myCoords?.altitude || null,
+      batteryLevel,
+      isSharing: true,
+      updatedAt: new Date().toISOString(),
+      nearestLandmark: getNearestHighlandLandmark(initialLat, initialLon),
+    };
+
+    try {
+      // Clean up previous subscription before joining
+      if (sessionUnsubRef.current) {
+        sessionUnsubRef.current();
+        sessionUnsubRef.current = null;
+      }
+
+      const joinedSession = await beaconService.joinSession(targetCode, selfMember);
+      setSession(joinedSession);
+      setIsSharing(true);
+      localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, targetCode);
+      subscribeToSession(targetCode);
+      setShowLiveMapModal(true);
+    } catch (err: any) {
+      // Ensure no isolated local session or phantom cache persists
+      setSession(null);
+      beaconService.clearCachedSession();
+      if (sessionUnsubRef.current) {
+        sessionUnsubRef.current();
+        sessionUnsubRef.current = null;
+      }
+
+      if (err.message === 'SESSION_NOT_FOUND') {
+        setErrorMsg(
+          language === 'bm'
+            ? `Kod sesi "${targetCode}" tidak dijumpai dalam pangkalan data live. Sahkan kod daripada ketua kumpulan anda.`
+            : `Session code "${targetCode}" not found in live database. Verify code and try again.`
+        );
+      } else if (err.message === 'SESSION_EXPIRED') {
+        setErrorMsg(
+          language === 'bm' ? 'Sesi ini telah tamat tempoh.' : 'This session has already expired.'
+        );
+      } else {
+        console.error('Error joining session:', err);
+        setErrorMsg(
+          language === 'bm' ? `Ralat menyertai sesi "${targetCode}".` : `Error joining session "${targetCode}".`
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Leave session
+  const handleLeaveSession = async () => {
+    if (!session) return;
+    const confirmLeave = window.confirm(
+      language === 'bm'
+        ? 'Adakah anda pasti mahu keluar dari kumpulan penjejakan ini?'
+        : 'Are you sure you want to leave this tracking group?'
+    );
+    if (!confirmLeave) return;
+
+    if (sessionUnsubRef.current) {
+      sessionUnsubRef.current();
+      sessionUnsubRef.current = null;
+    }
+
+    const currentCode = session.code;
+    setSession(null);
+    setIsSharing(false);
+    localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
+    beaconService.clearCachedSession();
+
+    try {
+      await beaconService.leaveSession(currentCode, memberId);
+    } catch (e) {
+      console.warn('Error during leaveSession:', e);
+    }
+  };
+
+  // Switch to creating a different beacon
+  const handleSwitchToCreate = () => {
+    if (sessionUnsubRef.current) {
+      sessionUnsubRef.current();
+      sessionUnsubRef.current = null;
+    }
+    setSession(null);
+    beaconService.clearCachedSession();
+    setPreGeneratedCode(generateBeaconCode());
+    setEntryMode('create');
+  };
+
+  // Switch to joining a different beacon
+  const handleSwitchToJoin = () => {
+    if (sessionUnsubRef.current) {
+      sessionUnsubRef.current();
+      sessionUnsubRef.current = null;
+    }
+    setSession(null);
+    beaconService.clearCachedSession();
+    setEntryMode('join');
+  };
 
   // Toggle Sharing ON/OFF
   const handleToggleSharing = async () => {
@@ -772,40 +735,50 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     }
   };
 
-  // Copy session invite code
-  const handleCopyCode = () => {
-    if (!session) return;
-    navigator.clipboard.writeText(session.code);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
-  };
+  // QR Code Generation
+  const activeQrCode = session?.code || preGeneratedCode;
+  useEffect(() => {
+    if (!activeQrCode) return;
+    let isMounted = true;
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : 'https://camgo.app';
+    const shareUrl = `${baseUrl}?beacon=${activeQrCode}`;
 
-  // Share session invite
-  const handleShareSession = () => {
-    if (!session) return;
-    const shareText = `🏔️ Join our Cameron Highlands group beacon on CamGo!\nGroup: "${session.name}"\nInvite Code: ${session.code}\nView live companion coordinates on map.`;
+    QRCode.toDataURL(shareUrl, {
+      width: 320,
+      margin: 2,
+      color: {
+        dark: '#064e3b',
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'M',
+    })
+      .then((url) => {
+        if (isMounted) setQrCodeDataUrl(url);
+      })
+      .catch((err) => {
+        console.error('Failed to generate QR Code:', err);
+      });
 
-    if (navigator.share) {
-      navigator.share({
-        title: `Join ${session.name} - CamGo Highlands Beacon`,
-        text: shareText,
-        url: window.location.href,
-      }).catch(() => {});
-    } else {
-      const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-      window.open(waUrl, '_blank');
-    }
-  };
+    return () => {
+      isMounted = false;
+    };
+  }, [activeQrCode]);
 
-    // Setup Leaflet Map
+  // Setup Leaflet Map
   useEffect(() => {
     if (!isOpen || activeTab !== 'map' || !mapContainerRef.current) return;
 
     const currentMapEl = mapContainerRef.current;
 
     if (!mapInstanceRef.current) {
+      const initialLat = myCoords?.latitude || 4.5050;
+      const initialLon = myCoords?.longitude || 101.4080;
+
       const map = L.map(currentMapEl, {
-        center: [4.5050, 101.4080], // Kea Farm
+        center: [initialLat, initialLon],
         zoom: 15,
         zoomControl: false,
       });
@@ -819,23 +792,9 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       mapInstanceRef.current = map;
     }
 
-    // Touchstart listener to prevent browser scroll triggers from interrupting map panning on mobile devices
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.cancelable) {
-        e.stopPropagation();
-      }
-    };
-
-    currentMapEl.addEventListener('touchstart', handleTouchStart, { passive: true });
-
-    // Force resize calculation
     setTimeout(() => {
       mapInstanceRef.current?.invalidateSize();
     }, 200);
-
-    return () => {
-      currentMapEl.removeEventListener('touchstart', handleTouchStart);
-    };
   }, [isOpen, activeTab]);
 
   // Clean up map when modal closes
@@ -848,51 +807,88 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     }
   }, [isOpen]);
 
-  // Update map markers when members change
+  // Sort and assign designated pins to all real members who join
+  const designatedMembers = useMemo(() => {
+    if (!session?.members) return [];
+    const list = Object.values(session.members);
+    return list.sort((a, b) => {
+      if (a.id === session.createdBy) return -1;
+      if (b.id === session.createdBy) return 1;
+      return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+    });
+  }, [session?.members, session?.createdBy]);
+
+  // Update Designated Map Markers for each user who joins
   useEffect(() => {
-    if (!mapInstanceRef.current || activeTab !== 'map' || !session?.members) return;
-
+    if (!mapInstanceRef.current || activeTab !== 'map') return;
     const map = mapInstanceRef.current;
-    const membersList = Object.values(session.members);
-    const bounds = L.latLngBounds([]);
 
-    membersList.forEach((member) => {
+    const activeList = [...designatedMembers];
+    // If user has coords but not yet in session list, show their pin
+    if (myCoords && !activeList.some((m) => m.id === memberId)) {
+      activeList.unshift({
+        id: memberId,
+        name: memberName || 'You',
+        avatarColor,
+        latitude: myCoords.latitude,
+        longitude: myCoords.longitude,
+        accuracy: myCoords.accuracy,
+        heading: myCoords.heading,
+        speed: myCoords.speed,
+        altitude: myCoords.altitude,
+        batteryLevel,
+        isSharing: true,
+        updatedAt: new Date().toISOString(),
+        nearestLandmark: getNearestHighlandLandmark(myCoords.latitude, myCoords.longitude),
+      });
+    }
+
+    const currentMemberIds = new Set(activeList.map((m) => m.id));
+
+    activeList.forEach((member, index) => {
       const isMe = member.id === memberId;
+      const pinNumber = index + 1;
       const stale = isLocationStale(member.updatedAt);
       const isActivelySharing = member.isSharing;
+      const pinColor = member.avatarColor || AVATAR_COLORS[index % AVATAR_COLORS.length].value;
 
-      // Create Custom HTML Marker with radar pulse
-      const iconHtml = `
-        <div class="relative flex items-center justify-center">
+      // Unique Designated Teardrop SVG Pin Marker
+      const designatedPinSvg = `
+        <div class="relative flex flex-col items-center justify-center cursor-pointer group" style="transform: translate(-50%, -100%);">
           ${
             isActivelySharing && !stale
-              ? `<div class="absolute w-10 h-10 rounded-full animate-ping opacity-60" style="background-color: ${member.avatarColor};"></div>`
+              ? `<div class="absolute -bottom-1 w-8 h-8 rounded-full animate-ping opacity-60" style="background-color: ${pinColor};"></div>`
               : ''
           }
-          <div class="w-8 h-8 rounded-full border-2 border-white shadow-xl flex items-center justify-center font-bold text-white text-xs z-10 transition-transform ${
-            stale ? 'opacity-70 grayscale-[50%]' : ''
-          }" style="background-color: ${member.avatarColor};">
-            ${member.name.charAt(0).toUpperCase()}
+          <!-- Designated Pin SVG Marker -->
+          <div class="relative transition-transform duration-200 group-hover:scale-110 drop-shadow-xl">
+            <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 0C8.954 0 0 8.954 0 20C0 33.5 20 48 20 48C20 48 40 33.5 40 20C40 8.954 31.046 0 20 0Z" fill="${pinColor}" stroke="#ffffff" stroke-width="2.5"/>
+              <circle cx="20" cy="18" r="13" fill="#ffffff"/>
+              <text x="20" y="23" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="11" fill="${pinColor}">${isMe ? 'YOU' : '#' + pinNumber}</text>
+            </svg>
           </div>
-          <div class="absolute -bottom-6 bg-stone-900/95 backdrop-blur-md px-1.5 py-0.5 rounded border border-white/20 text-[9px] font-mono text-white whitespace-nowrap shadow-md z-20 flex items-center gap-1">
-            <span>${member.name}</span>
-            ${stale ? '<span class="text-amber-400 font-bold">⚠️</span>' : ''}
-            ${isMe ? '<span class="text-emerald-400 font-bold">(You)</span>' : ''}
+
+          <!-- Designated Tag with Name, Pin Number & Status -->
+          <div class="mt-1 bg-stone-900/95 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/20 text-[10px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5 z-20">
+            <span class="w-2 h-2 rounded-full" style="background-color: ${pinColor};"></span>
+            <span class="text-emerald-400 font-extrabold">Pin #${pinNumber}:</span>
+            <span class="max-w-[75px] truncate">${member.name}</span>
+            ${isMe ? '<span class="text-emerald-300 font-black">(You)</span>' : ''}
+            ${stale ? '<span class="text-amber-400">⚠️</span>' : ''}
           </div>
         </div>
       `;
 
       const customIcon = L.divIcon({
-        html: iconHtml,
-        className: 'custom-party-beacon-marker',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
+        html: designatedPinSvg,
+        className: 'custom-designated-beacon-pin',
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
       });
 
       const latLng = L.latLng(member.latitude, member.longitude);
-      bounds.extend(latLng);
 
-      // Marker management
       if (markersRef.current[member.id]) {
         markersRef.current[member.id].setLatLng(latLng);
         markersRef.current[member.id].setIcon(customIcon);
@@ -900,31 +896,32 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         const marker = L.marker(latLng, { icon: customIcon }).addTo(map);
         marker.on('click', () => {
           setSelectedCompanionId(member.id);
+          map.panTo(latLng);
         });
         markersRef.current[member.id] = marker;
       }
 
-      // Accuracy Circle management
+      // Accuracy Circle
       if (member.accuracy && isActivelySharing) {
         if (circlesRef.current[member.id]) {
           circlesRef.current[member.id].setLatLng(latLng);
-          circlesRef.current[member.id].setRadius(member.accuracy);
+          circlesRef.current[member.id].setRadius(Math.max(10, member.accuracy));
         } else {
           const circle = L.circle(latLng, {
-            radius: member.accuracy,
-            color: member.avatarColor,
-            fillColor: member.avatarColor,
+            radius: Math.max(10, member.accuracy),
+            color: pinColor,
+            fillColor: pinColor,
             fillOpacity: 0.12,
-            weight: 1,
+            weight: 1.5,
           }).addTo(map);
           circlesRef.current[member.id] = circle;
         }
       }
     });
 
-    // Remove any markers for departed members
+    // Cleanup departed members
     Object.keys(markersRef.current).forEach((existingId) => {
-      if (!session.members || !session.members[existingId]) {
+      if (!currentMemberIds.has(existingId)) {
         markersRef.current[existingId].remove();
         delete markersRef.current[existingId];
         if (circlesRef.current[existingId]) {
@@ -933,32 +930,12 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         }
       }
     });
-  }, [session?.members, activeTab, memberId]);
+  }, [designatedMembers, myCoords, activeTab, memberId, memberName, avatarColor]);
 
-  // Fit bounds to all companions
-  const handleFitAllMembers = () => {
-    if (!mapInstanceRef.current || !session?.members) return;
-    const membersList = Object.values(session.members);
-    if (membersList.length === 0) return;
+  // Selected companion calculations
+  const companions = designatedMembers.filter((m) => m.id !== memberId);
+  const selectedCompanion = companions.find((c) => c.id === selectedCompanionId) || companions[0] || null;
 
-    const bounds = L.latLngBounds(membersList.map((m) => [m.latitude, m.longitude]));
-    mapInstanceRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
-  };
-
-  // Center on my location
-  const handleCenterOnMe = () => {
-    if (!mapInstanceRef.current || !myCoords) return;
-    mapInstanceRef.current.setView([myCoords.latitude, myCoords.longitude], 17);
-  };
-
-  // Current selected companion for bearing/distance
-  const companions = session?.members
-    ? Object.values(session.members).filter((m) => m.id !== memberId)
-    : [];
-  const selectedCompanion =
-    companions.find((c) => c.id === selectedCompanionId) || companions[0] || null;
-
-  // Haversine & Bearing calculations from ME to selected companion
   let liveDistanceMeters = 0;
   let liveBearingDegrees = 0;
   let liveCardinal = 'N';
@@ -979,14 +956,8 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     liveCardinal = getCompassCardinal(liveBearingDegrees);
   }
 
-  // Calculate remaining session time
   const remainingHours = session
-    ? Math.max(
-        0,
-        Math.round(
-          (new Date(session.expiresAt).getTime() - Date.now()) / (3600 * 1000)
-        )
-      )
+    ? Math.max(0, Math.round((new Date(session.expiresAt).getTime() - Date.now()) / (3600 * 1000)))
     : 0;
 
   if (!isOpen) return null;
@@ -1005,7 +976,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
 
         {/* Sticky Header Bar */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-3.5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md z-30 shrink-0">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md z-30 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-emerald-950/60 shrink-0">
               <Users className="w-5 h-5" />
@@ -1015,62 +986,105 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                 <h2 className="text-base sm:text-lg font-heading font-extrabold text-stone-100 flex items-center gap-2">
                   <span>{language === 'bm' ? 'Cari Rakan Kumpulan' : 'Find My Party'}</span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
-                    {language === 'bm' ? 'Suar Kumpulan' : 'Group Beacon'}
+                    {language === 'bm' ? 'Suar GPS' : 'Live Beacon'}
                   </span>
                 </h2>
               </div>
               <p className="text-[11px] text-stone-400 line-clamp-1">
                 {language === 'bm'
-                  ? 'Penjejakan koordinat live & kompas berasingan untuk pasar malam, ladang teh & denai'
-                  : 'Live GPS sync & offline bearing for night markets, tea estates & hiking trails'}
+                  ? 'Kesan lokasi tepat anda dan semak pin designated setiap ahli yang menyertai'
+                  : 'Real-time GPS tracking with designated pins for each companion who joins'}
               </p>
             </div>
           </div>
 
-          {/* Clean icon-only X close button */}
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer shrink-0"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* High-visibility "Locate Me" button */}
+            <button
+              type="button"
+              onClick={handleLocateMe}
+              disabled={locatingUser}
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/60 transition-all cursor-pointer disabled:opacity-50"
+              title="Locate my exact position on map"
+            >
+              {locatingUser ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+              ) : (
+                <Crosshair className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+              )}
+              <span className="hidden xs:inline">
+                {language === 'bm' ? 'Kesan Saya' : 'Locate Me'}
+              </span>
+            </button>
+
+            {/* Close Button */}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Scrollable Content Body with touch support and safe padding */}
-        <div 
+        {/* Locate Me Floating Notification Toast */}
+        {locateToast && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs px-4 py-2 rounded-full shadow-2xl animate-in fade-in slide-in-from-top duration-200 flex items-center gap-2">
+            <span>{locateToast}</span>
+          </div>
+        )}
+
+        {/* GPS Error alert if any */}
+        {gpsError && (
+          <div className="mx-4 mt-2 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{gpsError}</span>
+          </div>
+        )}
+
+        {/* Scrollable Content Body */}
+        <div
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 sm:px-6 py-4 pb-28 sm:pb-8 space-y-4 touch-pan-y"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {/* If NO active session: Show Join / Create Screen */}
+          {/* Active Session vs Create/Join Modes */}
           {!session ? (
-            <div className="max-w-xl mx-auto space-y-6 py-2">
-              {/* Member Profile Setup Card */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-stone-800/80 border border-white/10 space-y-4">
-                <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>{language === 'bm' ? '1. Identiti Anda' : '1. Your Companion Identity'}</span>
+            <div className="max-w-xl mx-auto space-y-5 py-1">
+              {/* Profile Card: Display Name & Designated Pin Color */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-stone-800/80 border border-white/10 space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>{language === 'bm' ? 'Identiti Pin Anda' : 'Your Designated Pin'}</span>
+                  </div>
+                  {myCoords && (
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      GPS Active (±{myCoords.accuracy}m)
+                    </span>
+                  )}
                 </div>
 
-                <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-xs font-semibold text-stone-300 mb-1">
-                      {language === 'bm' ? 'Nama Panggilan / Nama Anda' : 'Your Display Name'}
+                      {language === 'bm' ? 'Nama Anda / Panggilan' : 'Your Display Name'}
                     </label>
                     <input
                       type="text"
                       value={memberName}
                       onChange={(e) => setMemberName(e.target.value)}
                       placeholder={language === 'bm' ? 'Cth: Putri, Hazry, Ibu' : 'e.g., Sarah, Putri, Dad'}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-stone-100 placeholder:text-stone-500 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-stone-100 placeholder:text-stone-500 text-sm focus:outline-none focus:border-emerald-500"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-stone-300 mb-1.5">
-                      {language === 'bm' ? 'Warna Avatar Suar Anda' : 'Beacon Pin Color'}
+                      {language === 'bm' ? 'Warna Designated Pin Anda' : 'Designated Pin Color'}
                     </label>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 pt-0.5">
                       {AVATAR_COLORS.map((col) => (
                         <button
                           key={col.value}
@@ -1092,809 +1106,493 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                 </div>
               </div>
 
-              {/* Error Message Alert */}
+              {/* Clear Option Switcher Tabs: CREATE BEACON vs JOIN BEACON */}
+              <div className="grid grid-cols-2 p-1.5 rounded-2xl bg-stone-950 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEntryMode('create');
+                    setErrorMsg(null);
+                  }}
+                  className={`py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    entryMode === 'create'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/60'
+                      : 'text-stone-400 hover:text-white'
+                  }`}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>{language === 'bm' ? 'Cipta Suar Baharu' : 'Create Beacon'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEntryMode('join');
+                    setErrorMsg(null);
+                  }}
+                  className={`py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    entryMode === 'join'
+                      ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-lg shadow-sky-950/60'
+                      : 'text-stone-400 hover:text-white'
+                  }`}
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>{language === 'bm' ? 'Sertai Suar Kumpulan' : 'Join Beacon'}</span>
+                </button>
+              </div>
+
+              {/* Error Alert */}
               {errorMsg && (
-                <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+                <div className="p-3.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
                   <span>{errorMsg}</span>
                 </div>
               )}
 
-              {/* Two Options: Create or Join */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Option A: Create New Session */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-stone-800/90 to-stone-900 border border-emerald-500/30 flex flex-col justify-between space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                      <Sparkles className="w-4 h-4" />
-                      <span>{language === 'bm' ? 'Cipta Sesi Baharu' : 'Create New Beacon'}</span>
-                    </div>
-                    <p className="text-xs text-stone-300 leading-relaxed">
+              {/* MODE A: CREATE BEACON */}
+              {entryMode === 'create' && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-stone-850 to-stone-900 border border-emerald-500/30 space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-stone-100 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <span>{language === 'bm' ? 'Cipta Suar Lawatan Cameron Highlands' : 'Create Live Group Beacon'}</span>
+                    </h3>
+                    <p className="text-xs text-stone-300">
                       {language === 'bm'
-                        ? 'Cipta kod jemputan khas seperti CAMGO-TRIP-882 untuk dikongsi kepada keluarga atau rakan.'
-                        : 'Generate a private invite code (e.g. CAMGO-TRIP-882) to share with your travel companions.'}
+                        ? 'Jana kod suar persendirian untuk dikongsi dengan rakan perjalanan anda.'
+                        : 'Generate a private invite code to broadcast designated pins with your companions.'}
                     </p>
+                  </div>
 
-                    {/* Prominent Auto-Generated Code & QR Preview upfront */}
-                    <div className="p-3 rounded-xl bg-stone-950/80 border border-emerald-500/30 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold flex items-center gap-1">
-                          <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-                          <span>{language === 'bm' ? 'Kod Dijana Automatik:' : 'Auto-Generated Code:'}</span>
-                        </span>
+                  {/* Auto-Generated Code Preview */}
+                  <div className="p-3 rounded-xl bg-stone-950 border border-emerald-500/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold flex items-center gap-1">
+                        <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                        <span>{language === 'bm' ? 'Kod Suar Dijana:' : 'Designated Session Code:'}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPreGeneratedCode(generateBeaconCode())}
+                        className="px-2 py-0.5 rounded-md bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-emerald-300 border border-white/10 text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Generate different code"
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" />
+                        <span>{language === 'bm' ? 'Jana Lain' : 'Regenerate'}</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-base font-mono font-black text-emerald-300 tracking-wider px-3 py-1.5 rounded-lg bg-stone-900 border border-emerald-500/40 select-all">
+                        {preGeneratedCode}
+                      </span>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
-                          onClick={() => setPreGeneratedCode(generateBeaconCode())}
-                          className="px-2 py-0.5 rounded-md bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-emerald-300 border border-white/10 text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                          title="Generate new code"
+                          onClick={() => {
+                            navigator.clipboard.writeText(preGeneratedCode);
+                            setCopiedCode(true);
+                            setTimeout(() => setCopiedCode(false), 2000);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 text-xs font-medium flex items-center gap-1 cursor-pointer transition-colors"
                         >
-                          <RefreshCw className="w-2.5 h-2.5" />
-                          <span>{language === 'bm' ? 'Jana Lain' : 'Regenerate'}</span>
+                          {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedCode ? (language === 'bm' ? 'Disalin' : 'Copied') : (language === 'bm' ? 'Salin' : 'Copy')}</span>
                         </button>
-                      </div>
 
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-mono font-black text-emerald-300 tracking-wider px-2.5 py-1 rounded-lg bg-stone-900 border border-emerald-500/40 select-all truncate">
-                          {preGeneratedCode}
-                        </span>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(preGeneratedCode);
-                              setCopiedCode(true);
-                              setTimeout(() => setCopiedCode(false), 2000);
-                            }}
-                            className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
-                            title="Copy code"
-                          >
-                            {copiedCode ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                            <span>{copiedCode ? (language === 'bm' ? 'Disalin' : 'Copied') : (language === 'bm' ? 'Salin' : 'Copy')}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setShowQrModal(true)}
-                            className="px-2 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                            title="Preview scannable QR code"
-                          >
-                            <QrCode className="w-3 h-3" />
-                            <span>QR</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-stone-400 mb-1">
-                        {language === 'bm' ? 'Nama Kumpulan / Lawatan' : 'Group / Trip Name'}
-                      </label>
-                      <input
-                        type="text"
-                        value={newSessionName}
-                        onChange={(e) => setNewSessionName(e.target.value)}
-                        placeholder="e.g. Kea Farm Market Walk"
-                        className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-xs text-stone-100 focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-stone-400 mb-1">
-                        {language === 'bm' ? 'Tempoh Hayat Sesi (Tamat Automatik)' : 'Auto-Expiry Duration'}
-                      </label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {([2, 8, 24] as const).map((hrs) => (
-                          <button
-                            key={hrs}
-                            type="button"
-                            onClick={() => setExpiryHours(hrs)}
-                            className={`py-1.5 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
-                              expiryHours === hrs
-                                ? 'bg-emerald-600 text-white border-emerald-400'
-                                : 'bg-stone-900 text-stone-400 border-white/10 hover:text-white'
-                            }`}
-                          >
-                            {hrs} {language === 'bm' ? 'Jam' : 'Hours'}
-                          </button>
-                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setShowQrModal(true)}
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>QR</span>
+                        </button>
                       </div>
                     </div>
                   </div>
 
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-400 mb-1">
+                      {language === 'bm' ? 'Nama Kumpulan / Lawatan' : 'Trip / Group Name'}
+                    </label>
+                    <input
+                      type="text"
+                      value={newSessionName}
+                      onChange={(e) => setNewSessionName(e.target.value)}
+                      placeholder="e.g. Kea Farm & Night Market Walk"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/10 text-xs text-stone-100 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-400 mb-1">
+                      {language === 'bm' ? 'Tempoh Hayat Sesi' : 'Session Duration'}
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([2, 8, 24] as const).map((hrs) => (
+                        <button
+                          key={hrs}
+                          type="button"
+                          onClick={() => setExpiryHours(hrs)}
+                          className={`py-2 text-xs font-mono font-bold rounded-xl border transition-all cursor-pointer ${
+                            expiryHours === hrs
+                              ? 'bg-emerald-600 text-white border-emerald-400 shadow-md'
+                              : 'bg-stone-900 text-stone-400 border-white/10 hover:text-white'
+                          }`}
+                        >
+                          {hrs} {language === 'bm' ? 'Jam' : 'Hours'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <button
+                    type="button"
                     onClick={handleCreateSession}
                     disabled={loading}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950/60 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-xl shadow-emerald-950/60 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    {loading ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Radio className="w-4 h-4" />
-                    )}
+                    {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
                     <span>{language === 'bm' ? 'Mula Suar Kumpulan' : 'Start Group Beacon'}</span>
                   </button>
                 </div>
+              )}
 
-                {/* Option B: Join Existing Session */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-stone-800/90 to-stone-900 border border-sky-500/30 flex flex-col justify-between space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-mono font-bold text-sky-400 uppercase tracking-wider">
-                      <Users className="w-4 h-4" />
-                      <span>{language === 'bm' ? 'Sertai Kumpulan Sedia Ada' : 'Join Existing Beacon'}</span>
-                    </div>
-                    <p className="text-xs text-stone-300 leading-relaxed">
+              {/* MODE B: JOIN BEACON */}
+              {entryMode === 'join' && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-stone-850 to-stone-900 border border-sky-500/30 space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-stone-100 flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-sky-400" />
+                      <span>{language === 'bm' ? 'Sertai Suar Kumpulan Sedia Ada' : 'Join Existing Beacon'}</span>
+                    </h3>
+                    <p className="text-xs text-stone-300">
                       {language === 'bm'
-                        ? 'Ada kod atau imbas QR daripada rakan? Masukkan kod untuk menyegerakkan lokasi live.'
-                        : 'Have an invite code or scanned a QR from your companion? Enter it below to sync live coordinates.'}
+                        ? 'Masukkan kod jemputan daripada rakan untuk menyegerakkan designated pin anda pada peta live.'
+                        : 'Enter the invite code from your group leader to join with your designated pin.'}
                     </p>
+                  </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-semibold text-stone-400">
-                          {language === 'bm' ? 'Kod Jemputan Kumpulan' : 'Session Invite Code'}
-                        </label>
-                        {joinCodeInput && (
-                          <span className="text-[9px] font-mono text-sky-400 bg-sky-950/60 border border-sky-500/30 px-1.5 py-0.5 rounded">
-                            {language === 'bm' ? 'Diisi Auto' : 'Auto-detected'}
-                          </span>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        value={joinCodeInput}
-                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                        placeholder="CAMGO-TRIP-882"
-                        className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-xs font-mono uppercase tracking-wider text-stone-100 placeholder:text-stone-600 focus:outline-none focus:border-sky-500"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-400 mb-1.5">
+                      {language === 'bm' ? 'Kod Jemputan Sesi' : 'Session Invite Code'}
+                    </label>
+                    <input
+                      type="text"
+                      value={joinCodeInput}
+                      onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                      placeholder="e.g. CAMGO-TRIP-123"
+                      className="w-full px-4 py-3 rounded-xl bg-stone-900 border border-white/15 text-sm font-mono uppercase tracking-wider text-stone-100 placeholder:text-stone-600 focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
 
-                    <div className="p-2.5 rounded-xl bg-stone-900/60 border border-white/5 text-[11px] text-stone-400 flex items-start gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>
-                        {language === 'bm'
-                          ? 'Perkongsian lokasi anda dikawal sepenuhnya oleh anda. Anda boleh hidupkan atau matikan pada bila-bila masa.'
-                          : 'Privacy first: You always maintain full opt-in control over whether your GPS is broadcast.'}
-                      </span>
-                    </div>
+                  <div className="p-3 rounded-xl bg-stone-900/60 border border-white/5 text-xs text-stone-300 flex items-start gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <span>
+                      {language === 'bm'
+                        ? 'Lokasi anda disegerakkan secara langsung dengan ahli kumpulan. Anda boleh matikan perkongsian pada bila-bila masa.'
+                        : 'Your real GPS pin will be broadcast only to verified companions in this session. You can stop sharing anytime.'}
+                    </span>
                   </div>
 
                   <button
+                    type="button"
                     onClick={handleJoinSession}
-                    disabled={loading}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-950/60 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    disabled={loading || !joinCodeInput.trim()}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-sky-950/60 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    {loading ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ArrowUpRight className="w-4 h-4" />
-                    )}
+                    {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
                     <span>{language === 'bm' ? 'Sertai Suar Kumpulan' : 'Join Group Beacon'}</span>
                   </button>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
-            /* ACTIVE SESSION VIEW */
+            /* ACTIVE SESSION VIEW (Real Users Only) */
             <div className="space-y-4">
               {/* Session Control Banner */}
               <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-800 via-stone-850 to-stone-800 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3 shadow-xl">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-bold text-emerald-400 font-mono tracking-wider">
+                    <span className="text-xs sm:text-sm font-bold text-emerald-400 font-mono tracking-wider">
                       {session.name}
                     </span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-stone-900 text-stone-300 border border-white/10 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-emerald-400" />
-                      <span>
-                        {language === 'bm' ? 'Tamat dalam' : 'Expires in'} ~{remainingHours}h
-                      </span>
+                      <span>~{remainingHours}h remaining</span>
                     </span>
                   </div>
 
-                  {/* Invite Code with Copy & Share */}
+                  {/* Invite Code */}
                   <div className="flex items-center gap-2 pt-0.5">
-                    <span className="text-[11px] text-stone-400">{language === 'bm' ? 'Kod Sesi:' : 'Code:'}</span>
-                    <span className="text-sm font-mono font-black text-white px-2 py-0.5 rounded bg-black/60 border border-emerald-500/40 select-all">
+                    <span className="text-xs text-stone-400">{language === 'bm' ? 'Kod Sesi:' : 'Code:'}</span>
+                    <span className="text-sm font-mono font-black text-white px-2.5 py-0.5 rounded bg-black/60 border border-emerald-500/40 select-all">
                       {session.code}
                     </span>
                     <button
-                      onClick={handleCopyCode}
-                      className="p-1.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors cursor-pointer text-xs flex items-center gap-1"
-                      title="Copy Code"
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(session.code);
+                        setCopiedCode(true);
+                        setTimeout(() => setCopiedCode(false), 2000);
+                      }}
+                      className="p-1 rounded bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors"
+                      title="Copy code"
                     >
                       {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
-                    <button
-                      onClick={handleShareSession}
-                      className="p-1.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors cursor-pointer text-xs flex items-center gap-1"
-                      title="Share Invite"
-                    >
-                      <Share2 className="w-3.5 h-3.5" />
-                      <span className="text-[11px] font-medium hidden sm:inline">{language === 'bm' ? 'Kongsi' : 'Share'}</span>
-                    </button>
-                    <button
-                      onClick={() => setShowLiveMapModal(true)}
-                      className="p-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
-                      title="Open Live Beacon Map"
-                    >
-                      <Navigation className="w-3.5 h-3.5" />
-                      <span>{language === 'bm' ? 'Peta Live' : 'Live Map'}</span>
-                    </button>
-                    <button
-                      onClick={() => setShowQrModal(true)}
-                      className="p-1.5 px-2.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
-                      title="Show QR Code"
-                    >
-                      <QrCode className="w-3.5 h-3.5" />
-                      <span>{language === 'bm' ? 'Kod QR' : 'QR Code'}</span>
-                    </button>
                   </div>
                 </div>
 
-                {/* Right side: Opt-in Live Sharing & History Toggle Switches */}
-                <div className="flex items-center gap-3">
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs font-bold text-stone-200 flex items-center gap-1.5">
-                      {isSharing ? (
-                        <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <EyeOff className="w-3.5 h-3.5 text-stone-500" />
-                      )}
-                      <span>
-                        {isSharing
-                          ? (language === 'bm' ? 'Berkongsi Lokasi' : 'Sharing Live Location')
-                          : (language === 'bm' ? 'Perkongsian Dijeda' : 'Location Paused')}
-                      </span>
-                    </span>
-                    <span className="text-[10px] text-stone-400">
-                      {isSharing
-                        ? (language === 'bm' ? 'Kumpulan boleh lihat anda' : 'Visible to group')
-                        : (language === 'bm' ? 'Tersembunyi daripada kumpulan' : 'Hidden from group')}
-                    </span>
-                  </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Locate Me Shortcut Button in Active Session */}
+                  <button
+                    type="button"
+                    onClick={handleLocateMe}
+                    disabled={locatingUser}
+                    className="px-2.5 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-colors"
+                  >
+                    <Crosshair className="w-3.5 h-3.5 animate-pulse" />
+                    <span>{language === 'bm' ? 'Kesan Saya' : 'Locate Me'}</span>
+                  </button>
 
+                  {/* Switch to Create Another Beacon */}
+                  <button
+                    type="button"
+                    onClick={handleSwitchToCreate}
+                    className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{language === 'bm' ? 'Cipta Lain' : 'New Beacon'}</span>
+                  </button>
+
+                  {/* Switch to Join Another Beacon */}
+                  <button
+                    type="button"
+                    onClick={handleSwitchToJoin}
+                    className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{language === 'bm' ? 'Sertai Lain' : 'Join Other'}</span>
+                  </button>
+
+                  {/* Leave Session */}
+                  <button
+                    type="button"
+                    onClick={handleLeaveSession}
+                    className="px-2.5 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{language === 'bm' ? 'Keluar' : 'Leave'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* View Switcher Tabs: MAP / COMPASS BEARING / DESIGNATED PINS */}
+              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('map')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeTab === 'map'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                    }`}
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>{language === 'bm' ? 'Peta Live' : 'Live Map'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('compass')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeTab === 'compass'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                    }`}
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>{language === 'bm' ? 'Kompas & Jarak' : 'Bearing & Distance'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('members')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeTab === 'members'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>
+                      {language === 'bm' ? 'Ahli Designated' : 'Designated Pins'} ({designatedMembers.length})
+                    </span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleToggleSharing}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      isSharing ? 'bg-emerald-600' : 'bg-stone-700'
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                      isSharing
+                        ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                        : 'bg-stone-800 border-white/10 text-stone-400'
                     }`}
                   >
-                    <span
-                      aria-hidden="true"
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        isSharing ? 'translate-x-6' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-
-                  <div className="flex flex-col items-end ml-2">
-                    <span className="text-xs font-bold text-stone-200 flex items-center gap-1.5">
-                      <Footprints className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>{language === 'bm' ? 'Sejarah Lokasi' : 'Location History'}</span>
-                    </span>
-                    <span className="text-[10px] text-stone-400">
-                      {showLocationHistory ? (language === 'bm' ? 'Dipaparkan' : 'Shown') : (language === 'bm' ? 'Disembunyikan' : 'Hidden')}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowLocationHistory(!showLocationHistory)}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      showLocationHistory ? 'bg-indigo-600' : 'bg-stone-700'
-                    }`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        showLocationHistory ? 'translate-x-6' : 'translate-x-0'
-                      }`}
-                    />
+                    {isSharing ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5" />}
+                    <span>{isSharing ? 'Broadcasting GPS' : 'GPS Paused'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Highlands Spotty Signal / Simulation bar */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-stone-900/80 border border-white/10 text-xs">
-                <div className="flex items-center gap-3 text-stone-300">
-                  {myCoords ? (
-                    <span className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px]">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
-                      <span>GPS ±{myCoords.accuracy}m</span>
-                      {myCoords.altitude && <span>• {myCoords.altitude}m ASL</span>}
-                    </span>
-                  ) : (
-                    <span className="text-amber-400 text-[11px] flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>{gpsError || (language === 'bm' ? 'Menunggu isyarat GPS...' : 'Acquiring GPS fix...')}</span>
-                    </span>
-                  )}
-
-                  {batteryLevel !== null && (
-                    <span className="hidden sm:flex items-center gap-1 text-stone-400 text-[11px]">
-                      <Battery className="w-3.5 h-3.5 text-stone-300" />
-                      <span>{batteryLevel}%</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Simulation toggle for testing / desktop */}
-                <button
-                  onClick={() => setSimulationActive(!simulationActive)}
-                  className={`text-[10px] font-mono px-2 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
-                    simulationActive
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                      : 'bg-stone-800 text-stone-400 border-white/5 hover:text-stone-200'
-                  }`}
-                  title="Simulate walking through Kea Farm & trails"
-                >
-                  <Footprints className="w-3 h-3" />
-                  <span>
-                    {simulationActive
-                      ? (language === 'bm' ? 'Simulasi Berjalan Aktif' : 'Simulated Walk Active')
-                      : (language === 'bm' ? 'Mod Simulasi Tanah Tinggi' : 'Highland Simulator')}
-                  </span>
-                </button>
-              </div>
-
-              {/* Tab Navigation: Map / Tactical Compass / Group Members */}
-              <div className="flex items-center gap-2 border-b border-white/10 pb-2">
-                <button
-                  onClick={() => setActiveTab('map')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    activeTab === 'map'
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'bg-stone-800/80 text-stone-400 hover:text-white'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{language === 'bm' ? 'Peta Interaktif' : 'Interactive Map'}</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('compass')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    activeTab === 'compass'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'bg-stone-800/80 text-stone-400 hover:text-white'
-                  }`}
-                >
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>
-                    {language === 'bm' ? 'Kompas Luar Talian (Spotty Signal)' : 'Offline Compass & Bearing'}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('members')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    activeTab === 'members'
-                      ? 'bg-teal-600 text-white shadow-md'
-                      : 'bg-stone-800/80 text-stone-400 hover:text-white'
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>
-                    {language === 'bm' ? 'Ahli Kumpulan' : 'Party Members'} (
-                    {session.members ? Object.keys(session.members).length : 0})
-                  </span>
-                </button>
-              </div>
-
-              {/* TAB 1: LEAFLET MAP VIEW */}
+              {/* TAB 1: LIVE MAP WITH DESIGNATED PINS */}
               {activeTab === 'map' && (
                 <div className="space-y-3">
-                  <div 
-                    className="relative w-full rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-stone-950 transition-[height] duration-200"
+                  <div
+                    ref={mapContainerRef}
+                    className="w-full rounded-2xl overflow-hidden border border-white/15 shadow-inner relative z-10"
                     style={{ height: `${dynamicMapHeight}px` }}
-                  >
-                    <div ref={mapContainerRef} className="w-full h-full z-10" />
+                  />
 
-                    {/* Floating Controls over Map */}
-                    <div className="absolute top-3 right-3 z-[400] flex flex-col gap-2">
-                      <button
-                        onClick={handleFitAllMembers}
-                        className="p-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-100 border border-white/20 shadow-lg backdrop-blur-md cursor-pointer transition-colors"
-                        title="Fit all party members"
-                      >
-                        <Maximize2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={handleCenterOnMe}
-                        className="p-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white border border-emerald-400/40 shadow-lg backdrop-blur-md cursor-pointer transition-colors"
-                        title="Center on my location"
-                      >
-                        <Crosshair className="w-4 h-4" />
-                      </button>
+                  {/* Map overlay controls */}
+                  <div className="flex items-center justify-between text-xs text-stone-400 px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span>{designatedMembers.length} real companions active in session</span>
                     </div>
 
-                    {/* Live companions quick pill footer on map */}
-                    <div className="absolute bottom-3 left-3 right-3 sm:right-auto z-[400] flex items-center gap-2 overflow-x-auto py-1">
-                      {companions.map((comp) => {
-                        const stale = isLocationStale(comp.updatedAt);
-                        const dist = myCoords
-                          ? formatDistance(
-                              calculateHaversineDistance(
-                                myCoords.latitude,
-                                myCoords.longitude,
-                                comp.latitude,
-                                comp.longitude
-                              )
-                            )
-                          : null;
-
-                        return (
-                          <button
-                            key={comp.id}
-                            onClick={() => {
-                              setSelectedCompanionId(comp.id);
-                              mapInstanceRef.current?.setView([comp.latitude, comp.longitude], 17);
-                            }}
-                            className={`px-2.5 py-1.5 rounded-xl bg-stone-900/95 backdrop-blur-md border text-left shrink-0 transition-all flex items-center gap-2 cursor-pointer shadow-lg ${
-                              selectedCompanionId === comp.id
-                                ? 'border-emerald-400 ring-1 ring-emerald-400'
-                                : 'border-white/15 hover:border-white/30'
-                            }`}
-                          >
-                            <div
-                              className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
-                              style={{ backgroundColor: comp.avatarColor }}
-                            >
-                              {comp.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="leading-tight">
-                              <div className="text-xs font-bold text-white flex items-center gap-1">
-                                <span>{comp.name}</span>
-                                {stale && <span className="text-[10px] text-amber-400 font-bold">⚠️ Stale</span>}
-                              </div>
-                              <div className="text-[10px] text-stone-400 font-mono">
-                                {dist ? dist : formatTimeAgo(comp.updatedAt)}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowLiveMapModal(true)}
+                      className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>{language === 'bm' ? 'Peta Skrin Penuh' : 'Fullscreen Map'}</span>
+                    </button>
                   </div>
                 </div>
               )}
 
-              {/* TAB 2: SPOTTY SIGNAL & OFFLINE TACTICAL COMPASS VIEW */}
+              {/* TAB 2: COMPASS & DISTANCE */}
               {activeTab === 'compass' && (
-                <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-b from-stone-850 to-stone-900 border border-indigo-500/30 space-y-6">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div>
-                      <h3 className="text-sm font-bold text-indigo-300 flex items-center gap-2">
-                        <Compass className="w-4 h-4 text-indigo-400" />
-                        <span>
-                          {language === 'bm'
-                            ? 'Panduan Kompas Luar Talian & Jarak Terus'
-                            : 'Offline Directional Compass & Bearing'}
-                        </span>
-                      </h3>
-                      <p className="text-xs text-stone-400 mt-0.5">
-                        {language === 'bm'
-                          ? 'Direka khas untuk kawasan tanpa isyarat internet di denai atau lembah ladang teh.'
-                          : 'Operates 100% offline via GPS sensors and cached coordinates without needing map tiles.'}
-                      </p>
-                    </div>
-
-                    {/* Companion Selector */}
-                    {companions.length > 0 && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-stone-400">{language === 'bm' ? 'Arah ke:' : 'Track towards:'}</span>
-                        <select
-                          value={selectedCompanion?.id || ''}
-                          onChange={(e) => setSelectedCompanionId(e.target.value)}
-                          className="px-3 py-1.5 rounded-xl bg-stone-900 border border-white/15 text-xs text-stone-100 font-bold focus:outline-none focus:border-indigo-400"
-                        >
-                          {companions.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
+                <div className="p-4 sm:p-5 rounded-2xl bg-stone-850 border border-white/10 space-y-4">
                   {selectedCompanion ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                      {/* Big Circular Tactical Compass Display */}
-                      <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-stone-900/90 border border-white/10 relative">
-                        <div className="w-56 h-56 rounded-full border-4 border-stone-800 bg-stone-950 relative flex items-center justify-center shadow-inner">
-                          {/* Cardinal Markers */}
-                          <span className="absolute top-2 text-xs font-mono font-bold text-red-400">N</span>
-                          <span className="absolute right-3 text-xs font-mono font-bold text-stone-400">E</span>
-                          <span className="absolute bottom-2 text-xs font-mono font-bold text-stone-400">S</span>
-                          <span className="absolute left-3 text-xs font-mono font-bold text-stone-400">W</span>
+                    <div className="text-center space-y-4">
+                      <div className="space-y-1">
+                        <span className="text-xs font-mono text-emerald-400 uppercase tracking-wider">
+                          {language === 'bm' ? 'Menjejak Ahli' : 'Tracking Companion'}
+                        </span>
+                        <h4 className="text-lg font-extrabold text-white">{selectedCompanion.name}</h4>
+                        <p className="text-xs text-stone-400">{selectedCompanion.nearestLandmark || 'Cameron Highlands'}</p>
+                      </div>
 
-                          {/* Outer Dial Degrees */}
-                          <div className="absolute inset-4 rounded-full border border-dashed border-stone-700 pointer-events-none" />
-
-                          {/* Rotating Directional Needle pointing towards companion */}
-                          <div
-                            className="absolute inset-0 flex items-center justify-center transition-transform duration-700 ease-out"
-                            style={{ transform: `rotate(${liveBearingDegrees}deg)` }}
-                          >
-                            <div className="flex flex-col items-center h-full justify-between py-5">
-                              {/* Arrow pointing UP towards bearing */}
-                              <div className="w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[24px] border-b-indigo-500 filter drop-shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
-                              <div className="w-2.5 h-2.5 rounded-full bg-indigo-400" />
-                              <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[14px] border-t-stone-700" />
-                            </div>
-                          </div>
-
-                          {/* Center Hub with Distance */}
-                          <div className="w-24 h-24 rounded-full bg-stone-900/95 border-2 border-indigo-400/50 flex flex-col items-center justify-center z-10 shadow-lg text-center p-1">
-                            <span className="text-[10px] font-mono text-stone-400 uppercase">Haversine</span>
-                            <span className="text-base font-extrabold font-mono text-white">
-                              {formatDistance(liveDistanceMeters)}
-                            </span>
-                            <span className="text-[10px] font-bold text-indigo-400">
-                              {liveCardinal} ({liveBearingDegrees}°)
-                            </span>
-                          </div>
+                      {/* Compass Circle */}
+                      <div className="relative w-44 h-44 mx-auto rounded-full border-4 border-stone-700 bg-stone-900 flex items-center justify-center shadow-2xl">
+                        <div
+                          className="absolute inset-2 flex items-center justify-center transition-transform duration-500"
+                          style={{ transform: `rotate(${liveBearingDegrees}deg)` }}
+                        >
+                          <div className="w-2 h-20 bg-gradient-to-t from-transparent via-rose-500 to-rose-400 rounded-full shadow-lg shadow-rose-500/50" />
                         </div>
-
-                        <div className="mt-4 text-center">
-                          <span className="text-xs text-stone-400">
-                            {language === 'bm' ? 'Arah langsung menuju' : 'Straight-line heading to'}{' '}
-                            <strong className="text-white">{selectedCompanion.name}</strong>
-                          </span>
+                        <div className="z-10 text-center">
+                          <span className="text-2xl font-black font-mono text-white">{liveCardinal}</span>
+                          <span className="block text-[11px] font-mono text-stone-400">{liveBearingDegrees}°</span>
                         </div>
                       </div>
 
-                      {/* Directional Walk Telemetry & Spotty Signal Status */}
-                      <div className="space-y-4">
-                        <div className="p-4 rounded-xl bg-stone-900/80 border border-white/10 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-stone-400">{language === 'bm' ? 'Status Rakan' : 'Companion Status'}</span>
-                            {isLocationStale(selectedCompanion.updatedAt) ? (
-                              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" />
-                                <span>{language === 'bm' ? 'Isyarat Terputus (Stale)' : 'Signal Lost (Stale)'}</span>
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                                <span>{language === 'bm' ? 'Isyarat Live Aktif' : 'Live Active Signal'}</span>
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <div className="text-sm font-bold text-stone-100 flex items-center gap-2">
-                              <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
-                              <span>{selectedCompanion.nearestLandmark || 'Cameron Highlands'}</span>
-                            </div>
-                            <div className="text-xs text-stone-400 flex items-center gap-2">
-                              <Clock className="w-3.5 h-3.5 text-stone-500" />
-                              <span>
-                                {language === 'bm' ? 'Ping Terakhir:' : 'Last Ping:'}{' '}
-                                {formatTimeAgo(selectedCompanion.updatedAt)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="p-3 rounded-lg bg-indigo-950/40 border border-indigo-500/30 text-xs text-indigo-200 leading-relaxed">
-                            💡 <strong>{language === 'bm' ? 'Panduan Berjalan:' : 'Navigation Advisory:'}</strong>{' '}
-                            {language === 'bm'
-                              ? `Halakan telefon anda ke arah ${liveCardinal} (${liveBearingDegrees}°) dan berjalan sejauh ~${formatDistance(
-                                  liveDistanceMeters
-                                )} untuk mendekati ${selectedCompanion.name}.`
-                              : `Point your phone towards heading ${liveCardinal} (${liveBearingDegrees}°) and walk ~${formatDistance(
-                                  liveDistanceMeters
-                                )} to rejoin ${selectedCompanion.name}.`}
-                          </div>
-                        </div>
-
-                        {/* Highland Valley & Forest Notice */}
-                        <div className="p-3 rounded-xl bg-stone-900/60 border border-white/5 text-[11px] text-stone-400 flex items-start gap-2">
-                          <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-                          <span>
-                            {language === 'bm'
-                              ? 'Di kawasan lembah bukit Mossy Forest atau ladang teh tanpa isyarat 4G, penunjuk kompas ini akan terus berfungsi mengikut koordinat GPS terakhir yang direkodkan.'
-                              : 'In deep valleys like Mossy Forest or sprawling tea trails with zero 4G reception, this compass needle relies directly on internal device GPS without needing cellular data.'}
-                          </span>
-                        </div>
+                      <div className="p-3 rounded-xl bg-stone-900/80 border border-white/10 max-w-xs mx-auto">
+                        <span className="text-xs text-stone-400 block">{language === 'bm' ? 'Jarak Langsung' : 'Straight-Line Distance'}</span>
+                        <span className="text-xl font-mono font-black text-emerald-400">{formatDistance(liveDistanceMeters)}</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="py-12 text-center text-stone-400 space-y-2">
-                      <Users className="w-8 h-8 mx-auto text-stone-600" />
-                      <p className="text-xs">
+                    <div className="py-8 text-center text-xs text-stone-400 space-y-2">
+                      <Users className="w-8 h-8 text-stone-600 mx-auto" />
+                      <p>
                         {language === 'bm'
-                          ? 'Belum ada rakan lain dalam kumpulan ini. Kongsi kod jemputan di atas!'
-                          : 'No companions have joined this beacon session yet. Share your invite code above!'}
+                          ? 'Tiada rakan lain dalam sesi ini lagi. Kongsi kod sesi untuk memulakan penjejakan kompas.'
+                          : 'No other companions have joined this session yet. Share your session code to track distances.'}
                       </p>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* TAB 3: MEMBERS LIST */}
+              {/* TAB 3: DESIGNATED PINS LIST */}
               {activeTab === 'members' && (
                 <div className="space-y-3">
-                  <div className="text-xs text-stone-400 flex items-center justify-between">
+                  <div className="p-3 rounded-xl bg-stone-950/60 border border-white/10 text-xs text-stone-300 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>
-                      {language === 'bm' ? 'Senarai Ahli Sesi Suar' : 'Active Party Members List'}
-                    </span>
-                    <span className="font-mono text-emerald-400">
-                      {session.members ? Object.keys(session.members).length : 0} {language === 'bm' ? 'Ahli' : 'Members'}
+                      {language === 'bm'
+                        ? 'Setiap pengguna yang menyertai diberikan Designated Pin unik dengan warna dan koordinat tersendiri.'
+                        : 'Every companion who joins receives their own designated pin badge and real-time GPS tracking.'}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Current User Card */}
-                    <div className="p-3.5 rounded-2xl bg-stone-800/90 border border-emerald-500/40 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="relative">
-                            <div
-                              className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-sm border-2 border-white/40"
-                              style={{ backgroundColor: avatarColor }}
-                            >
-                              {memberName.charAt(0).toUpperCase()}
-                            </div>
-                            <span
-                              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-stone-800 ${
-                                isSharing ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
-                              }`}
-                              title={isSharing ? 'Connection Active' : 'Location Paused'}
-                            />
-                          </div>
-                          <div>
-                            <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                              <span>{memberName}</span>
-                              <span className="text-[10px] font-mono text-emerald-400 font-bold">(You)</span>
-                            </div>
-                            <div className="text-[11px] text-stone-400 font-mono">
-                              {isSharing
-                                ? (language === 'bm' ? 'Penyiaran GPS Aktif' : 'Broadcasting Live')
-                                : (language === 'bm' ? 'Penyiaran Dijeda' : 'Broadcast Paused')}
-                            </div>
-                          </div>
-                        </div>
-
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 border ${
-                            isSharing
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                              : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                          }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isSharing ? 'bg-emerald-400 animate-ping' : 'bg-rose-500'
-                            }`}
-                          />
-                          <span>
-                            {isSharing
-                              ? (language === 'bm' ? 'Aktif' : 'Active')
-                              : (language === 'bm' ? 'Tidak Aktif' : 'Inactive')}
-                          </span>
-                        </span>
-                      </div>
-
-                      <div className="text-[11px] text-stone-300 pt-1 border-t border-white/5 flex items-center justify-between">
-                        <span>{getNearestHighlandLandmark(myCoords?.latitude || 4.5050, myCoords?.longitude || 101.4080)}</span>
-                        <span className="font-mono text-stone-400">±{myCoords?.accuracy || 15}m</span>
-                      </div>
-                    </div>
-
-                    {/* Companions */}
-                    {companions.map((comp) => {
-                      const stale = isLocationStale(comp.updatedAt);
-                      const isConnectionActive = comp.isSharing && !stale;
-                      const dist = myCoords
-                        ? formatDistance(
-                            calculateHaversineDistance(
-                              myCoords.latitude,
-                              myCoords.longitude,
-                              comp.latitude,
-                              comp.longitude
-                            )
-                          )
-                        : null;
+                  <div className="space-y-2">
+                    {designatedMembers.map((member, index) => {
+                      const isMe = member.id === memberId;
+                      const pinNumber = index + 1;
+                      const pinColor = member.avatarColor || AVATAR_COLORS[index % AVATAR_COLORS.length].value;
+                      const stale = isLocationStale(member.updatedAt);
 
                       return (
                         <div
-                          key={comp.id}
-                          className={`p-3.5 rounded-2xl bg-stone-800/60 border transition-all space-y-2 ${
-                            isLocationActive(comp.updatedAt) && comp.isSharing
-                              ? 'border-emerald-500/30 hover:border-emerald-500/50'
-                              : stale
-                              ? 'border-amber-500/40 bg-stone-850/80'
-                              : 'border-rose-500/30 bg-stone-850/60'
-                          }`}
+                          key={member.id}
+                          className="p-3 sm:p-3.5 rounded-xl bg-stone-800/80 border border-white/10 flex items-center justify-between gap-3 shadow-md"
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="relative shrink-0">
-                                <div
-                                  className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-sm border-2 border-white/40"
-                                  style={{ backgroundColor: comp.avatarColor }}
-                                >
-                                  {comp.name.charAt(0).toUpperCase()}
-                                </div>
-                                <span
-                                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-stone-800 ${
-                                    isLocationActive(comp.updatedAt) && comp.isSharing
-                                      ? 'bg-emerald-400 animate-pulse'
-                                      : stale
-                                      ? 'bg-amber-400'
-                                      : 'bg-rose-500'
-                                  }`}
-                                  title={
-                                    isConnectionActive
-                                      ? 'Active Connection'
-                                      : stale
-                                      ? 'Signal Stale'
-                                      : 'Inactive'
-                                  }
-                                />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                                  <span className="truncate">{comp.name}</span>
-                                </div>
-                                <div className="text-[11px] text-stone-400 font-mono truncate">
-                                  {dist ? `Jarak: ${dist}` : formatTimeAgo(comp.updatedAt)}
-                                </div>
-                              </div>
+                          <div className="flex items-center gap-3">
+                            {/* Designated Pin Badge */}
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-xs shadow-md border-2 border-white/20 shrink-0"
+                              style={{ backgroundColor: pinColor }}
+                            >
+                              #{pinNumber}
                             </div>
 
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 border ${
-                                  isConnectionActive
-                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                                    : stale
-                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                                    : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                                }`}
-                              >
-                                <span
-                                  className={`w-1.5 h-1.5 rounded-full ${
-                                    isConnectionActive
-                                      ? 'bg-emerald-400 animate-ping'
-                                      : stale
-                                      ? 'bg-amber-400'
-                                      : 'bg-rose-500'
-                                  }`}
-                                />
-                                <span>
-                                  {isLocationActive(comp.updatedAt) && comp.isSharing
-                                    ? (language === 'bm' ? 'Aktif' : 'Active')
-                                    : stale
-                                    ? (language === 'bm' ? 'Isyarat Lemah' : 'Stale Signal')
-                                    : (language === 'bm' ? 'Tidak Aktif' : 'Inactive')}
-                                </span>
-                              </span>
-
-                              <button
-                                onClick={() => {
-                                  setSelectedCompanionId(comp.id);
-                                  setActiveTab('compass');
-                                }}
-                                className="p-1.5 rounded-xl bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors text-xs flex items-center gap-1 cursor-pointer"
-                                title="Compass Bearing"
-                              >
-                                <Compass className="w-3.5 h-3.5 text-indigo-400" />
-                              </button>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-sm text-stone-100">{member.name}</span>
+                                {isMe && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                    You
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-stone-400">
+                                {member.nearestLandmark || 'Cameron Highlands'} · {formatTimeAgo(member.updatedAt)}
+                              </p>
                             </div>
                           </div>
 
-                          <div className="text-[11px] text-stone-300 pt-1 border-t border-white/5 flex items-center justify-between">
-                            <span className="truncate max-w-[200px]">
-                              {comp.nearestLandmark || 'Cameron Highlands'}
-                            </span>
-                            <span className="text-[10px] text-stone-400 font-mono">
-                              {comp.batteryLevel ? `🔋 ${comp.batteryLevel}%` : ''}
-                            </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {member.batteryLevel !== null && member.batteryLevel !== undefined && (
+                              <div className="flex items-center gap-1 text-[11px] text-stone-400 font-mono">
+                                <Battery className="w-3.5 h-3.5 text-stone-400" />
+                                <span>{member.batteryLevel}%</span>
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCompanionId(member.id);
+                                setActiveTab('map');
+                                if (mapInstanceRef.current) {
+                                  mapInstanceRef.current.setView([member.latitude, member.longitude], 17, { animate: true });
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-semibold cursor-pointer transition-colors"
+                            >
+                              Focus Pin
+                            </button>
                           </div>
                         </div>
                       );
@@ -1902,135 +1600,56 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                   </div>
                 </div>
               )}
-
-              {/* Bottom Actions: Leave Group or End Session */}
-              <div className="pt-3 border-t border-white/10 flex items-center justify-between flex-wrap gap-2">
-                <button
-                  onClick={handleLeaveSession}
-                  className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-rose-950/60 hover:text-rose-300 text-stone-300 text-xs font-semibold border border-white/10 transition-colors flex items-center gap-2 cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>{language === 'bm' ? 'Keluar dari Kumpulan' : 'Leave Group Beacon'}</span>
-                </button>
-
-                {session.createdBy === memberId && (
-                  <button
-                    onClick={handleEndSession}
-                    className="px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>{language === 'bm' ? 'Tamatkan Sesi untuk Semua' : 'End Session for Everyone'}</span>
-                  </button>
-                )}
-              </div>
             </div>
           )}
         </div>
+      </div>
 
-        {/* QR CODE & INSTANT SHARE MODAL POPUP */}
-        {showQrModal && (
-          <div 
-            className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150"
-            onClick={() => setShowQrModal(false)}
+      {/* QR Code Preview Modal */}
+      {showQrModal && qrCodeDataUrl && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setShowQrModal(false)}
+        >
+          <div
+            className="p-5 rounded-3xl bg-stone-900 border border-emerald-500/40 text-center space-y-4 max-w-sm w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div 
-              className="w-full max-w-sm rounded-3xl bg-stone-900 border border-emerald-500/40 p-5 sm:p-6 shadow-2xl relative text-center space-y-4"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono font-bold text-emerald-400 uppercase">
+                {language === 'bm' ? 'Imbas QR Suar' : 'Beacon QR Code'}
+              </span>
               <button
                 onClick={() => setShowQrModal(false)}
-                className="absolute top-4 right-4 p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
-                aria-label="Close QR Modal"
+                className="p-1 rounded-lg text-stone-400 hover:text-white"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
-
-              <div className="space-y-1 pt-1">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto mb-2">
-                  <QrCode className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-stone-100 font-heading">
-                  {language === 'bm' ? 'Imbas Kod QR Suar' : 'Scan Group Beacon QR Code'}
-                </h3>
-                <p className="text-xs text-stone-400">
-                  {language === 'bm'
-                    ? 'Arahkan kamera telefon untuk menyertai penjejakan lokasi kumpulan secara automatik.'
-                    : 'Point any phone camera to instantly join this live tracking party.'}
-                </p>
-              </div>
-
-              {/* QR Image */}
-              <div className="p-3 bg-white rounded-2xl shadow-xl border-2 border-emerald-500/30 w-fit mx-auto">
-                {qrCodeDataUrl ? (
-                  <img
-                    src={qrCodeDataUrl}
-                    alt={`QR Code for ${session?.code || preGeneratedCode}`}
-                    className="w-48 h-48 object-contain rounded-lg"
-                  />
-                ) : (
-                  <div className="w-48 h-48 flex items-center justify-center bg-stone-100 text-stone-400">
-                    <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
-                  </div>
-                )}
-              </div>
-
-              {/* Monospace Code Pill */}
-              <div className="p-2.5 rounded-xl bg-stone-950 border border-white/10 flex items-center justify-between gap-2">
-                <div className="text-left min-w-0">
-                  <span className="text-[10px] uppercase font-mono text-stone-400 block">
-                    {language === 'bm' ? 'Kod Sesi' : 'Session Code'}
-                  </span>
-                  <span className="text-sm font-mono font-black text-emerald-400 select-all truncate block">
-                    {session?.code || preGeneratedCode}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(session?.code || preGeneratedCode);
-                    setCopiedCode(true);
-                    setTimeout(() => setCopiedCode(false), 2000);
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center gap-1 border border-white/10 cursor-pointer shrink-0 transition-colors"
-                >
-                  {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedCode ? (language === 'bm' ? 'Disalin' : 'Copied') : (language === 'bm' ? 'Salin' : 'Copy')}</span>
-                </button>
-              </div>
-
-              {/* Share Actions */}
-              <div className="space-y-2 pt-1">
-                <button
-                  onClick={handleShareWhatsApp}
-                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all cursor-pointer"
-                >
-                  <Share2 className="w-4 h-4" />
-                  <span>{language === 'bm' ? 'Kongsi ke WhatsApp' : 'Share via WhatsApp'}</span>
-                </button>
-
-                <button
-                  onClick={handleCopyShareLink}
-                  className="w-full py-2 px-4 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 border border-white/10 transition-all cursor-pointer"
-                >
-                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedLink ? (language === 'bm' ? 'Pautan Disalin!' : 'Link Copied!') : (language === 'bm' ? 'Salin Pautan Penuh' : 'Copy Direct Share Link')}</span>
-                </button>
-              </div>
             </div>
-          </div>
-        )}
 
-        {/* LIVE INTERACTIVE BEACON MAP POPUP MODAL */}
+            <div className="p-3 bg-white rounded-2xl inline-block shadow-inner">
+              <img src={qrCodeDataUrl} alt="Beacon QR Code" className="w-60 h-60 mx-auto" />
+            </div>
+
+            <p className="text-xs text-stone-400 font-mono">Code: {session?.code || preGeneratedCode}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Live Beacon Map Modal */}
+      {showLiveMapModal && (
         <LiveBeaconMapModal
           isOpen={showLiveMapModal}
           onClose={() => setShowLiveMapModal(false)}
           session={session}
           myCoords={myCoords}
           memberId={memberId}
-          memberName={memberName}
+          memberName={memberName || 'You'}
           avatarColor={avatarColor}
           batteryLevel={batteryLevel}
           language={language}
         />
-      </div>
+      )}
     </div>
   );
 };

@@ -33,6 +33,8 @@ import {
   X,
   Calendar,
   Ticket,
+  Layers,
+  RotateCcw,
 } from 'lucide-react';
 import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
@@ -350,112 +352,223 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         </div>
       </div>
 
-      {/* Main Category Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        {mainCategories.map((cat) => {
-          const isActive = selectedCategory === cat.key;
-          return (
-            <button
-              key={cat.key}
-              onClick={() => onSelectCategory(cat.key)}
-              className={`p-3 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
-                isActive
-                  ? 'bg-emerald-950/40 border-emerald-500/50 shadow-lg shadow-emerald-950/50 text-white'
-                  : 'bg-stone-900/70 border-white/5 hover:border-white/15 text-stone-400 hover:text-white'
-              }`}
-            >
-              <span className="text-2xl">{cat.icon}</span>
-              <div>
-                <span className="text-xs sm:text-sm font-bold block">
-                  {getTranslation(language, cat.labelKey)}
+      {/* ========================================================= */}
+      {/* SECTION 1: DIRECTORY CATEGORIES (FILTER SELECTORS)       */}
+      {/* ========================================================= */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-stone-900/70 border border-white/10 shadow-xl backdrop-blur-sm space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-white/5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono uppercase tracking-widest font-extrabold text-emerald-400">
+                  {language === 'bm' ? 'PILIHAN KATEGORI' : 'DIRECTORY SELECTOR'}
                 </span>
-                <span className="text-[10px] text-stone-500 font-mono">
-                  {places.filter((p) => p.category === cat.key).length} listings
-                </span>
+                <span className="text-[10px] text-stone-500 font-mono">• 8 {language === 'bm' ? 'Kategori' : 'Categories'}</span>
               </div>
-            </button>
-          );
-        })}
-      </div>
+              <h4 className="text-sm sm:text-base font-heading font-extrabold text-stone-100 tracking-tight">
+                {language === 'bm' ? 'Kategori Direktori Utama' : 'Main Directory Categories'}
+              </h4>
+            </div>
+          </div>
 
-
-
-
-      {/* Places Cards Grid */}
-      {filteredPlaces.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl bg-stone-900/40 border border-white/5">
-          <p className="text-stone-400 text-sm">
-            {language === 'bm'
-              ? 'Tiada tempat dijumpai bagi carian ini.'
-              : 'No places match the selected filters or search query.'}
-          </p>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-stone-400 font-medium">
+              {language === 'bm' ? 'Kategori Aktif:' : 'Active Category:'}
+            </span>
+            <span className="font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs">
+              {mainCategories.find((c) => c.key === selectedCategory)?.labelKey
+                ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey)
+                : selectedCategory}
+            </span>
+          </div>
         </div>
-      ) : (
-        <div className="grid no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-2.5">
-          {filteredPlaces.map((place) => {
-            const isBookmarked = bookmarkedIds.includes(place.id);
-            const openStatus = isCurrentlyOpen(place.operatingHours);
 
+        {/* Category Cards Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+          {mainCategories.map((cat) => {
+            const isActive = selectedCategory === cat.key;
+            const catPlaceCount = places.filter((p) => p.category === cat.key).length;
             return (
-              <div
-                key={place.id}
-                onClick={() => {
-                  window.scrollTo({ top: 0, behavior: 'instant' });
-                  setSelectedPlacePopup(place);
-                }}
-                className="glass-card-hover no-mobile-clamp group p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-stone-900/90 border border-white/10 hover:border-emerald-500/50 hover:bg-stone-850 flex flex-col justify-between gap-1.5 sm:gap-2 cursor-pointer transition-all shadow-md min-h-[78px] sm:min-h-[88px] text-left relative overflow-hidden"
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => onSelectCategory(cat.key)}
+                className={`p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 relative overflow-hidden group ${
+                  isActive
+                    ? 'bg-gradient-to-br from-emerald-950/90 via-emerald-900/50 to-stone-900 border-emerald-500/80 shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-500/30 text-white'
+                    : 'bg-stone-900/90 border-white/5 hover:border-emerald-500/30 hover:bg-stone-850 text-stone-400 hover:text-white'
+                }`}
               >
-                {/* Top Row: Live Status Dot + Township badge & Bookmark */}
-                <div className="flex items-center justify-between gap-1.5 w-full">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        openStatus ? 'bg-emerald-500 animate-pulse' : 'bg-stone-600'
-                      }`}
-                      title={openStatus ? 'Open Now' : 'Closed'}
-                    />
-                    <span className="text-[9px] sm:text-[10px] text-emerald-400 font-mono font-medium truncate max-w-[80px] min-[380px]:max-w-none">
-                      {place.township}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleBookmark(place.id);
-                    }}
-                    className="p-0.5 -mr-1 rounded-md text-stone-400 hover:text-white transition-colors shrink-0"
-                    title={isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}
-                  >
-                    <Bookmark
-                      className={`w-3 h-3 ${
-                        isBookmarked ? 'fill-emerald-400 text-emerald-400' : 'text-stone-400'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* Business Name - compact, crisp, readable 2 lines */}
-                <h4 className="no-mobile-clamp !text-[11px] sm:!text-xs font-semibold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 !leading-tight break-words my-auto">
-                  {language === 'bm' ? place.nameBm || place.name : place.name}
-                </h4>
-
-                {/* Bottom Row: Star Rating & Details trigger */}
-                <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-stone-400 font-mono pt-1 border-t border-white/5">
-                  <span className="text-amber-400 font-semibold flex items-center gap-0.5">
-                    ★ {place.rating}
+                {isActive && (
+                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                )}
+                <span className="text-2xl sm:text-3xl shrink-0 p-1.5 rounded-xl bg-white/5 group-hover:scale-105 transition-transform">
+                  {cat.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className={`text-xs sm:text-sm font-bold block truncate ${isActive ? 'text-emerald-200' : 'text-stone-200'}`}>
+                    {getTranslation(language, cat.labelKey)}
                   </span>
-                  <span className="text-[9px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5">
-                    <span>{language === 'bm' ? 'Lihat' : 'Details'}</span>
-                    <ArrowUpRight className="w-2.5 h-2.5" />
+                  <span className="text-[10px] text-stone-500 font-mono block">
+                    {catPlaceCount} {language === 'bm' ? 'senarai' : 'listings'}
                   </span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
-      )}
+      </div>
+
+      {/* ========================================================= */}
+      {/* DISTINCT VISIBLE SEPARATION: DIRECTORY TABS <-> PLACE CARDS */}
+      {/* ========================================================= */}
+      <div className="pt-2 sm:pt-4">
+        {/* Bold Accent Divider Line with Center Beacon */}
+        <div className="relative mb-5 flex items-center" aria-hidden="true">
+          <div className="flex-grow border-t-2 border-dashed border-emerald-500/25"></div>
+          <div className="mx-3 sm:mx-4 flex items-center gap-2 px-3.5 py-1 rounded-full bg-stone-900 border-2 border-emerald-500/40 text-[11px] font-mono text-emerald-400 shadow-xl shadow-black/60">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="font-extrabold tracking-wider uppercase">
+              {language === 'bm' ? 'PREMIS & TARIKAN TERCATAT' : 'VERIFIED PLACE CARDS'}
+            </span>
+          </div>
+          <div className="flex-grow border-t-2 border-dashed border-emerald-500/25"></div>
+        </div>
+
+        {/* Place Cards Banner Header */}
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-stone-900/95 to-emerald-950/40 border border-emerald-500/30 shadow-xl mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+              <MapPin className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
+                  {language === 'bm' ? 'Kad Tempat Cameron' : 'Cameron Place Cards'}
+                </span>
+                {selectedTown !== 'all' && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
+                    📍 {selectedTown}
+                  </span>
+                )}
+                {searchQuery.trim() && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
+                    🔍 &quot;{searchQuery.trim()}&quot;
+                  </span>
+                )}
+              </div>
+              <h3 className="text-sm sm:text-base font-heading font-extrabold text-white mt-0.5">
+                {language === 'bm'
+                  ? `Senarai Tempat: ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`
+                  : `Places in ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`}
+              </h3>
+            </div>
+          </div>
+
+          {/* Right Action & Place Counter */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {(selectedCategory !== 'food' || selectedSubCategory || selectedTown !== 'all' || searchQuery.trim()) && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectCategory('food', undefined);
+                  setSelectedTown('all');
+                  setSearchQuery('');
+                }}
+                className="text-xs text-stone-300 hover:text-white px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <RotateCcw className="w-3 h-3 text-stone-400" />
+                <span>{language === 'bm' ? 'Tetap Semula' : 'Reset Filters'}</span>
+              </button>
+            )}
+            <span className="px-3 py-1.5 rounded-xl text-xs font-mono font-extrabold bg-emerald-500 text-stone-950 shadow-md">
+              {filteredPlaces.length} {language === 'bm' ? 'Tempat' : 'Places'}
+            </span>
+          </div>
+        </div>
+
+        {/* Places Cards Grid */}
+        {filteredPlaces.length === 0 ? (
+          <div className="p-12 text-center rounded-3xl bg-stone-900/40 border border-white/5">
+            <p className="text-stone-400 text-sm">
+              {language === 'bm'
+                ? 'Tiada tempat dijumpai bagi carian ini.'
+                : 'No places match the selected filters or search query.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-2.5">
+            {filteredPlaces.map((place) => {
+              const isBookmarked = bookmarkedIds.includes(place.id);
+              const openStatus = isCurrentlyOpen(place.operatingHours);
+
+              return (
+                <div
+                  key={place.id}
+                  onClick={() => {
+                    window.scrollTo({ top: 0, behavior: 'instant' });
+                    setSelectedPlacePopup(place);
+                  }}
+                  className="glass-card-hover no-mobile-clamp group p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-stone-900/95 border border-stone-800 hover:border-emerald-500/60 hover:bg-stone-850 flex flex-col justify-between gap-1.5 sm:gap-2 cursor-pointer transition-all shadow-md min-h-[78px] sm:min-h-[88px] text-left relative overflow-hidden"
+                >
+                  {/* Top Row: Live Status Dot + Township badge & Bookmark */}
+                  <div className="flex items-center justify-between gap-1.5 w-full">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          openStatus ? 'bg-emerald-500 animate-pulse' : 'bg-stone-600'
+                        }`}
+                        title={openStatus ? 'Open Now' : 'Closed'}
+                      />
+                      <span className="text-[9px] sm:text-[10px] text-emerald-400 font-mono font-medium truncate max-w-[80px] min-[380px]:max-w-none">
+                        {place.township}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleBookmark(place.id);
+                      }}
+                      className="p-0.5 -mr-1 rounded-md text-stone-400 hover:text-white transition-colors shrink-0"
+                      title={isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}
+                    >
+                      <Bookmark
+                        className={`w-3 h-3 ${
+                          isBookmarked ? 'fill-emerald-400 text-emerald-400' : 'text-stone-400'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Business Name - compact, crisp, readable 2 lines */}
+                  <h4 className="no-mobile-clamp !text-[11px] sm:!text-xs font-semibold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 !leading-tight break-words my-auto">
+                    {language === 'bm' ? place.nameBm || place.name : place.name}
+                  </h4>
+
+                  {/* Bottom Row: Star Rating & Details trigger */}
+                  <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-stone-400 font-mono pt-1 border-t border-white/5">
+                    <span className="text-amber-400 font-semibold flex items-center gap-0.5">
+                      ★ {place.rating}
+                    </span>
+                    <span className="text-[9px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5">
+                      <span>{language === 'bm' ? 'Lihat' : 'Details'}</span>
+                      <ArrowUpRight className="w-2.5 h-2.5" />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Detailed Place Pop-up Modal (Image 2 style) */}
       {selectedPlacePopup &&

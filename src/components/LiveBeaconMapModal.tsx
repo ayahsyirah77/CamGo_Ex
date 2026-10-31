@@ -176,27 +176,33 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
       });
     }
 
-    effectiveMembers.forEach((member) => {
+    effectiveMembers.forEach((member, index) => {
       const isMe = member.id === memberId;
+      const pinNumber = index + 1;
       const stale = isLocationStale(member.updatedAt);
       const isActivelySharing = member.isSharing;
+      const pinColor = member.avatarColor || '#10b981';
 
-      // Custom marker icon with radar pulse & label
+      // Custom designated teardrop pin with number & label
       const iconHtml = `
-        <div class="relative flex items-center justify-center">
+        <div class="relative flex flex-col items-center justify-center cursor-pointer group" style="transform: translate(-50%, -100%);">
           ${
             isActivelySharing && !stale
-              ? `<div class="absolute w-11 h-11 rounded-full animate-ping opacity-60" style="background-color: ${member.avatarColor};"></div>`
+              ? `<div class="absolute -bottom-1 w-8 h-8 rounded-full animate-ping opacity-60" style="background-color: ${pinColor};"></div>`
               : ''
           }
-          <div class="w-9 h-9 rounded-full border-2 border-white shadow-2xl flex items-center justify-center font-black text-white text-xs z-10 transition-transform ${
-            stale ? 'opacity-70 grayscale-[40%]' : ''
-          }" style="background-color: ${member.avatarColor};">
-            ${member.name.charAt(0).toUpperCase()}
+          <div class="relative transition-transform duration-200 group-hover:scale-110 drop-shadow-xl">
+            <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 0C8.954 0 0 8.954 0 20C0 33.5 20 48 20 48C20 48 40 33.5 40 20C40 8.954 31.046 0 20 0Z" fill="${pinColor}" stroke="#ffffff" stroke-width="2.5"/>
+              <circle cx="20" cy="18" r="13" fill="#ffffff"/>
+              <text x="20" y="23" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="11" fill="${pinColor}">${isMe ? 'YOU' : '#' + pinNumber}</text>
+            </svg>
           </div>
-          <div class="absolute -bottom-6 bg-stone-900/95 backdrop-blur-md px-2 py-0.5 rounded-lg border border-white/20 text-[10px] font-mono font-bold text-white whitespace-nowrap shadow-xl z-20 flex items-center gap-1">
-            <span>${member.name}</span>
-            ${isMe ? '<span class="text-emerald-400 font-extrabold">(You)</span>' : ''}
+          <div class="mt-1 bg-stone-900/95 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/20 text-[10px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5 z-20">
+            <span class="w-2 h-2 rounded-full" style="background-color: ${pinColor};"></span>
+            <span class="text-emerald-400 font-extrabold">Pin #${pinNumber}:</span>
+            <span class="max-w-[75px] truncate">${member.name}</span>
+            ${isMe ? '<span class="text-emerald-300 font-black">(You)</span>' : ''}
             ${stale ? '<span class="text-amber-400">⚠️</span>' : ''}
           </div>
         </div>
@@ -205,8 +211,8 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
       const customIcon = L.divIcon({
         html: iconHtml,
         className: 'custom-live-beacon-marker',
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
       });
 
       const latLng = L.latLng(member.latitude, member.longitude);
@@ -256,32 +262,57 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     });
   }, [isOpen, session, myCoords, memberId, memberName, avatarColor, batteryLevel]);
 
-  // Recenter Map directly on user's exact current location
+  // Recenter / Locate Me directly on user's exact current GPS location
   const handleRecenter = () => {
-    if (!mapInstanceRef.current) return;
+    if ('geolocation' in navigator) {
+      setRecenterToast(
+        language === 'bm'
+          ? 'Mengesan isyarat GPS peranti...'
+          : 'Locating real GPS satellite fix...'
+      );
 
-    const lat = myCoords?.latitude;
-    const lon = myCoords?.longitude;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const accuracy = Math.round(pos.coords.accuracy);
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.flyTo([lat, lon], 17, {
+              animate: true,
+              duration: 0.8,
+            });
+          }
+          setRecenterToast(
+            language === 'bm'
+              ? `Dipusatkan ke lokasi anda (±${accuracy}m)`
+              : `Located & centered (±${accuracy}m)`
+          );
+          setTimeout(() => setRecenterToast(null), 3000);
+        },
+        () => {
+          if (myCoords && mapInstanceRef.current) {
+            mapInstanceRef.current.flyTo([myCoords.latitude, myCoords.longitude], 17, {
+              animate: true,
+              duration: 0.8,
+            });
+            setRecenterToast(
+              language === 'bm'
+                ? `Dipusatkan ke lokasi anda (±${myCoords.accuracy}m)`
+                : `Centered on your location (±${myCoords.accuracy}m)`
+            );
+            setTimeout(() => setRecenterToast(null), 2500);
+          }
+        },
+        { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
+      );
+      return;
+    }
 
-    if (lat !== undefined && lon !== undefined) {
-      mapInstanceRef.current.flyTo([lat, lon], 17, {
+    if (myCoords && mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([myCoords.latitude, myCoords.longitude], 17, {
         animate: true,
         duration: 0.8,
       });
-      const accuracy = myCoords?.accuracy ? `±${myCoords.accuracy}m` : 'High GPS';
-      setRecenterToast(
-        language === 'bm'
-          ? `Dipusatkan ke lokasi anda (${accuracy})`
-          : `Centered on your location (${accuracy})`
-      );
-      setTimeout(() => setRecenterToast(null), 2500);
-    } else {
-      setRecenterToast(
-        language === 'bm'
-          ? 'Mendapatkan isyarat GPS peranti...'
-          : 'Acquiring GPS satellite fix...'
-      );
-      setTimeout(() => setRecenterToast(null), 2500);
     }
   };
 

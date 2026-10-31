@@ -819,6 +819,7 @@ export const INITIAL_EVENTS: EventNotification[] = [];
 export const INITIAL_GALLERY: GalleryItem[] = [];
 export const INITIAL_LOUNGE: LoungePost[] = [];
 
+
 export const TOWNSHIP_PORTALS = [
   {
     name: 'Tanah Rata',

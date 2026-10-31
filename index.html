@@ -8,29 +8,31 @@
         var origConsoleError = console.error;
         var origConsoleWarn = console.warn;
         
-        var isViteError = function(msg) {
+        var isIgnoredLog = function(msg) {
           if (!msg) return false;
           var str = String(msg);
           return str.indexOf('WebSocket') !== -1 || 
                  str.indexOf('@vite/client') !== -1 || 
                  str.indexOf('HMR') !== -1 ||
-                 str.indexOf('failed to connect to server') !== -1;
+                 str.indexOf('failed to connect to server') !== -1 ||
+                 str.indexOf('Timeout expired') !== -1 ||
+                 str.indexOf('Geolocation') !== -1;
         };
 
         console.error = function() {
           var args = Array.prototype.slice.call(arguments);
-          if (args.some(isViteError)) return;
+          if (args.some(isIgnoredLog)) return;
           origConsoleError.apply(console, args);
         };
         
         console.warn = function() {
           var args = Array.prototype.slice.call(arguments);
-          if (args.some(isViteError)) return;
+          if (args.some(isIgnoredLog)) return;
           origConsoleWarn.apply(console, args);
         };
 
         window.addEventListener('error', function (event) {
-          if (isViteError(event.message) || isViteError(event.error && event.error.message)) {
+          if (isIgnoredLog(event.message) || isIgnoredLog(event.error && event.error.message)) {
             event.stopImmediatePropagation();
             event.preventDefault();
             return true;
@@ -39,7 +41,7 @@
         
         window.addEventListener('unhandledrejection', function (event) {
           var reason = event.reason ? (event.reason.message || event.reason) : '';
-          if (isViteError(reason)) {
+          if (isIgnoredLog(reason)) {
             event.stopImmediatePropagation();
             event.preventDefault();
             return true;
