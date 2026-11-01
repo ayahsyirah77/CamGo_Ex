@@ -49,6 +49,7 @@ import { AiChatModal } from './components/AiChatModal';
 import { MobileFooterNav } from './components/MobileFooterNav';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLoginPage } from './components/AdminLoginPage';
+import { Analytics } from '@vercel/analytics/react';
 import { UserDashboard } from './components/UserDashboard';
 import { AuthModal } from './components/AuthModal';
 import { VisualSplitItinerary } from './components/VisualSplitItinerary';
@@ -1180,6 +1181,9 @@ export default function App() {
 
       {/* Back To Top Floating Action */}
       <BackToTop />
+      
+      {/* Vercel Web Analytics */}
+      <Analytics />
     </div>
   );
 }
