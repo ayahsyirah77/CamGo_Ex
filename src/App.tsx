@@ -66,6 +66,7 @@ import { FindMyPartyModal } from './components/FindMyPartyModal';
 import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
+import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import {
   Sparkles,
   Compass,
@@ -139,6 +140,7 @@ export default function App() {
   const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
   const [isCurrencyConverterOpen, setIsCurrencyConverterOpen] = useState(false);
+  const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
     null | 'microclimate' | 'traffic' | 'hazard' | 'events'
   >(null);
@@ -256,7 +258,10 @@ export default function App() {
       setUserDashboardInitialTab('online-payment');
       setIsUserDashboardOpen(true);
     };
-    window.addEventListener('open-currency-converter', handleOpenCurrencyConverter);
+    const handleOpenSmartParkingEv = () => {
+      setIsParkingEvOpen(true);
+    };
+    window.addEventListener('open-smart-parking-ev-modal', handleOpenSmartParkingEv);
 
     // Auto-open Find My Party Beacon if URL has beacon or party query parameter
     const urlParams = new URLSearchParams(window.location.search);
@@ -277,6 +282,7 @@ export default function App() {
       window.removeEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
       window.removeEventListener('open-classifieds-modal', handleOpenClassifiedsModal);
       window.removeEventListener('open-currency-converter', handleOpenCurrencyConverter);
+      window.removeEventListener('open-smart-parking-ev-modal', handleOpenSmartParkingEv);
       unsubUser();
       unsubLounge();
     };
@@ -360,6 +366,7 @@ export default function App() {
         onOpenCurrencyConverter={handleOpenCurrencyConverter}
         onOpenVendorPortal={handleOpenVendorPortal}
         onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
+        onOpenParkingEvModal={() => setIsParkingEvOpen(true)}
         places={places}
         events={events}
         onSelectPlace={handleSelectPlaceForMap}
@@ -701,6 +708,20 @@ export default function App() {
         onSelectPlaceForMap={handleSelectPlaceForMap}
       />
 
+      {/* Smart Parking & EV Charging Bay Finder Modal */}
+      <SmartParkingEvModal
+        isOpen={isParkingEvOpen}
+        onClose={() => setIsParkingEvOpen(false)}
+        language={language}
+        onSelectOnMap={(lat, lng) => {
+          setIsParkingEvOpen(false);
+          setIsMapModalOpen(true);
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('focus-hotspot-on-map', { detail: [lat, lng] }));
+          }, 250);
+        }}
+      />
+
       {/* Chat Modal */}
       {isChatOpen && (
         <div
@@ -820,7 +841,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
               <InteractiveMap
                 places={places}
                 language={language}

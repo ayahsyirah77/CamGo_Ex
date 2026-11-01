@@ -809,13 +809,45 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     },
   ];
 
-  const filteredTrafficNavItems = mapTrafficSearchQuery.trim()
+  const searchQueryTrimmed = mapTrafficSearchQuery.trim().toLowerCase();
+
+  const matchingPlaceResults = searchQueryTrimmed
+    ? places.filter((p) => {
+        const nameMatch = p.name.toLowerCase().includes(searchQueryTrimmed) || (p.nameBm && p.nameBm.toLowerCase().includes(searchQueryTrimmed));
+        const townMatch = p.township.toLowerCase().includes(searchQueryTrimmed);
+        const subCatMatch = p.subCategory && p.subCategory.toLowerCase().includes(searchQueryTrimmed);
+        const catMatch = p.category.toLowerCase().includes(searchQueryTrimmed);
+        const tagMatch = p.tags && p.tags.some((t) => t.toLowerCase().includes(searchQueryTrimmed));
+        return nameMatch || townMatch || subCatMatch || catMatch || tagMatch;
+      }).slice(0, 6)
+    : [];
+
+  const filteredTrafficNavItems = searchQueryTrimmed
     ? TRAFFIC_NAV_ITEMS.filter((item) =>
-        item.title.toLowerCase().includes(mapTrafficSearchQuery.toLowerCase()) ||
-        item.subtitle.toLowerCase().includes(mapTrafficSearchQuery.toLowerCase()) ||
-        item.badge.toLowerCase().includes(mapTrafficSearchQuery.toLowerCase())
+        item.title.toLowerCase().includes(searchQueryTrimmed) ||
+        item.subtitle.toLowerCase().includes(searchQueryTrimmed) ||
+        item.badge.toLowerCase().includes(searchQueryTrimmed)
       )
     : TRAFFIC_NAV_ITEMS;
+
+  const handleSelectPlaceOnMap = (place: Place) => {
+    onSelectPlace(place);
+    setMapTrafficSearchQuery(language === 'bm' ? place.nameBm || place.name : place.name);
+    setIsTrafficSearchDropdownOpen(false);
+
+    if (mapInstanceRef.current) {
+      const defaultCoord = TOWNSHIP_COORDS[place.township] || { lat: 4.475, lng: 101.385 };
+      const lat = Number(place.coordinates?.lat);
+      const lng = Number(place.coordinates?.lng);
+      const validLat = !isNaN(lat) && lat !== 0 ? lat : defaultCoord.lat;
+      const validLng = !isNaN(lng) && lng !== 0 ? lng : defaultCoord.lng;
+
+      mapInstanceRef.current.flyTo([validLat, validLng], 16, {
+        duration: 1.2,
+        easeLinearity: 0.25,
+      });
+    }
+  };
 
   const handleSelectTrafficNav = (item: (typeof TRAFFIC_NAV_ITEMS)[0]) => {
     setMapTrafficSearchQuery(item.title);
@@ -831,11 +863,37 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  const handleScrollToForecaster = () => {
-    const el = document.getElementById('traffic-forecasting-section');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      if (matchingPlaceResults.length > 0) {
+        handleSelectPlaceOnMap(matchingPlaceResults[0]);
+      } else if (filteredTrafficNavItems.length > 0) {
+        handleSelectTrafficNav(filteredTrafficNavItems[0]);
+      }
     }
+  };
+
+  // Listen for close-traffic-forecaster event to reset map scroll & invalidate map size
+  useEffect(() => {
+    const handleCloseForecaster = () => {
+      if (mapContainerRef.current) {
+        const parentScroll = mapContainerRef.current.closest('.overflow-y-auto') || window;
+        if ('scrollTo' in parentScroll) {
+          parentScroll.scrollTo({ top: 0, behavior: 'instant' });
+        }
+      }
+      if (mapInstanceRef.current) {
+        setTimeout(() => {
+          mapInstanceRef.current?.invalidateSize();
+        }, 100);
+      }
+    };
+    window.addEventListener('close-traffic-forecaster', handleCloseForecaster);
+    return () => window.removeEventListener('close-traffic-forecaster', handleCloseForecaster);
+  }, []);
+
+  const handleScrollToForecaster = () => {
+    window.dispatchEvent(new CustomEvent('open-traffic-forecaster'));
   };
 
   // Center of Cameron Highlands (Tanah Rata / Brinchang central valley)
@@ -1250,34 +1308,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       // Render Live Colored TomTom Traffic Overlay & Hotspots
       renderColoredTrafficOverlay(map);
-
-      // Add Draw Control for region selection
-      const drawnItems = new L.FeatureGroup();
-      map.addLayer(drawnItems);
-      const drawControl = new L.Control.Draw({
-        edit: { featureGroup: drawnItems },
-        draw: {
-          polygon: {} as any,
-          marker: false,
-          circle: false,
-          rectangle: {} as any,
-          polyline: false,
-          circlemarker: false,
-        },
-      });
-      map.addControl(drawControl);
-      drawControlRef.current = drawControl;
-
-      map.on(L.Draw.Event.CREATED, (e: any) => {
-        const layer = e.layer;
-        drawnItems.addLayer(layer);
-        
-        // Handle region selected
-        if (window.confirm('Download map data for this region?')) {
-          console.log('Downloading map data for region:', layer.toGeoJSON());
-          window.alert('Map download started. (Demo mode: no actual tiles downloaded)');
-        }
-      });
 
       mapInstanceRef.current = map;
     }
@@ -1794,8 +1824,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 setMapTrafficSearchQuery(e.target.value);
                 setIsTrafficSearchDropdownOpen(true);
               }}
+              onKeyDown={handleSearchKeyDown}
               onFocus={() => setIsTrafficSearchDropdownOpen(true)}
-              placeholder="Search Route, Corridor or Origin (KL, Tapah, FT185)..."
+              placeholder="Search places, towns or routes (Kea Farm, Boh Tea, FT185)..."
               className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-stone-950 border border-white/15 text-[10px] text-stone-100 placeholder-stone-400 outline-none focus:border-emerald-400"
             />
             {mapTrafficSearchQuery && (
@@ -1811,24 +1842,66 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             )}
           </div>
 
-          {/* Mobile Traffic Dropdown Suggestions */}
+          {/* Mobile Search Dropdown Suggestions (Places & Corridors) */}
           {isTrafficSearchDropdownOpen && (
-            <div className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl bg-stone-950/98 backdrop-blur-xl border border-emerald-500/30 shadow-2xl p-1.5 z-50 text-stone-100 space-y-1">
-              {filteredTrafficNavItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleSelectTrafficNav(item)}
-                  className="w-full p-1.5 rounded-lg text-left hover:bg-stone-800 transition-colors cursor-pointer flex items-center justify-between"
-                >
-                  <div className="min-w-0 pr-1">
-                    <div className="font-bold text-[11px] text-stone-200 truncate">{item.title}</div>
-                    <div className="text-[9px] text-stone-400 truncate">{item.subtitle}</div>
+            <div className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl bg-stone-950/98 backdrop-blur-xl border border-emerald-500/30 shadow-2xl p-1.5 z-50 text-stone-100 space-y-1">
+              {/* Places Section */}
+              {matchingPlaceResults.length > 0 && (
+                <div className="space-y-1 mb-1">
+                  <div className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-1">
+                    📍 Verified Places ({matchingPlaceResults.length})
                   </div>
-                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
-                    {item.badge}
-                  </span>
-                </button>
-              ))}
+                  {matchingPlaceResults.map((place) => (
+                    <button
+                      key={`place-${place.id}`}
+                      onClick={() => handleSelectPlaceOnMap(place)}
+                      className="w-full p-1.5 rounded-lg text-left hover:bg-emerald-950/60 bg-stone-900/60 border border-emerald-500/20 transition-colors cursor-pointer flex items-center justify-between"
+                    >
+                      <div className="min-w-0 pr-1">
+                        <div className="font-bold text-[11px] text-stone-100 truncate">
+                          {language === 'bm' ? place.nameBm || place.name : place.name}
+                        </div>
+                        <div className="text-[9px] text-stone-400 truncate">
+                          {place.township} • {place.subCategory?.replace(/_/g, ' ') || place.category}
+                        </div>
+                      </div>
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                        ★ {place.rating}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Corridors & Routes Section */}
+              {filteredTrafficNavItems.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[9px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-1">
+                    🛣️ Highway Routes & Corridors
+                  </div>
+                  {filteredTrafficNavItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelectTrafficNav(item)}
+                      className="w-full p-1.5 rounded-lg text-left hover:bg-stone-800 transition-colors cursor-pointer flex items-center justify-between"
+                    >
+                      <div className="min-w-0 pr-1">
+                        <div className="font-bold text-[11px] text-stone-200 truncate">{item.title}</div>
+                        <div className="text-[9px] text-stone-400 truncate">{item.subtitle}</div>
+                      </div>
+                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
+                        {item.badge}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingPlaceResults.length === 0 && filteredTrafficNavItems.length === 0 && (
+                <div className="p-2 text-center text-xs text-stone-400 font-mono">
+                  No places or routes match &quot;{mapTrafficSearchQuery}&quot;
+                </div>
+              )}
             </div>
           )}
 
@@ -2002,9 +2075,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     setMapTrafficSearchQuery(e.target.value);
                     setIsTrafficSearchDropdownOpen(true);
                   }}
+                  onKeyDown={handleSearchKeyDown}
                   onFocus={() => setIsTrafficSearchDropdownOpen(true)}
-                  placeholder="Search route or corridor (FT185, KL, Tapah)..."
-                  className="w-48 lg:w-60 bg-transparent text-xs text-stone-100 placeholder-stone-400 outline-none"
+                  placeholder="Search places, towns or routes (Kea Farm, Boh Tea, FT185)..."
+                  className="w-48 lg:w-64 bg-transparent text-xs text-stone-100 placeholder-stone-400 outline-none"
                 />
                 {mapTrafficSearchQuery && (
                   <button
@@ -2019,28 +2093,70 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 )}
               </div>
 
-              {/* Autocomplete Dropdown */}
+              {/* Autocomplete Dropdown (Places & Corridors) */}
               {isTrafficSearchDropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 max-h-64 overflow-y-auto rounded-2xl bg-stone-950/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 z-50 text-stone-100 space-y-1 w-72 sm:w-80">
-                  {filteredTrafficNavItems.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSelectTrafficNav(item)}
-                      className="w-full p-2 rounded-xl text-left hover:bg-stone-800 transition-colors cursor-pointer flex items-center justify-between group"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <div className="font-bold text-xs text-stone-200 group-hover:text-emerald-300 truncate">
-                          {item.title}
-                        </div>
-                        <div className="text-[10px] text-stone-400 truncate">
-                          {item.subtitle}
-                        </div>
+                <div className="absolute top-full left-0 mt-2 max-h-72 overflow-y-auto rounded-2xl bg-stone-950/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 z-50 text-stone-100 space-y-1.5 w-80 sm:w-96">
+                  {/* Places Section */}
+                  {matchingPlaceResults.length > 0 && (
+                    <div className="space-y-1 mb-1.5">
+                      <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-1">
+                        📍 Verified Places ({matchingPlaceResults.length})
                       </div>
-                      <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
-                        {item.badge}
-                      </span>
-                    </button>
-                  ))}
+                      {matchingPlaceResults.map((place) => (
+                        <button
+                          key={`pc-place-${place.id}`}
+                          onClick={() => handleSelectPlaceOnMap(place)}
+                          className="w-full p-2 rounded-xl text-left hover:bg-emerald-950/60 bg-stone-900/70 border border-emerald-500/20 transition-colors cursor-pointer flex items-center justify-between group"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-bold text-xs text-stone-100 group-hover:text-emerald-300 truncate">
+                              {language === 'bm' ? place.nameBm || place.name : place.name}
+                            </div>
+                            <div className="text-[10px] text-stone-400 truncate">
+                              {place.township} • {place.subCategory?.replace(/_/g, ' ') || place.category}
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                            ★ {place.rating}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Corridors Section */}
+                  {filteredTrafficNavItems.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-1">
+                        🛣️ Highway Routes & Corridors
+                      </div>
+                      {filteredTrafficNavItems.map((item) => (
+                        <button
+                          key={`pc-corridor-${item.id}`}
+                          onClick={() => handleSelectTrafficNav(item)}
+                          className="w-full p-2 rounded-xl text-left hover:bg-stone-800 transition-colors cursor-pointer flex items-center justify-between group"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-bold text-xs text-stone-200 group-hover:text-cyan-300 truncate">
+                              {item.title}
+                            </div>
+                            <div className="text-[10px] text-stone-400 truncate">
+                              {item.subtitle}
+                            </div>
+                          </div>
+                          <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
+                            {item.badge}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {matchingPlaceResults.length === 0 && filteredTrafficNavItems.length === 0 && (
+                    <div className="p-3 text-center text-xs text-stone-400 font-mono">
+                      No places or routes match &quot;{mapTrafficSearchQuery}&quot;
+                    </div>
+                  )}
                 </div>
               )}
             </div>

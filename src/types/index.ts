@@ -46,11 +46,15 @@ export type SubCategory =
   | 'logistics_freight'
   | 'property_real_estate'
   | 'event_business_support'
+  | 'public_toilets_restrooms'
   // Shopping & Local Produce
   | 'fresh_markets_produce'
   | 'souvenirs_handicrafts'
   | 'convenience_groceries'
   | 'retail_apparel'
+  | 'hardware_store'
+  | 'lighting_store'
+  | 'furniture'
   // Services & Utilities
   | 'plumbing_electrical'
   | 'locksmith_access'

@@ -365,18 +365,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       { key: 'camping_glamping', label: 'Camping & Glamping' },
     ],
     transport: [
+      { key: 'fuel_ev_charging', label: 'Fuel & EV Charging' },
+      { key: 'taxi_ehailing', label: 'Taxi & E-Hailing' },
       { key: 'auto_repair_roadside', label: 'Auto Repair & Roadside' },
+      { key: 'car_bike_rentals', label: 'Car & Bike Rentals' },
     ],
     local_services: [
       { key: 'health_wellness', label: 'Health & Wellness' },
       { key: 'banking_financial', label: 'Banking & Financial' },
       { key: 'logistics_freight', label: 'Logistics & Freight' },
+      { key: 'property_real_estate', label: 'Property & Real Estate' },
+      { key: 'event_business_support', label: 'Event & Business Support' },
+      { key: 'public_toilets_restrooms', label: 'Public Toilets & Restrooms' },
     ],
     shopping: [
       { key: 'fresh_markets_produce', label: 'Fresh Markets & Produce' },
       { key: 'souvenirs_handicrafts', label: 'Souvenirs & Handicrafts' },
       { key: 'convenience_groceries', label: 'Convenience & Groceries' },
       { key: 'retail_apparel', label: 'Retail & Apparel' },
+      { key: 'hardware_store', label: 'Hardware Store' },
+      { key: 'lighting_store', label: 'Lighting Store' },
+      { key: 'furniture', label: 'Furniture' },
     ],
     services_utilities: [
       { key: 'plumbing_electrical', label: 'Plumbing & Electrical' },
@@ -385,6 +394,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       { key: 'pest_control', label: 'Pest Control & Fumigation' },
       { key: 'laundry_dry_cleaning', label: 'Laundry & Dry Cleaning' },
       { key: 'housekeeping_maid', label: 'Housekeeping & Maid Services' },
+      { key: 'cooking_gas_delivery', label: 'Cooking Gas Delivery' },
     ],
     masjid_surau: [
       { key: 'masjid_surau', label: 'Masjid & Surau' },
@@ -402,6 +412,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       { key: 'souvenirs_handicrafts', label: 'Souvenirs & Handicrafts' },
       { key: 'convenience_groceries', label: 'Convenience & Groceries' },
       { key: 'retail_apparel', label: 'Retail & Apparel' },
+      { key: 'hardware_store', label: 'Hardware Store' },
+      { key: 'lighting_store', label: 'Lighting Store' },
+      { key: 'furniture', label: 'Furniture' },
     ],
   };
 

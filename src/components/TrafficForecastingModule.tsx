@@ -202,6 +202,20 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
     return day === 0 || day === 6; // Sunday or Saturday
   });
 
+  const handleClose = () => {
+    setIsMinimized(true);
+    window.dispatchEvent(new CustomEvent('close-traffic-forecaster'));
+  };
+
+  // Event listener for open-traffic-forecaster
+  useEffect(() => {
+    const handleOpenForecaster = () => {
+      setIsMinimized(false);
+    };
+    window.addEventListener('open-traffic-forecaster', handleOpenForecaster);
+    return () => window.removeEventListener('open-traffic-forecaster', handleOpenForecaster);
+  }, []);
+
   // Close origin search dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -463,46 +477,59 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
       )}
 
       {/* Expanded View: Centered Modal */}
-      {!isMinimized && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md overflow-hidden animate-in fade-in duration-200">
-          <div className="w-full max-w-5xl h-[94vh] sm:h-[90vh] bg-stone-900 rounded-2xl sm:rounded-3xl border border-emerald-500/40 shadow-2xl flex flex-col overflow-hidden relative">
-            
-            {/* Sticky Header with visible close X button */}
-            <div className="sticky top-0 z-50 flex items-center justify-between p-3.5 sm:p-5 border-b border-white/10 bg-stone-900/98 backdrop-blur-md shrink-0">
-              <div className="flex items-center gap-2 min-w-0 pr-2">
-                <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                  <Car className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" />
-                </span>
-                <div className="min-w-0">
-                  <h3 className="text-xs sm:text-base font-heading font-black text-stone-100 truncate">
-                    {language === 'bm' ? 'Telemetri & Ramalan Trafik' : 'Real-Time & Predictive Highway Telemetry'}
-                  </h3>
-                  <p className="text-[10px] sm:text-xs text-emerald-400 font-mono font-bold truncate">
-                    {language === 'bm' ? 'Enjin Ramalan Trafik Cameron Highlands' : 'Cameron Highlands Traffic Forecaster Engine'}
-                  </p>
+      {!isMinimized &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/85 backdrop-blur-md p-0 sm:p-4 overflow-hidden animate-in fade-in duration-200"
+            onClick={handleClose}
+          >
+            <div
+              className="w-full max-w-5xl h-[92vh] sm:h-[90vh] max-h-[94vh] sm:max-h-[90vh] bg-stone-900 border-t sm:border border-emerald-500/40 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col min-h-0 overflow-hidden relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Mobile Pull Handle */}
+              <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
+
+              {/* Sticky Header with visible close X button */}
+              <div className="shrink-0 flex items-center justify-between px-3.5 sm:px-6 py-3 border-b border-white/10 bg-stone-900/98 backdrop-blur-md z-30">
+                <div className="flex items-center gap-2 min-w-0 pr-1.5">
+                  <span className="p-1.5 sm:p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                    <Car className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-[10px] min-[360px]:text-[11px] sm:text-base font-heading font-black text-stone-100 leading-tight">
+                      {language === 'bm' ? 'Telemetri & Ramalan Trafik' : 'Real-Time & Predictive Highway Telemetry'}
+                    </h3>
+                    <p className="text-[8.5px] min-[360px]:text-[9.5px] sm:text-xs text-emerald-400 font-mono font-bold leading-tight mt-0.5">
+                      {language === 'bm' ? 'Enjin Ramalan Trafik Cameron Highlands' : 'Cameron Highlands Traffic Forecaster Engine'}
+                    </p>
+                  </div>
                 </div>
+
+                <button
+                  onClick={handleClose}
+                  aria-label="Close modal"
+                  className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 shrink-0 min-h-[38px] sm:min-h-[44px] justify-center"
+                >
+                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="font-mono text-[10px] sm:text-xs hidden min-[380px]:inline">{language === 'bm' ? 'Tutup' : 'Close'}</span>
+                </button>
               </div>
 
-              <button
-                onClick={() => setIsMinimized(true)}
-                className="p-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-white/15 cursor-pointer transition-all shadow-lg active:scale-95 flex items-center justify-center shrink-0"
-                aria-label="Close modal"
+              {/* Scrollable Content Body */}
+              <div
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-6 space-y-6 touch-pan-y"
+                style={{ WebkitOverflowScrolling: 'touch' }}
               >
-                <X className="w-5 h-5 text-emerald-400" />
-              </button>
-            </div>
-
-            {/* Scrollable Content Body */}
-            <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-6 scrollbar-thin">
               {/* Header & TomTom API Integration Status Banner */}
               <div className="glass-panel p-4 sm:p-7 rounded-2xl sm:rounded-3xl border border-emerald-500/30 shadow-2xl bg-gradient-to-br from-stone-900 via-stone-950 to-stone-900 relative overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        <Car className="w-4 h-4 animate-pulse" />
+                      <span className="p-1 sm:p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        <Car className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
                       </span>
-                      <span className="text-[10px] sm:text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                      <span className="text-[8.5px] min-[360px]:text-[9.5px] sm:text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
                         Real-Time &amp; Predictive Highway Telemetry
                       </span>
                     </div>
@@ -1145,7 +1172,8 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Detailed Modal Pop-up for Corridor Comparison (Rich Mobile Pop-up) */}
@@ -1307,6 +1335,7 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
                     onClick={() => {
                       onSelectCorridorOnMap?.(selectedCorridorPopup.id);
                       setSelectedCorridorPopup(null);
+                      handleClose();
                     }}
                     className="w-full py-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs flex items-center justify-center gap-2 border border-white/10 transition-colors cursor-pointer"
                   >

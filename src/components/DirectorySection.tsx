@@ -39,6 +39,68 @@ import {
 import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
 
+export const SUB_CATEGORY_LABELS: Record<string, string> = {
+  // Food & Beverages
+  dining: 'Restaurants & Dining',
+  steamboats: 'Steamboat',
+  cafes: 'Cafes & Bakeries',
+  night_markets_street: 'Night Markets & Street Food',
+  bars_nightlife: 'Bars & Nightlife',
+  // Travel & Tourism
+  attractions_sightseeing: 'Attractions & Sightseeing',
+  agrotourism_farms: 'Agrotourism & Farms',
+  outdoor_adventure: 'Outdoor & Adventure',
+  tour_agencies_guides: 'Tour Agencies & Guides',
+  // Accommodation
+  hotels_resorts: 'Hotels & Resorts',
+  guesthouses: 'Guesthouses',
+  chalets: 'Chalets',
+  homestay: 'Homestays',
+  camping_glamping: 'Camping & Glamping',
+  // Transport
+  auto_repair_roadside: 'Auto Repair & Roadside',
+  car_bike_rentals: 'Car & Bike Rentals',
+  taxi_ehailing: 'Taxi & E-Hailing',
+  fuel_ev_charging: 'Fuel & EV Charging',
+  // Local Services
+  health_wellness: 'Health & Wellness',
+  banking_financial: 'Banking & Financial',
+  logistics_freight: 'Logistics & Freight',
+  property_real_estate: 'Property & Real Estate',
+  event_business_support: 'Event & Business Support',
+  public_toilets_restrooms: 'Public Toilets & Restrooms',
+  // Shopping & Local Produce
+  fresh_markets_produce: 'Fresh Markets & Produce',
+  souvenirs_handicrafts: 'Souvenirs & Handicrafts',
+  convenience_groceries: 'Convenience & Groceries',
+  retail_apparel: 'Retail & Apparel',
+  hardware_store: 'Hardware Store',
+  lighting_store: 'Lighting Store',
+  furniture: 'Furniture',
+  // Services & Utilities
+  plumbing_electrical: 'Plumbing & Electrical',
+  locksmith_access: 'Locksmith & Access Services',
+  carpentry_construction: 'Carpentry & Construction',
+  pest_control: 'Pest Control & Fumigation',
+  laundry_dry_cleaning: 'Laundry & Dry Cleaning',
+  housekeeping_maid: 'Housekeeping & Maid Services',
+  cooking_gas_delivery: 'Cooking Gas Delivery',
+  // Masjid & Surau
+  masjid_surau: 'Masjid & Surau',
+  jumaat_masjid: 'Masjid (Jumaat)',
+  other_surau: 'Surau',
+};
+
+export function getSubCategoryLabel(subCategoryKey?: string): string {
+  if (!subCategoryKey) return 'General';
+  if (SUB_CATEGORY_LABELS[subCategoryKey]) {
+    return SUB_CATEGORY_LABELS[subCategoryKey];
+  }
+  return subCategoryKey
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 interface DirectorySectionProps {
   places: Place[];
   language: Language;
@@ -123,6 +185,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'camping_glamping', label: 'Camping & Glamping' },
     ],
     transport: [
+      { key: 'fuel_ev_charging', label: 'Fuel & EV Charging', icon: <Car className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'taxi_ehailing', label: 'Taxi & E-Hailing', icon: <Car className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'auto_repair_roadside', label: 'Auto Repair & Roadside', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     local_services: [
@@ -130,12 +194,17 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'banking_financial', label: 'Banking & Financial', icon: <KeyRound className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'logistics_freight', label: 'Logistics & Freight', icon: <Truck className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'property_real_estate', label: 'Property & Real Estate', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'event_business_support', label: 'Event & Business Support', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'public_toilets_restrooms', label: 'Public Toilets & Restrooms', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     shopping: [
       { key: 'fresh_markets_produce', label: 'Fresh Markets & Produce', icon: <ShoppingBag className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'souvenirs_handicrafts', label: 'Souvenirs & Handicrafts', icon: <ShoppingBag className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'convenience_groceries', label: 'Convenience & Groceries', icon: <ShoppingBag className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'retail_apparel', label: 'Retail & Apparel', icon: <ShoppingBag className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'hardware_store', label: 'Hardware Store', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'lighting_store', label: 'Lighting Store', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'furniture', label: 'Furniture', icon: <ShoppingBag className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     services_utilities: [
       { key: 'plumbing_electrical', label: 'Plumbing & Electrical', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
@@ -144,6 +213,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'pest_control', label: 'Pest Control & Fumigation', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'laundry_dry_cleaning', label: 'Laundry & Dry Cleaning', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'housekeeping_maid', label: 'Housekeeping & Maid Services', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'cooking_gas_delivery', label: 'Cooking Gas Delivery', icon: <Truck className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     masjid_surau: [
        { key: 'masjid_surau', label: 'Masjid & Surau' },
@@ -152,7 +222,9 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     ],
   };
 
-  const currentSubList = subCategoryFilters[selectedCategory] || [];
+  // Add alias mappings so subcategories never fail to load regardless of category string
+  subCategoryFilters.attraction = subCategoryFilters.travel_tourism;
+  subCategoryFilters.business = subCategoryFilters.shopping;
 
   const isCategoryMatch = (placeCat: string, selCat: string) => {
     if (placeCat === selCat) return true;
@@ -169,6 +241,30 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     }
   }
   const dedupedPlaces = Array.from(uniquePlacesMap.values());
+
+  // Resolve active subcategories list with fallback to places data
+  const normalizedCategoryKey =
+    selectedCategory === 'attraction' ? 'travel_tourism' :
+    selectedCategory === 'business' ? 'shopping' :
+    selectedCategory;
+
+  const baseSubList = subCategoryFilters[normalizedCategoryKey] || subCategoryFilters[selectedCategory] || [];
+  const knownSubKeys = new Set(baseSubList.map((s) => s.key));
+  const discoveredSubs: { key: SubCategory; label: string; icon?: React.ReactNode }[] = [];
+
+  for (const p of dedupedPlaces) {
+    if (isCategoryMatch(p.category, selectedCategory) && p.subCategory) {
+      if (!knownSubKeys.has(p.subCategory)) {
+        knownSubKeys.add(p.subCategory);
+        discoveredSubs.push({
+          key: p.subCategory,
+          label: getSubCategoryLabel(p.subCategory),
+        });
+      }
+    }
+  }
+
+  const currentSubList = [...baseSubList, ...discoveredSubs];
 
   const filteredPlaces = dedupedPlaces.filter((p) => {
     // Completely remove motorbike and scooter rentals from general directory listings
@@ -258,99 +354,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         </button>
       </div>
 
-      {/* Subcategory & Township Filters Row */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-stone-900/80 border border-white/5">
-        {/* Subcategories (Desktop Pills) */}
-        <div className="hidden sm:flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => onSelectCategory(selectedCategory, undefined)}
-            className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-              !selectedSubCategory
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-stone-400 hover:text-white'
-            }`}
-          >
-            {language === 'bm' ? 'Semua Sub-Kategori' : 'All Types'}
-          </button>
-          {currentSubList.map((sub) => (
-            <button
-              key={sub.key}
-              onClick={() => onSelectCategory(selectedCategory, sub.key)}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all flex items-center ${
-                selectedSubCategory === sub.key
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-stone-400 hover:text-white'
-              }`}
-            >
-              {sub.icon}
-              {sub.label}
-            </button>
-          ))}
-        </div>
 
-        {/* Mobile Subcategory Dropdown & Town Select Filter Row */}
-        <div className="flex sm:hidden items-center justify-between gap-2 w-full text-xs text-stone-400">
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <Filter className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <select
-              value={selectedSubCategory || 'all'}
-              onChange={(e) => {
-                const val = e.target.value;
-                onSelectCategory(selectedCategory, val === 'all' ? undefined : (val as SubCategory));
-              }}
-              className="bg-stone-800 text-stone-200 px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer w-full truncate"
-            >
-              <option value="all">{language === 'bm' ? 'Semua Sub-Kategori' : 'All Types'}</option>
-              {currentSubList.map((sub) => (
-                <option key={sub.key} value={sub.key}>
-                  {sub.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <select
-              value={selectedTown}
-              onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
-              className="bg-stone-800 text-stone-200 px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer"
-            >
-              <option value="all">{language === 'bm' ? 'Semua Pekan' : 'All Towns'}</option>
-              <option value="Tanah Rata">Tanah Rata</option>
-              <option value="Brinchang">Brinchang</option>
-              <option value="Kea Farm">Kea Farm</option>
-              <option value="Ringlet">Ringlet</option>
-              <option value="Kampung Raja">Kampung Raja</option>
-              <option value="Tringkap">Tringkap</option>
-              <option value="Kuala Terla">Kuala Terla</option>
-              <option value="Bertam Valley">Bertam Valley</option>
-              <option value="Blue Valley">Blue Valley</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Town Select Filter (Desktop) */}
-        <div className="hidden sm:flex items-center gap-2 text-xs text-stone-400">
-          <Filter className="w-3.5 h-3.5" />
-          <span className="font-semibold text-stone-200">Town:</span>
-          <select
-            value={selectedTown}
-            onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
-            className="bg-stone-800 text-stone-200 px-2.5 py-1 rounded-xl border border-white/10 outline-none cursor-pointer"
-          >
-            <option value="all">{language === 'bm' ? 'Semua Pekan' : 'All Townships'}</option>
-            <option value="Tanah Rata">Tanah Rata</option>
-            <option value="Brinchang">Brinchang</option>
-            <option value="Kea Farm">Kea Farm</option>
-            <option value="Ringlet">Ringlet</option>
-            <option value="Kampung Raja">Kampung Raja</option>
-            <option value="Tringkap">Tringkap</option>
-            <option value="Kuala Terla">Kuala Terla</option>
-            <option value="Bertam Valley">Bertam Valley</option>
-            <option value="Blue Valley">Blue Valley</option>
-          </select>
-        </div>
-      </div>
 
       {/* ========================================================= */}
       {/* SECTION 1: DIRECTORY CATEGORIES (FILTER SELECTORS)       */}
@@ -387,35 +391,35 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         </div>
 
         {/* Category Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2.5">
           {mainCategories.map((cat) => {
-            const isActive = selectedCategory === cat.key;
+            const isActive = isCategoryMatch(selectedCategory, cat.key);
             // Exclude motorbike rentals from the count for transport category
             const catPlaceCount = places.filter((p) => 
-              p.category === cat.key && !(p.category === 'transport' && p.subCategory === 'car_bike_rentals')
+              isCategoryMatch(p.category, cat.key) && !(p.category === 'transport' && p.subCategory === 'car_bike_rentals')
             ).length;
             return (
               <button
                 key={cat.key}
                 type="button"
                 onClick={() => onSelectCategory(cat.key)}
-                className={`p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 relative overflow-hidden group ${
+                className={`p-1.5 min-[380px]:p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-1.5 sm:gap-2 relative overflow-hidden group min-h-[46px] min-[380px]:min-h-[50px] sm:min-h-[58px] ${
                   isActive
                     ? 'bg-gradient-to-br from-emerald-950/90 via-emerald-900/50 to-stone-900 border-emerald-500/80 shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-500/30 text-white'
                     : 'bg-stone-900/90 border-white/5 hover:border-emerald-500/30 hover:bg-stone-850 text-stone-400 hover:text-white'
                 }`}
               >
                 {isActive && (
-                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                  <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
                 )}
-                <span className="text-2xl sm:text-3xl shrink-0 p-1.5 rounded-xl bg-white/5 group-hover:scale-105 transition-transform">
+                <span className="text-sm min-[380px]:text-base sm:text-xl shrink-0 w-6 h-6 min-[380px]:w-7 min-[380px]:h-7 sm:w-8 sm:h-8 rounded-lg bg-white/5 group-hover:scale-105 transition-transform flex items-center justify-center">
                   {cat.icon}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <span className={`text-xs sm:text-sm font-bold block truncate ${isActive ? 'text-emerald-200' : 'text-stone-200'}`}>
+                <div className="min-w-0 flex-1 py-0.5">
+                  <span className={`text-[8.5px] min-[360px]:text-[9px] min-[400px]:text-[10px] sm:text-[11px] font-bold block leading-tight break-normal whitespace-normal tracking-tight ${isActive ? 'text-emerald-200' : 'text-stone-200'}`}>
                     {getTranslation(language, cat.labelKey)}
                   </span>
-                  <span className="text-[10px] text-stone-500 font-mono block">
+                  <span className="text-[7.5px] min-[360px]:text-[8px] sm:text-[9.5px] text-stone-500 font-mono block mt-0.5">
                     {catPlaceCount} {language === 'bm' ? 'senarai' : 'listings'}
                   </span>
                 </div>
@@ -444,55 +448,131 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
           <div className="flex-grow border-t-2 border-dashed border-emerald-500/25"></div>
         </div>
 
-        {/* Place Cards Banner Header */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-stone-900/95 to-emerald-950/40 border border-emerald-500/30 shadow-xl mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-              <MapPin className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
-                  {language === 'bm' ? 'Kad Tempat Cameron' : 'Cameron Place Cards'}
-                </span>
-                {selectedTown !== 'all' && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
-                    📍 {selectedTown}
-                  </span>
-                )}
-                {searchQuery.trim() && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
-                    🔍 &quot;{searchQuery.trim()}&quot;
-                  </span>
-                )}
+        {/* Place Cards Banner Header with Embedded Filters */}
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-stone-900/95 to-emerald-950/40 border border-emerald-500/30 shadow-xl mb-4 flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                <MapPin className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="text-sm sm:text-base font-heading font-extrabold text-white mt-0.5">
-                {language === 'bm'
-                  ? `Senarai Tempat: ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`
-                  : `Places in ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`}
-              </h3>
+              <div>
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
+                    {language === 'bm' ? 'Kad Tempat Cameron' : 'Cameron Place Cards'}
+                  </span>
+                  {selectedTown !== 'all' && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
+                      📍 {selectedTown}
+                    </span>
+                  )}
+                  {searchQuery.trim() && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
+                      🔍 &quot;{searchQuery.trim()}&quot;
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-sm sm:text-base font-heading font-extrabold text-white mt-0.5">
+                  {language === 'bm'
+                    ? `Senarai Tempat: ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`
+                    : `Places in ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`}
+                </h3>
+              </div>
+            </div>
+
+            {/* Right Action & Place Counter */}
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              {(selectedCategory !== 'food' || selectedSubCategory || selectedTown !== 'all' || searchQuery.trim()) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectCategory('food', undefined);
+                    setSelectedTown('all');
+                    setSearchQuery('');
+                  }}
+                  className="text-xs text-stone-300 hover:text-white px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <RotateCcw className="w-3 h-3 text-stone-400" />
+                  <span>{language === 'bm' ? 'Tetap Semula' : 'Reset Filters'}</span>
+                </button>
+              )}
+              <span className="px-3 py-1.5 rounded-xl text-xs font-mono font-extrabold bg-emerald-500 text-stone-950 shadow-md">
+                {filteredPlaces.length} {language === 'bm' ? 'Tempat' : 'Places'}
+              </span>
             </div>
           </div>
 
-          {/* Right Action & Place Counter */}
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            {(selectedCategory !== 'food' || selectedSubCategory || selectedTown !== 'all' || searchQuery.trim()) && (
+          {/* FILTERS INSIDE CAMERON PLACE CARDS HEADER */}
+          <div className="pt-2 border-t border-white/10 flex flex-col gap-2.5">
+            {/* Desktop Subcategory Pills */}
+            <div className="hidden sm:flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => {
-                  onSelectCategory('food', undefined);
-                  setSelectedTown('all');
-                  setSearchQuery('');
-                }}
-                className="text-xs text-stone-300 hover:text-white px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                onClick={() => onSelectCategory(selectedCategory, undefined)}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+                  !selectedSubCategory
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-stone-800 text-stone-400 hover:text-white'
+                }`}
               >
-                <RotateCcw className="w-3 h-3 text-stone-400" />
-                <span>{language === 'bm' ? 'Tetap Semula' : 'Reset Filters'}</span>
+                {language === 'bm' ? 'Semua Sub-Kategori' : 'All Types'}
               </button>
-            )}
-            <span className="px-3 py-1.5 rounded-xl text-xs font-mono font-extrabold bg-emerald-500 text-stone-950 shadow-md">
-              {filteredPlaces.length} {language === 'bm' ? 'Tempat' : 'Places'}
-            </span>
+              {currentSubList.map((sub) => (
+                <button
+                  key={sub.key}
+                  type="button"
+                  onClick={() => onSelectCategory(selectedCategory, sub.key)}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 ${
+                    selectedSubCategory === sub.key
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-stone-800 text-stone-400 hover:text-white'
+                  }`}
+                >
+                  {sub.icon}
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Subcategory & Township Filters Row (Mobile & Desktop Township Selector) */}
+            <div className="flex items-center justify-between gap-2 w-full text-xs text-stone-400">
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <Filter className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <select
+                  value={selectedSubCategory || 'all'}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    onSelectCategory(selectedCategory, val === 'all' ? undefined : (val as SubCategory));
+                  }}
+                  className="bg-stone-800 text-stone-100 text-xs px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer w-full truncate font-medium"
+                >
+                  <option value="all">{language === 'bm' ? 'Semua Sub-Kategori (All Types)' : 'All Types'}</option>
+                  {currentSubList.map((sub) => (
+                    <option key={sub.key} value={sub.key}>
+                      {sub.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <select
+                  value={selectedTown}
+                  onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
+                  className="bg-stone-800 text-stone-100 text-xs px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer font-medium"
+                >
+                  <option value="all">{language === 'bm' ? 'Semua Pekan (All Towns)' : 'All Towns'}</option>
+                  <option value="Tanah Rata">Tanah Rata</option>
+                  <option value="Brinchang">Brinchang</option>
+                  <option value="Kea Farm">Kea Farm</option>
+                  <option value="Ringlet">Ringlet</option>
+                  <option value="Kampung Raja">Kampung Raja</option>
+                  <option value="Tringkap">Tringkap</option>
+                  <option value="Kuala Terla">Kuala Terla</option>
+                  <option value="Bertam Valley">Bertam Valley</option>
+                  <option value="Blue Valley">Blue Valley</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -506,7 +586,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-2.5">
+          <div className="grid no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
             {filteredPlaces.map((place) => {
               const isBookmarked = bookmarkedIds.includes(place.id);
               const openStatus = isCurrentlyOpen(place.operatingHours);
@@ -518,7 +598,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                     window.scrollTo({ top: 0, behavior: 'instant' });
                     setSelectedPlacePopup(place);
                   }}
-                  className="glass-card-hover no-mobile-clamp group p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-stone-900/95 border border-stone-800 hover:border-emerald-500/60 hover:bg-stone-850 flex flex-col justify-between gap-1.5 sm:gap-2 cursor-pointer transition-all shadow-md min-h-[78px] sm:min-h-[88px] text-left relative overflow-hidden"
+                  className="glass-card-hover no-mobile-clamp group p-3 sm:p-3.5 rounded-2xl bg-stone-900/95 border border-stone-800 hover:border-emerald-500/60 hover:bg-stone-850 flex flex-col justify-between gap-2 cursor-pointer transition-all shadow-md h-full min-h-[110px] sm:min-h-[120px] text-left relative overflow-hidden"
                 >
                   {/* Top Row: Live Status Dot + Township badge & Bookmark */}
                   <div className="flex items-center justify-between gap-1.5 w-full">
@@ -529,7 +609,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                         }`}
                         title={openStatus ? 'Open Now' : 'Closed'}
                       />
-                      <span className="text-[9px] sm:text-[10px] text-emerald-400 font-mono font-medium truncate max-w-[80px] min-[380px]:max-w-none">
+                      <span className="text-[10px] sm:text-[11px] text-emerald-400 font-mono font-medium truncate">
                         {place.township}
                       </span>
                     </div>
@@ -540,30 +620,40 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                         e.stopPropagation();
                         onToggleBookmark(place.id);
                       }}
-                      className="p-0.5 -mr-1 rounded-md text-stone-400 hover:text-white transition-colors shrink-0"
+                      className="p-1 -mr-1 rounded-md text-stone-400 hover:text-white transition-colors shrink-0"
                       title={isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}
                     >
                       <Bookmark
-                        className={`w-3 h-3 ${
+                        className={`w-3.5 h-3.5 ${
                           isBookmarked ? 'fill-emerald-400 text-emerald-400' : 'text-stone-400'
                         }`}
                       />
                     </button>
                   </div>
 
-                  {/* Business Name - compact, crisp, readable 2 lines */}
-                  <h4 className="no-mobile-clamp !text-[11px] sm:!text-xs font-semibold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 !leading-tight break-words my-auto">
-                    {language === 'bm' ? place.nameBm || place.name : place.name}
-                  </h4>
+                  {/* Business Name - crisp, readable, unclipped */}
+                  <div className="my-0.5 min-w-0">
+                    <h4 className="no-mobile-clamp text-xs sm:text-sm font-bold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 leading-snug break-words">
+                      {language === 'bm' ? place.nameBm || place.name : place.name}
+                    </h4>
+                  </div>
+
+                  {/* Sub-Category Label Badge */}
+                  <div className="flex flex-wrap items-center gap-1 my-0.5">
+                    <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-medium text-emerald-300 bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-md max-w-full">
+                      <span className="w-1 h-1 rounded-full bg-emerald-400 shrink-0" />
+                      <span className="truncate">{getSubCategoryLabel(place.subCategory)}</span>
+                    </span>
+                  </div>
 
                   {/* Bottom Row: Star Rating & Details trigger */}
-                  <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-stone-400 font-mono pt-1 border-t border-white/5">
+                  <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono pt-1.5 border-t border-white/5 mt-auto">
                     <span className="text-amber-400 font-semibold flex items-center gap-0.5">
                       ★ {place.rating}
                     </span>
-                    <span className="text-[9px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5">
+                    <span className="text-[10px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5">
                       <span>{language === 'bm' ? 'Lihat' : 'Details'}</span>
-                      <ArrowUpRight className="w-2.5 h-2.5" />
+                      <ArrowUpRight className="w-3 h-3" />
                     </span>
                   </div>
                 </div>
@@ -643,9 +733,13 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
               {/* Modal Body Content */}
               <div className="p-6 overflow-y-auto space-y-4 flex-1">
                 <div>
-                  <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-1 font-medium">
+                  <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-1 font-medium flex-wrap">
                     <MapPin className="w-4 h-4 text-emerald-400" />
                     <span>{selectedPlacePopup.township}</span>
+                    <span>•</span>
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/30 font-semibold font-mono text-[11px]">
+                      🏷️ {getSubCategoryLabel(selectedPlacePopup.subCategory)}
+                    </span>
                     {selectedPlacePopup.priceRange && (
                       <>
                         <span>•</span>

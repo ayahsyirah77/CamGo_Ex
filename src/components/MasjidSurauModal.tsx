@@ -393,18 +393,12 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
 
                       {/* Amenities / Key Highlights */}
                       <div className="flex flex-wrap gap-1.5 mb-3">
-                        {place.tags?.map((tag, idx) => {
-                          const lowerTag = tag.toLowerCase();
-                          if (lowerTag.includes('wuduk') || lowerTag.includes('solat wanita') || lowerTag.includes('parkir') || lowerTag.includes('jumaat')) {
-                            return (
-                              <span key={idx} className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 text-[10px] border border-emerald-500/20 flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                                {tag}
-                              </span>
-                            );
-                          }
-                          return null;
-                        })}
+                        {place.tags?.map((tag, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 text-[10px] border border-emerald-500/20 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            {tag}
+                          </span>
+                        ))}
                         {place.operatingHours?.isOpen24Hours ? (
                           <span className="px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 text-[10px] border border-sky-500/20 flex items-center gap-1">
                             <Clock className="w-3 h-3 text-sky-400" />
@@ -461,7 +455,7 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
                         <span>{language === 'bm' ? 'Lihat Peta' : 'View on Map'}</span>
                       </button>
 
-                      {place.contact && place.contact !== '+' && place.contact !== '-' && (
+                      {place.contact && place.contact.trim() !== '+' && place.contact.trim() !== '-' && place.contact.trim().length > 1 && (
                         <a
                           href={`tel:${place.contact.replace(/\s+/g, '')}`}
                           className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900/80 hover:bg-stone-900 text-stone-300 text-[11px] border border-stone-700 hover:text-white"

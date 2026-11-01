@@ -161,6 +161,15 @@ export function isMockVendorListing(vendor: any): boolean {
   return false;
 }
 
+export function isMockLoungePost(post: any): boolean {
+  if (!post) return true;
+  const id = (post.id || '').toLowerCase();
+  const content = (post.content || '').toLowerCase();
+  if (id.startsWith('mock-') || id.startsWith('seed-') || id.startsWith('init-') || id.startsWith('lounge-seed-')) return true;
+  if (content.includes('mock chat') || content.includes('sample message')) return true;
+  return false;
+}
+
 class FirebaseStorageService {
   private currentUser: UserProfile | null = null;
   private listeners: (() => void)[] = [];
@@ -997,12 +1006,14 @@ class FirebaseStorageService {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((p) => !isMockLoungePost(p));
+        }
       } catch {
         // fallback
       }
     }
-    return INITIAL_LOUNGE;
+    return INITIAL_LOUNGE.filter((p) => !isMockLoungePost(p));
   }
 
   public subscribeLoungePosts(callback: (posts: LoungePost[]) => void): () => void {
@@ -1036,29 +1047,39 @@ class FirebaseStorageService {
         loungeCol,
         (snapshot) => {
           if (!snapshot.empty) {
-            const cloudPosts: LoungePost[] = snapshot.docs.map((docSnap) => {
+            const cloudPosts: LoungePost[] = snapshot.docs
+              .map((docSnap) => {
+                const data = docSnap.data() as any;
+                return {
+                  id: docSnap.id,
+                  authorName: data.authorName || 'Highland Explorer',
+                  authorAvatar:
+                    data.authorAvatar ||
+                    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+                  authorRole: data.authorRole || 'Visitor',
+                  content: data.content || '',
+                  timestamp: data.timestamp || 'Recently',
+                  upvotes: typeof data.upvotes === 'number' ? data.upvotes : 0,
+                  hasUpvoted: false,
+                  tag: data.tag || 'Traffic',
+                  replies: Array.isArray(data.replies) ? data.replies : [],
+                  repliesCount:
+                    typeof data.repliesCount === 'number'
+                      ? data.repliesCount
+                      : Array.isArray(data.replies)
+                      ? data.replies.length
+                      : 0,
+                  createdAt: data.createdAt || 0,
+                };
+              })
+              .filter((p) => !isMockLoungePost(p));
+
+            // Purge any mock posts from Firestore
+            snapshot.docs.forEach((docSnap) => {
               const data = docSnap.data() as any;
-              return {
-                id: docSnap.id,
-                authorName: data.authorName || 'Highland Explorer',
-                authorAvatar:
-                  data.authorAvatar ||
-                  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
-                authorRole: data.authorRole || 'Visitor',
-                content: data.content || '',
-                timestamp: data.timestamp || 'Recently',
-                upvotes: typeof data.upvotes === 'number' ? data.upvotes : 0,
-                hasUpvoted: false,
-                tag: data.tag || 'Traffic',
-                replies: Array.isArray(data.replies) ? data.replies : [],
-                repliesCount:
-                  typeof data.repliesCount === 'number'
-                    ? data.repliesCount
-                    : Array.isArray(data.replies)
-                    ? data.replies.length
-                    : 0,
-                createdAt: data.createdAt || 0,
-              };
+              if (isMockLoungePost({ id: docSnap.id, ...data })) {
+                deleteDoc(doc(db, 'lounge', docSnap.id)).catch(() => {});
+              }
             });
 
             // Sort newest first
@@ -1071,8 +1092,8 @@ class FirebaseStorageService {
             this.setLocalStorageItem(STORAGE_KEYS.LOUNGE, JSON.stringify(cloudPosts.slice(0, 40)));
             this.notifyLounge(cloudPosts);
           } else {
-            // Seed Firestore with realistic starters
-            this.seedInitialLoungePosts();
+            this.setLocalStorageItem(STORAGE_KEYS.LOUNGE, JSON.stringify([]));
+            this.notifyLounge([]);
           }
         },
         (err) => {
