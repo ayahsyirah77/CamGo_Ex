@@ -2013,7 +2013,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <label className="text-xs font-bold text-stone-300 block mb-1">Township</label>
                     <select
                       value={placeTownship}
-                      onChange={(e) => setPlaceTownship(e.target.value as Township)}
+                      onChange={(e) => {
+                        const newTownship = e.target.value as Township;
+                        setPlaceTownship(newTownship);
+                        if (!editingPlaceId) {
+                          const def = TOWNSHIP_DEFAULTS[newTownship];
+                          if (def) {
+                            setPlaceLat(def.lat.toFixed(5));
+                            setPlaceLng(def.lng.toFixed(5));
+                            setPlaceElevation(def.elevation);
+                          }
+                        }
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
                     >
                       {ALL_9_TOWNSHIPS.map((t) => (
@@ -2063,22 +2074,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-stone-300 block mb-1">Latitude</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-stone-300">Latitude</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const def = TOWNSHIP_DEFAULTS[placeTownship];
+                          if (def) setPlaceLat(def.lat.toFixed(5));
+                        }}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-semibold cursor-pointer"
+                      >
+                        Use {placeTownship} Lat
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={placeLat}
                       onChange={(e) => setPlaceLat(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      placeholder="e.g. 4.4715"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-emerald-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-stone-300 block mb-1">Longitude</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-stone-300">Longitude</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const def = TOWNSHIP_DEFAULTS[placeTownship];
+                          if (def) setPlaceLng(def.lng.toFixed(5));
+                        }}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-semibold cursor-pointer"
+                      >
+                        Use {placeTownship} Lng
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={placeLng}
                       onChange={(e) => setPlaceLng(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      placeholder="e.g. 101.3805"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-emerald-500"
                     />
+                  </div>
+                  <div className="sm:col-span-2 -mt-1 text-[10px] text-stone-400 flex items-center gap-1">
+                    <span className="text-emerald-400 font-bold">📍 Map Pin:</span>
+                    <span>An interactive pin will be automatically generated at this latitude/longitude on the Intelligent Map Navigator.</span>
                   </div>
                   <div className="sm:col-span-2">
                     <label className="text-xs font-bold text-stone-300 block mb-1">

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { LoungePost, Language } from '../types';
 import { getTranslation } from '../services/i18n';
-import { firebaseService, UserProfile } from '../services/firebase';
+import { firebaseService, UserProfile, isMockLoungePost, isMockLoungeReply } from '../services/firebase';
 import {
   MessageSquare,
   ThumbsUp,
@@ -107,7 +107,9 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
 
   const tags: Array<string> = ['all', 'Traffic', 'Weather', 'Tips', 'Food', 'Question'];
 
-  const filteredPosts = posts.filter((p) => {
+  const activePosts = (posts || []).filter((p) => !isMockLoungePost(p));
+
+  const filteredPosts = activePosts.filter((p) => {
     if (filter === 'all') return true;
     return (p.tag || '').toLowerCase() === filter.toLowerCase();
   });
@@ -633,9 +635,12 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
                 </div>
 
                 {/* Existing replies (scrollable if many) */}
-                {post.replies && post.replies.length > 0 && (
+                {post.replies &&
+                  post.replies.filter((r) => !isMockLoungeReply(r)).length > 0 && (
                   <div className="pl-2 sm:pl-12 space-y-2 pt-1 max-h-60 overflow-y-auto pr-1 overscroll-contain">
-                    {post.replies.map((reply) => (
+                    {post.replies
+                      .filter((r) => !isMockLoungeReply(r))
+                      .map((reply) => (
                       <div
                         key={reply.id}
                         className="p-3 rounded-2xl bg-stone-950/70 border border-white/5 text-xs space-y-1"

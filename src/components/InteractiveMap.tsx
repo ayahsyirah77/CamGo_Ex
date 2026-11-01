@@ -1477,7 +1477,28 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   }, [selectedPlace]);
 
-  const filteredPlaces = places.filter((p) => {
+  const [livePlaces, setLivePlaces] = useState<Place[]>(places);
+
+  useEffect(() => {
+    setLivePlaces(places);
+  }, [places]);
+
+  // Real-time listener: whenever admin creates or adds a new place, update pins instantly
+  useEffect(() => {
+    const handlePlacesUpdated = (e: any) => {
+      const updatedList = e?.detail || firebaseService.getPlaces();
+      if (Array.isArray(updatedList) && updatedList.length > 0) {
+        setLivePlaces(updatedList);
+      }
+    };
+
+    window.addEventListener('places-updated', handlePlacesUpdated);
+    return () => {
+      window.removeEventListener('places-updated', handlePlacesUpdated);
+    };
+  }, []);
+
+  const filteredPlaces = livePlaces.filter((p) => {
     const matchCat =
       activeCategory === 'all' ||
       p.category === activeCategory ||
@@ -1489,122 +1510,75 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return matchCat && matchTown;
   });
 
-  // Render Markers on Map with Intelligent Clustering for High Performance
+  // Helper to parse coordinate safely (number, string, comma decimal)
+  const parseCoord = (val: any): number => {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (typeof val === 'string') {
+      const num = parseFloat(val.replace(',', '.').trim());
+      return isNaN(num) ? 0 : num;
+    }
+    return 0;
+  };
+
+  // Category visual mapping for beautiful, informative highland pins
+  const getCategoryPinStyle = (cat?: string, subCat?: string) => {
+    switch (cat) {
+      case 'accommodation':
+        if (subCat === 'camping_glamping') return { pinColor: '#2563eb', iconEmoji: '⛺', label: 'Glamping & Camp' };
+        if (subCat === 'homestay' || subCat === 'chalets') return { pinColor: '#2563eb', iconEmoji: '🏡', label: 'Chalet & Homestay' };
+        return { pinColor: '#1d4ed8', iconEmoji: '🏨', label: 'Hotel & Resort' };
+
+      case 'food':
+        if (subCat === 'steamboats') return { pinColor: '#ea580c', iconEmoji: '🍲', label: 'Steamboat' };
+        if (subCat === 'cafes') return { pinColor: '#c2410c', iconEmoji: '☕', label: 'Cafe' };
+        if (subCat === 'night_markets_street') return { pinColor: '#f97316', iconEmoji: '🍢', label: 'Street Food' };
+        return { pinColor: '#ea580c', iconEmoji: '🍽️', label: 'Food & Dining' };
+
+      case 'travel_tourism':
+      case 'attraction':
+        if (subCat === 'agrotourism_farms') return { pinColor: '#16a34a', iconEmoji: '🍓', label: 'Farm & Agrotourism' };
+        if (subCat === 'outdoor_adventure') return { pinColor: '#059669', iconEmoji: '🌲', label: 'Nature & Adventure' };
+        return { pinColor: '#10b981', iconEmoji: '🏞️', label: 'Sightseeing & Attraction' };
+
+      case 'transport':
+        if (subCat === 'car_bike_rentals') return { pinColor: '#0284c7', iconEmoji: '🛵', label: 'Motorbike / Car Rental' };
+        if (subCat === 'fuel_ev_charging') return { pinColor: '#0ea5e9', iconEmoji: '⚡', label: 'EV & Fuel' };
+        if (subCat === 'taxi_ehailing') return { pinColor: '#0284c7', iconEmoji: '🚕', label: 'Taxi & E-Hailing' };
+        return { pinColor: '#0369a1', iconEmoji: '🚗', label: 'Transport' };
+
+      case 'local_services':
+        if (subCat === 'public_toilets_restrooms') return { pinColor: '#0d9488', iconEmoji: '🚻', label: 'Public Restroom' };
+        if (subCat === 'health_wellness') return { pinColor: '#e11d48', iconEmoji: '🏥', label: 'Clinic & Hospital' };
+        if (subCat === 'banking_financial') return { pinColor: '#0d9488', iconEmoji: '🏦', label: 'ATM & Banking' };
+        return { pinColor: '#0f766e', iconEmoji: '🏢', label: 'Local Services' };
+
+      case 'shopping':
+        if (subCat === 'fresh_markets_produce') return { pinColor: '#d97706', iconEmoji: '🥬', label: 'Fresh Market' };
+        if (subCat === 'souvenirs_handicrafts') return { pinColor: '#b45309', iconEmoji: '🎁', label: 'Souvenirs & Crafts' };
+        return { pinColor: '#d97706', iconEmoji: '🛍️', label: 'Shopping' };
+
+      case 'masjid_surau':
+        return { pinColor: '#15803d', iconEmoji: '🕌', label: 'Masjid & Surau' };
+
+      case 'services_utilities':
+        if (subCat === 'cooking_gas_delivery') return { pinColor: '#6366f1', iconEmoji: '🔥', label: 'Gas Delivery' };
+        return { pinColor: '#6366f1', iconEmoji: '🔧', label: 'Utilities & Repairs' };
+
+      case 'business':
+        return { pinColor: '#7c3aed', iconEmoji: '💼', label: 'Business & Office' };
+
+      default:
+        return { pinColor: '#059669', iconEmoji: '📍', label: 'Place' };
+    }
+  };
+
+  // Render Markers on Map - creates an individual pin for every directory place according to its latitude & longitude
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    const renderMarkers = () => {
-      Object.values(markersRef.current).forEach((m) => m.remove());
-      markersRef.current = {};
-
-      const currentZoom = map.getZoom();
-      const shouldCluster = currentZoom < 14;
-
-      if (shouldCluster) {
-        const gridSize = 0.012; // ~1.2 km grid cell
-        const clusters: Record<string, { latSum: number; lngSum: number; places: Place[] }> = {};
-
-        filteredPlaces.forEach((place) => {
-          const lat = Number(place.coordinates?.lat);
-          const lng = Number(place.coordinates?.lng);
-          const defaultCoord = TOWNSHIP_COORDS[place.township] || { lat: 4.475, lng: 101.385 };
-          const validLat = !isNaN(lat) && lat !== 0 ? lat : defaultCoord.lat;
-          const validLng = !isNaN(lng) && lng !== 0 ? lng : defaultCoord.lng;
-
-          if (selectedPlace?.id === place.id) {
-            const key = `selected-${place.id}`;
-            clusters[key] = { latSum: validLat, lngSum: validLng, places: [place] };
-            return;
-          }
-
-          const gridX = Math.floor(validLng / gridSize);
-          const gridY = Math.floor(validLat / gridSize);
-          const cellKey = `${gridX},${gridY}`;
-
-          if (!clusters[cellKey]) {
-            clusters[cellKey] = { latSum: 0, lngSum: 0, places: [] };
-          }
-          clusters[cellKey].latSum += validLat;
-          clusters[cellKey].lngSum += validLng;
-          clusters[cellKey].places.push(place);
-        });
-
-        Object.entries(clusters).forEach(([key, cluster]) => {
-          const count = cluster.places.length;
-          const centerLat = cluster.latSum / count;
-          const centerLng = cluster.lngSum / count;
-
-          if (count === 1) {
-            const place = cluster.places[0];
-            createSingleMarker(place, centerLat, centerLng, map);
-          } else {
-            const clusterIcon = L.divIcon({
-              className: 'custom-cluster-marker',
-              html: `
-                <div style="
-                  background: #059669;
-                  color: white;
-                  width: 42px;
-                  height: 42px;
-                  border-radius: 50%;
-                  display: flex;
-                  flex-direction: column;
-                  align-items: center;
-                  justify-content: center;
-                  border: 3px solid white;
-                  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-                  font-weight: 900;
-                  font-size: 13px;
-                  cursor: pointer;
-                ">
-                  <span>🌲</span>
-                  <span style="font-size: 10px; line-height: 1;">${count}</span>
-                </div>
-              `,
-              iconSize: [42, 42],
-              iconAnchor: [21, 21],
-            });
-
-            const marker = L.marker([centerLat, centerLng], { icon: clusterIcon }).addTo(map);
-            marker.bindTooltip(`Cluster: ${count} places. Click to zoom in.`, {
-              direction: 'top',
-              offset: [0, -21],
-            });
-
-            marker.on('click', () => {
-              map.flyTo([centerLat, centerLng], map.getZoom() + 2, { duration: 0.8 });
-            });
-
-            markersRef.current[`cluster-${key}`] = marker;
-          }
-        });
-      } else {
-        filteredPlaces.forEach((place) => {
-          const lat = Number(place.coordinates?.lat);
-          const lng = Number(place.coordinates?.lng);
-          const defaultCoord = TOWNSHIP_COORDS[place.township] || { lat: 4.475, lng: 101.385 };
-          const validLat = !isNaN(lat) && lat !== 0 ? lat : defaultCoord.lat;
-          const validLng = !isNaN(lng) && lng !== 0 ? lng : defaultCoord.lng;
-          createSingleMarker(place, validLat, validLng, map);
-        });
-      }
-    };
-
     const createSingleMarker = (place: Place, lat: number, lng: number, mapInstance: L.Map) => {
-      let pinColor = '#059669';
-      let iconEmoji = '🌲';
-      if (place.category === 'accommodation') {
-        pinColor = '#2563eb';
-        iconEmoji = '🏨';
-      } else if (place.category === 'food') {
-        pinColor = '#ea580c';
-        iconEmoji = '🍲';
-      } else if (place.category === 'business') {
-        pinColor = '#7c3aed';
-        iconEmoji = '💼';
-      }
-
+      const { pinColor, iconEmoji, label } = getCategoryPinStyle(place.category, place.subCategory);
       const isSelected = selectedPlace?.id === place.id;
 
       const customIcon = L.divIcon({
@@ -1612,23 +1586,24 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         html: `
           <div style="
             background: ${pinColor};
-            width: ${isSelected ? '40px' : '34px'};
-            height: ${isSelected ? '40px' : '34px'};
+            width: ${isSelected ? '42px' : '34px'};
+            height: ${isSelected ? '42px' : '34px'};
             border-radius: 50% 50% 50% 0;
             transform: rotate(-45deg);
             display: flex;
             align-items: center;
             justify-content: center;
             border: ${isSelected ? '3px solid #facc15' : '2px solid white'};
-            box-shadow: ${isSelected ? '0 0 20px rgba(250, 204, 21, 0.9)' : '0 4px 12px rgba(0,0,0,0.4)'};
+            box-shadow: ${isSelected ? '0 0 24px rgba(250, 204, 21, 0.95), 0 4px 14px rgba(0,0,0,0.6)' : '0 3px 10px rgba(0,0,0,0.45)'};
             cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
           ">
-            <span style="transform: rotate(45deg); font-size: ${isSelected ? '18px' : '15px'};">${iconEmoji}</span>
+            <span style="transform: rotate(45deg); font-size: ${isSelected ? '18px' : '15px'}; line-height: 1;">${iconEmoji}</span>
           </div>
         `,
-        iconSize: [isSelected ? 40 : 34, isSelected ? 40 : 34],
-        iconAnchor: [isSelected ? 20 : 17, isSelected ? 40 : 34],
-        popupAnchor: [0, -34],
+        iconSize: [isSelected ? 42 : 34, isSelected ? 42 : 34],
+        iconAnchor: [isSelected ? 21 : 17, isSelected ? 42 : 34],
+        popupAnchor: [0, -36],
       });
 
       const marker = L.marker([lat, lng], {
@@ -1636,10 +1611,70 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         zIndexOffset: isSelected ? 1000 : 0,
       }).addTo(mapInstance);
 
-      marker.bindTooltip(place.name, {
+      // Tooltip on hover
+      marker.bindTooltip(`
+        <div style="font-family: inherit; font-size: 11px; padding: 2px 4px;">
+          <div style="font-weight: 800; color: #f8fafc;">${place.name}</div>
+          <div style="font-size: 9.5px; color: #94a3b8; display: flex; gap: 4px; align-items: center; margin-top: 2px;">
+            <span>${iconEmoji} ${label}</span>
+            <span>•</span>
+            <span>${place.township}</span>
+            <span>•</span>
+            <span style="color: #facc15; font-weight: 700;">★ ${place.rating || '4.8'}</span>
+          </div>
+        </div>
+      `, {
         direction: 'top',
         offset: [0, -34],
-        opacity: 0.95,
+        opacity: 0.98,
+        className: 'highland-map-tooltip',
+      });
+
+      // Rich click popup
+      const descText = language === 'bm' && place.descriptionBm ? place.descriptionBm : (place.description || '');
+      const popupHtml = `
+        <div style="width: 250px; font-family: inherit; color: #f8fafc; padding: 4px;">
+          ${place.imageUrl ? `
+            <div style="width: 100%; height: 115px; border-radius: 12px; overflow: hidden; margin-bottom: 8px; background: #1c1917; border: 1px solid rgba(255,255,255,0.1);">
+              <img src="${place.imageUrl}" alt="${place.name}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'" />
+            </div>
+          ` : ''}
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+            <span style="background: ${pinColor}22; color: ${pinColor}; border: 1px solid ${pinColor}44; font-size: 9.5px; font-weight: 800; padding: 2px 6px; border-radius: 6px; text-transform: uppercase;">
+              ${iconEmoji} ${label}
+            </span>
+            <span style="font-size: 10.5px; color: #a8a29e; font-weight: 600;">${place.township}</span>
+          </div>
+          <h4 style="font-size: 13.5px; font-weight: 800; color: #ffffff; margin: 0 0 4px 0; line-height: 1.25;">
+            ${place.name}
+          </h4>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: #d6d3d1; margin-bottom: 6px;">
+            <span style="color: #facc15; font-weight: 700;">★ ${place.rating || 4.8} <span style="color: #78716c; font-weight: 400;">(${place.reviewsCount || 10})</span></span>
+            <span style="color: #34d399; font-weight: 700;">${place.elevation || '1,500m'}</span>
+          </div>
+          <p style="font-size: 11px; color: #a8a29e; margin: 0 0 10px 0; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+            ${descText}
+          </p>
+          <button id="btn-select-${place.id}" style="width: 100%; background: #059669; color: white; border: none; padding: 7px 12px; border-radius: 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);">
+            <span>🧭 ${language === 'bm' ? 'Pilih Tempat & Laluan' : 'Select Place & Route'}</span>
+          </button>
+        </div>
+      `;
+
+      marker.bindPopup(popupHtml, {
+        maxWidth: 280,
+        className: 'highland-leaflet-popup',
+      });
+
+      marker.on('popupopen', () => {
+        const btn = document.getElementById(`btn-select-${place.id}`);
+        if (btn) {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            onSelectPlace(place);
+            marker.closePopup();
+          };
+        }
       });
 
       marker.on('click', () => {
@@ -1649,13 +1684,30 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       markersRef.current[place.id] = marker;
     };
 
+    const renderMarkers = () => {
+      Object.values(markersRef.current).forEach((m) => m.remove());
+      markersRef.current = {};
+
+      filteredPlaces.forEach((place) => {
+        const rawLat = place.coordinates?.lat ?? (place as any).lat ?? (place as any).latitude;
+        const rawLng = place.coordinates?.lng ?? (place as any).lng ?? (place as any).longitude;
+        const lat = parseCoord(rawLat);
+        const lng = parseCoord(rawLng);
+        const defaultCoord = TOWNSHIP_COORDS[place.township] || { lat: 4.475, lng: 101.385 };
+        const validLat = lat !== 0 ? lat : defaultCoord.lat;
+        const validLng = lng !== 0 ? lng : defaultCoord.lng;
+
+        createSingleMarker(place, validLat, validLng, map);
+      });
+    };
+
     renderMarkers();
     map.on('zoomend', renderMarkers);
 
     return () => {
       map.off('zoomend', renderMarkers);
     };
-  }, [filteredPlaces, places, selectedPlace]);
+  }, [filteredPlaces, livePlaces, selectedPlace, language]);
 
   useEffect(() => {
     if (!selectedPlace) {

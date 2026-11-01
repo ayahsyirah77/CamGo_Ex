@@ -161,12 +161,110 @@ export function isMockVendorListing(vendor: any): boolean {
   return false;
 }
 
+export function isMockLoungeReply(reply: any): boolean {
+  if (!reply) return true;
+  const author = String(reply.authorName || '').toLowerCase();
+  const content = String(reply.content || '').toLowerCase();
+  const id = String(reply.id || '').toLowerCase();
+  if (id.startsWith('mock') || id.startsWith('seed') || id.startsWith('sample')) return true;
+  if (
+    author.includes('sarah wong') ||
+    author.includes('cikgu') ||
+    author.includes('chloe') ||
+    author.includes('farhan')
+  ) {
+    return true;
+  }
+  if (
+    content.includes('terima kasih info cikgu') ||
+    content.includes('simpang pulai pun lancar')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function isMockLoungePost(post: any): boolean {
   if (!post) return true;
-  const id = (post.id || '').toLowerCase();
-  const content = (post.content || '').toLowerCase();
-  if (id.startsWith('mock-') || id.startsWith('seed-') || id.startsWith('init-') || id.startsWith('lounge-seed-')) return true;
-  if (content.includes('mock chat') || content.includes('sample message')) return true;
+  const id = String(post.id || '').trim().toLowerCase();
+  const content = String(post.content || '').toLowerCase();
+  const author = String(post.authorName || '').toLowerCase();
+
+  // Flag mock persona authors explicitly
+  const mockAuthors = [
+    'cikgu razak',
+    'sarah wong',
+    'chloe liew',
+    'aiman farhan',
+    'highland guide',
+    'local guide',
+  ];
+  if (mockAuthors.some((ma) => author.includes(ma))) {
+    return true;
+  }
+
+  // Flag mock post phrases explicitly
+  const mockPhrases = [
+    'laluan tapah',
+    'lata iskandar',
+    'simpang pulai pun lancar',
+    'steamboat sup herba',
+    'cameron+highlands+steamboat',
+    'mossy forest: jangan lupa booking',
+    'portal jabatan perhutanan pahang',
+    'kasut getah bertapak grip',
+    'pandu berhemah di selekoh',
+    'salam semua pengunjung',
+    'suhu sejuk 16°c petang ni',
+  ];
+  if (mockPhrases.some((phrase) => content.includes(phrase))) {
+    return true;
+  }
+
+  // Flag any mock/seed prefixes or legacy IDs
+  if (
+    id.startsWith('mock') ||
+    id.startsWith('seed') ||
+    id.startsWith('init') ||
+    id.startsWith('sample') ||
+    id.startsWith('test') ||
+    id.startsWith('dummy') ||
+    id.startsWith('lounge-seed') ||
+    id.startsWith('legacy') ||
+    id.startsWith('lounge-') ||
+    id.startsWith('lounge_')
+  ) {
+    return true;
+  }
+
+  // Flag legacy sequential or template IDs like '1', '2', 'post-1', 'post-2', etc.
+  if (/^(post-)?\d+$/i.test(id) || /^(lounge-)?\d+$/i.test(id) || /^p\d+$/i.test(id)) {
+    return true;
+  }
+
+  // Flag mock wording in content
+  if (
+    content.includes('mock chat') ||
+    content.includes('sample message') ||
+    content.includes('placeholder') ||
+    content.includes('dummy message') ||
+    content.includes('simulated')
+  ) {
+    return true;
+  }
+
+  // Valid real user posts must have a valid creation timestamp (> Nov 2023)
+  const createdTime =
+    typeof post.createdAt === 'number'
+      ? post.createdAt
+      : typeof post.createdAt === 'string'
+      ? new Date(post.createdAt).getTime()
+      : 0;
+
+  if (isNaN(createdTime) || createdTime < 1700000000000) {
+    return true;
+  }
+
   return false;
 }
 
@@ -186,6 +284,20 @@ class FirebaseStorageService {
     const savedPlaces = localStorage.getItem(STORAGE_KEYS.PLACES);
     if (savedPlaces) {
       try { this.places = JSON.parse(savedPlaces); } catch {}
+    }
+
+    // Purge any legacy mock lounge posts immediately on startup
+    try {
+      const savedLounge = localStorage.getItem(STORAGE_KEYS.LOUNGE);
+      if (savedLounge) {
+        const parsed = JSON.parse(savedLounge);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter((p) => !isMockLoungePost(p));
+          localStorage.setItem(STORAGE_KEYS.LOUNGE, JSON.stringify(cleaned));
+        }
+      }
+    } catch {
+      // ignore
     }
 
     this.syncCloudData();
@@ -1007,13 +1119,17 @@ class FirebaseStorageService {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.filter((p) => !isMockLoungePost(p));
+          const filtered = parsed.filter((p) => !isMockLoungePost(p));
+          if (filtered.length !== parsed.length) {
+            this.setLocalStorageItem(STORAGE_KEYS.LOUNGE, JSON.stringify(filtered));
+          }
+          return filtered;
         }
       } catch {
         // fallback
       }
     }
-    return INITIAL_LOUNGE.filter((p) => !isMockLoungePost(p));
+    return [];
   }
 
   public subscribeLoungePosts(callback: (posts: LoungePost[]) => void): () => void {

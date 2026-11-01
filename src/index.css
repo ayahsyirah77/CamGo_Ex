@@ -250,3 +250,40 @@
     border-radius: 9999px !important;
   }
 }
+
+/* Highland Map Popup & Tooltip Custom Dark Theme */
+.highland-leaflet-popup .leaflet-popup-content-wrapper {
+  background: #1c1917 !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.85) !important;
+  padding: 6px !important;
+}
+
+.highland-leaflet-popup .leaflet-popup-tip {
+  background: #1c1917 !important;
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+}
+
+.highland-leaflet-popup .leaflet-popup-close-button {
+  color: #94a3b8 !important;
+  padding: 8px !important;
+}
+
+.highland-leaflet-popup .leaflet-popup-close-button:hover {
+  color: #ffffff !important;
+}
+
+.highland-map-tooltip {
+  background: #1c1917 !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6) !important;
+  padding: 6px 10px !important;
+}
+
+.highland-map-tooltip::before {
+  border-top-color: #1c1917 !important;
+}

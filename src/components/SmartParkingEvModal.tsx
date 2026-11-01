@@ -245,21 +245,21 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
         <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
 
         {/* Sticky Header with Visible Close Button */}
-        <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-900/98 backdrop-blur-md z-30">
-          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-            <span className="p-2.5 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30 shrink-0 shadow-inner">
-              <Car className="w-5 h-5 animate-pulse" />
+        <div className="shrink-0 flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-white/10 bg-stone-900/98 backdrop-blur-md z-30 gap-2">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
+            <span className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30 shrink-0 shadow-inner">
+              <Car className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" />
             </span>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5">
+                <span className="text-[8.5px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shrink-0">
                   REAL-TIME TELEMETRY
                 </span>
                 <span className="hidden sm:inline-block text-[10px] font-mono text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20 font-bold">
                   ⚡ EV &amp; PARKING FINDER
                 </span>
               </div>
-              <h2 className="text-sm sm:text-lg font-heading font-black text-stone-100 truncate">
+              <h2 className="text-[11px] min-[360px]:text-xs sm:text-lg font-heading font-black text-stone-100 leading-tight break-words sm:truncate">
                 {language === 'bm'
                   ? 'Carian Petak Letak Kereta & Stesen Pengecas EV'
                   : 'Smart Parking & EV Charging Bay Finder'}
@@ -270,10 +270,10 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
           <button
             onClick={onClose}
             aria-label="Close modal"
-            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95 shrink-0 min-h-[44px] min-w-[44px] justify-center"
+            className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 shrink-0 min-h-[40px] justify-center"
           >
-            <X className="w-5 h-5" />
-            <span className="font-mono">{language === 'bm' ? 'Tutup' : 'Close'}</span>
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="font-mono text-[11px] sm:text-xs">{language === 'bm' ? 'Tutup' : 'Close'}</span>
           </button>
         </div>
 
