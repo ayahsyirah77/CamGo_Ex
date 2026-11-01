@@ -73,6 +73,8 @@ export type SubCategory =
   | 'culture_history'
   | 'places_of_worship'
   | 'masjid_surau'
+  | 'jumaat_masjid'
+  | 'other_surau'
   | 'recreation_leisure';
 
 export type Township =
@@ -86,6 +88,15 @@ export type Township =
   | 'Bertam Valley'
   | 'Blue Valley';
 
+export interface PrayerTimes {
+  subuh: string;
+  syuruk: string;
+  zohor: string;
+  asar: string;
+  maghrib: string;
+  isyak: string;
+}
+
 export interface TownshipHubInfo {
   township: Township;
   description: string;
@@ -95,6 +106,7 @@ export interface TownshipHubInfo {
   publicToilet: string;
   gasStation: string;
   placesOfInterest: string[];
+  prayerTimes?: PrayerTimes;
 }
 
 export type DayOfWeek =

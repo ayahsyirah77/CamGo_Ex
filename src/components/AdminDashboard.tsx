@@ -365,8 +365,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       { key: 'camping_glamping', label: 'Camping & Glamping' },
     ],
     transport: [
-      { key: 'car_bike_rentals', label: 'Car & Bike Rentals' },
-      { key: 'taxi_ehailing', label: 'Taxi & E-Hailing' },
       { key: 'auto_repair_roadside', label: 'Auto Repair & Roadside' },
     ],
     local_services: [
@@ -390,6 +388,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ],
     masjid_surau: [
       { key: 'masjid_surau', label: 'Masjid & Surau' },
+      { key: 'jumaat_masjid', label: 'Masjid (Jumaat)' },
+      { key: 'other_surau', label: 'Surau' },
     ],
     attraction: [
       { key: 'attractions_sightseeing', label: 'Attractions & Sightseeing' },
@@ -451,6 +451,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [townToilet, setTownToilet] = useState('');
   const [townGas, setTownGas] = useState('');
   const [townPlacesInterest, setTownPlacesInterest] = useState('');
+  
+  // Prayer Times States
+  const [subuhTime, setSubuhTime] = useState('06:05');
+  const [syurukTime, setSyurukTime] = useState('07:18');
+  const [zohorTime, setZohorTime] = useState('13:21');
+  const [asarTime, setAsarTime] = useState('16:38');
+  const [maghribTime, setMaghribTime] = useState('19:22');
+  const [isyakTime, setIsyakTime] = useState('20:33');
+
   const [townError, setTownError] = useState<string | null>(null);
   const [townSaving, setTownSaving] = useState(false);
 
@@ -1026,6 +1035,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       existing?.placesOfInterest || defaultPortal?.keyAttractions || ['Highland Views', 'Farms'];
     setTownPlacesInterest(Array.isArray(interestList) ? interestList.join(', ') : interestList);
 
+    // Populate Prayer Times
+    if (existing?.prayerTimes) {
+      setSubuhTime(existing.prayerTimes.subuh || '06:05');
+      setSyurukTime(existing.prayerTimes.syuruk || '07:18');
+      setZohorTime(existing.prayerTimes.zohor || '13:21');
+      setAsarTime(existing.prayerTimes.asar || '16:38');
+      setMaghribTime(existing.prayerTimes.maghrib || '19:22');
+      setIsyakTime(existing.prayerTimes.isyak || '20:33');
+    } else {
+      setSubuhTime('06:05');
+      setSyurukTime('07:18');
+      setZohorTime('13:21');
+      setAsarTime('16:38');
+      setMaghribTime('19:22');
+      setIsyakTime('20:33');
+    }
+
     setShowTownshipModal(true);
   };
 
@@ -1053,6 +1079,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       publicToilet: townToilet?.trim() || 'Public restrooms available in town area',
       gasStation: townGas?.trim() || 'Local fuel station',
       placesOfInterest: placesArray.length > 0 ? placesArray : ['Highland Views', 'Farms'],
+      prayerTimes: {
+        subuh: subuhTime,
+        syuruk: syurukTime,
+        zohor: zohorTime,
+        asar: asarTime,
+        maghrib: maghribTime,
+        isyak: isyakTime,
+      },
     };
 
     try {
@@ -2964,6 +2998,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) => setTownPlacesInterest(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-blue-500"
                   />
+                </div>
+
+                {/* Prayer Times Section */}
+                <div className="pt-4 border-t border-white/10 mt-2">
+                  <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-3">
+                    Daily Prayer Times (Zon 3 Pahang)
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-400 block mb-1 uppercase">Subuh</label>
+                      <input
+                        type="time"
+                        value={subuhTime}
+                        onChange={(e) => setSubuhTime(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-stone-800 border border-white/5 text-xs text-stone-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-400 block mb-1 uppercase">Syuruk</label>
+                      <input
+                        type="time"
+                        value={syurukTime}
+                        onChange={(e) => setSyurukTime(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-stone-800 border border-white/5 text-xs text-stone-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-400 block mb-1 uppercase">Zohor</label>
+                      <input
+                        type="time"
+                        value={zohorTime}
+                        onChange={(e) => setZohorTime(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-stone-800 border border-white/5 text-xs text-stone-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-400 block mb-1 uppercase">Asar</label>
+                      <input
+                        type="time"
+                        value={asarTime}
+                        onChange={(e) => setAsarTime(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-stone-800 border border-white/5 text-xs text-stone-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-400 block mb-1 uppercase">Maghrib</label>
+                      <input
+                        type="time"
+                        value={maghribTime}
+                        onChange={(e) => setMaghribTime(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-stone-800 border border-white/5 text-xs text-stone-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-400 block mb-1 uppercase">Isyak</label>
+                      <input
+                        type="time"
+                        value={isyakTime}
+                        onChange={(e) => setIsyakTime(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-stone-800 border border-white/5 text-xs text-stone-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-3 border-t border-white/10">

@@ -637,6 +637,23 @@ export default function App() {
               </div>
               <span>SOS Emergency</span>
             </button>
+
+            {/* 6. Masjid & Surau */}
+            <button
+              onClick={() => {
+                setIsWidgetMenuOpen(false);
+                setIsMasjidModalOpen(true);
+              }}
+              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 hover:border-emerald-500/40 border border-white/5 transition-all text-left text-xs font-bold text-emerald-300 hover:text-emerald-100 cursor-pointer group"
+            >
+              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-black transition-colors">
+                <span className="text-base">🕌</span>
+              </div>
+              <div className="flex-1">
+                <span>Masjid &amp; Surau</span>
+                <span className="block text-[10px] text-stone-400 font-normal">Prayer Times &amp; Directions</span>
+              </div>
+            </button>
           </div>
         )}
 

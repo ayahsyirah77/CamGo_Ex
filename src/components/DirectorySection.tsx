@@ -123,8 +123,6 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'camping_glamping', label: 'Camping & Glamping' },
     ],
     transport: [
-      { key: 'car_bike_rentals', label: 'Car & Bike Rentals', icon: <Car className="w-3.5 h-3.5 inline mr-1" /> },
-      { key: 'taxi_ehailing', label: 'Taxi & E-Hailing', icon: <Car className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'auto_repair_roadside', label: 'Auto Repair & Roadside', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     local_services: [
@@ -148,7 +146,9 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'housekeeping_maid', label: 'Housekeeping & Maid Services', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     masjid_surau: [
-       { key: 'masjid_surau', label: 'Masjid & Surau' }
+       { key: 'masjid_surau', label: 'Masjid & Surau' },
+       { key: 'jumaat_masjid', label: 'Masjid (Jumaat)' },
+       { key: 'other_surau', label: 'Surau' },
     ],
   };
 

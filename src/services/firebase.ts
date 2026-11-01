@@ -441,6 +441,23 @@ class FirebaseStorageService {
 
           // Attempt to load live emergency card & user profile from Firestore cloud across PC & Mobile
           if (db) {
+            // Real-time listener for emergency card
+            onSnapshot(doc(db, 'emergency_cards', fbUser.uid), (snap) => {
+              if (snap.exists()) {
+                const cardData = snap.data() as EmergencyCard;
+                const sanitized = sanitizeEmergencyCard(cardData);
+                this.setLocalStorageItem(STORAGE_KEYS.EMERGENCY_CARD, JSON.stringify(sanitized));
+                if (this.currentUser) {
+                  this.currentUser.emergencyCard = sanitized;
+                  this.setLocalStorageItem(STORAGE_KEYS.USER, JSON.stringify(this.currentUser));
+                }
+                this.notify();
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('emergency-card-updated', { detail: sanitized }));
+                }
+              }
+            });
+
             try {
               const [userSnap, cardSnap] = await Promise.all([
                 getDoc(doc(db, 'users', fbUser.uid)),

@@ -75,16 +75,18 @@ export interface TrailSafetyStatus {
 export const weatherService = {
   async fetchLiveWeather(): Promise<WeatherData[]> {
     const townships = Object.keys(TOWNSHIP_COORDS) as Township[];
-    const latitudes = townships.map(t => TOWNSHIP_COORDS[t].lat).join(',');
-    const longitudes = townships.map(t => TOWNSHIP_COORDS[t].lng).join(',');
-
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitudes}&longitude=${longitudes}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max&timezone=Asia%2FKuala_Lumpur`;
-
+    
     try {
-      const response = await fetch(url);
-      const data = await response.json();
-
-      const results = Array.isArray(data) ? data : [data];
+      const results = await Promise.all(
+        townships.map(async (township) => {
+          const coords = TOWNSHIP_COORDS[township];
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max&timezone=Asia%2FKuala_Lumpur`;
+          
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Failed to fetch weather for ${township}`);
+          return response.json();
+        })
+      );
 
       return results.map((item: any, index: number) => {
         const township = townships[index];

@@ -12,7 +12,8 @@ import {
   Mountain,
   Share2,
 } from 'lucide-react';
-import { Place, Language } from '../types';
+import { Place, Language, Township } from '../types';
+import { firebaseService } from '../services/firebase';
 
 interface MasjidSurauModalProps {
   isOpen: boolean;
@@ -23,14 +24,7 @@ interface MasjidSurauModalProps {
 }
 
 // Cameron Highlands falls under Zon 3 Pahang (Cameron Highlands, Genting Highlands, Bukit Fraser)
-const HIGHLAND_PRAYER_TIMES = [
-  { nameEn: 'Subuh', nameBm: 'Subuh', time: '06:05 AM', icon: '🌅' },
-  { nameEn: 'Syuruk', nameBm: 'Syuruk', time: '07:18 AM', icon: '☀️' },
-  { nameEn: 'Zohor', nameBm: 'Zohor', time: '01:21 PM', icon: '☀️' },
-  { nameEn: 'Asar', nameBm: 'Asar', time: '04:38 PM', icon: '🌤️' },
-  { nameEn: 'Maghrib', nameBm: 'Maghrib', time: '07:22 PM', icon: '🌇' },
-  { nameEn: 'Isyak', nameBm: 'Isyak', time: '08:33 PM', icon: '🌙' },
-];
+
 
 export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
   isOpen,
@@ -43,12 +37,61 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
   const [selectedTownFilter, setSelectedTownFilter] = useState<string>('all');
   const [onlyJumaat, setOnlyJumaat] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [townshipHubs, setTownshipHubs] = useState<Record<string, any>>({});
+
+  // Fetch township hubs for dynamic prayer times
+  useEffect(() => {
+    const fetchHubs = async () => {
+      const hubs = await firebaseService.getTownshipHubs();
+      setTownshipHubs(hubs);
+    };
+    fetchHubs();
+  }, []);
+
+  const currentPrayerTimes = useMemo(() => {
+    // Try to find prayer times for the selected town filter, or fall back to Tanah Rata
+    const townKey = selectedTownFilter !== 'all' ? selectedTownFilter : 'Tanah Rata';
+    const hub = townshipHubs[townKey];
+    
+    if (hub?.prayerTimes) {
+      return [
+        { nameEn: 'Subuh', nameBm: 'Subuh', time: hub.prayerTimes.subuh, icon: '🌅' },
+        { nameEn: 'Syuruk', nameBm: 'Syuruk', time: hub.prayerTimes.syuruk, icon: '☀️' },
+        { nameEn: 'Zohor', nameBm: 'Zohor', time: hub.prayerTimes.zohor, icon: '☀️' },
+        { nameEn: 'Asar', nameBm: 'Asar', time: hub.prayerTimes.asar, icon: '🌤️' },
+        { nameEn: 'Maghrib', nameBm: 'Maghrib', time: hub.prayerTimes.maghrib, icon: '🌇' },
+        { nameEn: 'Isyak', nameBm: 'Isyak', time: hub.prayerTimes.isyak, icon: '🌙' },
+      ].map(p => {
+        // Simple 24h to 12h conversion if needed, or assume it's stored correctly
+        let t = p.time;
+        if (t && t.includes(':')) {
+          const [h, m] = t.split(':').map(Number);
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const h12 = h % 12 || 12;
+          t = `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+        }
+        return { ...p, time: t };
+      });
+    }
+
+    // Static fallback if no hub data
+    return [
+      { nameEn: 'Subuh', nameBm: 'Subuh', time: '06:05 AM', icon: '🌅' },
+      { nameEn: 'Syuruk', nameBm: 'Syuruk', time: '07:18 AM', icon: '☀️' },
+      { nameEn: 'Zohor', nameBm: 'Zohor', time: '01:21 PM', icon: '☀️' },
+      { nameEn: 'Asar', nameBm: 'Asar', time: '04:38 PM', icon: '🌤️' },
+      { nameEn: 'Maghrib', nameBm: 'Maghrib', time: '07:22 PM', icon: '🌇' },
+      { nameEn: 'Isyak', nameBm: 'Isyak', time: '08:33 PM', icon: '🌙' },
+    ];
+  }, [townshipHubs, selectedTownFilter]);
 
   // Filter only masjid_surau places
   const allMasjidPlaces = useMemo(() => {
     return places.filter(
       (p) =>
         p.subCategory === 'masjid_surau' ||
+        p.subCategory === 'jumaat_masjid' ||
+        p.subCategory === 'other_surau' ||
         p.tags?.some((t) => t.toLowerCase().includes('masjid') || t.toLowerCase().includes('surau'))
     );
   }, [places]);
@@ -73,6 +116,7 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
       // Friday prayer filter
       if (onlyJumaat) {
         const hasJumaat =
+          place.subCategory === 'jumaat_masjid' ||
           place.tags?.some((t) => t.toLowerCase().includes('jumaat')) ||
           place.description.toLowerCase().includes('jumaat') ||
           place.description.toLowerCase().includes('friday');
@@ -179,7 +223,7 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
 
             {/* Prayer Times Badges */}
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-              {HIGHLAND_PRAYER_TIMES.map((prayer) => (
+              {currentPrayerTimes.map((prayer) => (
                 <div
                   key={prayer.nameEn}
                   className="bg-stone-900/90 border border-emerald-500/20 rounded-xl p-2 text-center shadow-sm"
@@ -349,25 +393,29 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
 
                       {/* Amenities / Key Highlights */}
                       <div className="flex flex-wrap gap-1.5 mb-3">
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 text-[10px] border border-emerald-500/20 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                          Wuduk Selesa
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 text-[10px] border border-emerald-500/20 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                          Ruang Solat Wanita
-                        </span>
+                        {place.tags?.map((tag, idx) => {
+                          const lowerTag = tag.toLowerCase();
+                          if (lowerTag.includes('wuduk') || lowerTag.includes('solat wanita') || lowerTag.includes('parkir') || lowerTag.includes('jumaat')) {
+                            return (
+                              <span key={idx} className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 text-[10px] border border-emerald-500/20 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                {tag}
+                              </span>
+                            );
+                          }
+                          return null;
+                        })}
                         {place.operatingHours?.isOpen24Hours ? (
                           <span className="px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 text-[10px] border border-sky-500/20 flex items-center gap-1">
                             <Clock className="w-3 h-3 text-sky-400" />
-                            Dibuka 24 Jam
+                            {language === 'bm' ? 'Dibuka 24 Jam' : 'Open 24 Hours'}
                           </span>
-                        ) : (
+                        ) : place.operatingHours?.from && place.operatingHours?.from !== '-' ? (
                           <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 text-[10px] border border-amber-500/20 flex items-center gap-1">
                             <Clock className="w-3 h-3 text-amber-400" />
-                            {place.operatingHours?.from} - {place.operatingHours?.to}
+                            {place.operatingHours.from} - {place.operatingHours.to}
                           </span>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Address string */}
@@ -413,13 +461,13 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
                         <span>{language === 'bm' ? 'Lihat Peta' : 'View on Map'}</span>
                       </button>
 
-                      {place.contact && (
+                      {place.contact && place.contact !== '+' && place.contact !== '-' && (
                         <a
                           href={`tel:${place.contact.replace(/\s+/g, '')}`}
                           className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900/80 hover:bg-stone-900 text-stone-300 text-[11px] border border-stone-700 hover:text-white"
                         >
                           <Phone className="w-3 h-3 text-emerald-400" />
-                          <span>Hubungi: {place.contact}</span>
+                          <span>{language === 'bm' ? 'Hubungi' : 'Contact'}: {place.contact}</span>
                         </a>
                       )}
                     </div>
