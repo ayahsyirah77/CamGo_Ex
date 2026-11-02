@@ -67,6 +67,8 @@ import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
+import { useMultiChannelNotifications } from './hooks/useMultiChannelNotifications';
+import { NotificationCenter } from './components/NotificationCenter';
 import {
   Sparkles,
   Compass,
@@ -144,6 +146,9 @@ export default function App() {
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
     null | 'microclimate' | 'traffic' | 'hazard' | 'events'
   >(null);
+
+  // Multi-Channel Real-Time Notification Engine
+  const notificationEngine = useMultiChannelNotifications();
 
   // Refresh data from storage
   const refreshStorageData = () => {
@@ -1180,6 +1185,9 @@ export default function App() {
 
       {/* Back To Top Floating Action */}
       <BackToTop />
+
+      {/* Multi-Channel Real-Time Notification Center & Simulation Dock */}
+      <NotificationCenter {...notificationEngine} language={language} />
     </div>
   );
 }

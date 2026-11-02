@@ -1,15 +1,359 @@
-import React, { useState } from 'react';
-import { WeatherData, Language, Township } from '../types';
+import React, { useState, useMemo } from 'react';
+import { WeatherData, Language, Township, WeatherForecastDay } from '../types';
 import { getTranslation } from '../services/i18n';
-import { CloudRain, Sun, CloudFog, Cloud, Wind, Droplets, Compass, CloudLightning, Sparkles } from 'lucide-react';
+import {
+  CloudRain,
+  Sun,
+  CloudFog,
+  Cloud,
+  Wind,
+  Droplets,
+  Compass,
+  CloudLightning,
+  Sparkles,
+  AlertTriangle,
+  ShieldAlert,
+  ShieldCheck,
+  CheckCircle2,
+  Car,
+  Eye,
+  ChevronDown,
+  ChevronUp,
+  Gauge,
+  Info,
+} from 'lucide-react';
 
-interface WeatherWidgetProps {
+export interface WeatherWidgetProps {
   weatherList: WeatherData[];
   language: Language;
 }
 
+export interface WeatherSafetyImpact {
+  level: 'critical' | 'warning' | 'caution' | 'optimal';
+  badgeLabel: string;
+  badgeLabelBm: string;
+  headline: string;
+  headlineBm: string;
+  summary: string;
+  summaryBm: string;
+  roadSlippage: {
+    level: 'high' | 'moderate' | 'low';
+    label: string;
+    labelBm: string;
+    detail: string;
+    detailBm: string;
+  };
+  windImpact: {
+    level: 'high' | 'moderate' | 'calm';
+    label: string;
+    labelBm: string;
+    detail: string;
+    detailBm: string;
+  };
+  visibilityImpact: {
+    level: 'low' | 'moderate' | 'clear';
+    label: string;
+    labelBm: string;
+    detail: string;
+    detailBm: string;
+  };
+  specificWarnings: Array<{
+    id: string;
+    factor: 'precipitation' | 'wind' | 'visibility' | 'optimal';
+    title: string;
+    titleBm: string;
+    message: string;
+    messageBm: string;
+    actionTip: string;
+    actionTipBm: string;
+  }>;
+}
+
+/**
+ * Analyzes live weather telemetry (precipitation, wind speed, humidity, cloud conditions)
+ * and generates contextual highland safety impact warnings for drivers and tourists.
+ */
+export const analyzeWeatherSafety = (weather: WeatherData): WeatherSafetyImpact => {
+  const cond = (weather.condition || '').toLowerCase();
+  const condBm = (weather.conditionBm || '').toLowerCase();
+  const rainProb = weather.rainfallProbability ?? 0;
+  const wind = weather.windSpeed ?? 0;
+  const humidity = weather.humidity ?? 0;
+
+  const isThunderstorm =
+    cond.includes('thunder') ||
+    cond.includes('storm') ||
+    cond.includes('hail') ||
+    condBm.includes('petir') ||
+    condBm.includes('ribut');
+
+  const isHeavyRain =
+    isThunderstorm ||
+    cond.includes('heavy rain') ||
+    cond.includes('violent') ||
+    condBm.includes('lebat') ||
+    (rainProb >= 70 && (cond.includes('rain') || cond.includes('shower') || condBm.includes('hujan')));
+
+  const isModerateRain =
+    !isHeavyRain &&
+    (cond.includes('rain') ||
+      cond.includes('shower') ||
+      cond.includes('drizzle') ||
+      condBm.includes('hujan') ||
+      condBm.includes('renyai') ||
+      rainProb >= 40);
+
+  const isHighWind = wind >= 28;
+  const isModerateWind = wind >= 18 && wind < 28;
+  const isDenseFog =
+    cond.includes('fog') ||
+    cond.includes('mist') ||
+    condBm.includes('kabus') ||
+    (humidity >= 86 && (cond.includes('cloud') || cond.includes('overcast') || condBm.includes('mendung')));
+
+  // Determine Overall Threat Level
+  let level: WeatherSafetyImpact['level'] = 'optimal';
+  if (isThunderstorm || (isHeavyRain && isHighWind)) {
+    level = 'critical';
+  } else if (isHeavyRain || isHighWind) {
+    level = 'warning';
+  } else if (isModerateRain || isDenseFog || isModerateWind) {
+    level = 'caution';
+  } else {
+    level = 'optimal';
+  }
+
+  // 1. Road Surface & Traction Vector
+  const roadSlippage = isHeavyRain
+    ? {
+        level: 'high' as const,
+        label: 'High Slippage Risk',
+        labelBm: 'Risiko Gelincir Tinggi',
+        detail:
+          'Heavy rain, potential road slippage: Drive with caution. Aquaplaning danger and long braking distances on winding mountain hairpins (FT 59 & FT 185).',
+        detailBm:
+          'Hujan lebat, potensi jalan licin dan tergelincir: Pandu dengan berhati-hati. Bahaya akuaplaning dan jarak membrek panjang di selekoh bukit (FT 59 & FT 185).',
+      }
+    : isModerateRain
+    ? {
+        level: 'moderate' as const,
+        label: 'Moderate Slickness',
+        labelBm: 'Licin Sederhana',
+        detail:
+          'Damp asphalt with reduced tyre friction. Downshift to lower gears on steep slopes to prevent brake fade.',
+        detailBm:
+          'Permukaan asfalt lembap dengan cengkaman tayar berkurangan. Gunakan gear rendah di laluan curam bagi mengelakkan kepanasan brek.',
+      }
+    : {
+        level: 'low' as const,
+        label: 'Stable Road Traction',
+        labelBm: 'Cengkaman Jalan Mantap',
+        detail:
+          'Dry pavement and reliable braking friction across all 9 highland townships.',
+        detailBm:
+          'Permukaan jalan kering dengan cengkaman membrek yang kukuh di semua 9 mukim tanah tinggi.',
+      };
+
+  // 2. Mountain Wind Impact Vector
+  const windImpact = isHighWind
+    ? {
+        level: 'high' as const,
+        label: `High Gusts (${wind} km/h)`,
+        labelBm: `Tiupan Kencang (${wind} km/j)`,
+        detail:
+          'Strong ridge gusts detected. Crosswind drift hazard on exposed viaducts, bridge passes, and ridge crests.',
+        detailBm:
+          'Tiupan angin permatang kencang. Bahaya angin lintang di jambatan terbuka, rabung bukit, dan laluan curam.',
+      }
+    : isModerateWind
+    ? {
+        level: 'moderate' as const,
+        label: `Breezy (${wind} km/h)`,
+        labelBm: `Berangin (${wind} km/j)`,
+        detail:
+          'Moderate mountain air currents. Motorcyclists and campers should maintain center lane position and secure gear.',
+        detailBm:
+          'Aliran udara pergunungan sederhana. Penunggang motosikal dan pengunjung berkhemah dinasihatkan mengikat muatan.',
+      }
+    : {
+        level: 'calm' as const,
+        label: `Gentle Breeze (${wind} km/h)`,
+        labelBm: `Bayu Tenang (${wind} km/j)`,
+        detail:
+          'Calm highland valley breeze with zero aerodynamic disturbance for vehicles.',
+        detailBm:
+          'Bayu lembah tanah tinggi yang tenang tanpa sebarang gangguan aerodinamik pada kenderaan.',
+      };
+
+  // 3. Sightline & Fog Visibility Vector
+  const visibilityImpact = isDenseFog
+    ? {
+        level: 'low' as const,
+        label: 'Dense Mist / Low Sight',
+        labelBm: 'Kabus Tebal / Pandangan Terhad',
+        detail: `High moisture saturation (${humidity}% humidity) reducing sightline below 35m on hilltop turns. Dipped headlights mandatory.`,
+        detailBm: `Kelembapan tepu (${humidity}%) mengurangkan jarak pandang bawah 35m di selekoh puncak. Lampu hadapan rendah diwajibkan.`,
+      }
+    : isModerateRain
+    ? {
+        level: 'moderate' as const,
+        label: 'Rain Spray Reduction',
+        labelBm: 'Percikan Air Kenderaan',
+        detail:
+          'Road spray from preceding heavy agricultural lorries reduces forward visibility.',
+        detailBm:
+          'Percikan air daripada lori sayur di hadapan mengurangkan jarak penglihatan depan.',
+      }
+    : {
+        level: 'clear' as const,
+        label: 'Clear Sightlines',
+        labelBm: 'Penglihatan Jelas',
+        detail:
+          'Crisp mountain visibility with clear forward horizon across mountain passes.',
+        detailBm:
+          'Jarak pandangan pergunungan yang terang dan jelas di sepanjang laluan.',
+      };
+
+  // 4. Specific Actionable Warning Cards
+  const specificWarnings: WeatherSafetyImpact['specificWarnings'] = [];
+
+  if (isHeavyRain || isThunderstorm) {
+    specificWarnings.push({
+      id: 'warn-heavy-rain',
+      factor: 'precipitation',
+      title: 'Heavy Rain & Road Slippage Alert',
+      titleBm: 'Amaran Hujan Lebat & Risiko Jalan Gelincir',
+      message:
+        'Heavy rain, potential road slippage: Drive with caution. Wet asphalt significantly reduces tyre grip along winding mountain descents.',
+      messageBm:
+        'Hujan lebat, potensi jalan licin dan tergelincir: Pandu dengan berhati-hati. Asfalt basah mengurangkan cengkaman tayar di laluan cerun.',
+      actionTip:
+        'Cap vehicle speed at 35 km/h, avoid sharp sudden steering inputs, and keep a 4-second minimum following gap behind preceding vehicles.',
+      actionTipBm:
+        'Hadkan kelajuan kepada 35 km/j, elak pergerakan stereng mengejut, dan kekalkan jarak sekurang-kurangnya 4 saat di belakang kenderaan lain.',
+    });
+  } else if (isModerateRain) {
+    specificWarnings.push({
+      id: 'warn-moderate-rain',
+      factor: 'precipitation',
+      title: 'Wet Pavement Caution',
+      titleBm: 'Langkah Berwaspada Jalan Basah',
+      message:
+        'Precipitation detected with damp road surface. Mountain curves have elevated skid potential during sudden braking.',
+      messageBm:
+        'Hujan dikesan dengan permukaan jalan basah. Selekoh bukit berisiko tergelincir jika membrek secara mendadak.',
+      actionTip:
+        'Brake gradually before approaching bends rather than braking while turning. Ensure tyre treads are in good condition.',
+      actionTipBm:
+        'Brek secara beransur-ansur sebelum selekoh dan bukan semasa membelok. Pastikan bunga tayar dalam keadaan baik.',
+    });
+  }
+
+  if (isHighWind) {
+    specificWarnings.push({
+      id: 'warn-wind',
+      factor: 'wind',
+      title: 'High Mountain Wind Gust Advisory',
+      titleBm: 'Nasihat Tiupan Angin Kencang Bukit',
+      message: `Strong wind velocity of ${wind} km/h recorded. High-profile vehicles, SUVs, and motorbikes may experience sudden lateral drift.`,
+      messageBm: `Kelajuan angin ${wind} km/j direkodkan. Kenderaan berbadan tinggi, SUV dan motosikal terdedah kepada tolakan angin lintang.`,
+      actionTip:
+        'Grip steering wheel firmly with both hands. Watch for small fallen tree branches or slope debris along jungle-lined road corridors.',
+      actionTipBm:
+        'Pegang stereng dengan kemas kedua-dua belah tangan. Awasi ranting pokok patah atau serpihan batuan di laluan berhampiran tebing.',
+    });
+  }
+
+  if (isDenseFog) {
+    specificWarnings.push({
+      id: 'warn-fog',
+      factor: 'visibility',
+      title: 'Highland Mist & Low Visibility Precaution',
+      titleBm: 'Langkah Berjaga-jaga Kabus Tebal',
+      message: `Dense highland fog rolling across ${weather.township} at ${weather.elevation || 'high elevation'}. Oncoming vehicle reaction time halved.`,
+      messageBm: `Kabus tebal melitupi kawasan ${weather.township} di ketinggian ${weather.elevation || 'tanah tinggi'}. Masa reaksi kenderaan bertentangan terjejas.`,
+      actionTip:
+        'Turn on front & rear fog lamps. NEVER turn on hazard lights while in motion as it conceals turn signals. Sound horn softly on narrow blind turns.',
+      actionTipBm:
+        'Gunakan lampu kabus depan & belakang. JANGAN hidupkan lampu kecemasan ketika bergerak. Bunyikan hon perlahan di selekoh tajam.',
+    });
+  }
+
+  if (specificWarnings.length === 0) {
+    specificWarnings.push({
+      id: 'warn-optimal',
+      factor: 'optimal',
+      title: 'Optimal Mountain Travel Conditions',
+      titleBm: 'Keadaan Perjalanan Tanah Tinggi Optimum',
+      message:
+        'Current precipitation (0%) and wind speeds are within tranquil parameters. Road surfaces are dry with maximum cornering traction.',
+      messageBm:
+        'Kadar kerpasan dan kelajuan angin berada pada tahap selamat dan tenang. Permukaan jalan kering dengan cengkaman maksimum.',
+      actionTip:
+        'Excellent conditions for scenic mountain touring, strawberry farm visits, and outdoor nature trail expeditions.',
+      actionTipBm:
+        'Keadaan terbaik untuk bersiar-siar di ladang teh, memetik strawberi, dan aktiviti mendaki laluan alam semulajadi.',
+    });
+  }
+
+  // Set headline and summary based on level
+  let headline = 'Optimal Mountain Travel Conditions';
+  let headlineBm = 'Keadaan Perjalanan Tanah Tinggi Optimum';
+  let summary =
+    'Dry road surfaces with stable tyre traction and clear visibility across highland passes.';
+  let summaryBm =
+    'Permukaan jalan kering dengan cengkaman tayar mantap dan jarak penglihatan terang.';
+  let badgeLabel = 'OPTIMAL TRAVEL';
+  let badgeLabelBm = 'PERJALANAN OPTIMUM';
+
+  if (level === 'critical') {
+    headline = 'Severe Weather Alert • High Road Hazard';
+    headlineBm = 'Amaran Cuaca Buruk • Bahaya Tinggi Di Jalan Raya';
+    summary =
+      'Heavy rain, potential road slippage & high wind gusts: Extreme caution required on all highland routes.';
+    summaryBm =
+      'Hujan lebat, potensi jalan licin & tiupan angin kencang: Berhati-hati sepenuhnya di semua laluan tanah tinggi.';
+    badgeLabel = 'CRITICAL ADVISORY';
+    badgeLabelBm = 'AMARAN KRITIKAL';
+  } else if (level === 'warning') {
+    headline = 'Weather Impact Warning • Road Slippage Hazard';
+    headlineBm = 'Amaran Impak Cuaca • Risiko Jalan Gelincir';
+    summary =
+      'Heavy rain, potential road slippage: Drive with caution. Wet mountain roads reduce braking grip.';
+    summaryBm =
+      'Hujan lebat, potensi jalan licin dan tergelincir: Pandu dengan berhati-hati. Jalan bukit basah mengurangkan cengkaman brek.';
+    badgeLabel = 'SAFETY WARNING';
+    badgeLabelBm = 'AMARAN KESELAMATAN';
+  } else if (level === 'caution') {
+    headline = 'Microclimate Precaution • Caution Advised';
+    headlineBm = 'Langkah Berjaga-jaga • Disarankan Berwaspada';
+    summary =
+      'Damp asphalt, fresh mountain winds, or localized fog detected. Keep headlights on and descend with caution.';
+    summaryBm =
+      'Jalan lembap, angin pergunungan, atau kabus setempat dikesan. Pasang lampu dan turun bukit dengan cermat.';
+    badgeLabel = 'EXERCISE CAUTION';
+    badgeLabelBm = 'SILA BERWASPADA';
+  }
+
+  return {
+    level,
+    badgeLabel,
+    badgeLabelBm,
+    headline,
+    headlineBm,
+    summary,
+    summaryBm,
+    roadSlippage,
+    windImpact,
+    visibilityImpact,
+    specificWarnings,
+  };
+};
+
 export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, language }) => {
   const [selectedTown, setSelectedTown] = useState<Township>('Brinchang');
+  const [activeSimulation, setActiveSimulation] = useState<'live' | 'heavy_rain' | 'high_wind' | 'dense_fog'>('live');
+  const [showAllAdvisories, setShowAllAdvisories] = useState(false);
 
   const DEFAULT_WEATHER: WeatherData = {
     township: selectedTown,
@@ -30,8 +374,48 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
     ],
   };
 
-  const currentWeather =
-    weatherList.find((w) => w.township === selectedTown) || weatherList[0] || DEFAULT_WEATHER;
+  const baseWeather =
+    weatherList.find((w: WeatherData) => w.township === selectedTown) || weatherList[0] || DEFAULT_WEATHER;
+
+  const currentWeather = useMemo(() => {
+    if (activeSimulation === 'heavy_rain') {
+      return {
+        ...baseWeather,
+        condition: 'Heavy Rain & Mountain Downpour',
+        conditionBm: 'Hujan Lebat & Limpahan Bukit',
+        rainfallProbability: 90,
+        windSpeed: 26,
+        humidity: 95,
+        temp: 14,
+        feelsLike: 13,
+      };
+    }
+    if (activeSimulation === 'high_wind') {
+      return {
+        ...baseWeather,
+        condition: 'Windy Ridge Turbulence',
+        conditionBm: 'Tiupan Angin Rabung Kencang',
+        rainfallProbability: 35,
+        windSpeed: 36,
+        humidity: 78,
+      };
+    }
+    if (activeSimulation === 'dense_fog') {
+      return {
+        ...baseWeather,
+        condition: 'Dense Mountain Fog',
+        conditionBm: 'Kabus Tebal Menyelubungi',
+        rainfallProbability: 30,
+        windSpeed: 11,
+        humidity: 98,
+        temp: 13,
+        feelsLike: 12,
+      };
+    }
+    return baseWeather;
+  }, [baseWeather, activeSimulation]);
+
+  const safetyImpact = useMemo(() => analyzeWeatherSafety(currentWeather), [currentWeather]);
 
   const getWeatherIcon = (cond: string, size = 'w-6 h-6') => {
     const c = cond.toLowerCase();
@@ -71,7 +455,7 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
 
         {/* Township Microclimate Switcher Pills */}
         <div className="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-stone-900/90 border border-white/10">
-          {weatherList.map((w) => (
+          {weatherList.map((w: WeatherData) => (
             <button
               key={w.township}
               onClick={() => setSelectedTown(w.township)}
@@ -154,10 +538,12 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
               <Wind className="w-4 h-4 text-teal-400" />
             </div>
             <div className="text-xl font-bold text-stone-100 mt-2">
-              {currentWeather.windSpeed} <span className="text-xs font-normal text-stone-400">km/h</span>
+              {currentWeather.windSpeed ?? 12} <span className="text-xs font-normal text-stone-400">km/h</span>
             </div>
             <div className="text-[11px] text-stone-400 mt-1">
-              {language === 'bm' ? 'Bayu segar bukit' : 'Fresh breeze'}
+              {(currentWeather.windSpeed ?? 0) >= 25
+                ? language === 'bm' ? 'Angin pergunungan kencang' : 'Strong mountain gusts'
+                : language === 'bm' ? 'Bayu segar bukit' : 'Fresh highland breeze'}
             </div>
           </div>
 
@@ -197,11 +583,338 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
             </div>
             <div className="w-full bg-stone-800 rounded-full h-1.5 mt-2 overflow-hidden">
               <div
-                className="bg-blue-400 h-full rounded-full"
+                className="bg-blue-400 h-full rounded-full transition-all duration-500"
                 style={{ width: `${currentWeather.rainfallProbability}%` }}
               />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* NEW FEATURE: Contextual Safety Impact Analysis & Road Slippage Warnings */}
+      <div
+        className={`mb-6 rounded-3xl p-5 sm:p-6 border transition-all duration-300 shadow-xl ${
+          safetyImpact.level === 'critical'
+            ? 'bg-gradient-to-br from-red-950/80 via-stone-900/95 to-rose-950/70 border-red-500/50 shadow-red-950/40'
+            : safetyImpact.level === 'warning'
+            ? 'bg-gradient-to-br from-amber-950/80 via-stone-900/95 to-orange-950/70 border-amber-500/50 shadow-amber-950/40'
+            : safetyImpact.level === 'caution'
+            ? 'bg-gradient-to-br from-teal-950/70 via-stone-900/95 to-stone-900/95 border-teal-500/40 shadow-teal-950/30'
+            : 'bg-gradient-to-br from-emerald-950/60 via-stone-900/95 to-stone-900/95 border-emerald-500/30 shadow-emerald-950/30'
+        }`}
+      >
+        {/* Safety Header Row */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div
+              className={`p-2.5 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
+                safetyImpact.level === 'critical'
+                  ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                  : safetyImpact.level === 'warning'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                  : safetyImpact.level === 'caution'
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40'
+                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+              }`}
+            >
+              {safetyImpact.level === 'critical' ? (
+                <ShieldAlert className="w-6 h-6 animate-pulse" />
+              ) : safetyImpact.level === 'warning' ? (
+                <AlertTriangle className="w-6 h-6 animate-bounce" />
+              ) : safetyImpact.level === 'caution' ? (
+                <Car className="w-6 h-6 text-teal-300" />
+              ) : (
+                <ShieldCheck className="w-6 h-6 text-emerald-400" />
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                    safetyImpact.level === 'critical'
+                      ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                      : safetyImpact.level === 'warning'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                      : safetyImpact.level === 'caution'
+                      ? 'bg-teal-500/20 text-teal-300 border-teal-500/30'
+                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  }`}
+                >
+                  {language === 'bm' ? safetyImpact.badgeLabelBm : safetyImpact.badgeLabel}
+                </span>
+
+                <span className="text-xs font-mono text-stone-400">
+                  {currentWeather.township} • {currentWeather.elevation}
+                </span>
+              </div>
+
+              <h4 className="text-base sm:text-lg font-heading font-black text-stone-100 tracking-tight mt-1">
+                {language === 'bm' ? safetyImpact.headlineBm : safetyImpact.headline}
+              </h4>
+            </div>
+          </div>
+
+          {/* Scenario Simulation Switcher for instant testing/demonstration */}
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-stone-950/80 border border-white/10 text-[11px]">
+            <span className="text-[10px] font-bold text-stone-400 px-2 uppercase tracking-wider hidden sm:inline">
+              {language === 'bm' ? 'Simulasi' : 'Simulate'}:
+            </span>
+            <button
+              onClick={() => setActiveSimulation('live')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                activeSimulation === 'live'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-stone-400 hover:text-white'
+              }`}
+              title="Real-time Open-Meteo satellite feed"
+            >
+              {language === 'bm' ? 'Satelit Langsung' : 'Live Satellite'}
+            </button>
+            <button
+              onClick={() => setActiveSimulation('heavy_rain')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                activeSimulation === 'heavy_rain'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-stone-400 hover:text-white'
+              }`}
+              title="Test heavy rain road slippage warning"
+            >
+              🌧️ {language === 'bm' ? 'Hujan Lebat' : 'Heavy Rain'}
+            </button>
+            <button
+              onClick={() => setActiveSimulation('high_wind')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                activeSimulation === 'high_wind'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-stone-400 hover:text-white'
+              }`}
+              title="Test mountain wind gust alert"
+            >
+              💨 {language === 'bm' ? 'Angin Kencang' : 'High Wind'}
+            </button>
+            <button
+              onClick={() => setActiveSimulation('dense_fog')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                activeSimulation === 'dense_fog'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-stone-400 hover:text-white'
+              }`}
+              title="Test dense fog low visibility warning"
+            >
+              🌫️ {language === 'bm' ? 'Kabus Tebal' : 'Dense Fog'}
+            </button>
+          </div>
+        </div>
+
+        {/* Primary Callout Alert Box (e.g., 'Heavy rain, potential road slippage: Drive with caution') */}
+        <div
+          className={`mt-4 p-4 rounded-2xl border flex items-start gap-3.5 ${
+            safetyImpact.level === 'critical'
+              ? 'bg-red-950/50 border-red-500/40 text-red-100'
+              : safetyImpact.level === 'warning'
+              ? 'bg-amber-950/50 border-amber-500/40 text-amber-100'
+              : safetyImpact.level === 'caution'
+              ? 'bg-teal-950/40 border-teal-500/30 text-teal-100'
+              : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-100'
+          }`}
+        >
+          <div
+            className={`p-2 rounded-xl shrink-0 mt-0.5 ${
+              safetyImpact.level === 'critical'
+                ? 'bg-red-500/20 text-red-400'
+                : safetyImpact.level === 'warning'
+                ? 'bg-amber-500/20 text-amber-400'
+                : safetyImpact.level === 'caution'
+                ? 'bg-teal-500/20 text-teal-300'
+                : 'bg-emerald-500/20 text-emerald-400'
+            }`}
+          >
+            <Car className="w-5 h-5" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-mono font-bold uppercase tracking-wider opacity-80 mb-0.5">
+              {language === 'bm' ? 'AMARAN IMPAK KESELAMATAN SEMASA' : 'LIVE SAFETY IMPACT WARNING'}
+            </div>
+            <p className="text-sm sm:text-base font-bold leading-snug">
+              {language === 'bm' ? safetyImpact.summaryBm : safetyImpact.summary}
+            </p>
+            <div className="text-xs opacity-90 mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span>
+                🌧️ {language === 'bm' ? 'Kerpasan' : 'Precipitation'}:{' '}
+                <strong className="underline">{currentWeather.rainfallProbability}%</strong>
+              </span>
+              <span>
+                💨 {language === 'bm' ? 'Kelajuan Angin' : 'Wind Speed'}:{' '}
+                <strong className="underline">{currentWeather.windSpeed} km/h</strong>
+              </span>
+              <span>
+                💧 {language === 'bm' ? 'Kelembapan' : 'Humidity'}:{' '}
+                <strong className="underline">{currentWeather.humidity}%</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3 Telemetry Impact Matrix Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+          {/* 1. Road Surface & Traction Impact */}
+          <div className="p-3.5 rounded-2xl bg-stone-900/80 border border-white/10 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-xs text-stone-400 mb-1.5">
+                <span className="font-semibold">{language === 'bm' ? 'Cengkaman Jalan' : 'Road Traction'}</span>
+                <Car
+                  className={`w-4 h-4 ${
+                    safetyImpact.roadSlippage.level === 'high'
+                      ? 'text-red-400 animate-pulse'
+                      : safetyImpact.roadSlippage.level === 'moderate'
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                  }`}
+                />
+              </div>
+              <div
+                className={`text-sm font-bold ${
+                  safetyImpact.roadSlippage.level === 'high'
+                    ? 'text-red-300'
+                    : safetyImpact.roadSlippage.level === 'moderate'
+                    ? 'text-amber-300'
+                    : 'text-emerald-300'
+                }`}
+              >
+                {language === 'bm'
+                  ? safetyImpact.roadSlippage.labelBm
+                  : safetyImpact.roadSlippage.label}
+              </div>
+            </div>
+            <p className="text-[11px] text-stone-300 mt-2 leading-relaxed">
+              {language === 'bm'
+                ? safetyImpact.roadSlippage.detailBm
+                : safetyImpact.roadSlippage.detail}
+            </p>
+          </div>
+
+          {/* 2. Mountain Wind Impact */}
+          <div className="p-3.5 rounded-2xl bg-stone-900/80 border border-white/10 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-xs text-stone-400 mb-1.5">
+                <span className="font-semibold">{language === 'bm' ? 'Impak Angin' : 'Wind Impact'}</span>
+                <Wind
+                  className={`w-4 h-4 ${
+                    safetyImpact.windImpact.level === 'high'
+                      ? 'text-amber-400 animate-pulse'
+                      : safetyImpact.windImpact.level === 'moderate'
+                      ? 'text-teal-300'
+                      : 'text-emerald-400'
+                  }`}
+                />
+              </div>
+              <div
+                className={`text-sm font-bold ${
+                  safetyImpact.windImpact.level === 'high'
+                    ? 'text-amber-300'
+                    : safetyImpact.windImpact.level === 'moderate'
+                    ? 'text-teal-300'
+                    : 'text-emerald-300'
+                }`}
+              >
+                {language === 'bm' ? safetyImpact.windImpact.labelBm : safetyImpact.windImpact.label}
+              </div>
+            </div>
+            <p className="text-[11px] text-stone-300 mt-2 leading-relaxed">
+              {language === 'bm'
+                ? safetyImpact.windImpact.detailBm
+                : safetyImpact.windImpact.detail}
+            </p>
+          </div>
+
+          {/* 3. Mountain Visibility & Fog Impact */}
+          <div className="p-3.5 rounded-2xl bg-stone-900/80 border border-white/10 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-xs text-stone-400 mb-1.5">
+                <span className="font-semibold">{language === 'bm' ? 'Jarak Penglihatan' : 'Sight Distance'}</span>
+                <Eye
+                  className={`w-4 h-4 ${
+                    safetyImpact.visibilityImpact.level === 'low'
+                      ? 'text-teal-300 animate-pulse'
+                      : safetyImpact.visibilityImpact.level === 'moderate'
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                  }`}
+                />
+              </div>
+              <div
+                className={`text-sm font-bold ${
+                  safetyImpact.visibilityImpact.level === 'low'
+                    ? 'text-teal-300'
+                    : safetyImpact.visibilityImpact.level === 'moderate'
+                    ? 'text-amber-300'
+                    : 'text-emerald-300'
+                }`}
+              >
+                {language === 'bm'
+                  ? safetyImpact.visibilityImpact.labelBm
+                  : safetyImpact.visibilityImpact.label}
+              </div>
+            </div>
+            <p className="text-[11px] text-stone-300 mt-2 leading-relaxed">
+              {language === 'bm'
+                ? safetyImpact.visibilityImpact.detailBm
+                : safetyImpact.visibilityImpact.detail}
+            </p>
+          </div>
+        </div>
+
+        {/* Expandable Actionable Safety Recommendations */}
+        <div className="mt-4 pt-3 border-t border-white/10">
+          <button
+            onClick={() => setShowAllAdvisories((prev) => !prev)}
+            className="w-full flex items-center justify-between text-xs font-bold text-stone-300 hover:text-white transition-colors cursor-pointer group"
+          >
+            <span className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-emerald-400" />
+              <span>
+                {language === 'bm'
+                  ? `Panduan Pemanduan & Keselamatan Terperinci (${safetyImpact.specificWarnings.length} Arahan)`
+                  : `Actionable Safety Guidelines & Protocols (${safetyImpact.specificWarnings.length} Directives)`}
+              </span>
+            </span>
+            <div className="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold group-hover:underline">
+              <span>{showAllAdvisories ? (language === 'bm' ? 'Sembunyi' : 'Hide') : (language === 'bm' ? 'Papar Semua' : 'View Details')}</span>
+              {showAllAdvisories ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </div>
+          </button>
+
+          {showAllAdvisories && (
+            <div className="space-y-2.5 mt-3 animate-in fade-in slide-in-from-top-2 duration-200">
+              {safetyImpact.specificWarnings.map((warn) => (
+                <div
+                  key={warn.id}
+                  className="p-3.5 rounded-2xl bg-stone-950/80 border border-white/10 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-stone-100 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>{language === 'bm' ? warn.titleBm : warn.title}</span>
+                    </span>
+                    <span className="text-[10px] font-mono uppercase text-stone-400 px-2 py-0.5 rounded bg-white/5">
+                      {warn.factor}
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-300 leading-relaxed">
+                    {language === 'bm' ? warn.messageBm : warn.message}
+                  </p>
+                  <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/20 text-[11.5px] text-emerald-200 font-medium">
+                    <strong className="text-emerald-300 font-bold">
+                      {language === 'bm' ? 'Tindakan Disyorkan: ' : 'Recommended Action: '}
+                    </strong>
+                    {language === 'bm' ? warn.actionTipBm : warn.actionTip}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -212,7 +925,7 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
           <span>{language === 'bm' ? 'Ramalan 5 Hari Seterusnya' : '5-Day Highland Outlook & Forecast'}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-          {currentWeather.forecast.map((f, i) => (
+          {currentWeather.forecast.map((f: WeatherForecastDay, i: number) => (
             <div
               key={i}
               className="bg-stone-900/80 rounded-2xl p-3 border border-white/5 text-center flex flex-col items-center justify-between hover:border-emerald-500/30 transition-colors"

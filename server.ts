@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
+import { WebSocketServer, WebSocket } from 'ws';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -853,6 +854,35 @@ Only return valid JSON without markdown wrapping.`;
   });
 
 
+  // Multi-Category Real-Time WebSocket Broadcaster & Connection Manager
+  const connectedClients = new Set<WebSocket>();
+
+  app.post('/api/notifications/broadcast', (req, res) => {
+    try {
+      const { event, priority = 'normal', payload } = req.body;
+      const message = JSON.stringify({
+        event: event || 'general_notification',
+        priority: priority || 'normal', // 'critical' | 'high' | 'normal' | 'low'
+        payload: payload || {},
+        timestamp: new Date().toISOString()
+      });
+
+      let count = 0;
+      for (const client of connectedClients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+          count++;
+        }
+      }
+
+      console.log(`[WS BROADCAST] Event: ${event} | Priority: ${priority} | Delivered to ${count} clients`);
+      return res.json({ success: true, deliveredClients: count, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      console.error('[WS BROADCAST ERROR]', err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (_req, res) => {
@@ -870,8 +900,37 @@ Only return valid JSON without markdown wrapping.`;
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`CamGo Highland Server running on http://0.0.0.0:${PORT}`);
+  });
+
+  const wss = new WebSocketServer({ server: httpServer });
+  wss.on('connection', (ws) => {
+    connectedClients.add(ws);
+    console.log(`[WS CLIENT CONNECTED] Total clients: ${connectedClients.size}`);
+
+    ws.send(JSON.stringify({
+      event: 'connection_established',
+      priority: 'low',
+      payload: { message: 'Connected to CamGo Multi-Channel Real-Time Telemetry & Notification Grid' },
+      timestamp: new Date().toISOString()
+    }));
+
+    ws.on('message', (data) => {
+      try {
+        const parsed = JSON.parse(data.toString());
+        if (parsed.action === 'ping') {
+          ws.send(JSON.stringify({ event: 'pong', priority: 'low', payload: {}, timestamp: new Date().toISOString() }));
+        }
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    ws.on('close', () => {
+      connectedClients.delete(ws);
+      console.log(`[WS CLIENT DISCONNECTED] Total clients: ${connectedClients.size}`);
+    });
   });
 }
 
