@@ -2643,6 +2643,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <option value="Scenic Escapes">Scenic Escapes</option>
                       <option value="Under the Sun">Under the Sun</option>
                       <option value="Shopping">Shopping</option>
+                      <option value="Events">Events</option>
+                      <option value="History">History</option>
                     </select>
                   </div>
                 </div>
