@@ -797,7 +797,11 @@ Structure answers with clean bullet points and bold highlights. Never give gener
         toolsUsed
       });
     } catch (err: any) {
-      console.warn('[AI CHAT SERVER ERROR, FALLING BACK]', err?.message || err);
+      if (err?.status === 429 || err?.code === 429) {
+        console.warn('[AI CHAT] Rate limit reached, falling back to local directory.');
+      } else {
+        console.error('[AI CHAT SERVER ERROR, FALLING BACK]', err);
+      }
       const fallback = getHighlandsFallbackReply(req.body?.message || '', req.body?.language || 'en');
       return res.json({
         reply: fallback,
