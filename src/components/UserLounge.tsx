@@ -276,18 +276,18 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
   return (
     <div className="flex flex-col h-full max-h-[92vh] sm:max-h-[88vh] bg-stone-900 text-stone-100 overflow-hidden" id="chat-lounge">
       {/* 1. Sticky Header Section */}
-      <div className="shrink-0 bg-stone-900/98 backdrop-blur-md border-b border-white/10 px-4 pt-4 pb-3 sm:px-6 z-20">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-sm">
+      <div className="shrink-0 bg-stone-900/98 backdrop-blur-md border-b border-white/10 px-3 pt-3 pb-2.5 sm:px-6 z-20">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-sm">
               <MessageSquare className="w-4 h-4 animate-pulse" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400 truncate">
                   {language === 'bm' ? 'SEMBANG KOMUNITI' : 'HIGHLANDS LIVE LOUNGE'}
                 </span>
-                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9px] sm:text-[10px] font-semibold shrink-0 ${
                   isOnline 
                     ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
                     : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
@@ -296,16 +296,16 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
                     <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOnline ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
                     <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${isOnline ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                   </span>
-                  <span>{isOnline ? (language === 'bm' ? 'Sambungan Online' : 'Online Connected') : (language === 'bm' ? 'Menyambung Semula...' : 'Reconnecting...')}</span>
+                  <span>{isOnline ? (language === 'bm' ? 'Online' : 'Online') : 'Syncing'}</span>
                 </span>
               </div>
-              <h3 className="text-base sm:text-lg font-heading font-extrabold text-stone-100 tracking-tight leading-tight">
+              <h3 className="text-xs sm:text-base font-heading font-extrabold text-stone-100 tracking-tight truncate">
                 {getTranslation(language, 'lounge_title')}
               </h3>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => {
                 setIsPosting((prev) => !prev);
@@ -313,17 +313,17 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
                   setTimeout(() => scrollToTop(), 50);
                 }
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-950 cursor-pointer shrink-0"
+              className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] sm:text-xs font-bold transition-all shadow-md shadow-emerald-950 cursor-pointer shrink-0"
               title="Create new post"
             >
               {isPosting ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-              <span>{isPosting ? (language === 'bm' ? 'Tutup' : 'Close') : (language === 'bm' ? 'Kongsi Info' : 'New Post')}</span>
+              <span>{isPosting ? (language === 'bm' ? 'Tutup' : 'Close') : (language === 'bm' ? 'Kongsi' : 'New Post')}</span>
             </button>
 
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-1.5 sm:p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1.5 sm:p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
                 title="Close Lounge"
               >
                 <X className="w-4 h-4 sm:w-5 sm:h-5" />

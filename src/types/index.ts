@@ -34,6 +34,8 @@ export type SubCategory =
   | 'guesthouses'
   | 'chalets'
   | 'homestay'
+  | 'homestay_apartment'
+  | 'homestay_landed'
   | 'camping_glamping'
   // Transport & Mobility Services
   | 'car_bike_rentals'

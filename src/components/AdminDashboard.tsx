@@ -362,7 +362,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       { key: 'hotels_resorts', label: 'Hotels & Resorts' },
       { key: 'guesthouses', label: 'Guesthouses' },
       { key: 'chalets', label: 'Chalets' },
-      { key: 'homestay', label: 'Homestays' },
+      { key: 'homestay_apartment', label: 'Homestay (Apartment)' },
+      { key: 'homestay_landed', label: 'Homestay (Landed)' },
       { key: 'camping_glamping', label: 'Camping & Glamping' },
     ],
     transport: [

@@ -56,6 +56,8 @@ export const SUB_CATEGORY_LABELS: Record<string, string> = {
   guesthouses: 'Guesthouses',
   chalets: 'Chalets',
   homestay: 'Homestays',
+  homestay_apartment: 'Homestay (Apartment)',
+  homestay_landed: 'Homestay (Landed)',
   camping_glamping: 'Camping & Glamping',
   // Transport
   auto_repair_roadside: 'Auto Repair & Roadside',
@@ -181,7 +183,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'hotels_resorts', label: 'Hotels & Resorts' },
       { key: 'guesthouses', label: 'Guesthouses' },
       { key: 'chalets', label: 'Chalets' },
-      { key: 'homestay', label: 'Homestays' },
+      { key: 'homestay_apartment', label: 'Homestay (Apartment)' },
+      { key: 'homestay_landed', label: 'Homestay (Landed)' },
       { key: 'camping_glamping', label: 'Camping & Glamping' },
     ],
     transport: [
@@ -824,13 +827,19 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
 
                   <button
                     onClick={() => {
+                      const placeToNavigate = selectedPlacePopup;
                       setSelectedPlacePopup(null);
-                      onSelectPlaceForMap(selectedPlacePopup);
+                      if (placeToNavigate) {
+                        onSelectPlaceForMap(placeToNavigate);
+                        setTimeout(() => {
+                          window.dispatchEvent(new CustomEvent('trigger-route-to-place', { detail: placeToNavigate }));
+                        }, 150);
+                      }
                     }}
                     className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
                   >
                     <Sparkles className="w-4 h-4 text-emerald-200" />
-                    <span>Map &amp; AI Route</span>
+                    <span>Map &amp; Live GPS Route</span>
                     <ArrowUpRight className="w-4 h-4" />
                   </button>
                 </div>

@@ -69,6 +69,7 @@ import { CurrencyConverterModal } from './components/CurrencyConverterModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import { useMultiChannelNotifications } from './hooks/useMultiChannelNotifications';
 import { NotificationCenter } from './components/NotificationCenter';
+import { NavigationPromptModal } from './components/NavigationPromptModal';
 import {
   Sparkles,
   Compass,
@@ -821,41 +822,32 @@ export default function App() {
       {/* Full-Screen Map Modal */}
       {isMapModalOpen && (
         <div className="fixed inset-0 z-[110] bg-stone-950 flex flex-col animate-in fade-in duration-200">
-          <div className={`sticky top-0 z-50 flex items-center justify-between p-4 border-b border-white/10 bg-stone-900/95 backdrop-blur-md ${selectedPlaceForMap ? 'hidden sm:flex' : 'flex'}`}>
-            <h2 className="text-sm font-bold text-emerald-400 uppercase tracking-wider">Intelligent Map Navigator</h2>
+          {/* Header visible ONLY on desktop (sm:flex), completely removed in mobile view */}
+          <div className="sticky top-0 z-50 hidden sm:flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <h2 className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
+                {language === 'bm' ? 'Peta Interaktif & Navigasi GPS' : 'Intelligent Map Navigator'}
+              </h2>
+            </div>
             <button
               onClick={() => setIsMapModalOpen(false)}
-              className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+              className="p-1.5 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
               aria-label="Close map"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {selectedPlaceForMap && (
-              <div className="p-4 border-b border-white/10 bg-stone-900 hidden sm:block">
-                <img
-                  src={selectedPlaceForMap.imageUrl}
-                  alt={selectedPlaceForMap.name}
-                  className="w-full h-40 object-cover rounded-xl mb-3"
-                />
-                <h3 className="text-lg font-bold text-white">{selectedPlaceForMap.name}</h3>
-                <div className="flex items-center justify-between text-xs text-stone-300 mt-1">
-                  <span>{selectedPlaceForMap.township} • {selectedPlaceForMap.elevation}</span>
-                  <span className="font-bold text-amber-400">★ {selectedPlaceForMap.rating} <span className="text-stone-500 font-normal">({selectedPlaceForMap.reviewsCount} reviews)</span></span>
-                </div>
-              </div>
-            )}
-            <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
-              <InteractiveMap
-                places={places}
-                language={language}
-                selectedPlace={selectedPlaceForMap}
-                onSelectPlace={(place) => {
-                  setSelectedPlaceForMap(place);
-                }}
-              />
-            </div>
+          <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col h-full w-full">
+            <InteractiveMap
+              places={places}
+              language={language}
+              selectedPlace={selectedPlaceForMap}
+              onSelectPlace={(place) => {
+                setSelectedPlaceForMap(place);
+              }}
+              onClose={() => setIsMapModalOpen(false)}
+            />
           </div>
         </div>
       )}
@@ -1188,6 +1180,21 @@ export default function App() {
 
       {/* Multi-Channel Real-Time Notification Center & Simulation Dock */}
       <NotificationCenter {...notificationEngine} language={language} />
+
+      {/* Navigation Prompt Modal */}
+      <NavigationPromptModal
+        language={language}
+        onNavigateInternal={(place) => {
+          setSelectedPlaceForMap(place);
+          setIsMapModalOpen(true);
+          const fireRoute = () => {
+            window.dispatchEvent(new CustomEvent('trigger-route-to-place', { detail: place }));
+          };
+          fireRoute();
+          setTimeout(fireRoute, 150);
+          setTimeout(fireRoute, 400);
+        }}
+      />
     </div>
   );
 }

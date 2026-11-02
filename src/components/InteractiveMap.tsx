@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet-draw';
+import 'leaflet-routing-machine';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import { Place, Township, MainCategory, Language } from '../types';
 import { firebaseService } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
@@ -35,6 +37,25 @@ import {
   GripHorizontal,
   Move,
   ShieldAlert,
+  Route,
+  ExternalLink,
+  Loader2,
+  CheckCircle2,
+  Play,
+  Pause,
+  Square,
+  CloudSun,
+  Briefcase,
+  Wrench,
+  Megaphone,
+  Utensils,
+  Hotel,
+  Palmtree,
+  CornerUpRight,
+  CornerUpLeft,
+  ArrowUp,
+  ArrowLeft,
+  LocateFixed,
 } from 'lucide-react';
 import { TrafficForecastingModule } from './TrafficForecastingModule';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
@@ -400,6 +421,24 @@ export const CONGESTION_HOTSPOTS: CongestionHotspotPoint[] = [
   },
 ];
 
+export interface RouteStep {
+  instruction: string;
+  distanceMeters: number;
+  durationSecs: number;
+  icon: string;
+}
+
+export interface TurnByTurnRoute {
+  originName: string;
+  originCoords: [number, number];
+  destinationName: string;
+  destinationCoords: [number, number];
+  distanceKm: number;
+  durationMins: number;
+  steps: RouteStep[];
+  coordinates: [number, number][];
+}
+
 interface InteractiveMapProps {
   places: Place[];
   language: Language;
@@ -407,6 +446,9 @@ interface InteractiveMapProps {
   onSelectPlace: (place: Place | null) => void;
   filterCategory?: MainCategory | 'all';
   filterTownship?: Township | 'all';
+  originCoords?: { lat: number; lng: number; name?: string } | null;
+  destinationCoords?: { lat: number; lng: number; name?: string } | null;
+  onClose?: () => void;
 }
 
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
@@ -416,6 +458,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   onSelectPlace,
   filterCategory = 'all',
   filterTownship = 'all',
+  originCoords = null,
+  destinationCoords = null,
+  onClose,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -423,9 +468,58 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const townshipLayerRef = useRef<L.LayerGroup | null>(null);
   const activeTileLayerRef = useRef<L.TileLayer | null>(null);
 
+  // Turn-by-Turn GPS Live Routing States & Refs
+  const routeLayerRef = useRef<L.LayerGroup | null>(null);
+  const routingControlRef = useRef<any>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const vehicleMarkerRef = useRef<L.Marker | null>(null);
+
+  const [activeRoute, setActiveRoute] = useState<TurnByTurnRoute | null>(null);
+  const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  // Auto-minimized on mobile (< 640px) so it does not block the map; open on desktop
+  const [routeStepsOpen, setRouteStepsOpen] = useState<boolean>(() => {
+    return typeof window !== 'undefined' ? window.innerWidth >= 640 : false;
+  });
+  const [userGpsCoords, setUserGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [isTrackingLive, setIsTrackingLive] = useState<boolean>(false);
+  const [isNavigationPaused, setIsNavigationPaused] = useState<boolean>(false);
+  const [isAutoFollowEnabled, setIsAutoFollowEnabled] = useState<boolean>(true);
+  const [currentHeading, setCurrentHeading] = useState<number>(0);
+  const [isLocatingUser, setIsLocatingUser] = useState<boolean>(false);
+  const userLocationMarkerRef = useRef<L.Marker | null>(null);
+
   const [activeMapType, setActiveMapType] = useState<'osm' | 'satellite' | 'terrain'>('osm');
   const [activeCategory, setActiveCategory] = useState<MainCategory | 'all'>(filterCategory);
   const [activeTownship, setActiveTownship] = useState<Township | 'all'>(filterTownship);
+  const [activeSubCategory, setActiveSubCategory] = useState<string | 'all'>('all');
+
+  // Google Maps Style Mobile Category Dropdown Pill States
+  const [openDropdownPill, setOpenDropdownPill] = useState<
+    'categories' | 'food' | 'tourism' | 'stays' | 'services' | 'townships' | null
+  >(null);
+  const pillDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Close dropdown on click/touch outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        pillDropdownRef.current &&
+        !pillDropdownRef.current.contains(event.target as Node)
+      ) {
+        setOpenDropdownPill(null);
+      }
+    };
+
+    if (openDropdownPill) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [openDropdownPill]);
 
   // AI Traffic Analysis State
   const [analyzingTraffic, setAnalyzingTraffic] = useState(false);
@@ -528,114 +622,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const trafficWidgetRef = useRef<HTMLDivElement>(null);
-  const [trafficWidgetPos, setTrafficWidgetPos] = useState<{ x: number; y: number } | null>(null);
-  const [isDraggingTrafficWidget, setIsDraggingTrafficWidget] = useState(false);
-  const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
-
-  const handleStartDrag = (clientX: number, clientY: number) => {
-    if (!trafficWidgetRef.current || !mapContainerRef.current) return;
-    const widgetRect = trafficWidgetRef.current.getBoundingClientRect();
-    const mapRect = mapContainerRef.current.getBoundingClientRect();
-
-    const currentX = trafficWidgetPos ? trafficWidgetPos.x : (widgetRect.left - mapRect.left);
-    const currentY = trafficWidgetPos ? trafficWidgetPos.y : (widgetRect.top - mapRect.top);
-
-    dragStartRef.current = {
-      mouseX: clientX,
-      mouseY: clientY,
-      startX: currentX,
-      startY: currentY,
-    };
-    setIsDraggingTrafficWidget(true);
+  // Real-Time Distance & Mountain Driving Time Calculator (Haversine Formula)
+  const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) *
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Number((R * c).toFixed(1));
   };
-
-  useEffect(() => {
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      if (!isDraggingTrafficWidget || !dragStartRef.current || !mapContainerRef.current || !trafficWidgetRef.current) return;
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-      const deltaX = clientX - dragStartRef.current.mouseX;
-      const deltaY = clientY - dragStartRef.current.mouseY;
-
-      const mapRect = mapContainerRef.current.getBoundingClientRect();
-      const widgetRect = trafficWidgetRef.current.getBoundingClientRect();
-
-      // Keep widget safely bounded inside map container
-      const maxX = Math.max(10, mapRect.width - widgetRect.width - 10);
-      const maxY = Math.max(10, mapRect.height - widgetRect.height - 10);
-
-      const newX = Math.max(10, Math.min(maxX, dragStartRef.current.startX + deltaX));
-      const newY = Math.max(10, Math.min(maxY, dragStartRef.current.startY + deltaY));
-
-      setTrafficWidgetPos({ x: newX, y: newY });
-    };
-
-    const handleEnd = () => {
-      setIsDraggingTrafficWidget(false);
-      dragStartRef.current = null;
-    };
-
-    if (isDraggingTrafficWidget) {
-      window.addEventListener('mousemove', handleMove, { passive: false });
-      window.addEventListener('mouseup', handleEnd);
-      window.addEventListener('touchmove', handleMove, { passive: false });
-      window.addEventListener('touchend', handleEnd);
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleEnd);
-      window.removeEventListener('touchmove', handleMove);
-      window.removeEventListener('touchend', handleEnd);
-    };
-  }, [isDraggingTrafficWidget]);
-
-  // Ensure widget stays in bounds on resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (!trafficWidgetPos || !mapContainerRef.current || !trafficWidgetRef.current) return;
-      
-      const mapRect = mapContainerRef.current.getBoundingClientRect();
-      const widgetRect = trafficWidgetRef.current.getBoundingClientRect();
-
-      const maxX = Math.max(10, mapRect.width - widgetRect.width - 10);
-      const maxY = Math.max(10, mapRect.height - widgetRect.height - 10);
-
-      if (trafficWidgetPos.x > maxX || trafficWidgetPos.y > maxY) {
-        setTrafficWidgetPos({
-          x: Math.min(trafficWidgetPos.x, maxX),
-          y: Math.min(trafficWidgetPos.y, maxY)
-        });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [trafficWidgetPos]);
-
-  // Adjust position when legend collapses/expands to prevent overflow
-  useEffect(() => {
-    if (!trafficWidgetPos || !mapContainerRef.current || !trafficWidgetRef.current) return;
-    
-    // Brief timeout to wait for DOM height to update after toggle
-    const timer = setTimeout(() => {
-      const mapRect = mapContainerRef.current?.getBoundingClientRect();
-      const widgetRect = trafficWidgetRef.current?.getBoundingClientRect();
-      if (!mapRect || !widgetRect) return;
-
-      const maxY = Math.max(10, mapRect.height - widgetRect.height - 10);
-      if (trafficWidgetPos.y > maxY) {
-        setTrafficWidgetPos({
-          x: trafficWidgetPos.x,
-          y: maxY
-        });
-      }
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [trafficLegendOpen]);
 
   const CORRIDOR_POLYLINES: Record<string, { coords: [number, number][]; color: string; name: string }> = {
     'simpang-pulai': {
@@ -895,6 +895,577 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const handleScrollToForecaster = () => {
     window.dispatchEvent(new CustomEvent('open-traffic-forecaster'));
   };
+
+  // Helper to parse OSRM maneuver steps into localized turn-by-turn instructions
+  const parseManeuverToInstruction = (step: any, destName: string, lang: Language): { instruction: string; icon: string } => {
+    const type = step.maneuver?.type;
+    const modifier = step.maneuver?.modifier;
+    const roadName = step.name ? step.name : (lang === 'bm' ? 'Jalan Utama' : 'Highland Main Route');
+
+    let icon = '⬆️';
+    let text = '';
+
+    if (type === 'depart') {
+      icon = '🚗';
+      text = lang === 'bm' ? `Bertolak dari lokasi asal di ${roadName}` : `Depart from origin onto ${roadName}`;
+    } else if (type === 'turn') {
+      if (modifier?.includes('left')) {
+        icon = '⬅️';
+        text = lang === 'bm' ? `Belok kiri ke ${roadName}` : `Turn left onto ${roadName}`;
+      } else if (modifier?.includes('right')) {
+        icon = '➡️';
+        text = lang === 'bm' ? `Belok kanan ke ${roadName}` : `Turn right onto ${roadName}`;
+      } else {
+        icon = '↗️';
+        text = lang === 'bm' ? `Teruskan ke ${roadName}` : `Continue onto ${roadName}`;
+      }
+    } else if (type === 'new name' || type === 'continue') {
+      icon = '⬆️';
+      text = lang === 'bm' ? `Terus di ${roadName}` : `Continue straight on ${roadName}`;
+    } else if (type === 'roundabout' || type === 'rotary') {
+      icon = '🔄';
+      text = lang === 'bm' ? `Di bulatan, ambil susur keluar ke ${roadName}` : `At roundabout, take exit onto ${roadName}`;
+    } else if (type === 'arrive') {
+      icon = '🏁';
+      text = lang === 'bm' ? `Tiba di destinasi: ${destName}` : `Arrive at destination: ${destName}`;
+    } else {
+      icon = '🧭';
+      text = lang === 'bm' ? `Ikuti laluan ${roadName}` : `Follow ${roadName}`;
+    }
+
+    return { instruction: text, icon };
+  };
+
+  // Parse TomTom maneuver/instruction types into icons
+  const parseTomTomManeuverIcon = (instructionType?: string, maneuver?: string): string => {
+    const type = (instructionType || '').toUpperCase();
+    const man = (maneuver || '').toUpperCase();
+
+    if (type.includes('DEPART') || man.includes('DEPART')) return '🚗';
+    if (type.includes('ARRIVE') || man.includes('ARRIVE')) return '🏁';
+    if (man.includes('LEFT') || type.includes('LEFT')) return '⬅️';
+    if (man.includes('RIGHT') || type.includes('RIGHT')) return '➡️';
+    if (man.includes('ROUNDABOUT') || type.includes('ROUNDABOUT')) return '🔄';
+    if (man.includes('BEER') || man.includes('SLIGHT')) return '↗️';
+    return '⬆️';
+  };
+
+  // TomTom Routing API Fetcher (Endpoint: https://api.tomtom.com/routing/1/calculateRoute/{origin}:{destination}/json)
+  const fetchTomTomRoute = async (
+    origin: { lat: number; lng: number; name: string },
+    destination: { lat: number; lng: number; name: string },
+    apiKey: string
+  ): Promise<TurnByTurnRoute | null> => {
+    try {
+      const url = `https://api.tomtom.com/routing/1/calculateRoute/${origin.lat},${origin.lng}:${destination.lat},${destination.lng}/json?key=${apiKey.trim()}&traffic=true&routeType=fastest&instructionsType=text`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`TomTom Routing HTTP ${response.status}`);
+      }
+      const data = await response.json();
+
+      if (!data.routes || data.routes.length === 0) {
+        throw new Error('No route returned by TomTom');
+      }
+
+      const route = data.routes[0];
+      const summary = route.summary || {};
+      const distanceKm = Number(((summary.lengthInMeters || 0) / 1000).toFixed(1));
+      const durationMins = Math.round((summary.travelTimeInSeconds || 0) / 60);
+
+      const points: { latitude: number; longitude: number }[] = route.legs?.[0]?.points || [];
+      const coordinates: [number, number][] = points.map((p) => [p.latitude, p.longitude]);
+
+      const instructions = route.guidance?.instructions || [];
+      const steps: RouteStep[] = instructions.map((inst: any) => ({
+        instruction: inst.message || (language === 'bm' ? `Laluan ke ${destination.name}` : `Route to ${destination.name}`),
+        distanceMeters: Math.round(inst.routeOffsetInMeters || 0),
+        durationSecs: Math.round(inst.travelTimeInSeconds || 0),
+        icon: parseTomTomManeuverIcon(inst.instructionType, inst.maneuver),
+      }));
+
+      return {
+        originName: origin.name,
+        originCoords: [origin.lat, origin.lng],
+        destinationName: destination.name,
+        destinationCoords: [destination.lat, destination.lng],
+        distanceKm,
+        durationMins,
+        steps: steps.length > 0 ? steps : [
+          { instruction: `Head towards ${destination.name}`, distanceMeters: summary.lengthInMeters || 0, durationSecs: summary.travelTimeInSeconds || 0, icon: '🚗' },
+          { instruction: `Arrive at ${destination.name}`, distanceMeters: 0, durationSecs: 0, icon: '🏁' },
+        ],
+        coordinates,
+      };
+    } catch (err) {
+      console.warn('[InteractiveMap] TomTom Routing API fetch error:', err);
+      return null;
+    }
+  };
+
+  // Helper to render polylines, start/destination markers, and auto-fit map bounds
+  const renderRouteOnMap = (routeData: TurnByTurnRoute, map: L.Map) => {
+    setActiveRoute(routeData);
+    if (typeof window !== 'undefined' && window.innerWidth < 640) {
+      setRouteStepsOpen(false); // Auto-minimize steps on mobile to prevent blocking map
+    }
+
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    } else {
+      routeLayerRef.current = L.layerGroup().addTo(map);
+    }
+
+    // Origin Start Marker (Animated Pulsing GPS Icon)
+    const originIcon = L.divIcon({
+      className: 'route-origin-marker',
+      html: `
+        <div style="position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">
+          <div style="position: absolute; inset: -4px; border-radius: 9999px; background: #0284c7; opacity: 0.5;" class="animate-ping"></div>
+          <div style="width: 26px; height: 26px; border-radius: 9999px; background: #0284c7; border: 2.5px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 2;">
+            <span style="font-size: 12px; line-height: 1;">🚗</span>
+          </div>
+        </div>
+      `,
+      iconSize: [34, 34],
+      iconAnchor: [17, 17],
+    });
+
+    const originMarker = L.marker(routeData.originCoords, { icon: originIcon, zIndexOffset: 900 });
+    originMarker.bindTooltip(`Origin: ${routeData.originName}`, { direction: 'top', className: 'text-xs font-bold' });
+    routeLayerRef.current.addLayer(originMarker);
+
+    // Destination Marker
+    const destIcon = L.divIcon({
+      className: 'route-dest-marker',
+      html: `
+        <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
+          <div style="position: absolute; inset: -4px; border-radius: 9999px; background: #10b981; opacity: 0.4;" class="animate-ping"></div>
+          <div style="width: 28px; height: 28px; border-radius: 9999px; background: #10b981; border: 2.5px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.6); z-index: 2;">
+            <span style="font-size: 13px; line-height: 1;">🏁</span>
+          </div>
+        </div>
+      `,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+
+    const destMarker = L.marker(routeData.destinationCoords, { icon: destIcon, zIndexOffset: 950 });
+    destMarker.bindTooltip(`Destination: ${routeData.destinationName}`, { direction: 'top', className: 'text-xs font-bold' });
+    routeLayerRef.current.addLayer(destMarker);
+
+    // Dark casing underlay for contrast
+    const underlayCasing = L.polyline(routeData.coordinates, {
+      color: '#09090b',
+      weight: 10,
+      opacity: 0.85,
+      lineCap: 'round',
+      lineJoin: 'round',
+    });
+    routeLayerRef.current.addLayer(underlayCasing);
+
+    // Main route polyline (Emerald glow line)
+    const routePolyline = L.polyline(routeData.coordinates, {
+      color: '#10b981',
+      weight: 6,
+      opacity: 0.95,
+      lineCap: 'round',
+      lineJoin: 'round',
+    });
+    routeLayerRef.current.addLayer(routePolyline);
+
+    // Requirement 3: Automatically fit map bounds to the route
+    const bounds = routePolyline.getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
+    }
+  };
+
+  // Pure OSRM JSON Route Fetcher
+  const fetchOsrmRoute = async (
+    origin: { lat: number; lng: number; name: string },
+    destination: { lat: number; lng: number; name: string }
+  ): Promise<TurnByTurnRoute | null> => {
+    try {
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true`;
+      const res = await fetch(osrmUrl);
+      if (!res.ok) throw new Error('OSRM routing service unavailable');
+      const data = await res.json();
+
+      if (!data.routes || data.routes.length === 0) {
+        throw new Error('No driving route found between origin and destination');
+      }
+
+      const route = data.routes[0];
+      const rawCoords: [number, number][] = route.geometry.coordinates;
+      const leafletCoords: [number, number][] = rawCoords.map((c) => [c[1], c[0]]);
+
+      const distanceKm = Number((route.distance / 1000).toFixed(1));
+      const durationMins = Math.round(route.duration / 60);
+
+      const rawSteps = route.legs?.[0]?.steps || [];
+      const steps: RouteStep[] = rawSteps.map((s: any) => {
+        const parsed = parseManeuverToInstruction(s, destination.name, language);
+        return {
+          instruction: parsed.instruction,
+          distanceMeters: Math.round(s.distance),
+          durationSecs: Math.round(s.duration),
+          icon: parsed.icon,
+        };
+      });
+
+      return {
+        originName: origin.name,
+        originCoords: [origin.lat, origin.lng],
+        destinationName: destination.name,
+        destinationCoords: [destination.lat, destination.lng],
+        distanceKm,
+        durationMins,
+        steps,
+        coordinates: leafletCoords,
+      };
+    } catch (err) {
+      console.warn('[InteractiveMap] OSRM Route fetch error:', err);
+      return null;
+    }
+  };
+
+  // Main Route Calculation Logic (TomTom Routing API with OSRM fallback)
+  const calculateAndRenderRoute = async (
+    origin: { lat: number; lng: number; name: string },
+    destination: { lat: number; lng: number; name: string }
+  ) => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    setIsCalculatingRoute(true);
+    setRouteError(null);
+
+    // Ensure old routing controls/layers are properly cleared
+    if (routingControlRef.current) {
+      try {
+        map.removeControl(routingControlRef.current);
+      } catch (e) {
+        // ignore
+      }
+      routingControlRef.current = null;
+    }
+
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    } else {
+      routeLayerRef.current = L.layerGroup().addTo(map);
+    }
+
+    try {
+      // 1. Try TomTom Routing API if API key is available
+      const apiKey = localStorage.getItem('tomtom_api_key') || (import.meta.env.VITE_TOMTOM_API_KEY as string) || '';
+      if (apiKey.trim()) {
+        const tomTomRoute = await fetchTomTomRoute(origin, destination, apiKey);
+        if (tomTomRoute) {
+          renderRouteOnMap(tomTomRoute, map);
+          setIsCalculatingRoute(false);
+          return;
+        }
+      }
+
+      // 2. Fallback: OSRM Routing API
+      const osrmRoute = await fetchOsrmRoute(origin, destination);
+      if (osrmRoute) {
+        renderRouteOnMap(osrmRoute, map);
+        setIsCalculatingRoute(false);
+        return;
+      }
+
+      // 3. Fallback: Direct Line Path
+      const fallbackCoords: [number, number][] = [
+        [origin.lat, origin.lng],
+        [destination.lat, destination.lng],
+      ];
+
+      renderRouteOnMap(
+        {
+          originName: origin.name,
+          originCoords: [origin.lat, origin.lng],
+          destinationName: destination.name,
+          destinationCoords: [destination.lat, destination.lng],
+          distanceKm: Number((Math.hypot(destination.lat - origin.lat, destination.lng - origin.lng) * 111).toFixed(1)),
+          durationMins: 18,
+          steps: [
+            { instruction: `Head towards ${destination.name}`, distanceMeters: 5000, durationSecs: 600, icon: '⬆️' },
+            { instruction: `Arrive at ${destination.name}`, distanceMeters: 0, durationSecs: 0, icon: '🏁' },
+          ],
+          coordinates: fallbackCoords,
+        },
+        map
+      );
+    } catch (err: any) {
+      console.warn('[InteractiveMap] Route fetch fallback:', err);
+      setRouteError(err.message || 'Displaying direct route path.');
+    } finally {
+      setIsCalculatingRoute(false);
+    }
+  };
+
+  const pendingRouteTargetRef = useRef<Place | null>(null);
+
+  // Requirement 2: Dynamic Vehicle Marker with smooth position updates and heading rotation (Waze / Google Maps style)
+  const updateVehicleMarkerOnMap = (lat: number, lng: number, heading: number = 0) => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    const rotationStyle = `transform: rotate(${heading}deg); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);`;
+
+    const vehicleHtml = `
+      <div style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+        <div style="position: absolute; inset: -4px; border-radius: 9999px; background: rgba(14, 165, 233, 0.35);" class="animate-ping"></div>
+        <div style="position: absolute; width: 40px; height: 40px; border-radius: 9999px; background: radial-gradient(circle, rgba(14,165,233,0.3) 0%, rgba(14,165,233,0) 70%);"></div>
+        <div style="${rotationStyle} width: 36px; height: 36px; border-radius: 9999px; background: #0284c7; border: 3px solid #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.55); z-index: 10;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: translateY(-1px);">
+            <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="#ffffff" stroke="#0284c7" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+    `;
+
+    const vehicleIcon = L.divIcon({
+      className: 'live-vehicle-puck-marker',
+      html: vehicleHtml,
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
+    });
+
+    if (vehicleMarkerRef.current) {
+      vehicleMarkerRef.current.setLatLng([lat, lng]);
+      vehicleMarkerRef.current.setIcon(vehicleIcon);
+    } else {
+      vehicleMarkerRef.current = L.marker([lat, lng], {
+        icon: vehicleIcon,
+        zIndexOffset: 1200,
+      }).addTo(map);
+
+      vehicleMarkerRef.current.bindTooltip(
+        language === 'bm' ? 'Kenderaan / GPS Anda' : 'Your Vehicle (Live Navigation)',
+        { direction: 'top', className: 'text-xs font-bold' }
+      );
+    }
+
+    // Auto-Pan / Follow Mode: keep camera centered on vehicle
+    if (isAutoFollowEnabled) {
+      map.panTo([lat, lng], { animate: true, duration: 0.8 });
+    }
+  };
+
+  // Requirement 1: Continuous Geolocation Tracking (watchPosition)
+  const startLiveGpsTracking = () => {
+    if (!navigator.geolocation) return;
+
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+
+    setIsTrackingLive(true);
+    setIsAutoFollowEnabled(true);
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const heading = pos.coords.heading || 0;
+
+        setUserGpsCoords({ lat, lng });
+        setCurrentHeading(heading);
+        updateVehicleMarkerOnMap(lat, lng, heading);
+      },
+      (err) => {
+        console.warn('[InteractiveMap] Live GPS watchPosition warning:', err);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000,
+      }
+    );
+
+    watchIdRef.current = watchId;
+  };
+
+  // Lifecycle Cleanup
+  const stopLiveGpsTracking = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setIsTrackingLive(false);
+    if (vehicleMarkerRef.current && mapInstanceRef.current) {
+      mapInstanceRef.current.removeLayer(vehicleMarkerRef.current);
+      vehicleMarkerRef.current = null;
+    }
+  };
+
+  // Start, Stop, Resume Navigation Handlers
+  const handleStartNavigation = () => {
+    setIsNavigationPaused(false);
+    startLiveGpsTracking();
+    if (mapInstanceRef.current && userGpsCoords) {
+      mapInstanceRef.current.flyTo([userGpsCoords.lat, userGpsCoords.lng], 16, { duration: 0.8 });
+    }
+  };
+
+  const handleStopNavigation = () => {
+    setIsNavigationPaused(true);
+    stopLiveGpsTracking();
+  };
+
+  const handleResumeNavigation = () => {
+    setIsNavigationPaused(false);
+    startLiveGpsTracking();
+    if (mapInstanceRef.current && userGpsCoords) {
+      mapInstanceRef.current.flyTo([userGpsCoords.lat, userGpsCoords.lng], 16, { duration: 0.8 });
+    }
+  };
+
+  // Trigger route calculation with GPS acquisition or Gateway Fallback
+  const handleTriggerRoute = (destinationPlace: Place) => {
+    if (!destinationPlace) return;
+
+    if (!mapInstanceRef.current) {
+      pendingRouteTargetRef.current = destinationPlace;
+      setIsCalculatingRoute(true);
+      return;
+    }
+
+    const destLat = Number(destinationPlace.coordinates?.lat || 4.49);
+    const destLng = Number(destinationPlace.coordinates?.lng || 101.39);
+
+    setIsCalculatingRoute(true);
+
+    // Start live continuous GPS tracking (watchPosition)
+    startLiveGpsTracking();
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const userLat = pos.coords.latitude;
+          const userLng = pos.coords.longitude;
+          setUserGpsCoords({ lat: userLat, lng: userLng });
+          calculateAndRenderRoute(
+            { lat: userLat, lng: userLng, name: language === 'bm' ? 'Lokasi GPS Semasa Anda' : 'Your Current GPS Location' },
+            { lat: destLat, lng: destLng, name: destinationPlace.name }
+          );
+        },
+        (err) => {
+          console.warn('GPS denied or timeout, using local Cameron Highlands fallback:', err);
+          const orig = userGpsCoords || { lat: 4.4715, lng: 101.3805 }; // Tanah Rata township center
+          calculateAndRenderRoute(
+            { lat: orig.lat, lng: orig.lng, name: language === 'bm' ? 'Pusat Tanah Rata' : 'Tanah Rata Town Center' },
+            { lat: destLat, lng: destLng, name: destinationPlace.name }
+          );
+        },
+        { timeout: 7000, enableHighAccuracy: true }
+      );
+    } else {
+      const orig = userGpsCoords || { lat: 4.4715, lng: 101.3805 };
+      calculateAndRenderRoute(
+        { lat: orig.lat, lng: orig.lng, name: language === 'bm' ? 'Pusat Tanah Rata' : 'Tanah Rata Town Center' },
+        { lat: destLat, lng: destLng, name: destinationPlace.name }
+      );
+    }
+  };
+
+  const handleClearRoute = () => {
+    setActiveRoute(null);
+    setRouteError(null);
+    stopLiveGpsTracking();
+
+    if (routingControlRef.current && mapInstanceRef.current) {
+      try {
+        mapInstanceRef.current.removeControl(routingControlRef.current);
+      } catch (e) {
+        // ignore
+      }
+      routingControlRef.current = null;
+    }
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
+  };
+
+  // Sync originCoords and destinationCoords props when passed dynamically
+  useEffect(() => {
+    if (destinationCoords) {
+      const origLat = originCoords?.lat ?? userGpsCoords?.lat ?? 4.4715;
+      const origLng = originCoords?.lng ?? userGpsCoords?.lng ?? 101.3805;
+      const origName = originCoords?.name || (userGpsCoords ? (language === 'bm' ? 'Lokasi GPS Anda' : 'Your GPS Location') : 'Tanah Rata Town Center');
+      const dest = {
+        lat: destinationCoords.lat,
+        lng: destinationCoords.lng,
+        name: destinationCoords.name || 'Selected Destination',
+      };
+      calculateAndRenderRoute(
+        { lat: origLat, lng: origLng, name: origName },
+        dest
+      );
+    }
+  }, [originCoords, destinationCoords, userGpsCoords]);
+
+  // Requirement 4: Ensure route layers, markers, and watchPosition tracking are cleaned up on unmount
+  useEffect(() => {
+    // Attempt silent initial GPS acquisition if permitted
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        () => {
+          // ignore unprompted or denied
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
+      );
+    }
+
+    return () => {
+      stopLiveGpsTracking();
+
+      if (userLocationMarkerRef.current && mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.removeLayer(userLocationMarkerRef.current);
+        } catch (e) {
+          // ignore
+        }
+        userLocationMarkerRef.current = null;
+      }
+
+      if (routingControlRef.current && mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.removeControl(routingControlRef.current);
+        } catch (e) {
+          // ignore
+        }
+        routingControlRef.current = null;
+      }
+      if (routeLayerRef.current) {
+        routeLayerRef.current.clearLayers();
+        routeLayerRef.current.remove();
+        routeLayerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Listen for open-navigation-prompt or trigger-route-to-place events
+  useEffect(() => {
+    const handleNavPrompt = (e: any) => {
+      if (e?.detail) {
+        handleTriggerRoute(e.detail);
+      }
+    };
+    window.addEventListener('open-navigation-prompt', handleNavPrompt as EventListener);
+    window.addEventListener('trigger-route-to-place', handleNavPrompt as EventListener);
+    return () => {
+      window.removeEventListener('open-navigation-prompt', handleNavPrompt as EventListener);
+      window.removeEventListener('trigger-route-to-place', handleNavPrompt as EventListener);
+    };
+  }, [language]);
 
   // Center of Cameron Highlands (Tanah Rata / Brinchang central valley)
   const defaultCenter: [number, number] = [4.475, 101.385];
@@ -1306,14 +1877,26 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       // Render the 9 Cameron Highlands Township center pins
       renderTownshipHubMarkers(map);
 
-      // Render Live Colored TomTom Traffic Overlay & Hotspots
-      renderColoredTrafficOverlay(map);
-
       mapInstanceRef.current = map;
+
+      // Disable auto-follow when user manually drags or pans map
+      map.on('dragstart', () => {
+        setIsAutoFollowEnabled(false);
+      });
+
+      // Check if there was a pending route calculation queued before map mounted
+      if (pendingRouteTargetRef.current) {
+        const targetToRoute = pendingRouteTargetRef.current;
+        pendingRouteTargetRef.current = null;
+        setTimeout(() => {
+          handleTriggerRoute(targetToRoute);
+        }, 150);
+      }
     }
 
     return () => {
       if (mapInstanceRef.current) {
+        mapInstanceRef.current.stop();
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
@@ -1505,10 +2088,47 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       ((activeCategory === 'travel_tourism' || activeCategory === 'attraction') &&
         (p.category === 'attraction' || p.category === 'travel_tourism')) ||
       ((activeCategory === 'shopping' || activeCategory === 'business') &&
-        (p.category === 'business' || p.category === 'shopping'));
+        (p.category === 'business' || p.category === 'shopping')) ||
+      ((activeCategory === 'services_utilities' || activeCategory === 'local_services') &&
+        (p.category === 'services_utilities' || p.category === 'local_services'));
     const matchTown = activeTownship === 'all' || p.township === activeTownship;
-    return matchCat && matchTown;
+    const matchSub = activeSubCategory === 'all' || p.subCategory === activeSubCategory;
+    return matchCat && matchTown && matchSub;
   });
+
+  // Dynamic counts for category and township dropdown badges
+  const placeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: livePlaces.length };
+    livePlaces.forEach((p) => {
+      if (p.category) counts[p.category] = (counts[p.category] || 0) + 1;
+      if (p.township) counts[p.township] = (counts[p.township] || 0) + 1;
+      if (p.subCategory) counts[p.subCategory] = (counts[p.subCategory] || 0) + 1;
+    });
+    return counts;
+  }, [livePlaces]);
+
+  const handleSelectCategory = (cat: MainCategory | 'all', subCat: string | 'all' = 'all') => {
+    setActiveCategory(cat);
+    setActiveSubCategory(subCat);
+    setOpenDropdownPill(null);
+  };
+
+  const handleSelectTownship = (town: Township | 'all') => {
+    setActiveTownship(town);
+    setOpenDropdownPill(null);
+    if (town !== 'all' && TOWNSHIP_COORDS[town] && mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([TOWNSHIP_COORDS[town].lat, TOWNSHIP_COORDS[town].lng], 14, {
+        duration: 1.0,
+      });
+    }
+  };
+
+  const handleResetFilters = () => {
+    setActiveCategory('all');
+    setActiveTownship('all');
+    setActiveSubCategory('all');
+    setOpenDropdownPill(null);
+  };
 
   // Helper to parse coordinate safely (number, string, comma decimal)
   const parseCoord = (val: any): number => {
@@ -1671,7 +2291,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         if (btn) {
           btn.onclick = (e) => {
             e.stopPropagation();
-            onSelectPlace(place);
+            console.log('[InteractiveMap] Dispatching navigation prompt for:', place.name);
+            window.dispatchEvent(new CustomEvent('open-navigation-prompt', { detail: place }));
             marker.closePopup();
           };
         }
@@ -1724,10 +2345,13 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const validLat = !isNaN(lat) && lat !== 0 ? lat : defaultCoord.lat;
     const validLng = !isNaN(lng) && lng !== 0 ? lng : defaultCoord.lng;
 
-    const offsetLng = window.innerWidth >= 768 ? validLng - 0.005 : validLng;
+    // Offset so the pin stays in the visible upper portion of the screen above the bottom sheet on mobile, and to the right on desktop
+    const isMobile = window.innerWidth < 768;
+    const targetLat = isMobile ? validLat - 0.0055 : validLat;
+    const targetLng = isMobile ? validLng : validLng - 0.005;
 
-    map.flyTo([validLat, offsetLng], 15, {
-      duration: 1.2,
+    map.flyTo([targetLat, targetLng], 15, {
+      duration: 1.0,
       easeLinearity: 0.25,
     });
 
@@ -1745,694 +2369,1590 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          const userIcon = L.divIcon({
-            className: 'user-location-marker',
-            html: `
-              <div style="position: relative; width: 22px; height: 22px;">
-                <div style="position: absolute; inset: -8px; border-radius: 9999px; background: rgba(16, 185, 129, 0.4); animation: ping 1.5s infinite;"></div>
-                <div style="width: 22px; height: 22px; border-radius: 9999px; background: #10b981; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.5);"></div>
-              </div>
-            `,
-            iconSize: [22, 22],
-            iconAnchor: [11, 11],
-          });
-
-          L.marker([latitude, longitude], { icon: userIcon }).addTo(map);
-          map.flyTo([latitude, longitude], 15);
-        },
-        () => {
-          map.flyTo(defaultCenter, 14);
-        }
-      );
-    } else {
+    if (!('geolocation' in navigator)) {
       map.flyTo(defaultCenter, 14);
+      return;
     }
+
+    setIsLocatingUser(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsLocatingUser(false);
+        const { latitude, longitude } = pos.coords;
+        setUserGpsCoords({ lat: latitude, lng: longitude });
+
+        const userIcon = L.divIcon({
+          className: 'user-location-marker',
+          html: `
+            <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
+              <div style="position: absolute; inset: -8px; border-radius: 9999px; background: rgba(16, 185, 129, 0.45); animation: ping 1.5s infinite;"></div>
+              <div style="width: 20px; height: 20px; border-radius: 9999px; background: #10b981; border: 3px solid white; box-shadow: 0 2px 12px rgba(0,0,0,0.65);"></div>
+            </div>
+          `,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+        });
+
+        if (userLocationMarkerRef.current) {
+          userLocationMarkerRef.current.setLatLng([latitude, longitude]);
+          userLocationMarkerRef.current.setIcon(userIcon);
+        } else {
+          userLocationMarkerRef.current = L.marker([latitude, longitude], { icon: userIcon, zIndexOffset: 1100 }).addTo(map);
+        }
+
+        userLocationMarkerRef.current.bindTooltip(
+          language === 'bm' ? 'Lokasi GPS Anda' : 'Your GPS Location',
+          { direction: 'top', className: 'text-xs font-bold' }
+        );
+
+        map.flyTo([latitude, longitude], 15, {
+          duration: 1.2,
+          easeLinearity: 0.25,
+        });
+      },
+      (err) => {
+        setIsLocatingUser(false);
+        console.warn('[InteractiveMap] Geolocation error:', err);
+        map.flyTo(defaultCenter, 14);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* MOBILE VIEW ONLY: Controls placed OUTSIDE the map */}
-      <div className="block sm:hidden space-y-2 p-2 rounded-2xl bg-stone-900/90 border border-emerald-500/30 shadow-xl">
-        <div className="text-[10px] font-bold text-emerald-400 tracking-wider uppercase px-0.5">
-          {language === 'bm' ? 'Kawalan & Penapis Peta' : 'Map Controls & Filters'}
-        </div>
-        
-        <div className="grid grid-cols-5 gap-1">
-          <button
-            onClick={() => setActiveMapType('osm')}
-            className={`py-1 px-0.5 rounded-xl text-[10px] font-bold transition-all text-center truncate cursor-pointer ${
-              activeMapType === 'osm' ? 'bg-emerald-600 text-white shadow-md' : 'bg-stone-800 text-stone-300'
-            }`}
-          >
-            {getTranslation(language, 'map_osm')}
-          </button>
-          <button
-            onClick={() => setActiveMapType('satellite')}
-            className={`py-1 px-0.5 rounded-xl text-[10px] font-bold transition-all text-center truncate cursor-pointer ${
-              activeMapType === 'satellite' ? 'bg-emerald-600 text-white shadow-md' : 'bg-stone-800 text-stone-300'
-            }`}
-          >
-            {getTranslation(language, 'map_satellite')}
-          </button>
-          <button
-            onClick={() => setActiveMapType('terrain')}
-            className={`py-1 px-0.5 rounded-xl text-[10px] font-bold transition-all text-center truncate cursor-pointer ${
-              activeMapType === 'terrain' ? 'bg-emerald-600 text-white shadow-md' : 'bg-stone-800 text-stone-300'
-            }`}
-          >
-            {getTranslation(language, 'map_terrain')}
-          </button>
-          <button
-            onClick={() => setStreetViewOpen(true)}
-            className="flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-xl text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 cursor-pointer truncate"
-          >
-            <Eye className="w-3 h-3" />
-            <span>360°</span>
-          </button>
-          <button
-            onClick={() => setIsTrafficOverlayActive(!isTrafficOverlayActive)}
-            className={`flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer truncate ${
-              isTrafficOverlayActive ? 'bg-rose-600 text-white shadow-md' : 'bg-stone-800 text-stone-300'
-            }`}
-            title="Toggle Live Traffic Overlay"
-          >
-            <Car className="w-3 h-3" />
-            <span>{isTrafficOverlayActive ? 'Flow ON' : 'Flow OFF'}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-3 gap-1">
-          <select
-            value={activeCategory}
-            onChange={(e) => setActiveCategory(e.target.value as MainCategory | 'all')}
-            className="bg-stone-800 text-[10px] font-semibold text-stone-200 px-1.5 py-1.5 rounded-xl outline-none border border-white/10 cursor-pointer truncate"
-          >
-            <option value="all">{getTranslation(language, 'map_filter_all')}</option>
-            <option value="services_utilities">Services</option>
-            <option value="food">Food</option>
-            <option value="travel_tourism">Tourism</option>
-            <option value="accommodation">Stay</option>
-            <option value="transport">Transport</option>
-            <option value="local_services">Amenities</option>
-            <option value="shopping">Shopping</option>
-          </select>
-
-          <select
-            value={activeTownship}
-            onChange={(e) => setActiveTownship(e.target.value as Township | 'all')}
-            className="bg-stone-800 text-[10px] font-semibold text-stone-200 px-1.5 py-1.5 rounded-xl outline-none border border-white/10 cursor-pointer truncate"
-          >
-            <option value="all">{language === 'bm' ? 'Semua Pekan' : 'All Townships'}</option>
-            <option value="Tanah Rata">Tanah Rata</option>
-            <option value="Brinchang">Brinchang</option>
-            <option value="Ringlet">Ringlet</option>
-            <option value="Tringkap">Tringkap</option>
-            <option value="Kampung Raja">Kampung Raja</option>
-            <option value="Blue Valley">Blue Valley</option>
-            <option value="Kea Farm">Kea Farm</option>
-          </select>
-
-          <button
-            onClick={handleLocateMe}
-            className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold shadow-md cursor-pointer truncate"
-          >
-            <Navigation2 className="w-3.5 h-3.5 animate-spin duration-3000 shrink-0" />
-            <span className="truncate">{getTranslation(language, 'map_locate_me')}</span>
-          </button>
-        </div>
-
-        {/* Mobile Traffic Route & Corridor Search Bar */}
-        <div className="relative pt-1 border-t border-white/10">
-          <div className="relative flex items-center">
-            <Search className="w-3.5 h-3.5 text-emerald-400 absolute left-2.5 pointer-events-none" />
-            <input
-              type="text"
-              value={mapTrafficSearchQuery}
-              onChange={(e) => {
-                setMapTrafficSearchQuery(e.target.value);
-                setIsTrafficSearchDropdownOpen(true);
-              }}
-              onKeyDown={handleSearchKeyDown}
-              onFocus={() => setIsTrafficSearchDropdownOpen(true)}
-              placeholder="Search places, towns or routes (Kea Farm, Boh Tea, FT185)..."
-              className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-stone-950 border border-white/15 text-[10px] text-stone-100 placeholder-stone-400 outline-none focus:border-emerald-400"
-            />
-            {mapTrafficSearchQuery && (
-              <button
-                onClick={() => {
-                  setMapTrafficSearchQuery('');
-                  setIsTrafficSearchDropdownOpen(false);
-                }}
-                className="absolute right-2 text-stone-400 hover:text-white"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          {/* Mobile Search Dropdown Suggestions (Places & Corridors) */}
-          {isTrafficSearchDropdownOpen && (
-            <div className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl bg-stone-950/98 backdrop-blur-xl border border-emerald-500/30 shadow-2xl p-1.5 z-50 text-stone-100 space-y-1">
-              {/* Places Section */}
-              {matchingPlaceResults.length > 0 && (
-                <div className="space-y-1 mb-1">
-                  <div className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-1">
-                    📍 Verified Places ({matchingPlaceResults.length})
-                  </div>
-                  {matchingPlaceResults.map((place) => (
-                    <button
-                      key={`place-${place.id}`}
-                      onClick={() => handleSelectPlaceOnMap(place)}
-                      className="w-full p-1.5 rounded-lg text-left hover:bg-emerald-950/60 bg-stone-900/60 border border-emerald-500/20 transition-colors cursor-pointer flex items-center justify-between"
-                    >
-                      <div className="min-w-0 pr-1">
-                        <div className="font-bold text-[11px] text-stone-100 truncate">
-                          {language === 'bm' ? place.nameBm || place.name : place.name}
-                        </div>
-                        <div className="text-[9px] text-stone-400 truncate">
-                          {place.township} • {place.subCategory?.replace(/_/g, ' ') || place.category}
-                        </div>
-                      </div>
-                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                        ★ {place.rating}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Corridors & Routes Section */}
-              {filteredTrafficNavItems.length > 0 && (
-                <div className="space-y-1">
-                  <div className="text-[9px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-1">
-                    🛣️ Highway Routes & Corridors
-                  </div>
-                  {filteredTrafficNavItems.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSelectTrafficNav(item)}
-                      className="w-full p-1.5 rounded-lg text-left hover:bg-stone-800 transition-colors cursor-pointer flex items-center justify-between"
-                    >
-                      <div className="min-w-0 pr-1">
-                        <div className="font-bold text-[11px] text-stone-200 truncate">{item.title}</div>
-                        <div className="text-[9px] text-stone-400 truncate">{item.subtitle}</div>
-                      </div>
-                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
-                        {item.badge}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {matchingPlaceResults.length === 0 && filteredTrafficNavItems.length === 0 && (
-                <div className="p-2 text-center text-xs text-stone-400 font-mono">
-                  No places or routes match &quot;{mapTrafficSearchQuery}&quot;
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center gap-1 mt-1 overflow-x-auto pb-0.5 text-[7.5px] scrollbar-none">
-            <span className="text-stone-400 shrink-0 font-bold">Gateways:</span>
-            <button
-              onClick={() => handleSelectTrafficNav(TRAFFIC_NAV_ITEMS[0])}
-              className="px-1 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/30 shrink-0 font-bold transition-all text-[7.5px]"
-            >
-              Simpang Pulai
-            </button>
-            <button
-              onClick={() => handleSelectTrafficNav(TRAFFIC_NAV_ITEMS[1])}
-              className="px-1 py-0.5 rounded bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-500/30 shrink-0 font-bold transition-all text-[7.5px]"
-            >
-              Tapah
-            </button>
-            <button
-              onClick={() => handleSelectTrafficNav(TRAFFIC_NAV_ITEMS[2])}
-              className="px-1 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/30 shrink-0 font-bold transition-all text-[7.5px]"
-            >
-              Sg Koyan
-            </button>
-            <button
-              onClick={handleScrollToForecaster}
-              className="px-1 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white shrink-0 font-bold transition-all text-[7.5px]"
-            >
-              Forecaster ↓
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Map Container */}
+    <div className="flex flex-col h-full w-full relative min-h-0">
+      {/* Map Container with Google Maps / Waze UI Overlays */}
       <div
-        className="map-wrapper relative w-full h-[520px] sm:h-[800px] rounded-3xl overflow-hidden border border-white/20 shadow-2xl glass-panel"
-        style={{ minHeight: '480px', width: '100%' }}
+        className="map-wrapper relative w-full h-full flex-1 min-h-[420px] rounded-none sm:rounded-2xl overflow-hidden border-0 sm:border border-white/10 shadow-2xl glass-panel select-none"
+        style={{ width: '100%', height: '100%' }}
       >
+        {/* Leaflet Map Target */}
         <div
           ref={mapContainerRef}
           className="w-full h-full z-10"
-          style={{ width: '100%', height: '100%', minHeight: '480px' }}
+          style={{ width: '100%', height: '100%' }}
         />
 
-        {/* PC / TABLET VIEW ONLY: Map Overlay Controls Bar */}
-        <div className="hidden sm:flex absolute top-4 left-4 right-4 z-20 items-center justify-between gap-3 pointer-events-none">
-          <div className="flex flex-wrap items-center gap-2 pointer-events-auto">
-            <div className="flex items-center gap-1 p-1 rounded-2xl bg-stone-900/90 backdrop-blur-md border border-white/10 shadow-lg">
-              <button
-                onClick={() => setActiveMapType('osm')}
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeMapType === 'osm'
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'text-stone-300 hover:text-white'
-                }`}
-              >
-                {getTranslation(language, 'map_osm')}
-              </button>
-              <button
-                onClick={() => setActiveMapType('satellite')}
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeMapType === 'satellite'
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'text-stone-300 hover:text-white'
-                }`}
-              >
-                {getTranslation(language, 'map_satellite')}
-              </button>
-              <button
-                onClick={() => setActiveMapType('terrain')}
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeMapType === 'terrain'
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'text-stone-300 hover:text-white'
-                }`}
-              >
-                {getTranslation(language, 'map_terrain')}
-              </button>
-              <button
-                onClick={() => setStreetViewOpen(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 transition-all cursor-pointer"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>360°</span>
-              </button>
-              <button
-                onClick={() => setIsTrafficOverlayActive(!isTrafficOverlayActive)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                  isTrafficOverlayActive
-                    ? 'bg-rose-600/90 hover:bg-rose-600 text-white border-rose-400/40 shadow-md shadow-rose-950/50'
-                    : 'bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border-white/10'
-                }`}
-                title="Toggle TomTom Live Colored Traffic Flow & Hotspots"
-              >
-                <Car className="w-3.5 h-3.5" />
-                <span>Traffic Flow</span>
-                <span className={`w-2 h-2 rounded-full ${isTrafficOverlayActive ? 'bg-emerald-300 animate-ping' : 'bg-stone-500'}`} />
-              </button>
-            </div>
-
-            <div className="relative group p-1 rounded-2xl bg-stone-900/90 backdrop-blur-md border border-white/10 shadow-lg">
-              <button className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-stone-200 cursor-pointer">
-                <span>Filter:</span>
-                <span>
-                  {activeCategory === 'all'
-                    ? 'All Places'
-                    : activeCategory === 'travel_tourism' || activeCategory === 'attraction'
-                    ? 'Travel & Tourism'
-                    : activeCategory === 'food'
-                    ? 'Food & Beverages'
-                    : activeCategory === 'accommodation'
-                    ? 'Accommodation'
-                    : activeCategory === 'transport'
-                    ? 'Transport & Mobility'
-                    : activeCategory === 'local_services'
-                    ? 'Local Services'
-                    : activeCategory === 'shopping' || activeCategory === 'business'
-                    ? 'Shopping & Produce'
-                    : 'Services & Utilities'}
-                </span>
-              </button>
-              <div className="absolute top-full left-0 mt-2 w-52 rounded-2xl bg-stone-900/95 border border-white/10 shadow-xl p-2 hidden group-hover:block z-50">
-                {[
-                  { key: 'all', label: getTranslation(language, 'map_filter_all') },
-                  { key: 'food', label: 'Food & Beverages' },
-                  { key: 'travel_tourism', label: 'Travel & Highland Tourism' },
-                  { key: 'accommodation', label: 'Accommodation' },
-                  { key: 'transport', label: 'Transport & Mobility' },
-                  { key: 'local_services', label: 'Local Services & Amenities' },
-                  { key: 'shopping', label: 'Shopping & Local Produce' },
-                  { key: 'services_utilities', label: 'Services & Utilities' },
-                ].map((catItem) => (
-                  <button
-                    key={catItem.key}
-                    onClick={() => setActiveCategory(catItem.key as MainCategory | 'all')}
-                    className={`block w-full text-left px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-                      activeCategory === catItem.key ? 'bg-emerald-600 text-white' : 'text-stone-300 hover:text-white hover:bg-white/10'
-                    }`}
-                  >
-                    {catItem.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-1 rounded-2xl bg-stone-900/90 backdrop-blur-md border border-white/10 shadow-lg">
-              <select
-                value={activeTownship}
-                onChange={(e) => setActiveTownship(e.target.value as Township | 'all')}
-                className="bg-transparent text-xs font-semibold text-stone-200 px-3 py-1.5 outline-none cursor-pointer"
-              >
-                <option value="all" className="bg-stone-900 text-stone-200">{language === 'bm' ? 'Semua Pekan' : 'All Townships'}</option>
-                <option value="Tanah Rata" className="bg-stone-900 text-stone-200">Tanah Rata</option>
-                <option value="Brinchang" className="bg-stone-900 text-stone-200">Brinchang</option>
-                <option value="Ringlet" className="bg-stone-900 text-stone-200">Ringlet</option>
-                <option value="Tringkap" className="bg-stone-900 text-stone-200">Tringkap</option>
-                <option value="Kampung Raja" className="bg-stone-900 text-stone-200">Kampung Raja</option>
-                <option value="Blue Valley" className="bg-stone-900 text-stone-200">Blue Valley</option>
-                <option value="Kea Farm" className="bg-stone-900 text-stone-200">Kea Farm</option>
-              </select>
-            </div>
-
-            {/* PC Traffic Corridor & Route Search Tool */}
-            <div ref={trafficSearchRef} className="relative p-1 rounded-2xl bg-stone-900/90 backdrop-blur-md border border-emerald-500/30 shadow-lg">
-              <div className="flex items-center gap-1.5 px-2.5 py-1">
-                <Search className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <input
-                  type="text"
-                  value={mapTrafficSearchQuery}
-                  onChange={(e) => {
-                    setMapTrafficSearchQuery(e.target.value);
-                    setIsTrafficSearchDropdownOpen(true);
+        {/* 1. TOP FLOATING HEADER (Waze / Google Maps Style): Active when navigation is NOT active */}
+        {!activeRoute && !isCalculatingRoute && (
+          <div className="absolute top-3 left-3 right-3 sm:left-4 sm:right-4 z-30 pointer-events-none flex flex-col gap-2 max-w-2xl sm:mx-auto">
+            {/* Top Search & Controls Bar */}
+            <div className="pointer-events-auto rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-1.5 flex items-center gap-1.5 sm:gap-2">
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="sm:hidden p-1.5 rounded-xl bg-stone-800/90 hover:bg-stone-700 text-stone-200 transition-colors cursor-pointer shrink-0"
+                  title={language === 'bm' ? 'Tutup Peta' : 'Close Map'}
+                  aria-label="Close Map"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              )}
+              <Search className="w-4 h-4 text-emerald-400 ml-1 sm:ml-2 shrink-0 pointer-events-none" />
+              <input
+                type="text"
+                value={mapTrafficSearchQuery}
+                onChange={(e) => {
+                  setMapTrafficSearchQuery(e.target.value);
+                  setIsTrafficSearchDropdownOpen(true);
+                }}
+                onKeyDown={handleSearchKeyDown}
+                onFocus={() => setIsTrafficSearchDropdownOpen(true)}
+                placeholder={
+                  language === 'bm'
+                    ? 'Cari destinasi, pekan, tarikan Cameron...'
+                    : 'Search destinations, towns, places...'
+                }
+                className="w-full bg-transparent text-xs sm:text-sm text-stone-100 placeholder-stone-400 outline-none px-1"
+              />
+              {mapTrafficSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMapTrafficSearchQuery('');
+                    setIsTrafficSearchDropdownOpen(false);
                   }}
-                  onKeyDown={handleSearchKeyDown}
-                  onFocus={() => setIsTrafficSearchDropdownOpen(true)}
-                  placeholder="Search places, towns or routes (Kea Farm, Boh Tea, FT185)..."
-                  className="w-48 lg:w-64 bg-transparent text-xs text-stone-100 placeholder-stone-400 outline-none"
-                />
-                {mapTrafficSearchQuery && (
+                  className="p-1 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {/* View Type Toggle Pills */}
+              <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-stone-950/80 border border-white/10 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveMapType('osm')}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    activeMapType === 'osm' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  Map
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMapType('satellite')}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    activeMapType === 'satellite' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  Sat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStreetViewOpen(true)}
+                  className="p-1 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-white/5 transition-all cursor-pointer"
+                  title="360° Street View"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Locate Me Button */}
+              <button
+                type="button"
+                onClick={handleLocateMe}
+                disabled={isLocatingUser}
+                className={`p-2 rounded-xl text-white transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                  isLocatingUser
+                    ? 'bg-amber-600 animate-pulse'
+                    : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+                title={language === 'bm' ? 'Kesan Lokasi GPS Anda' : 'Locate My GPS Position'}
+              >
+                <LocateFixed className={`w-4 h-4 ${isLocatingUser ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {/* Dropdown Suggestions */}
+            {isTrafficSearchDropdownOpen && (
+              <div
+                ref={trafficSearchRef}
+                className="pointer-events-auto max-h-64 overflow-y-auto rounded-2xl bg-stone-950/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 text-stone-100 space-y-1.5 [scrollbar-width:thin]"
+              >
+                {matchingPlaceResults.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-1">
+                      📍 Verified Places ({matchingPlaceResults.length})
+                    </div>
+                    {matchingPlaceResults.map((place) => (
+                      <button
+                        key={`search-place-${place.id}`}
+                        onClick={() => handleSelectPlaceOnMap(place)}
+                        className="w-full p-2 rounded-xl text-left hover:bg-emerald-950/60 bg-stone-900/60 border border-emerald-500/20 transition-colors cursor-pointer flex items-center justify-between"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-bold text-xs text-stone-100 truncate">
+                            {language === 'bm' ? place.nameBm || place.name : place.name}
+                          </div>
+                          <div className="text-[10px] text-stone-400 truncate">
+                            {place.township} • {place.subCategory?.replace(/_/g, ' ') || place.category}
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                          ★ {place.rating}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {filteredTrafficNavItems.length > 0 && (
+                  <div className="space-y-1 pt-1 border-t border-white/10">
+                    <div className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-1">
+                      🛣️ Mountain Corridors
+                    </div>
+                    {filteredTrafficNavItems.map((item) => (
+                      <button
+                        key={`search-corridor-${item.id}`}
+                        onClick={() => handleSelectTrafficNav(item)}
+                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 bg-stone-900/40 transition-colors cursor-pointer flex items-center justify-between"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-bold text-xs text-stone-200 truncate">{item.title}</div>
+                          <div className="text-[10px] text-stone-400 truncate">{item.subtitle}</div>
+                        </div>
+                        <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
+                          {item.badge}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {matchingPlaceResults.length === 0 && filteredTrafficNavItems.length === 0 && (
+                  <div className="p-3 text-center text-xs text-stone-400 font-mono">
+                    No places or routes match &quot;{mapTrafficSearchQuery}&quot;
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Mobile View: Google Maps Style Horizontally Scrollable Category Pills Bar with Custom Glassmorphism Dropdown */}
+            <div ref={pillDropdownRef} className="pointer-events-auto block sm:hidden relative">
+              {/* Horizontally Scrollable Pills Bar */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none touch-pan-x -mx-1 px-1">
+                {/* 1. Categories Pill Dropdown */}
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdownPill(openDropdownPill === 'categories' ? null : 'categories')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
+                    openDropdownPill === 'categories' || (activeCategory !== 'all' && activeCategory !== 'food' && activeCategory !== 'travel_tourism' && activeCategory !== 'accommodation' && activeCategory !== 'services_utilities')
+                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-900/40 ring-1 ring-emerald-400/50'
+                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
+                  }`}
+                >
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="whitespace-nowrap">
+                    {activeCategory === 'all'
+                      ? (language === 'bm' ? 'Kategori' : 'Categories')
+                      : activeCategory === 'shopping' || activeCategory === 'business'
+                      ? (language === 'bm' ? 'Membeli-belah' : 'Shopping')
+                      : activeCategory === 'masjid_surau'
+                      ? 'Masjid/Surau'
+                      : activeCategory}
+                  </span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
+                      openDropdownPill === 'categories' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* 2. Food Pill Dropdown */}
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdownPill(openDropdownPill === 'food' ? null : 'food')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
+                    openDropdownPill === 'food' || activeCategory === 'food'
+                      ? 'bg-amber-600 text-white border-amber-400 shadow-amber-900/40 ring-1 ring-amber-400/50'
+                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
+                  }`}
+                >
+                  <Utensils className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="whitespace-nowrap">{language === 'bm' ? 'Makanan' : 'Food'}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
+                      openDropdownPill === 'food' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* 3. Tourism Pill Dropdown */}
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdownPill(openDropdownPill === 'tourism' ? null : 'tourism')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
+                    openDropdownPill === 'tourism' || activeCategory === 'travel_tourism' || activeCategory === 'attraction'
+                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-900/40 ring-1 ring-emerald-400/50'
+                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
+                  }`}
+                >
+                  <Palmtree className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="whitespace-nowrap">{language === 'bm' ? 'Pelancongan' : 'Tourism'}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
+                      openDropdownPill === 'tourism' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* 4. Stays Pill Dropdown */}
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdownPill(openDropdownPill === 'stays' ? null : 'stays')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
+                    openDropdownPill === 'stays' || activeCategory === 'accommodation'
+                      ? 'bg-teal-600 text-white border-teal-400 shadow-teal-900/40 ring-1 ring-teal-400/50'
+                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
+                  }`}
+                >
+                  <Hotel className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                  <span className="whitespace-nowrap">{language === 'bm' ? 'Penginapan' : 'Stays'}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
+                      openDropdownPill === 'stays' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* 5. Services Pill Dropdown */}
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdownPill(openDropdownPill === 'services' ? null : 'services')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
+                    openDropdownPill === 'services' || activeCategory === 'services_utilities' || activeCategory === 'local_services'
+                      ? 'bg-blue-600 text-white border-blue-400 shadow-blue-900/40 ring-1 ring-blue-400/50'
+                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span className="whitespace-nowrap">{language === 'bm' ? 'Servis' : 'Services'}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
+                      openDropdownPill === 'services' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* 6. Townships Pill Dropdown */}
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdownPill(openDropdownPill === 'townships' ? null : 'townships')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
+                    openDropdownPill === 'townships' || activeTownship !== 'all'
+                      ? 'bg-purple-600 text-white border-purple-400 shadow-purple-900/40 ring-1 ring-purple-400/50'
+                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
+                  }`}
+                >
+                  <Navigation2 className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span className="whitespace-nowrap">{activeTownship === 'all' ? (language === 'bm' ? 'Pekan' : 'Townships') : activeTownship}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
+                      openDropdownPill === 'townships' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* 7. Weather Pill */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('weather-forecast');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-sky-950/80 border border-sky-500/30 text-sky-300 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+                >
+                  <CloudSun className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span className="whitespace-nowrap">Weather</span>
+                </button>
+
+                {/* 8. Jobs Pill */}
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('open-classifieds-modal'))}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-amber-950/80 border border-amber-500/30 text-amber-300 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+                >
+                  <Briefcase className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="whitespace-nowrap">Jobs</span>
+                </button>
+
+                {/* 9. Classifieds Pill */}
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('open-classifieds-modal'))}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+                >
+                  <Megaphone className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="whitespace-nowrap">Classifieds</span>
+                </button>
+
+                {/* 10. Reset Pill */}
+                {(activeCategory !== 'all' || activeTownship !== 'all' || activeSubCategory !== 'all') && (
                   <button
-                    onClick={() => {
-                      setMapTrafficSearchQuery('');
-                      setIsTrafficSearchDropdownOpen(false);
-                    }}
-                    className="p-0.5 text-stone-400 hover:text-white cursor-pointer"
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-red-950/80 hover:bg-red-900 border border-red-500/40 text-red-200 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+                    title={language === 'bm' ? 'Set Semula Penapis' : 'Reset All Filters'}
                   >
-                    <X className="w-3 h-3" />
+                    <RotateCcw className="w-3 h-3 text-red-300 shrink-0" />
+                    <span className="whitespace-nowrap">Reset</span>
                   </button>
                 )}
               </div>
 
-              {/* Autocomplete Dropdown (Places & Corridors) */}
-              {isTrafficSearchDropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 max-h-72 overflow-y-auto rounded-2xl bg-stone-950/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 z-50 text-stone-100 space-y-1.5 w-80 sm:w-96">
-                  {/* Places Section */}
-                  {matchingPlaceResults.length > 0 && (
-                    <div className="space-y-1 mb-1.5">
-                      <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-1">
-                        📍 Verified Places ({matchingPlaceResults.length})
+              {/* Custom Glassmorphism Dropdown Selector Panel */}
+              {openDropdownPill && (
+                <div className="mt-2 w-full rounded-2xl bg-stone-950/95 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-3 text-stone-100 max-h-[55vh] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                  {/* Dropdown Header */}
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">
+                        {openDropdownPill === 'categories' && '📍'}
+                        {openDropdownPill === 'food' && '🍽️'}
+                        {openDropdownPill === 'tourism' && '🌴'}
+                        {openDropdownPill === 'stays' && '🏨'}
+                        {openDropdownPill === 'services' && '🔧'}
+                        {openDropdownPill === 'townships' && '🏘️'}
+                      </span>
+                      <div>
+                        <div className="font-extrabold text-xs text-white">
+                          {openDropdownPill === 'categories' && (language === 'bm' ? 'Pilih Kategori Utama' : 'Main Categories')}
+                          {openDropdownPill === 'food' && (language === 'bm' ? 'Pilihan Makanan & Selera' : 'Food & Dining Highland')}
+                          {openDropdownPill === 'tourism' && (language === 'bm' ? 'Tarikan & Alam Semula Jadi' : 'Attractions & Nature')}
+                          {openDropdownPill === 'stays' && (language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations')}
+                          {openDropdownPill === 'services' && (language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities')}
+                          {openDropdownPill === 'townships' && (language === 'bm' ? 'Pilih Pekan Cameron Highlands' : 'Cameron Highlands Townships')}
+                        </div>
+                        <div className="text-[10px] text-stone-400">
+                          {openDropdownPill === 'townships'
+                            ? (language === 'bm' ? 'Teroka 9 mukim dan pusat pekan' : 'Filter by 9 highland town hubs')
+                            : `${placeCounts['all']} ${language === 'bm' ? 'lokasi berdaftar' : 'total locations'}`}
+                        </div>
                       </div>
-                      {matchingPlaceResults.map((place) => (
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdownPill(null)}
+                      className="p-1.5 rounded-lg bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Dropdown Content Options */}
+                  <div className="space-y-1.5">
+                    {/* --- CATEGORIES PANEL --- */}
+                    {openDropdownPill === 'categories' && (
+                      <>
                         <button
-                          key={`pc-place-${place.id}`}
-                          onClick={() => handleSelectPlaceOnMap(place)}
-                          className="w-full p-2 rounded-xl text-left hover:bg-emerald-950/60 bg-stone-900/70 border border-emerald-500/20 transition-colors cursor-pointer flex items-center justify-between group"
+                          type="button"
+                          onClick={() => handleSelectCategory('all', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'all'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
                         >
-                          <div className="min-w-0 pr-2">
-                            <div className="font-bold text-xs text-stone-100 group-hover:text-emerald-300 truncate">
-                              {language === 'bm' ? place.nameBm || place.name : place.name}
-                            </div>
-                            <div className="text-[10px] text-stone-400 truncate">
-                              {place.township} • {place.subCategory?.replace(/_/g, ' ') || place.category}
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">📍</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Kategori' : 'All Categories'}</div>
+                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Papar semua tempat menarik & perkhidmatan' : 'View all places & services'}</div>
                             </div>
                           </div>
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                            ★ {place.rating}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {placeCounts['all']}
+                            </span>
+                            {activeCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
                         </button>
-                      ))}
-                    </div>
-                  )}
 
-                  {/* Corridors Section */}
-                  {filteredTrafficNavItems.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-1">
-                        🛣️ Highway Routes & Corridors
-                      </div>
-                      {filteredTrafficNavItems.map((item) => (
                         <button
-                          key={`pc-corridor-${item.id}`}
-                          onClick={() => handleSelectTrafficNav(item)}
-                          className="w-full p-2 rounded-xl text-left hover:bg-stone-800 transition-colors cursor-pointer flex items-center justify-between group"
+                          type="button"
+                          onClick={() => handleSelectCategory('food', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'food'
+                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
                         >
-                          <div className="min-w-0 pr-2">
-                            <div className="font-bold text-xs text-stone-200 group-hover:text-cyan-300 truncate">
-                              {item.title}
-                            </div>
-                            <div className="text-[10px] text-stone-400 truncate">
-                              {item.subtitle}
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🍽️</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Makanan & Kafe' : 'Food & Dining'}</div>
+                              <div className="text-[10px] text-stone-400">Steamboat, Highland Scones, Halal & Cafes</div>
                             </div>
                           </div>
-                          <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
-                            {item.badge}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {placeCounts['food'] || 0}
+                            </span>
+                            {activeCategory === 'food' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
                         </button>
-                      ))}
-                    </div>
-                  )}
 
-                  {matchingPlaceResults.length === 0 && filteredTrafficNavItems.length === 0 && (
-                    <div className="p-3 text-center text-xs text-stone-400 font-mono">
-                      No places or routes match &quot;{mapTrafficSearchQuery}&quot;
-                    </div>
-                  )}
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'travel_tourism' || activeCategory === 'attraction'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🌴</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
+                              <div className="text-[10px] text-stone-400">Ladang Teh, Strawberi & Hutan Lumut</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {(placeCounts['travel_tourism'] || 0) + (placeCounts['attraction'] || 0)}
+                            </span>
+                            {(activeCategory === 'travel_tourism' || activeCategory === 'attraction') && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('accommodation', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'accommodation'
+                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏨</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
+                              <div className="text-[10px] text-stone-400">Resort, Homestay, Chalet & Glamping</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {placeCounts['accommodation'] || 0}
+                            </span>
+                            {activeCategory === 'accommodation' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'services_utilities' || activeCategory === 'local_services'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🔧</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
+                              <div className="text-[10px] text-stone-400">Bengkel Kereta, Stesen Minyak, Klinik & ATM</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {(placeCounts['services_utilities'] || 0) + (placeCounts['local_services'] || 0)}
+                            </span>
+                            {(activeCategory === 'services_utilities' || activeCategory === 'local_services') && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('shopping', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'shopping' || activeCategory === 'business'
+                              ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🛍️</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
+                              <div className="text-[10px] text-stone-400">Sayur Segar, Cenderamata & Hasil Tanah Tinggi</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {(placeCounts['shopping'] || 0) + (placeCounts['business'] || 0)}
+                            </span>
+                            {(activeCategory === 'shopping' || activeCategory === 'business') && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+                      </>
+                    )}
+
+                    {/* --- FOOD PANEL --- */}
+                    {openDropdownPill === 'food' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('food', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'food' && activeSubCategory === 'all'
+                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🍽️</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Pilihan Makanan' : 'All Food & Dining'}</div>
+                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Lihat semua restoran & gerai' : 'Explore all eateries'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {placeCounts['food'] || 0}
+                            </span>
+                            {activeCategory === 'food' && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('food', 'steamboats')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'food' && activeSubCategory === 'steamboats'
+                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🍲</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Steamboat & Sup Panas' : 'Steamboat & Hotpot'}</div>
+                              <div className="text-[10px] text-stone-400">Arang Tradisi, Tomyam & Halal Highland</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeCategory === 'food' && activeSubCategory === 'steamboats' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('food', 'cafes')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'food' && activeSubCategory === 'cafes'
+                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">☕</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Kafe & High Tea Scone' : 'Highland Cafes & Bakeries'}</div>
+                              <div className="text-[10px] text-stone-400">Kopi artisan, kek strawberi & teh herba</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeCategory === 'food' && activeSubCategory === 'cafes' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('food', 'night_markets_street')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'food' && activeSubCategory === 'night_markets_street'
+                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🍢</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Pasar Malam & Street Food' : 'Night Market & Street Food'}</div>
+                              <div className="text-[10px] text-stone-400">Jagung mutiara, ubi bakar & sosej</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeCategory === 'food' && activeSubCategory === 'night_markets_street' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('food', 'dining')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'food' && activeSubCategory === 'dining'
+                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🍛</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Restoran Tempatan & Halal' : 'Local & Halal Dining'}</div>
+                              <div className="text-[10px] text-stone-400">Masakan Melayu, Mamak & Masakan Cina Halal</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeCategory === 'food' && activeSubCategory === 'dining' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+                      </>
+                    )}
+
+                    {/* --- TOURISM PANEL --- */}
+                    {openDropdownPill === 'tourism' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            (activeCategory === 'travel_tourism' || activeCategory === 'attraction') && activeSubCategory === 'all'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🌴</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Tarikan Pelancongan' : 'All Attractions & Sights'}</div>
+                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Pemandangan, ladang & jejak denai' : 'Explore all tourist destinations'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {(placeCounts['travel_tourism'] || 0) + (placeCounts['attraction'] || 0)}
+                            </span>
+                            {(activeCategory === 'travel_tourism' || activeCategory === 'attraction') && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'agritourism_plantations')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'agritourism_plantations'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🍵</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Ladang & Kilang Teh Boh' : 'Tea Plantations & Valleys'}</div>
+                              <div className="text-[10px] text-stone-400">Sungai Palas, Habu & Bharat Tea</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'agritourism_plantations' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'agrotourism_farms')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'agrotourism_farms'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🍓</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Ladang Strawberi & Agro' : 'Strawberry & Agro Farms'}</div>
+                              <div className="text-[10px] text-stone-400">Petik sendiri strawberi & taman bunga kaktus</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'agrotourism_farms' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'outdoor_adventure')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'outdoor_adventure'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🌲</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Hutan Lumut & Denai Mendaki' : 'Mossy Forest & Hiking'}</div>
+                              <div className="text-[10px] text-stone-400">Gunung Brinchang, Gunung Irau & Trail 1-10</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'outdoor_adventure' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'attractions_sightseeing')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'attractions_sightseeing'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏛️</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Tempat Menarik & Bersejarah' : 'Sightseeing & Viewpoints'}</div>
+                              <div className="text-[10px] text-stone-400">Air Terjun Robinson, Time Tunnel & Lavender Park</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'attractions_sightseeing' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+                      </>
+                    )}
+
+                    {/* --- STAYS PANEL --- */}
+                    {openDropdownPill === 'stays' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('accommodation', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'accommodation' && activeSubCategory === 'all'
+                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏨</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Penginapan' : 'All Accommodations'}</div>
+                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Hotel, homestay, resort & chalet' : 'Browse all stays'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {placeCounts['accommodation'] || 0}
+                            </span>
+                            {activeCategory === 'accommodation' && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('accommodation', 'hotels_resorts')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'hotels_resorts'
+                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏰</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Hotel Warisan & Resort' : 'Hotels & Resorts'}</div>
+                              <div className="text-[10px] text-stone-400">Cameron Highlands Resort, Strawberry Park & Zenith</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'hotels_resorts' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('accommodation', 'homestay')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'homestay'
+                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏡</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Chalet & Homestay Kampung' : 'Chalets & Homestays'}</div>
+                              <div className="text-[10px] text-stone-400">Mesra keluarga, dapur memasak & balkoni sejuk</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'homestay' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('accommodation', 'camping_glamping')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'camping_glamping'
+                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">⛺</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Glamping & Perkhemahan' : 'Highland Glamping & Camping'}</div>
+                              <div className="text-[10px] text-stone-400">Pengalaman tidur di bawah bintang & udara sejuk</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'camping_glamping' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+                      </>
+                    )}
+
+                    {/* --- SERVICES PANEL --- */}
+                    {openDropdownPill === 'services' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            (activeCategory === 'services_utilities' || activeCategory === 'local_services') && activeSubCategory === 'all'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🔧</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Perkhidmatan' : 'All Services & Utilities'}</div>
+                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Bengkel, minyak, kecemasan & bank' : 'Essential highland amenities'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {(placeCounts['services_utilities'] || 0) + (placeCounts['local_services'] || 0)}
+                            </span>
+                            {(activeCategory === 'services_utilities' || activeCategory === 'local_services') && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'auto_repair_roadside')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'auto_repair_roadside'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🚗</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Bengkel & Towing 4WD Bukit' : 'Mechanics & Mountain Towing'}</div>
+                              <div className="text-[10px] text-stone-400">Pembaikan brek panas, tayar bocor & bantuan kecemasan</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'auto_repair_roadside' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'fuel_ev_charging')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'fuel_ev_charging'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">⛽</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Stesen Minyak & Pengecas EV' : 'Petrol Stations & EV Chargers'}</div>
+                              <div className="text-[10px] text-stone-400">Petronas Tanah Rata, Shell Ringlet & Brinchang</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'fuel_ev_charging' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'health_wellness')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'health_wellness'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏥</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Klinik, Hospital & Farmasi' : 'Clinics, Hospital & Pharmacy'}</div>
+                              <div className="text-[10px] text-stone-400">Hospital Sultanah Hajjah Kalsom Tanah Rata</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'health_wellness' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'banking_financial')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeSubCategory === 'banking_financial'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏧</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Mesin ATM & Cawangan Bank' : 'ATMs & Banking Hubs'}</div>
+                              <div className="text-[10px] text-stone-400">Maybank, CIMB, Agrobank & BSN</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {activeSubCategory === 'banking_financial' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+                      </>
+                    )}
+
+                    {/* --- TOWNSHIPS PANEL --- */}
+                    {openDropdownPill === 'townships' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectTownship('all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeTownship === 'all'
+                              ? 'bg-purple-600/30 border-purple-400/80 text-purple-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🗺️</span>
+                            <div>
+                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Pekan (Cameron Highlands)' : 'All Cameron Highlands'}</div>
+                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Papar keseluruhan koridor tanah tinggi' : 'Show full highland corridor'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                              {placeCounts['all']}
+                            </span>
+                            {activeTownship === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                        </button>
+
+                        {(
+                          [
+                            { name: 'Tanah Rata', desc: 'Pusat Pentadbiran, Bas Terminal & Kafe', icon: '🏛️' },
+                            { name: 'Brinchang', desc: 'Pasar Malam, Hotel & Restoran Steamboat', icon: '🌃' },
+                            { name: 'Kea Farm', desc: 'Pasar Sayur Tertinggi & Ladang Bunga', icon: '🥬' },
+                            { name: 'Ringlet', desc: 'Pintu Masuk Selatan & Tasik Habu', icon: '🌊' },
+                            { name: 'Kampung Raja', desc: 'Pintu Masuk Simpang Pulai & Hab Logistik', icon: '🚛' },
+                            { name: 'Tringkap', desc: 'Ladang Lebah, Bunga & Kampung Tradisi', icon: '🐝' },
+                            { name: 'Kuala Terla', desc: 'Lembah Teh Hijau & Kebun Sayur Organik', icon: '🍵' },
+                            { name: 'Bertam Valley', desc: 'Lembah Pertanian & Terowong Tapah', icon: '🌾' },
+                            { name: 'Blue Valley', desc: 'Ladang Teh Biru & Sempadan Kelantan', icon: '🏔️' },
+                          ] as const
+                        ).map((t) => (
+                          <button
+                            key={`town-opt-${t.name}`}
+                            type="button"
+                            onClick={() => handleSelectTownship(t.name as Township)}
+                            className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                              activeTownship === t.name
+                                ? 'bg-purple-600/30 border-purple-400/80 text-purple-200 font-bold'
+                                : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className="text-base">{t.icon}</span>
+                              <div>
+                                <div className="text-xs font-bold">{t.name}</div>
+                                <div className="text-[10px] text-stone-400">{t.desc}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {placeCounts[t.name] ? (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
+                                  {placeCounts[t.name]}
+                                </span>
+                              ) : null}
+                              {activeTownship === t.name && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                            </div>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Shortcut to Traffic Forecaster */}
-            <button
-              onClick={handleScrollToForecaster}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-600/30 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-300 hover:text-white text-xs font-bold transition-all shadow-md cursor-pointer"
-              title="Jump to Real-Time & Predictive Traffic Forecaster"
-            >
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Forecast Engine</span>
-            </button>
+            {/* Desktop View: Quick-Action Category Filter Chips Bar (hidden on mobile, visible on sm and up) */}
+            <div className="pointer-events-auto hidden sm:flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none">
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('weather-forecast');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-sky-950/80 border border-sky-500/30 hover:border-sky-400 text-sky-300 hover:text-white text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+              >
+                <CloudSun className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>Weather</span>
+              </button>
 
-            {/* Shortcut to LIVE ROAD STATUS Live Traffic Alerts Card */}
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('open-traffic-alerts-modal'))}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-rose-600/30 hover:bg-rose-600/40 border border-rose-500/40 text-rose-200 hover:text-white text-xs font-bold transition-all shadow-md cursor-pointer"
-              title="Open Live Road Status & Alerts Card"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-              <span>Live Alerts (3)</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open-classifieds-modal'));
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-amber-950/80 border border-amber-500/30 hover:border-amber-400 text-amber-300 hover:text-white text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+              >
+                <Briefcase className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Jobs</span>
+              </button>
 
-          <div className="pointer-events-auto flex">
-            <button
-              onClick={handleLocateMe}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/60 cursor-pointer transition-all active:scale-95"
-            >
-              <Navigation2 className="w-3.5 h-3.5 animate-spin duration-3000" />
-              <span>{getTranslation(language, 'map_locate_me')}</span>
-            </button>
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory(activeCategory === 'services_utilities' ? 'all' : 'services_utilities');
+                }}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
+                  activeCategory === 'services_utilities'
+                    ? 'bg-emerald-600 text-white border-emerald-400'
+                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Services</span>
+              </button>
 
-        {/* Floating Movable TomTom Live Traffic Legend & Hotspot Quick Jump Widget */}
-        <div
-          ref={trafficWidgetRef}
-          style={
-            trafficWidgetPos
-              ? {
-                  left: `${trafficWidgetPos.x}px`,
-                  top: `${trafficWidgetPos.y}px`,
-                  position: 'absolute',
-                  zIndex: 40,
-                }
-              : {
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  position: 'absolute',
-                  zIndex: 40,
-                }
-          }
-          className={`pointer-events-auto w-[290px] sm:w-[340px] max-w-[calc(100%-24px)] select-none transition-shadow ${
-            isDraggingTrafficWidget ? 'shadow-2xl ring-2 ring-emerald-400 scale-[1.01]' : 'shadow-xl'
-          }`}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          <div className="rounded-2xl bg-stone-900/95 backdrop-blur-2xl border border-emerald-500/40 shadow-2xl p-2.5 sm:p-3 text-stone-100 max-h-[70vh] sm:max-h-[480px] flex flex-col">
-            {/* Draggable Grip Handle Bar */}
-            <div
-              onMouseDown={(e) => {
-                e.preventDefault();
-                handleStartDrag(e.clientX, e.clientY);
-              }}
-              onTouchStart={(e) => {
-                if (e.touches && e.touches[0]) {
-                  handleStartDrag(e.touches[0].clientX, e.touches[0].clientY);
-                }
-              }}
-              className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-lg bg-stone-950/80 hover:bg-stone-800/80 border border-white/10 cursor-grab active:cursor-grabbing transition-colors group"
-              title="Click and drag to move this widget anywhere on the map"
-            >
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-stone-300 group-hover:text-emerald-300">
-                <Move className="w-3 h-3 text-emerald-400" />
-                <span>Move Widget Anywhere</span>
-              </div>
-              <GripHorizontal className="w-4 h-4 text-stone-400 group-hover:text-emerald-400" />
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open-classifieds-modal'));
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-indigo-950/80 border border-indigo-500/30 hover:border-indigo-400 text-indigo-300 hover:text-white text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+              >
+                <Megaphone className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>Classifieds</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory(activeCategory === 'travel_tourism' ? 'all' : 'travel_tourism');
+                }}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
+                  activeCategory === 'travel_tourism'
+                    ? 'bg-emerald-600 text-white border-emerald-400'
+                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
+                }`}
+              >
+                <Palmtree className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Tourism</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory(activeCategory === 'food' ? 'all' : 'food');
+                }}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
+                  activeCategory === 'food'
+                    ? 'bg-emerald-600 text-white border-emerald-400'
+                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
+                }`}
+              >
+                <Utensils className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Food</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory(activeCategory === 'accommodation' ? 'all' : 'accommodation');
+                }}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
+                  activeCategory === 'accommodation'
+                    ? 'bg-emerald-600 text-white border-emerald-400'
+                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
+                }`}
+              >
+                <Hotel className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                <span>Stays</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('all');
+                  setActiveTownship('all');
+                }}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
+                  activeCategory === 'all'
+                    ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-300 border-white/10'
+                }`}
+              >
+                <RotateCcw className="w-3 h-3 shrink-0" />
+                <span>All</span>
+              </button>
             </div>
+          </div>
+        )}
 
-            {/* Header with status, toggle, reset and collapse */}
-            <div className="flex items-center justify-between gap-1.5 pb-2 border-b border-white/10 shrink-0">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className="p-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shrink-0">
-                  <Car className="w-3.5 h-3.5" />
-                </div>
-                <div className="truncate">
-                  <div className="font-extrabold text-[11px] sm:text-xs text-white leading-tight flex items-center gap-1.5">
-                    <span>TomTom Traffic Flow</span>
-                    <span className="relative flex h-2 w-2 shrink-0">
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isTrafficOverlayActive ? 'bg-emerald-400' : 'bg-stone-500'}`}></span>
-                      <span className={`relative inline-flex rounded-full h-2 w-2 ${isTrafficOverlayActive ? 'bg-emerald-500' : 'bg-stone-500'}`}></span>
+        {/* 2. TOP NAVIGATION HUD BANNER (Waze / Google Maps Style): Active during navigation */}
+        {activeRoute && (
+          <div className="absolute top-2 left-2 right-2 sm:top-3 sm:left-6 sm:right-6 sm:max-w-xl sm:mx-auto z-40 pointer-events-auto select-none animate-in slide-in-from-top duration-300">
+            <div className="rounded-2xl sm:rounded-3xl bg-emerald-700/95 backdrop-blur-2xl border border-emerald-400/40 shadow-2xl p-2.5 sm:p-4 text-white flex items-center justify-between gap-2.5 sm:gap-3">
+              {/* Maneuver Icon */}
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white text-emerald-800 flex items-center justify-center shrink-0 shadow-md">
+                <span className="text-xl sm:text-2xl font-black leading-none">
+                  {activeRoute.steps[0]?.icon || '⬆️'}
+                </span>
+              </div>
+
+              {/* Maneuver Details */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-1.5 sm:gap-2">
+                  <span className="text-lg sm:text-2xl font-black tracking-tight text-white">
+                    {activeRoute.steps[0]?.distanceMeters > 0
+                      ? activeRoute.steps[0].distanceMeters >= 1000
+                        ? `${(activeRoute.steps[0].distanceMeters / 1000).toFixed(1)} km`
+                        : `${activeRoute.steps[0].distanceMeters} m`
+                      : 'Now'}
+                  </span>
+                  {activeRoute.steps[1] && (
+                    <span className="text-[10px] sm:text-[11px] font-medium text-emerald-200/90 truncate">
+                      Then {activeRoute.steps[1].icon}{' '}
+                      {activeRoute.steps[1].distanceMeters >= 1000
+                        ? `${(activeRoute.steps[1].distanceMeters / 1000).toFixed(1)} km`
+                        : `${activeRoute.steps[1].distanceMeters} m`}
                     </span>
-                  </div>
-                  <div className="text-[9px] text-stone-400 font-medium truncate">
-                    {tomTomKeyPresent ? '🟢 Live TomTom Feed Connected' : '⚡ Corridors & Choke Points'}
-                  </div>
+                  )}
+                </div>
+                <div className="text-[11px] sm:text-sm font-bold text-emerald-50 truncate leading-snug mt-0.5">
+                  {activeRoute.steps[0]?.instruction || `Navigate towards ${activeRoute.destinationName}`}
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 shrink-0">
-                {trafficWidgetPos && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTrafficWidgetPos(null);
-                    }}
-                    className="p-1 rounded-lg bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors cursor-pointer"
-                    title="Reset to default position"
-                  >
-                    <RotateCcw className="w-3 h-3 text-stone-300" />
-                  </button>
-                )}
+              {/* End / Exit Navigation Button */}
+              <button
+                type="button"
+                onClick={handleClearRoute}
+                className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-black/30 hover:bg-black/50 text-white transition-colors cursor-pointer shrink-0"
+                title="End Navigation"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Calculating Route Spinner Overlay */}
+        {isCalculatingRoute && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 p-4 rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/40 shadow-2xl flex items-center gap-3 text-stone-100">
+            <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+            <span className="text-xs font-bold">
+              {language === 'bm' ? 'Menjana laluan memandu...' : 'Calculating driving route...'}
+            </span>
+          </div>
+        )}
+
+        {/* 3. BOTTOM NAVIGATION CONTROL CARD: Active during navigation */}
+        {activeRoute && !isCalculatingRoute && (
+          <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-6 sm:right-6 sm:max-w-xl sm:mx-auto z-40 pointer-events-auto select-none animate-in slide-in-from-bottom duration-300">
+            <div className="rounded-2xl sm:rounded-3xl bg-stone-900/95 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2.5 sm:p-4 text-stone-100 flex flex-col gap-2 sm:gap-2.5">
+              {/* Mobile Slide-Up Pull / Toggle Handle (Mobile view only) */}
+              <div
+                onClick={() => setRouteStepsOpen(!routeStepsOpen)}
+                className="sm:hidden flex items-center justify-center pt-0.5 pb-1 cursor-pointer -mt-1 active:opacity-75 transition-opacity"
+              >
+                <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-800/90 border border-white/10 text-[10px] font-mono font-bold text-emerald-400 shadow-sm">
+                  <span>{routeStepsOpen ? '▼ Slide down to minimize' : `▲ Slide up steps (${activeRoute.steps.length})`}</span>
+                </div>
+              </div>
+
+              {/* Row 1: ETA, Time Remaining, Distance, Live GPS */}
+              <div className="flex items-center justify-between pb-1.5 sm:pb-2 border-b border-white/10">
+                <div>
+                  <div className="text-base sm:text-xl font-black text-emerald-400 leading-none">
+                    {(() => {
+                      const arrivalDate = new Date(Date.now() + activeRoute.durationMins * 60 * 1000);
+                      return arrivalDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    })()}
+                  </div>
+                  <div className="text-[9px] sm:text-[10px] text-stone-400 font-mono font-bold uppercase mt-0.5">
+                    {language === 'bm' ? 'Jangka Tiba' : 'Estimated Arrival'}
+                  </div>
+                </div>
+
+                <div className="text-center font-mono">
+                  <div className="text-sm sm:text-lg font-extrabold text-stone-100">
+                    {activeRoute.durationMins} min
+                  </div>
+                  <div className="text-[10px] text-stone-400 font-bold">{activeRoute.distanceKm} km</div>
+                </div>
+
+                {/* Recenter Button (pulses if map is panned away) */}
                 <button
-                  onClick={() => setIsTrafficOverlayActive(!isTrafficOverlayActive)}
-                  className={`px-2 py-0.5 rounded-lg text-[9.5px] font-black uppercase transition-all cursor-pointer ${
-                    isTrafficOverlayActive
-                      ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-500/30'
-                      : 'bg-stone-800 text-stone-400 hover:text-white'
+                  type="button"
+                  onClick={() => {
+                    setIsAutoFollowEnabled(true);
+                    if (mapInstanceRef.current && userGpsCoords) {
+                      mapInstanceRef.current.flyTo([userGpsCoords.lat, userGpsCoords.lng], 16, { duration: 0.8 });
+                    }
+                  }}
+                  className={`px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md ${
+                    isAutoFollowEnabled
+                      ? 'bg-stone-800 hover:bg-stone-700 text-stone-200'
+                      : 'bg-amber-500 hover:bg-amber-400 text-stone-950 font-black animate-pulse shadow-amber-950'
                   }`}
-                  title="Toggle Colored Traffic Flow Overlay on Map"
+                  title="Recenter camera on vehicle"
                 >
-                  {isTrafficOverlayActive ? 'ON' : 'OFF'}
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>{isAutoFollowEnabled ? 'Followed' : 'Recenter'}</span>
                 </button>
+              </div>
+
+              {/* Row 2: Navigation controls & Turn Steps Drawer Toggle */}
+              <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={isNavigationPaused ? handleResumeNavigation : handleStopNavigation}
+                    className="py-1.5 px-2.5 sm:px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {isNavigationPaused ? (
+                      <>
+                        <Play className="w-3.5 h-3.5 text-cyan-400 fill-current" />
+                        <span>Resume</span>
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="w-3.5 h-3.5 text-amber-400 fill-current" />
+                        <span>Pause</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRouteStepsOpen(!routeStepsOpen)}
+                    className="py-1.5 px-2.5 sm:px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <span className="hidden sm:inline">Directions ({activeRoute.steps.length})</span>
+                    <span className="sm:hidden">Steps ({activeRoute.steps.length})</span>
+                    {routeStepsOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 sm:gap-1.5">
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&origin=${activeRoute.originCoords[0]},${activeRoute.originCoords[1]}&destination=${activeRoute.destinationCoords[0]},${activeRoute.destinationCoords[1]}&travelmode=driving`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-1.5 px-2 sm:px-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] sm:text-[11px] flex items-center gap-1 transition-all"
+                  >
+                    <span>Google</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <a
+                    href={`https://waze.com/ul?ll=${activeRoute.destinationCoords[0]},${activeRoute.destinationCoords[1]}&navigate=yes`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-1.5 px-2 sm:px-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] sm:text-[11px] flex items-center gap-1 transition-all"
+                  >
+                    <span>Waze</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Turn-by-Turn Guidance Drawer (Slide-up on mobile, toggleable) */}
+              {routeStepsOpen && (
+                <div className="mt-1 space-y-1.5 max-h-48 sm:max-h-40 overflow-y-auto pr-1 [scrollbar-width:thin] border-t border-white/10 pt-2 animate-in slide-in-from-bottom-2 duration-200">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pb-1">
+                    <span className="font-bold text-stone-300">Turn-by-turn guidance</span>
+                    <button
+                      type="button"
+                      onClick={() => setRouteStepsOpen(false)}
+                      className="text-emerald-400 hover:text-emerald-300 font-bold cursor-pointer"
+                    >
+                      Hide Steps
+                    </button>
+                  </div>
+                  {activeRoute.steps.map((step, idx) => (
+                    <div
+                      key={`step-${idx}`}
+                      className="p-2 rounded-xl bg-stone-950/70 border border-white/5 flex items-start gap-2.5 text-xs"
+                    >
+                      <span className="text-base leading-none shrink-0 mt-0.5">{step.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-stone-200 leading-snug">{step.instruction}</div>
+                        {step.distanceMeters > 0 && (
+                          <div className="text-[10px] font-mono text-emerald-400 mt-0.5">
+                            {step.distanceMeters >= 1000
+                              ? `${(step.distanceMeters / 1000).toFixed(1)} km`
+                              : `${step.distanceMeters} m`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 4. SLIDE-UP BOTTOM SHEET (Waze / Google Maps Style Place Card) */}
+        {selectedPlace && !activeRoute && (
+          <div className="absolute bottom-2 sm:bottom-4 left-2 right-2 sm:left-6 sm:bottom-6 sm:w-[410px] sm:right-auto z-[1050] pointer-events-auto select-none animate-in slide-in-from-bottom duration-300 max-w-[calc(100vw-16px)]">
+            <div className="rounded-2xl sm:rounded-3xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/50 shadow-[0_20px_60px_rgba(0,0,0,0.9)] p-3 sm:p-4 text-stone-100 flex flex-col gap-2 sm:gap-2.5 max-h-[66vh] sm:max-h-[75vh] w-full overflow-hidden box-border">
+              {/* Drag Handle Indicator */}
+              <div className="w-10 h-1 bg-stone-600/80 rounded-full mx-auto -mt-0.5 mb-0.5 shrink-0" />
+
+              {/* Header: Place Photo + Titles + Close Button */}
+              <div className="flex items-start justify-between gap-2 w-full min-w-0 shrink-0">
+                <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1 overflow-hidden">
+                  <img
+                    src={selectedPlace.imageUrl}
+                    alt={selectedPlace.name}
+                    className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl object-cover shrink-0 border border-white/10 shadow-md aspect-square"
+                  />
+                  <div className="min-w-0 flex-1 overflow-hidden pr-0.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-400 px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 truncate max-w-[130px]">
+                        {selectedPlace.township}
+                      </span>
+                      {selectedPlace.elevation && (
+                        <span className="text-[9px] font-mono text-stone-400 shrink-0">
+                          {selectedPlace.elevation}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-xs sm:text-base font-extrabold text-white mt-1 leading-snug line-clamp-1 break-words truncate">
+                      {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
+                    </h3>
+                    <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-stone-400 mt-0.5 truncate">
+                      <span className="text-amber-400 font-bold shrink-0">★ {selectedPlace.rating}</span>
+                      <span className="truncate">({selectedPlace.reviewsCount || 85} reviews)</span>
+                    </div>
+                  </div>
+                </div>
+
                 <button
-                  onClick={() => setTrafficLegendOpen(!trafficLegendOpen)}
-                  className="p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
-                  title={trafficLegendOpen ? 'Collapse Legend' : 'Expand Legend'}
+                  type="button"
+                  onClick={() => onSelectPlace(null)}
+                  className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0 ml-1"
+                  title="Close place card"
                 >
-                  {trafficLegendOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                  <X className="w-4 h-4" />
                 </button>
+              </div>
+
+              {/* Live Distance & Estimated Mountain Drive Time */}
+              {(() => {
+                const lat = Number(selectedPlace.coordinates?.lat);
+                const lng = Number(selectedPlace.coordinates?.lng);
+                const hasValidCoords = !isNaN(lat) && !isNaN(lng) && lat !== 0;
+
+                if (!hasValidCoords) return null;
+
+                if (userGpsCoords) {
+                  const dist = calculateDistanceKm(userGpsCoords.lat, userGpsCoords.lng, lat, lng);
+                  const estMins = Math.max(3, Math.round((dist / 32) * 60));
+
+                  return (
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs shrink-0 w-full min-w-0 overflow-hidden">
+                      <div className="flex items-center gap-1.5 text-emerald-300 font-bold min-w-0 truncate">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="truncate">{dist} km away</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-amber-300 font-bold font-mono shrink-0 pl-1 text-[11px] sm:text-xs">
+                        <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>~{estMins} mins drive</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // If GPS is not yet acquired, do NOT show inaccurate 27.5 km! Show direct Locate Me button
+                return (
+                  <div className="flex items-center justify-between p-1.5 sm:p-2 rounded-xl bg-stone-950/80 border border-emerald-500/20 text-xs shrink-0 w-full min-w-0">
+                    <div className="flex items-center gap-1.5 text-stone-300 text-[11px] min-w-0 truncate">
+                      <LocateFixed className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="truncate">{language === 'bm' ? 'Jarak GPS masa nyata' : 'Real-time GPS distance'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleLocateMe();
+                      }}
+                      disabled={isLocatingUser}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-[10px] flex items-center gap-1 shrink-0 cursor-pointer shadow-sm transition-all"
+                    >
+                      <LocateFixed className={`w-3 h-3 ${isLocatingUser ? 'animate-spin' : ''}`} />
+                      <span>{isLocatingUser ? (language === 'bm' ? 'Mengesan...' : 'Locating...') : (language === 'bm' ? 'Kesan GPS' : 'Locate Me')}</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* PROMINENT "START NAVIGATION" BUTTON (Google Maps / Waze Style) */}
+              <button
+                type="button"
+                onClick={() => {
+                  const target = selectedPlace;
+                  onSelectPlace(null);
+                  handleTriggerRoute(target);
+                }}
+                className="w-full py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-950/80 active:scale-95 transition-all cursor-pointer shrink-0 min-w-0 truncate"
+              >
+                <Navigation2 className="w-4 h-4 sm:w-5 sm:h-5 fill-current shrink-0" />
+                <span className="truncate">{language === 'bm' ? 'Mula Navigasi GPS' : 'Start Navigation'}</span>
+              </button>
+
+              {/* Scrollable details: Quick Action Links & Operating info */}
+              <div className="overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#059669_transparent] pr-1 space-y-2 max-h-[160px] sm:max-h-[220px] w-full min-w-0">
+                {/* Secondary Actions: Google Maps, Waze, 360° Panorama */}
+                <div className="grid grid-cols-3 gap-1 pt-0.5 w-full">
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-1.5 px-1 rounded-xl bg-blue-600/90 hover:bg-blue-600 text-white font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all text-center min-w-0 overflow-hidden"
+                  >
+                    <span className="truncate">Google Maps</span>
+                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                  </a>
+                  <a
+                    href={`https://waze.com/ul?ll=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}&navigate=yes`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-1.5 px-1 rounded-xl bg-cyan-600/90 hover:bg-cyan-600 text-white font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all text-center min-w-0 overflow-hidden"
+                  >
+                    <span className="truncate">Waze</span>
+                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setStreetViewOpen(true)}
+                    className="py-1.5 px-1 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer text-center min-w-0 overflow-hidden"
+                  >
+                    <Eye className="w-3 h-3 shrink-0" />
+                    <span className="truncate">360° View</span>
+                  </button>
+                </div>
+
+                {/* Place Details Accordion */}
+                <details className="text-xs bg-stone-950/70 rounded-xl p-2 sm:p-2.5 border border-white/5 group w-full overflow-hidden">
+                  <summary className="font-bold text-stone-300 cursor-pointer flex items-center justify-between select-none min-w-0">
+                    <span className="truncate pr-1 text-[11px] sm:text-xs">
+                      {language === 'bm' ? 'Maklumat & Waktu Operasi' : 'Place Details & Operating Hours'}
+                    </span>
+                    <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform shrink-0">▼</span>
+                  </summary>
+                  <div className="mt-2 space-y-2 pt-2 border-t border-white/5 text-stone-300 text-[11px] overflow-hidden">
+                    <p className="leading-relaxed break-words">
+                      {language === 'bm' ? selectedPlace.descriptionBm : selectedPlace.description}
+                    </p>
+                    {selectedPlace.contact && (
+                      <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px] break-all">
+                        <Phone className="w-3 h-3 shrink-0" />
+                        <a href={`tel:${selectedPlace.contact}`} className="underline hover:text-emerald-300 truncate">
+                          {selectedPlace.contact}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </details>
               </div>
             </div>
-
-            {/* Collapsible Legend Details & Hotspot Quick Jump (Scrollable) */}
-            {trafficLegendOpen && (
-              <div className="mt-2 space-y-2 overflow-y-auto pr-0.5 [scrollbar-width:thin] [scrollbar-color:#059669_transparent]">
-                {/* Speed Spectrum Indicator */}
-                <div className="grid grid-cols-4 gap-1 text-[8.5px] sm:text-[9px] font-bold text-center">
-                  <div className="p-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-300">
-                    <div className="w-full h-1.5 rounded-full bg-[#10b981] mb-1"></div>
-                    <span>&gt;60k</span>
-                    <div className="text-[7.5px] font-normal text-emerald-400/80">Clear</div>
-                  </div>
-                  <div className="p-1 rounded-lg bg-amber-950/60 border border-amber-500/30 text-amber-300">
-                    <div className="w-full h-1.5 rounded-full bg-[#f59e0b] mb-1"></div>
-                    <span>30-50k</span>
-                    <div className="text-[7.5px] font-normal text-amber-400/80">Moderate</div>
-                  </div>
-                  <div className="p-1 rounded-lg bg-rose-950/60 border border-rose-500/30 text-rose-300">
-                    <div className="w-full h-1.5 rounded-full bg-[#ef4444] mb-1"></div>
-                    <span>15-25k</span>
-                    <div className="text-[7.5px] font-normal text-rose-400/80">Heavy</div>
-                  </div>
-                  <div className="p-1 rounded-lg bg-red-950/70 border border-red-500/40 text-red-200">
-                    <div className="w-full h-1.5 rounded-full bg-[#dc2626] mb-1"></div>
-                    <span>&lt;15k</span>
-                    <div className="text-[7.5px] font-normal text-red-400">Gridlock</div>
-                  </div>
-                </div>
-
-                {/* Hotspot Quick Jump List */}
-                <div>
-                  <div className="text-[9.5px] font-extrabold uppercase tracking-wider text-stone-400 mb-1 flex items-center justify-between">
-                    <span>Bottlenecks (Click to Pan)</span>
-                    <span className="text-[8.5px] text-amber-400 font-mono">6 monitored</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1 max-h-24 sm:max-h-28 overflow-y-auto pr-0.5 [scrollbar-width:thin]">
-                    {congestionHotspots.map((h) => (
-                      <button
-                        key={h.id}
-                        onClick={() => handleFlyToHotspot(h)}
-                        className="p-1 rounded-xl bg-stone-950/80 hover:bg-stone-800 border border-white/5 hover:border-emerald-500/40 text-left transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-bold text-[9.5px] text-stone-200 group-hover:text-emerald-300 truncate">
-                            {h.name.replace(' Bottleneck Hotspot', '').replace(' Gridlock', '')}
-                          </span>
-                          <span
-                            className="text-[8px] font-mono font-bold px-1 rounded shrink-0"
-                            style={{ background: `${h.color}25`, color: h.color }}
-                          >
-                            {h.speedKmh}k
-                          </span>
-                        </div>
-                        <div className="text-[8px] text-stone-400 truncate">
-                          +{h.delayMins}m delay
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Live Road Status Alerts Card Trigger */}
-                <button
-                  onClick={() => window.dispatchEvent(new CustomEvent('open-traffic-alerts-modal'))}
-                  className="w-full py-1.5 px-2 rounded-xl bg-rose-600/25 hover:bg-rose-600/35 border border-rose-500/40 text-rose-200 hover:text-white text-[9.5px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                  title="Open Live Road Status & Alerts Card"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-                  <ShieldAlert className="w-3 h-3 text-rose-400" />
-                  <span>Live Road Alerts & Broadcast (3 Active)</span>
-                </button>
-
-                {/* Jump to Forecaster */}
-                <button
-                  onClick={handleScrollToForecaster}
-                  className="w-full py-1.5 px-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 hover:text-white text-[9.5px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <TrendingUp className="w-3 h-3 text-emerald-400" />
-                  <span>Open Full Traffic Forecaster ↓</span>
-                </button>
-              </div>
-            )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Real-Time & Predictive Traffic Forecasting Module for Long-Distance Drivers */}
-      <div className="mt-4">
+      <div className="mt-1.5 shrink-0">
         <TrafficForecastingModule
           language={language}
           selectedCorridorId={selectedCorridorId}
@@ -2514,245 +4034,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               {language === 'bm'
                 ? 'Paparan jalan 360° interaktif disimulasikan dari koordinat satelit Cameron Highlands.'
                 : 'Interactive 360° ground perspective rendered from Cameron Highlands geo-coordinates.'}
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Selected Place Pop-Up Window */}
-      {selectedPlace && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto pointer-events-auto"
-          onClick={() => onSelectPlace(null)}
-          onWheel={(e) => e.stopPropagation()}
-          onTouchMove={(e) => e.stopPropagation()}
-        >
-          <div
-            className="glass-panel w-full max-w-md max-h-[88vh] my-auto overflow-y-auto rounded-3xl p-5 sm:p-6 bg-stone-900 border border-emerald-500/30 shadow-2xl relative transition-transform duration-200 [scrollbar-width:thin] [scrollbar-color:#059669_transparent]"
-            style={{ transform: `scale(${cardZoom})`, transformOrigin: 'top center' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => onSelectPlace(null)}
-              className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/60 backdrop-blur-md text-white hover:bg-emerald-600 transition-colors cursor-pointer"
-              aria-label="Close modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3.5 pr-8">
-              <img
-                src={selectedPlace.imageUrl}
-                alt={selectedPlace.name}
-                className="w-full sm:w-16 h-48 sm:h-16 rounded-2xl object-cover shrink-0 border border-white/10"
-              />
-              <div className="text-center sm:text-left">
-                <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-                    {selectedPlace.township} • {selectedPlace.elevation}
-                  </span>
-                </div>
-                <h4 className="text-base font-bold text-stone-100 mt-1 line-clamp-1">
-                  {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
-                </h4>
-                <div className="flex items-center justify-center sm:justify-start gap-2 text-xs text-stone-400 mt-0.5">
-                  <span className="text-amber-400 font-bold">★ {selectedPlace.rating}</span>
-                  <span>({selectedPlace.reviewsCount} reviews)</span>
-                </div>
-              </div>
-            </div>
-
-            {(selectedPlace.checkIn || selectedPlace.checkOut) && (
-              <div className="mt-2.5 flex items-center gap-2 text-[11px] font-mono text-emerald-300 bg-emerald-950/40 px-3 py-1.5 rounded-xl border border-emerald-500/20">
-                <Clock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>
-                  {language === 'bm' ? 'Masuk' : 'Check-In'}: {selectedPlace.checkIn || '14:00'}
-                </span>
-                <span>•</span>
-                <span>
-                  {language === 'bm' ? 'Keluar' : 'Check-Out'}: {selectedPlace.checkOut || '12:00'}
-                </span>
-              </div>
-            )}
-
-            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-300">
-              {selectedPlace.operatingHours && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <Clock className="w-3 h-3 text-stone-400" />
-                  {(() => {
-                    const todaySched = getTodayDaySchedule(selectedPlace.operatingHours);
-                    const todayName = getTodayDayName();
-                    if (selectedPlace.operatingHours.isOpen24Hours) {
-                      return <span>{language === 'bm' ? 'Dibuka 24 Jam' : 'Open 24 Hours'}</span>;
-                    }
-                    if (todaySched) {
-                      return todaySched.isOpen ? (
-                        <span>
-                          {todayName.slice(0, 3)}: {formatTimeTo12Hour(todaySched.from)} – {formatTimeTo12Hour(todaySched.to)}
-                        </span>
-                      ) : (
-                        <span className="text-rose-400 font-bold">
-                          {todayName.slice(0, 3)}: {language === 'bm' ? 'Tutup' : 'Closed'}
-                        </span>
-                      );
-                    }
-                    return (
-                      <span>
-                        {selectedPlace.operatingHours.from} - {selectedPlace.operatingHours.to}
-                      </span>
-                    );
-                  })()}
-                </div>
-              )}
-              {selectedPlace.contact && (
-                <div className="flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-emerald-400" />
-                  <a href={`tel:${selectedPlace.contact}`} className="hover:text-emerald-300 underline font-mono text-[10px]">
-                    {selectedPlace.contact}
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <p className="text-xs text-stone-300 mt-2.5 line-clamp-3 leading-relaxed">
-              {language === 'bm' ? selectedPlace.descriptionBm : selectedPlace.description}
-            </p>
-
-            {/* Real-Time Operational Flags Badges */}
-            <div className="mt-3 p-3 rounded-2xl bg-stone-950/70 border border-white/5">
-              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1.5">
-                {language === 'bm' ? 'Status Operasi Masa Nyata' : 'Real-Time Operational Flags'}
-              </div>
-              <OperationalStatusBadges
-                realTimeStatus={selectedPlace.realTimeStatus}
-                diyHarvestStatus={selectedPlace.diyHarvestStatus}
-                parkingStatus={selectedPlace.parkingStatus}
-                roomAvailabilityStatus={selectedPlace.roomAvailabilityStatus}
-                language={language}
-              />
-            </div>
-
-            {selectedPlace.operatingHours?.weeklySchedule && selectedPlace.operatingHours.weeklySchedule.length > 0 && (
-              <details className="mt-2 text-[11px] bg-stone-900/60 rounded-xl p-2.5 border border-white/5 group">
-                <summary className="font-semibold text-emerald-400 cursor-pointer flex items-center justify-between select-none">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="w-3 h-3" />
-                    <span>{language === 'bm' ? 'Jadual Waktu Operasi 7 Hari' : '7-Day Weekly Schedule'}</span>
-                  </span>
-                  <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform">▼</span>
-                </summary>
-                <div className="mt-2 space-y-1 font-mono pt-1.5 border-t border-white/5">
-                  {selectedPlace.operatingHours.weeklySchedule.map((s) => {
-                    const isToday = s.day === getTodayDayName();
-                    return (
-                      <div
-                        key={s.day}
-                        className={`flex items-center justify-between px-2 py-0.5 rounded ${
-                          isToday ? 'bg-emerald-500/10 text-emerald-300 font-bold' : 'text-stone-300'
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          {s.day}
-                          {isToday && <span className="text-[9px] px-1 bg-emerald-500/30 rounded font-sans uppercase">Today</span>}
-                        </span>
-                        {s.isOpen ? (
-                          <span>
-                            {formatTimeTo12Hour(s.from)} – {formatTimeTo12Hour(s.to)}
-                          </span>
-                        ) : (
-                          <span className="text-rose-400 font-bold">CLOSED</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            )}
-
-            <div className="mt-3.5 p-3.5 rounded-2xl bg-stone-950/80 border border-emerald-500/20">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{getTranslation(language, 'map_traffic_analysis')}</span>
-                </div>
-                {analyzingTraffic ? (
-                  <span className="text-[10px] text-stone-400 animate-pulse">
-                    {language === 'bm' ? 'Menganalisis satelit & laluan...' : 'Analyzing live flow...'}
-                  </span>
-                ) : trafficResult ? (
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      trafficResult.condition === 'heavy'
-                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                        : trafficResult.condition === 'moderate'
-                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    }`}
-                  >
-                    {trafficResult.condition === 'heavy'
-                      ? (language === 'bm' ? 'Trafik Sesak' : 'Heavy Delays')
-                      : trafficResult.condition === 'moderate'
-                      ? (language === 'bm' ? 'Sederhana' : 'Moderate Crawl')
-                      : (language === 'bm' ? 'Lancar' : 'Smooth Route')}
-                  </span>
-                ) : null}
-              </div>
-
-              {trafficResult && !analyzingTraffic && (
-                <div className="space-y-2 text-xs text-stone-300">
-                  <p className="leading-snug">
-                    {language === 'bm' ? trafficResult.summaryBm : trafficResult.summary}
-                  </p>
-
-                  <div className="flex items-center gap-2 font-mono text-[11px] text-stone-400 pt-1">
-                    <Clock className="w-3 h-3 text-stone-400" />
-                    <span>Est delay: {trafficResult.delayEstimate}</span>
-                  </div>
-
-                  {trafficResult.suggestedAlternativeRoute && (
-                    <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200">
-                      <span className="font-bold">
-                        {language === 'bm' ? 'Laluan Pintas AI: ' : 'Suggested Bypass: '}
-                      </span>
-                      <span>{trafficResult.suggestedAlternativeRoute}</span>
-                    </div>
-                  )}
-
-                  {trafficResult.suggestedAlternativePlace && (
-                    <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-200">
-                      <span className="font-bold">
-                        {language === 'bm' ? 'Tempat Alternatif (Kurang Sesak): ' : 'Alternative Spot (Less Crowded): '}
-                      </span>
-                      <span>{trafficResult.suggestedAlternativePlace}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Action Bar */}
-            <div className="mt-3.5 pt-2 flex items-center justify-between gap-2 text-xs">
-              <button
-                onClick={() => {
-                  if (mapInstanceRef.current && selectedPlace) {
-                    const lat = Number(selectedPlace.coordinates?.lat);
-                    const lng = Number(selectedPlace.coordinates?.lng);
-                    mapInstanceRef.current.flyTo([lat, lng], 17, { duration: 1.5 });
-                    onSelectPlace(null);
-                  }
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-center transition-colors shadow-md shadow-emerald-950 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Navigation2 className="w-3.5 h-3.5" />
-                <span>{language === 'bm' ? 'Navigasi Dalam App' : 'In-App Route'}</span>
-              </button>
-              <button
-                onClick={() => setStreetViewOpen(true)}
-                className="px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 transition-colors flex items-center gap-1.5 cursor-pointer"
-                title="Street View 360"
-              >
-                <Eye className="w-4 h-4 text-amber-400" />
-                <span>360°</span>
-              </button>
             </div>
           </div>
         </div>

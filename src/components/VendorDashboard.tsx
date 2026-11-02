@@ -1743,7 +1743,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                           <option value="hotels_resorts">Hotels & Resorts</option>
                           <option value="guesthouses">Guesthouses</option>
                           <option value="chalets">Chalets & Cottages</option>
-                          <option value="homestay">Homestay</option>
+                          <option value="homestay_apartment">Homestay (Apartment)</option>
+                          <option value="homestay_landed">Homestay (Landed)</option>
                           <option value="camping_glamping">Camping & Glamping</option>
                         </>
                       )}
@@ -2714,7 +2715,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                           <option value="hotels_resorts">Hotels & Resorts</option>
                           <option value="guesthouses">Guesthouses</option>
                           <option value="chalets">Chalets & Cottages</option>
-                          <option value="homestay">Homestay</option>
+                          <option value="homestay_apartment">Homestay (Apartment)</option>
+                          <option value="homestay_landed">Homestay (Landed)</option>
                           <option value="camping_glamping">Camping & Glamping</option>
                         </>
                       )}
