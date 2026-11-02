@@ -8,15 +8,10 @@ import {
   ShoppingBag,
   Wrench,
   X,
-  Bell,
-  BellOff,
-  Volume2,
-  VolumeX,
-  AlertTriangle,
-  CheckCircle2,
   PhoneCall,
   MapPin,
-  ExternalLink,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { NotificationEvent } from '../hooks/useMultiChannelNotifications';
 
@@ -45,10 +40,6 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   setActiveChatPreview,
   toasts,
   setToasts,
-  isMuted,
-  setIsMuted,
-  isConnected,
-  simulateEvent,
   language = 'en',
 }) => {
   return (
@@ -201,7 +192,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 4. TOAST CONTAINER FOR JOBS, CLASSIFIEDS, SERVICES (TOP RIGHT / BOTTOM LEFT) */}
+      {/* 4. TOAST CONTAINER FOR JOBS, CLASSIFIEDS, SERVICES (BOTTOM LEFT) */}
       <div className="fixed bottom-6 left-6 z-40 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
         <AnimatePresence>
           {toasts.map((toast) => (
@@ -244,59 +235,6 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             </motion.div>
           ))}
         </AnimatePresence>
-      </div>
-
-      {/* 5. FLOATING CONTROLS / SIMULATION DOCK FOR REVIEWERS */}
-      <div className="fixed bottom-6 right-6 z-30 flex items-center gap-2 bg-stone-900/90 backdrop-blur-md border border-white/10 p-2 rounded-2xl shadow-xl text-stone-300 text-xs">
-        <div className="flex items-center gap-1.5 px-2">
-          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-          <span className="text-[11px] font-medium hidden sm:inline">
-            {isConnected ? 'WS Live' : 'Connecting'}
-          </span>
-        </div>
-
-        <button
-          onClick={() => setIsMuted(!isMuted)}
-          className={`p-2 rounded-xl transition-colors ${
-            isMuted ? 'bg-red-600/20 text-red-400' : 'bg-white/5 hover:bg-white/10 text-stone-200'
-          }`}
-          title={isMuted ? 'Unmute notifications' : 'Mute notifications'}
-        >
-          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-        </button>
-
-        <div className="h-4 w-px bg-white/10" />
-
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => simulateEvent('sos_alert', 'critical', { title: 'Emergency SOS at Mossy Forest', sender: 'Ahmad Zakaria', location: '4.5123, 101.3912', phone: '0123456789' })}
-            className="px-2.5 py-1.5 rounded-xl bg-red-600/30 hover:bg-red-600/50 text-red-300 font-bold transition-all text-[11px]"
-            title="Simulate SOS Emergency"
-          >
-            SOS
-          </button>
-          <button
-            onClick={() => simulateEvent('weather_alert', 'high', { title: 'Heavy rain & mountain mist warning on FT 59', message: 'Drive with caution: Potential road slippage near Ringlet.' })}
-            className="px-2.5 py-1.5 rounded-xl bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 font-bold transition-all text-[11px]"
-            title="Simulate Weather Alert"
-          >
-            Weather
-          </button>
-          <button
-            onClick={() => simulateEvent('chat_message', 'normal', { sender: 'Cikgu Razak', message: 'Traffic along Tapah - Ringlet is smooth and misty. Drive safely!' })}
-            className="px-2.5 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 font-bold transition-all text-[11px]"
-            title="Simulate Chat Message"
-          >
-            Chat
-          </button>
-          <button
-            onClick={() => simulateEvent('job_posted', 'low', { title: 'Chef Wanted at Brinchang Steamboat', message: 'Full-time highland hospitality position open now.' })}
-            className="px-2.5 py-1.5 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 font-bold transition-all text-[11px]"
-            title="Simulate Job Post"
-          >
-            Job
-          </button>
-        </div>
       </div>
     </>
   );

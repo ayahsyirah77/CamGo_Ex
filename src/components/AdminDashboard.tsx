@@ -56,6 +56,7 @@ import {
   Copy,
   Check,
   Navigation,
+  CloudRain,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -1324,6 +1325,99 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <Ticket className="w-5 h-5" />
                 <span>Manage Farm Tickets</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Real-Time WebSocket Notification & Broadcast Test Center */}
+          <div className="p-6 rounded-3xl bg-stone-900/90 border border-emerald-500/30 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                <span>Real-Time WebSocket & Multi-Channel Broadcast Center</span>
+              </h4>
+              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                Active WebSocket Gateway
+              </span>
+            </div>
+            <p className="text-xs text-stone-400">
+              Trigger real-time categorized priority alerts to all connected visitors and devices across CamGo.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch('/api/notifications/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      event: 'sos_alert',
+                      priority: 'critical',
+                      payload: { title: 'Admin SOS Broadcast at Mossy Forest', sender: 'Admin Dispatch', location: '4.5123, 101.3912', phone: '999' }
+                    })
+                  });
+                }}
+                className="p-3 rounded-2xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <ShieldAlert className="w-4 h-4" />
+                <span>Broadcast SOS</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch('/api/notifications/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      event: 'weather_alert',
+                      priority: 'high',
+                      payload: { title: 'Highland Heavy Rain & Mist Advisory', message: 'Federal Route 59 slippery conditions: Drive with caution.' }
+                    })
+                  });
+                }}
+                className="p-3 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <CloudRain className="w-4 h-4" />
+                <span>Broadcast Weather</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch('/api/notifications/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      event: 'chat_message',
+                      priority: 'normal',
+                      payload: { sender: 'Highland Guide Cikgu Razak', message: 'Simpang Pulai traffic smooth and weather cool. Welcome visitors!' }
+                    })
+                  });
+                }}
+                className="p-3 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Users className="w-4 h-4" />
+                <span>Broadcast Chat</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch('/api/notifications/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      event: 'job_posted',
+                      priority: 'low',
+                      payload: { title: 'New Job Opening: Farm Tour Guide', message: 'Kea Farm Agro Tourism is hiring local guides.' }
+                    })
+                  });
+                }}
+                className="p-3 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Ticket className="w-4 h-4" />
+                <span>Broadcast Job / Ad</span>
               </button>
             </div>
           </div>
