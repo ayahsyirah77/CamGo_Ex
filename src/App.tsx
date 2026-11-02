@@ -90,6 +90,8 @@ import {
   Menu,
   Users,
   Bike,
+  Megaphone,
+  Camera,
 } from 'lucide-react';
 
 export default function App() {
@@ -429,7 +431,7 @@ export default function App() {
 
         {/* Experience Hub Cards: Motorbike Rental Marketplace & Intelligent Map Navigator */}
         <section className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mb-6 sm:mb-10">
-          <div className="grid grid-cols-2 gap-2 sm:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-6">
             {/* Card 1: Motorbike & Scooter Rental Marketplace */}
             <div
               onClick={() => setIsMotorbikeRentalOpen(true)}
@@ -499,7 +501,7 @@ export default function App() {
             {/* Card 3: Visual Split Itinerary & Trip Planner */}
             <div
               onClick={() => setIsItineraryOpen(true)}
-              className="col-span-2 group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-amber-950/90 via-stone-900 to-emerald-950/90 border border-amber-500/40 p-2.5 sm:p-5 shadow-2xl hover:border-amber-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+              className="col-span-1 sm:col-span-1 group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-amber-950/90 via-stone-900 to-emerald-950/90 border border-amber-500/40 p-2.5 sm:p-5 shadow-2xl hover:border-amber-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
             >
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.15),transparent_50%)] pointer-events-none" />
               
@@ -530,12 +532,64 @@ export default function App() {
                 <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
               </div>
             </div>
+
+            {/* Card 4: Jobs & Classifieds Hub (Side-by-side with Itinerary in Mobile & PC) */}
+            <div
+              onClick={() => setIsClassifiedsModalOpen(true)}
+              className="col-span-1 sm:col-span-1 group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-indigo-950/90 via-stone-900 to-purple-950/90 border border-indigo-500/40 p-2.5 sm:p-5 shadow-2xl hover:border-indigo-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.15),transparent_50%)] pointer-events-none" />
+              
+              <div className="space-y-1.5 sm:space-y-3 z-10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-indigo-400">
+                    {language === 'bm' ? 'Peluang Kerja & Iklan' : 'Jobs & Classifieds'}
+                  </span>
+                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                    <Megaphone className="w-3 h-3 sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-indigo-300 transition-colors leading-tight sm:leading-snug">
+                    {language === 'bm' ? 'Papan Iklan & Kerjaya' : 'Jobs & Classifieds Hub'}
+                  </h3>
+                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
+                    {language === 'bm'
+                      ? 'Cari peluang pekerjaan tanah tinggi, barangan terpakai & pengumuman komuniti.'
+                      : 'Explore highland career openings, marketplace buy/sell listings & community notices.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-indigo-400 group-hover:text-indigo-300">
+                <span>{language === 'bm' ? 'Buka Iklan' : 'View Classifieds'}</span>
+                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* 7. Interactive Lightbox Gallery (Hidden inline, opens via hamburger menu modal) */}
-        <section id="interactive-gallery" className="hidden">
-          <GalleryCarousel items={galleryItems} onSelectPlace={handleSelectPlaceForMap} />
+        {/* Visual Highland Gallery Carousel Showcase (Placed directly below the 4 cards) */}
+        <section id="interactive-gallery" className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mb-6 sm:mb-10">
+          <div className="rounded-2xl sm:rounded-3xl bg-stone-900/90 border border-emerald-500/30 p-3 sm:p-6 shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
+                  <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-base font-heading font-black text-white">
+                    {language === 'bm' ? 'Galeri Foto & Panorama Tanah Tinggi' : 'Highland Photo & Panorama Gallery'}
+                  </h3>
+                  <p className="text-[10px] sm:text-xs text-stone-400">
+                    {language === 'bm' ? 'Pemandangan indah koridor Cameron Highlands' : 'Breathtaking moments & viewpoints across the plateau'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <GalleryCarousel items={galleryItems} onSelectPlace={handleSelectPlaceForMap} />
+          </div>
         </section>
 
         {/* Back To Top */}

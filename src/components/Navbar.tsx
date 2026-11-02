@@ -1141,28 +1141,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-cyan-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-                  {/* 5. Gallery */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenGalleryModal) {
-                        onOpenGalleryModal();
-                      } else {
-                        onNavigateSection('interactive-gallery');
-                      }
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-rose-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Camera className="w-4 h-4 text-rose-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-rose-300 transition-colors">
-                        Gallery
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-rose-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
+
 
                   {/* Smart Parking & EV Charging Bay Finder */}
                   <button
