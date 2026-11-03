@@ -218,6 +218,15 @@ export default function App() {
     window.addEventListener('vendor-listings-updated', handleVendorListingsUpdated);
     window.addEventListener('hazard-alerts-updated', handleHazardsUpdated);
 
+    const handleFilterDirectoryByTownship = (e: any) => {
+      const town = e.detail as Township;
+      if (town) {
+        setIsMapModalOpen(false);
+        setIsDirectoriesModalOpen(true);
+      }
+    };
+    window.addEventListener('filter-directory-by-township', handleFilterDirectoryByTownship);
+
     const unsubUser = firebaseService.subscribeUser(() => {
       setCurrentUser(firebaseService.getCurrentUser());
       refreshStorageData();
@@ -285,6 +294,7 @@ export default function App() {
       window.removeEventListener('township-hub-updated', handleTownshipHubUpdated);
       window.removeEventListener('vendor-listings-updated', handleVendorListingsUpdated);
       window.removeEventListener('hazard-alerts-updated', handleHazardsUpdated);
+      window.removeEventListener('filter-directory-by-township', handleFilterDirectoryByTownship);
       window.removeEventListener('open-emergency-card', handleOpenEmergencyCard);
       window.removeEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
       window.removeEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
@@ -1093,7 +1103,7 @@ export default function App() {
                 setIsPortalsModalOpen(false);
                 const match = places.find((p) => p.township === town);
                 if (match) setSelectedPlaceForMap(match);
-                navigateToSection('interactive-map');
+                setIsMapModalOpen(true);
               }}
               onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
               onOpenVendorPortal={() => {

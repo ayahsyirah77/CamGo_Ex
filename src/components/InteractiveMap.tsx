@@ -547,6 +547,56 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return Boolean(localStorage.getItem('tomtom_api_key'));
   });
 
+  const [isVoiceNavEnabled, setIsVoiceNavEnabled] = useState(true);
+  const spokenStepsMapRef = useRef<Record<number, boolean>>({});
+  const [voicesLoaded, setVoicesLoaded] = useState(false);
+
+  // Requirement 3: Async Voice Loading for Android & Mobile Browsers
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const handleVoicesChanged = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        setVoicesLoaded(true);
+      }
+    };
+    window.speechSynthesis.onvoiceschanged = handleVoicesChanged;
+    handleVoicesChanged();
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
+  // Requirement 1: User Gesture / Audio Unlock (iOS Fix)
+  const unlockAudioEngine = () => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const dummy = new SpeechSynthesisUtterance('');
+      dummy.volume = 0;
+      window.speechSynthesis.speak(dummy);
+    } catch (e) {
+      console.warn('[TTS] Audio unlock warning:', e);
+    }
+  };
+
+  const speakInstruction = (text: string) => {
+    if (!isVoiceNavEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
+    try {
+      // Requirement 2: Speech Queue Management (cancel stuck utterances)
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = language === 'bm' ? 'ms-MY' : 'en-US';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('[TTS] Speech synthesis error:', e);
+    }
+  };
+
   const [trafficSegments, setTrafficSegments] = useState<TrafficPolylineSegment[]>(HIGHWAY_TRAFFIC_SEGMENTS);
   const [congestionHotspots, setCongestionHotspots] = useState<CongestionHotspotPoint[]>(CONGESTION_HOTSPOTS);
 
@@ -1276,6 +1326,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         setUserGpsCoords({ lat, lng });
         setCurrentHeading(heading);
         updateVehicleMarkerOnMap(lat, lng, heading);
+
+        // Turn-by-turn Proximity check (within 45 meters) & TTS voice engine
+        if (activeRoute && activeRoute.steps && activeRoute.steps.length > 0) {
+          activeRoute.steps.forEach((step, idx) => {
+            if (spokenStepsMapRef.current[idx]) return;
+            const targetCoord = activeRoute.coordinates[Math.min(idx * 3, activeRoute.coordinates.length - 1)] || activeRoute.destinationCoords;
+            const distKm = calculateDistanceKm(lat, lng, targetCoord[0], targetCoord[1]);
+            const distMeters = distKm * 1000;
+            if (distMeters <= 45) {
+              spokenStepsMapRef.current[idx] = true;
+              speakInstruction(step.instruction);
+            }
+          });
+        }
       },
       (err) => {
         console.warn('[InteractiveMap] Live GPS watchPosition warning:', err);
@@ -1305,6 +1369,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   // Start, Stop, Resume Navigation Handlers
   const handleStartNavigation = () => {
+    unlockAudioEngine();
     setIsNavigationPaused(false);
     startLiveGpsTracking();
     if (mapInstanceRef.current && userGpsCoords) {
@@ -1318,6 +1383,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   };
 
   const handleResumeNavigation = () => {
+    unlockAudioEngine();
     setIsNavigationPaused(false);
     startLiveGpsTracking();
     if (mapInstanceRef.current && userGpsCoords) {
@@ -1328,6 +1394,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Trigger route calculation with GPS acquisition or Gateway Fallback
   const handleTriggerRoute = (destinationPlace: Place) => {
     if (!destinationPlace) return;
+    unlockAudioEngine();
 
     if (!mapInstanceRef.current) {
       pendingRouteTargetRef.current = destinationPlace;
@@ -1962,6 +2029,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const town = e.detail as Township;
       if (town) {
         setActiveTownship(town);
+        const coords = TOWNSHIP_HUBS_DATA[town] || TOWNSHIP_COORDS[town];
+        if (coords && mapInstanceRef.current) {
+          mapInstanceRef.current.flyTo([coords.lat, coords.lng], 15, {
+            duration: 1.0,
+          });
+          mapInstanceRef.current.closePopup();
+        }
+        window.dispatchEvent(new CustomEvent('filter-directory-by-township', { detail: town }));
       }
     };
     window.addEventListener('filter-township-hub', handleFilterTownship);

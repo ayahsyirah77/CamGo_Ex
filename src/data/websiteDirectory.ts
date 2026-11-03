@@ -559,5 +559,26 @@ Safety Tip: You can also activate the red **"SOS Emergency Dispatch"** beacon on
     return { found: true, category: 'attractions', response: '', contextText };
   }
 
+  // 5. FOOD, DINING, NASI LEMAK, SAMBAL STRAWBERRY, STEAMBOAT, CAFES
+  if (
+    q.includes('nasi lemak') ||
+    q.includes('sambal strawberry') ||
+    q.includes('strawberry sambal') ||
+    q.includes('makan') ||
+    q.includes('food') ||
+    q.includes('dining') ||
+    q.includes('cafe') ||
+    q.includes('steamboat') ||
+    q.includes('restoran')
+  ) {
+    let response = '';
+    if (language === 'bm') {
+      response = `Pandunci Makanan & Destinasi Best di Cameron Highlands (Termasuk Nasi Lemak Sambal Strawberi & Steamboat):\n• **Nasi Lemak Sambal Strawberi & Kafe Highlands**: Boleh didapati di kafe-kafe warisan Tanah Rata dan restoran agrotourism tempatan seperti Raju's Hill Strawberry Farm dan kafe Agro MARDI yang menyajikan sambal tumis pedas manis beraroma buah strawberi segar.\n• **Steamboat Arang & Tom Yam**: Water Crest Valley (Tringkap) dan Highland Steamboat Cheese & Grill (Tanah Rata).\n• **Scones & Teh Panas**: BOH Sungei Palas Tea Centre dan Cameron Valley Tea House.\nSila semak direktori makanan CamGo untuk senarai lengkap restoran halal dan kafe istimewa!`;
+    } else {
+      response = `Cameron Highlands Dining & Local Delicacies Guide (Including Strawberry Sambal Nasi Lemak & Steamboat):\n• **Nasi Lemak with Strawberry Sambal & Highlands Cafes**: Served at specialty heritage cafes in Tanah Rata and farm-to-table spots like Raju's Hill Strawberry Farm and MARDI Agro Park cafe featuring signature sweet-spicy chili sambal infused with fresh local highland strawberries.\n• **Charcoal Steamboat & Tom Yam**: Water Crest Valley (Tringkap) and Highland Steamboat Cheese & Grill (Tanah Rata).\n• **Fresh Scones & Afternoon Tea**: BOH Sungei Palas Tea Centre and Cameron Valley Tea House.\nExplore our Food & Dining directory tab for complete halal and specialty restaurant recommendations!`;
+    }
+    return { found: true, category: 'food', response, contextText: response };
+  }
+
   return { found: false, category: 'general', response: '', contextText: '' };
 }

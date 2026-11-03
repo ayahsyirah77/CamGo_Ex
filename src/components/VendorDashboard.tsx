@@ -45,7 +45,22 @@ import {
   Save,
   Loader2,
   Bike,
+  Utensils,
+  ShoppingBag,
+  Home,
+  Car,
+  Wrench,
+  Compass,
+  Package,
+  Briefcase,
 } from 'lucide-react';
+import {
+  BUSINESS_TAXONOMY,
+  findBusinessSector,
+  findBusinessCategory,
+  BusinessSector,
+  BusinessCategoryItem,
+} from '../data/businessTaxonomy';
 import {
   VendorListing,
   VendorVoucher,
@@ -137,10 +152,34 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [newBizName, setNewBizName] = useState('');
   const [newBizLogo, setNewBizLogo] = useState('');
   const [newBizTownship, setNewBizTownship] = useState<Township>('Brinchang');
-  const [newBizCategory, setNewBizCategory] = useState<MainCategory>('services_utilities');
-  const [newBizSubCategory, setNewBizSubCategory] = useState<SubCategory>('plumbing_electrical');
+  const [newBizCategory, setNewBizCategory] = useState<MainCategory>('food');
+  const [newBizSubCategory, setNewBizSubCategory] = useState<string>('fb_restaurants_cafes');
   const [newBizPhone, setNewBizPhone] = useState('+6012');
   const [newBizAddress, setNewBizAddress] = useState('');
+
+  // Active Sector & Category derived dynamically from activeVendor
+  const activeSector: BusinessSector = findBusinessSector(activeVendor?.subCategory || activeVendor?.category);
+  const activeCategoryConfig: BusinessCategoryItem = findBusinessCategory(activeVendor?.subCategory) || activeSector.categories[0];
+
+  const getSectorIcon = (sectorId: string) => {
+    switch (sectorId) {
+      case 'food_beverage':
+        return Utensils;
+      case 'retail_products':
+        return ShoppingBag;
+      case 'real_estate_accommodation':
+        return Home;
+      case 'vehicle_equipment_rental':
+        return Bike;
+      case 'professional_services':
+        return Wrench;
+      case 'tourism_leisure_events':
+        return Compass;
+      default:
+        return Store;
+    }
+  };
+  const SectorIcon = getSectorIcon(activeSector.id);
 
   // Motorbike & Scooter Management State
   const [motorbikeBookings, setMotorbikeBookings] = useState<MotorbikeBookingRecord[]>([]);
@@ -466,7 +505,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       verificationStatus: 'verified',
       isBookingEnabled: true,
       category: newBizCategory,
-      subCategory: newBizSubCategory,
+      subCategory: newBizSubCategory as any,
       township: newBizTownship,
       address: newBizAddress.trim() || `${newBizTownship}, Cameron Highlands, Pahang`,
       contactPhone: newBizPhone || '+60 5-491 0000',
@@ -530,6 +569,33 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     setActiveVendor(newListing);
     setSaveNotification(`Successfully created new business "${newListing.businessName}"!`);
     setTimeout(() => setSaveNotification(null), 3500);
+  };
+
+  const handleLocalImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !activeVendor) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const resultUrl = uploadEvent.target?.result as string;
+        if (resultUrl) {
+          const updatedGallery = [...(activeVendor.galleryImages || []), resultUrl];
+          const updatedCover = activeVendor.coverImage || resultUrl;
+          const updated = {
+            ...activeVendor,
+            coverImage: updatedCover,
+            galleryImages: updatedGallery,
+            updatedAt: new Date().toISOString(),
+          };
+          setActiveVendor(updated);
+          firebaseService.saveVendorListing(updated);
+          setSaveNotification(`Successfully uploaded photo "${file.name}" from local storage!`);
+          setTimeout(() => setSaveNotification(null), 3500);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleCreateVoucher = async () => {
@@ -919,11 +985,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs font-semibold">
             {[
               { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-              { id: 'directory', label: 'Listing Mgt', icon: Store },
+              { id: 'directory', label: 'Profile', icon: Store },
+              { id: 'motorbikes', label: activeSector.shortName, icon: SectorIcon },
               { id: 'promotions', label: 'Deals', icon: Ticket },
               { id: 'analytics', label: 'Analytics', icon: BarChart3 },
               { id: 'billing', label: 'Team', icon: Settings },
-              { id: 'reservations', label: 'Reservations', icon: Calendar },
+              { id: 'reservations', label: 'Orders & Bookings', icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -1018,11 +1085,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             <nav className="space-y-1">
               {[
                 { id: 'overview', label: 'Overview & Actions', icon: LayoutDashboard },
-                { id: 'directory', label: 'Listing Management', icon: Store },
+                { id: 'directory', label: 'Listing Profile & Flags', icon: Store },
+                { id: 'motorbikes', label: `${activeSector.shortName}`, icon: SectorIcon },
                 { id: 'promotions', label: 'Deals & Marketing', icon: Ticket },
                 { id: 'analytics', label: 'Customer Analytics', icon: BarChart3 },
                 { id: 'billing', label: 'Team & Billing', icon: Settings },
-                { id: 'reservations', label: 'Incoming Reservations', icon: Calendar },
+                { id: 'reservations', label: 'Orders & Reservations', icon: Calendar },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -1149,10 +1217,11 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               <h1 className="text-xl sm:text-2xl font-black text-white font-heading">
                 {activeTab === 'overview' && 'Listing Performance & Real-Time Actions'}
                 {activeTab === 'directory' && 'Vendor Directory Profile & Operational Flags'}
-                {activeTab === 'motorbikes' && 'Motorbike & Scooter Fleet Management & Reservations'}
+                {activeTab === 'motorbikes' && activeSector.moduleTitle}
                 {activeTab === 'promotions' && 'Promotional Deals & Event Publisher'}
                 {activeTab === 'analytics' && 'Customer Intelligence & Visitor Traffic'}
                 {activeTab === 'billing' && 'Team Access & Subscription Management'}
+                {activeTab === 'reservations' && 'Incoming Customer Orders & Booking Requests'}
               </h1>
               <p className="text-xs text-stone-400 mt-0.5">
                 {activeVendor?.businessName} · {activeVendor?.township}
@@ -1680,100 +1749,44 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-300 mb-1">Primary Category</label>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-stone-300 mb-1">
+                      Business Sector &amp; Category Nature (Comprehensive Taxonomy)
+                    </label>
                     <select
-                      value={activeVendor.category}
+                      value={activeVendor.subCategory || 'fb_restaurants_cafes'}
                       onChange={(e) => {
-                        const newCat = e.target.value as MainCategory;
-                        let defaultSub: SubCategory = 'recreation_leisure';
-                        if (newCat === 'transport') defaultSub = 'car_bike_rentals';
-                        else if (newCat === 'food') defaultSub = 'dining';
-                        else if (newCat === 'travel_tourism') defaultSub = 'attractions_sightseeing';
-                        else if (newCat === 'accommodation') defaultSub = 'hotels_resorts';
-                        else if (newCat === 'services_utilities') defaultSub = 'plumbing_electrical';
-                        else if (newCat === 'shopping') defaultSub = 'fresh_markets_produce';
-                        setActiveVendor({ ...activeVendor, category: newCat, subCategory: defaultSub });
+                        const selectedSub = e.target.value;
+                        const sector = findBusinessSector(selectedSub);
+                        let mainCat: MainCategory = 'services_utilities';
+                        if (sector.id === 'food_beverage') mainCat = 'food';
+                        else if (sector.id === 'retail_products') mainCat = 'shopping';
+                        else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
+                        else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
+                        else if (sector.id === 'professional_services') mainCat = 'services_utilities';
+                        else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
+                        setActiveVendor({ ...activeVendor, category: mainCat, subCategory: selectedSub as any });
                       }}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
                     >
-                      <option value="services_utilities">Services & Utilities</option>
-                      <option value="food">Food & Beverages</option>
-                      <option value="travel_tourism">Travel & Highland Tourism</option>
-                      <option value="accommodation">Accommodation</option>
-                      <option value="transport">Transport & Mobility Services</option>
-                      <option value="local_services">Local Services & Amenities</option>
-                      <option value="shopping">Shopping & Local Produce</option>
+                      {BUSINESS_TAXONOMY.map((sector) => (
+                        <optgroup key={sector.id} label={sector.name}>
+                          {sector.categories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
                     </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-stone-300 mb-1">Sub-Category</label>
-                    <select
-                      value={activeVendor.subCategory || 'car_bike_rentals'}
-                      onChange={(e) => setActiveVendor({ ...activeVendor, subCategory: e.target.value as SubCategory })}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    >
-                      {activeVendor.category === 'transport' && (
-                        <>
-                          <option value="car_bike_rentals">Car & Bike Rentals</option>
-                          <option value="taxi_ehailing">Taxi & E-Hailing</option>
-                          <option value="auto_repair_roadside">Auto Repair & Roadside</option>
-                          <option value="fuel_ev_charging">Fuel & EV Charging</option>
-                        </>
-                      )}
-                      {activeVendor.category === 'food' && (
-                        <>
-                          <option value="dining">Dining & Restaurants</option>
-                          <option value="steamboats">Steamboats & BBQ</option>
-                          <option value="cafes">Cafes & Teahouses</option>
-                          <option value="night_markets_street">Night Market & Street Food</option>
-                        </>
-                      )}
-                      {activeVendor.category === 'travel_tourism' && (
-                        <>
-                          <option value="attractions_sightseeing">Attractions & Sightseeing</option>
-                          <option value="agrotourism_farms">Agrotourism & Strawberry Farms</option>
-                          <option value="outdoor_adventure">Outdoor Adventure & Hiking</option>
-                          <option value="tour_agencies_guides">Tour Agencies & Guides</option>
-                        </>
-                      )}
-                      {activeVendor.category === 'accommodation' && (
-                        <>
-                          <option value="hotels_resorts">Hotels & Resorts</option>
-                          <option value="guesthouses">Guesthouses</option>
-                          <option value="chalets">Chalets & Cottages</option>
-                          <option value="homestay_apartment">Homestay (Apartment)</option>
-                          <option value="homestay_landed">Homestay (Landed)</option>
-                          <option value="camping_glamping">Camping & Glamping</option>
-                        </>
-                      )}
-                      {activeVendor.category === 'services_utilities' && (
-                        <>
-                          <option value="plumbing_electrical">Plumbing & Electrical</option>
-                          <option value="locksmith_access">Locksmith & Security</option>
-                          <option value="carpentry_construction">Carpentry & Construction</option>
-                          <option value="laundry_dry_cleaning">Laundry & Dry Cleaning</option>
-                        </>
-                      )}
-                      {activeVendor.category === 'local_services' && (
-                        <>
-                          <option value="health_wellness">Health & Wellness</option>
-                          <option value="banking_financial">Banking & Financial</option>
-                          <option value="logistics_freight">Logistics & Freight</option>
-                        </>
-                      )}
-                      {activeVendor.category === 'shopping' && (
-                        <>
-                          <option value="fresh_markets_produce">Fresh Markets & Produce</option>
-                          <option value="souvenirs_handicrafts">Souvenirs & Handicrafts</option>
-                          <option value="convenience_groceries">Convenience & Groceries</option>
-                        </>
-                      )}
-                      {!['transport', 'food', 'travel_tourism', 'accommodation', 'services_utilities', 'local_services', 'shopping'].includes(activeVendor.category) && (
-                        <option value={activeVendor.subCategory || 'recreation_leisure'}>{activeVendor.subCategory || 'General / Recreation'}</option>
-                      )}
-                    </select>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${activeSector.badgeColor}`}>
+                        Sector: {activeSector.name}
+                      </span>
+                      <span className="text-[11px] text-stone-400">
+                        {activeCategoryConfig?.description || activeSector.moduleSubtitle}
+                      </span>
+                    </div>
                   </div>
 
                   <div>
@@ -1878,9 +1891,22 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Cover Image & Gallery Preview */}
-                <div className="space-y-2 pt-2 border-t border-stone-800">
-                  <label className="block text-xs font-medium text-stone-300">Photo Gallery</label>
+                {/* Cover Image & Gallery Preview with Local Storage Upload */}
+                <div className="space-y-3 pt-2 border-t border-stone-800">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="block text-xs font-medium text-stone-300">Photo Gallery & Local Storage Upload</label>
+                    <label className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload Photos from Folder / Computer</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleLocalImageUpload}
+                      />
+                    </label>
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {activeVendor.galleryImages.map((img, idx) => (
                       <div key={idx} className="relative group rounded-xl overflow-hidden border border-stone-800 aspect-video bg-stone-900">
@@ -1992,47 +2018,57 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 </div>
               </div>
 
-              {/* MOTORBIKE & SCOOTER FLEET MANAGEMENT & RESERVATIONS SECTION INSIDE LISTING MANAGEMENT */}
+              {/* COMPREHENSIVE BUSINESS SECTOR CATALOG & RESERVATION MANAGEMENT */}
               <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      <Bike className="w-5 h-5" />
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      <SectorIcon className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white">Motorbike &amp; Scooter Fleet Management &amp; Reservations</h3>
-                      <p className="text-[11px] text-stone-400">Add, update, or remove fleet models, daily rates, package features, addon details, and process incoming reservations for {activeVendor.businessName}.</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-white">{activeSector.moduleTitle}</h3>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${activeSector.badgeColor}`}>
+                          {activeSector.shortName}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-stone-400">
+                        {activeSector.moduleSubtitle} for {activeVendor.businessName}.
+                      </p>
                     </div>
                   </div>
                   <button
                     onClick={() => {
                       setEditingBike(null);
                       setBikeName('');
-                      setBikeCc('155cc');
+                      setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
                       setBikePrice('80');
-                      setBikeImage('https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=600&q=80');
+                      setBikeImage(activeCategoryConfig?.defaultImage || '');
                       setBikeHelmets('2');
-                      setBikePkgDetails('Includes Top Box, Keyless Ignition, Full Tank Fuel');
-                      setBikeAddonDetails('Extra Helmet RM10/day, Phone Holder RM5/day');
+                      setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
+                      setBikeAddonDetails(activeCategoryConfig?.defaultAddonPlaceholder || '');
                       setShowBikeForm(true);
                     }}
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow cursor-pointer transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Motorbike / Scooter</span>
+                    <span>{activeSector.addItemLabel}</span>
                   </button>
                 </div>
 
-                {/* Form to Add / Edit Motorbike */}
+                {/* Dynamic Form to Add / Edit Offerings Item */}
                 {showBikeForm && (
-                  <div className="p-4 rounded-2xl bg-stone-900 border border-emerald-500/40 space-y-4">
+                  <div className="p-4 rounded-2xl bg-stone-900 border border-emerald-500/40 space-y-4 shadow-xl">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="text-xs font-bold text-emerald-400">
-                        {editingBike ? 'Edit Motorbike / Scooter Details' : 'Add New Motorbike / Scooter to Fleet'}
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-2">
+                        <SectorIcon className="w-4 h-4" />
+                        {editingBike
+                          ? `Edit ${activeSector.itemNoun} Details`
+                          : `Add New ${activeSector.itemNoun} (${activeCategoryConfig?.label || activeSector.name})`}
                       </span>
                       <button
                         onClick={() => setShowBikeForm(false)}
-                        className="p-1 rounded-lg text-stone-400 hover:text-white"
+                        className="p-1 rounded-lg text-stone-400 hover:text-white cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -2040,29 +2076,35 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
-                        <label className="block text-xs text-stone-300 mb-1">Bike / Scooter Model Name *</label>
+                        <label className="block text-xs text-stone-300 mb-1">
+                          {activeSector.itemNoun} Name *
+                        </label>
                         <input
                           type="text"
                           required
                           value={bikeName}
                           onChange={(e) => setBikeName(e.target.value)}
-                          placeholder="e.g. Yamaha NMAX 155cc ABS"
+                          placeholder={activeCategoryConfig?.sampleItemName || `e.g. Premium ${activeSector.itemNoun}`}
                           className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-stone-300 mb-1">Engine Capacity (CC) *</label>
+                        <label className="block text-xs text-stone-300 mb-1">
+                          {activeCategoryConfig?.specLabel || 'Specification / Capacity'} *
+                        </label>
                         <input
                           type="text"
                           required
                           value={bikeCc}
                           onChange={(e) => setBikeCc(e.target.value)}
-                          placeholder="e.g. 155cc"
+                          placeholder={activeCategoryConfig?.defaultSpecPlaceholder || 'e.g. Standard Spec'}
                           className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-stone-300 mb-1">Daily Rental Price (RM) *</label>
+                        <label className="block text-xs text-stone-300 mb-1">
+                          {activeCategoryConfig?.rateLabel || 'Price (RM)'} *
+                        </label>
                         <input
                           type="number"
                           required
@@ -2076,22 +2118,26 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-stone-300 mb-1">Package Details &amp; Features</label>
+                        <label className="block text-xs text-stone-300 mb-1">
+                          {activeCategoryConfig?.featuresLabel || 'Features, Inclusions & Specifications'}
+                        </label>
                         <input
                           type="text"
                           value={bikePkgDetails}
                           onChange={(e) => setBikePkgDetails(e.target.value)}
-                          placeholder="e.g. Includes Top Box, Touring Windshield, Unlimited Mileage"
+                          placeholder={activeCategoryConfig?.defaultFeaturesPlaceholder || 'e.g. Inclusions & highlights'}
                           className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-stone-300 mb-1">Addon Details</label>
+                        <label className="block text-xs text-stone-300 mb-1">
+                          Add-on Options / Extras / Customizations
+                        </label>
                         <input
                           type="text"
                           value={bikeAddonDetails}
                           onChange={(e) => setBikeAddonDetails(e.target.value)}
-                          placeholder="e.g. Extra Helmet RM10/day, Raincoat RM5/day"
+                          placeholder={activeCategoryConfig?.defaultAddonPlaceholder || 'e.g. Optional upgrades & extras'}
                           className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
                         />
                       </div>
@@ -2099,25 +2145,28 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-stone-300 mb-1">Image URL</label>
+                        <label className="block text-xs text-stone-300 mb-1">Photo / Showcase Image URL</label>
                         <input
                           type="text"
                           value={bikeImage}
                           onChange={(e) => setBikeImage(e.target.value)}
-                          placeholder="https://..."
+                          placeholder={activeCategoryConfig?.defaultImage || 'https://...'}
                           className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-stone-300 mb-1">Standard Helmets Included</label>
+                        <label className="block text-xs text-stone-300 mb-1">
+                          Units / Inclusions (e.g. Pax / Sets / Capacity)
+                        </label>
                         <select
                           value={bikeHelmets}
                           onChange={(e) => setBikeHelmets(e.target.value)}
                           className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
                         >
-                          <option value="1">1 Helmet Included</option>
-                          <option value="2">2 Helmets Included</option>
-                          <option value="3">3 Helmets Included</option>
+                          <option value="1">1 Unit / 1 Pax / Solo</option>
+                          <option value="2">2 Units / 2 Pax / Duo</option>
+                          <option value="3">3 Units / Family Set</option>
+                          <option value="4">4+ Units / Group Package</option>
                         </select>
                       </div>
                     </div>
@@ -2133,33 +2182,71 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       <button
                         type="button"
                         onClick={handleSaveBikePackage}
-                        className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow cursor-pointer"
+                        className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow cursor-pointer transition-colors"
                       >
-                        {editingBike ? 'Update Motorbike' : 'Save Motorbike to Fleet'}
+                        {editingBike ? `Update ${activeSector.itemNoun}` : `Save to ${activeSector.shortName}`}
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Current Fleet List */}
+                {/* Active Items List */}
                 <div className="space-y-3">
-                  <h4 className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                    Active Fleet Models ({(activeVendor.motorbikePackages || []).length})
-                  </h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                      <SectorIcon className="w-3.5 h-3.5" />
+                      <span>
+                        Active {activeSector.itemNoun} Catalog ({(activeVendor.motorbikePackages || []).length})
+                      </span>
+                    </h4>
+                    <span className="text-[10px] text-stone-400">
+                      Unit: {activeCategoryConfig?.unitLabel || 'Per Unit'}
+                    </span>
+                  </div>
+
                   {(!activeVendor.motorbikePackages || activeVendor.motorbikePackages.length === 0) ? (
-                    <div className="p-4 rounded-xl bg-stone-900 border border-stone-800 text-stone-400 text-xs text-center">
-                      No specific motorbikes or scooters added yet. Click "Add Motorbike / Scooter" above to list models for rental.
+                    <div className="p-6 rounded-2xl bg-stone-900 border border-dashed border-stone-800 text-stone-400 text-xs text-center space-y-2">
+                      <p>No {activeSector.itemNoun.toLowerCase()} items added yet for this business.</p>
+                      <button
+                        onClick={() => {
+                          setEditingBike(null);
+                          setBikeName(activeCategoryConfig?.sampleItemName || '');
+                          setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
+                          setBikePrice('80');
+                          setBikeImage(activeCategoryConfig?.defaultImage || '');
+                          setBikeHelmets('2');
+                          setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
+                          setBikeAddonDetails(activeCategoryConfig?.defaultAddonPlaceholder || '');
+                          setShowBikeForm(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold hover:bg-emerald-600/50 cursor-pointer"
+                      >
+                        + Pre-fill {activeSector.addItemLabel}
+                      </button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {activeVendor.motorbikePackages.map((pkg) => (
                         <div key={pkg.id} className="p-3.5 rounded-xl bg-stone-900 border border-white/10 flex flex-col justify-between space-y-2">
-                          <div className="flex items-center gap-3">
-                            <img src={pkg.imageUrl} alt={pkg.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                          <div className="flex items-start gap-3">
+                            <img
+                              src={pkg.imageUrl || activeCategoryConfig?.defaultImage}
+                              alt={pkg.name}
+                              className="w-14 h-14 rounded-xl object-cover shrink-0 border border-stone-800"
+                            />
                             <div className="min-w-0 flex-1">
                               <div className="text-xs font-bold text-white truncate">{pkg.name}</div>
-                              <div className="text-[10px] text-emerald-400 font-mono font-bold">RM {pkg.dailyRateRm} / day • {pkg.cc}</div>
-                              {pkg.packageDetails && <div className="text-[9px] text-stone-400 truncate">{pkg.packageDetails}</div>}
+                              <div className="text-[11px] text-emerald-400 font-mono font-bold mt-0.5">
+                                RM {pkg.dailyRateRm} <span className="text-[9px] text-stone-400 font-sans font-normal">/ {activeCategoryConfig?.unitLabel || 'unit'}</span>
+                              </div>
+                              <div className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-stone-800 text-stone-300 border border-stone-700">
+                                {pkg.cc}
+                              </div>
+                              {pkg.packageDetails && (
+                                <div className="text-[10px] text-stone-400 line-clamp-1 mt-1">
+                                  {pkg.packageDetails}
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="flex justify-end gap-2 border-t border-white/5 pt-2">
@@ -2185,7 +2272,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                                 const updatedVendor = { ...activeVendor, motorbikePackages: updatedPackages };
                                 setActiveVendor(updatedVendor);
                                 await firebaseService.saveVendorListing(updatedVendor);
-                                setSaveNotification(`Removed ${pkg.name} from fleet!`);
+                                setSaveNotification(`Removed ${pkg.name}!`);
                                 setTimeout(() => setSaveNotification(null), 3000);
                               }}
                               className="px-2.5 py-1 rounded bg-rose-950/60 hover:bg-rose-900 border border-rose-500/30 text-rose-300 text-[10px] font-bold cursor-pointer"
@@ -2199,12 +2286,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   )}
                 </div>
 
-                {/* Live Reservations Table inside Listing Management */}
+                {/* Live Reservations & Order Inquiries Table */}
                 <div className="space-y-3 pt-3 border-t border-stone-800">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-mono font-bold text-teal-400 uppercase tracking-wider flex items-center gap-2">
                       <Clock className="w-3.5 h-3.5 text-teal-400" />
-                      <span>Incoming Reservations for {activeVendor.businessName}</span>
+                      <span>Incoming {activeSector.shortName} Orders &amp; Reservations for {activeVendor.businessName}</span>
                     </h4>
                     <button
                       onClick={() => setMotorbikeBookings(firebaseService.getMotorbikeBookings())}
@@ -2216,17 +2303,17 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
                   {motorbikeBookings.filter((bk) => bk.partnerId === activeVendor.id || bk.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase())).length === 0 ? (
                     <div className="p-4 rounded-xl bg-stone-900 border border-stone-800 text-stone-500 text-xs text-center">
-                      No active booking requests recorded for this business listing yet.
+                      No active bookings or orders recorded for this business listing yet.
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs text-stone-300 border-collapse">
                         <thead>
                           <tr className="border-b border-stone-800 text-stone-400 text-[10px] font-mono">
-                            <th className="py-2 px-3">Renter</th>
-                            <th className="py-2 px-3">Model</th>
-                            <th className="py-2 px-3">Pickup</th>
-                            <th className="py-2 px-3">Dates</th>
+                            <th className="py-2 px-3">Customer</th>
+                            <th className="py-2 px-3">{activeSector.itemNoun}</th>
+                            <th className="py-2 px-3">Location</th>
+                            <th className="py-2 px-3">Dates / Timeline</th>
                             <th className="py-2 px-3">Total</th>
                             <th className="py-2 px-3 text-right">Action</th>
                           </tr>
@@ -2568,31 +2655,339 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             </div>
           )}
 
+          {/* TAB: DEDICATED SECTOR CATALOG TAB */}
+          {activeTab === 'motorbikes' && (
+            <div className="space-y-6">
+              {activeVendor ? (
+                <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        <SectorIcon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-bold text-white">{activeSector.moduleTitle}</h3>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${activeSector.badgeColor}`}>
+                            {activeSector.shortName}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-400">
+                          {activeSector.moduleSubtitle} for {activeVendor.businessName}.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingBike(null);
+                        setBikeName('');
+                        setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
+                        setBikePrice('80');
+                        setBikeImage(activeCategoryConfig?.defaultImage || '');
+                        setBikeHelmets('2');
+                        setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
+                        setBikeAddonDetails(activeCategoryConfig?.defaultAddonPlaceholder || '');
+                        setShowBikeForm(true);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{activeSector.addItemLabel}</span>
+                    </button>
+                  </div>
+
+                  {/* Dynamic Form to Add / Edit Offerings Item */}
+                  {showBikeForm && (
+                    <div className="p-4 rounded-2xl bg-stone-900 border border-emerald-500/40 space-y-4 shadow-xl">
+                      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-2">
+                          <SectorIcon className="w-4 h-4" />
+                          {editingBike
+                            ? `Edit ${activeSector.itemNoun} Details`
+                            : `Add New ${activeSector.itemNoun} (${activeCategoryConfig?.label || activeSector.name})`}
+                        </span>
+                        <button
+                          onClick={() => setShowBikeForm(false)}
+                          className="p-1 rounded-lg text-stone-400 hover:text-white cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-stone-300 mb-1">
+                            {activeSector.itemNoun} Name *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={bikeName}
+                            onChange={(e) => setBikeName(e.target.value)}
+                            placeholder={activeCategoryConfig?.sampleItemName || `e.g. Premium ${activeSector.itemNoun}`}
+                            className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-stone-300 mb-1">
+                            {activeCategoryConfig?.specLabel || 'Specification / Capacity'} *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={bikeCc}
+                            onChange={(e) => setBikeCc(e.target.value)}
+                            placeholder={activeCategoryConfig?.defaultSpecPlaceholder || 'e.g. Standard Spec'}
+                            className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-stone-300 mb-1">
+                            {activeCategoryConfig?.rateLabel || 'Price (RM)'} *
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            value={bikePrice}
+                            onChange={(e) => setBikePrice(e.target.value)}
+                            placeholder="80"
+                            className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-stone-300 mb-1">
+                            {activeCategoryConfig?.featuresLabel || 'Features, Inclusions & Specifications'}
+                          </label>
+                          <input
+                            type="text"
+                            value={bikePkgDetails}
+                            onChange={(e) => setBikePkgDetails(e.target.value)}
+                            placeholder={activeCategoryConfig?.defaultFeaturesPlaceholder || 'e.g. Inclusions & highlights'}
+                            className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-stone-300 mb-1">
+                            Add-on Options / Extras / Customizations
+                          </label>
+                          <input
+                            type="text"
+                            value={bikeAddonDetails}
+                            onChange={(e) => setBikeAddonDetails(e.target.value)}
+                            placeholder={activeCategoryConfig?.defaultAddonPlaceholder || 'e.g. Optional upgrades & extras'}
+                            className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-stone-300 mb-1">Photo / Showcase Image URL</label>
+                          <input
+                            type="text"
+                            value={bikeImage}
+                            onChange={(e) => setBikeImage(e.target.value)}
+                            placeholder={activeCategoryConfig?.defaultImage || 'https://...'}
+                            className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-stone-300 mb-1">
+                            Units / Inclusions (e.g. Pax / Sets / Capacity)
+                          </label>
+                          <select
+                            value={bikeHelmets}
+                            onChange={(e) => setBikeHelmets(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-xs text-white"
+                          >
+                            <option value="1">1 Unit / 1 Pax / Solo</option>
+                            <option value="2">2 Units / 2 Pax / Duo</option>
+                            <option value="3">3 Units / Family Set</option>
+                            <option value="4">4+ Units / Group Package</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowBikeForm(false)}
+                          className="px-4 py-2 rounded-xl bg-stone-800 text-xs font-semibold cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveBikePackage}
+                          className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow cursor-pointer transition-colors"
+                        >
+                          {editingBike ? `Update ${activeSector.itemNoun}` : `Save to ${activeSector.shortName}`}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Active Items List */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                        <SectorIcon className="w-3.5 h-3.5" />
+                        <span>
+                          Active {activeSector.itemNoun} Catalog ({(activeVendor.motorbikePackages || []).length})
+                        </span>
+                      </h4>
+                      <span className="text-[10px] text-stone-400">
+                        Unit: {activeCategoryConfig?.unitLabel || 'Per Unit'}
+                      </span>
+                    </div>
+
+                    {(!activeVendor.motorbikePackages || activeVendor.motorbikePackages.length === 0) ? (
+                      <div className="p-6 rounded-2xl bg-stone-900 border border-dashed border-stone-800 text-stone-400 text-xs text-center space-y-2">
+                        <p>No {activeSector.itemNoun.toLowerCase()} items added yet for this business.</p>
+                        <button
+                          onClick={() => {
+                            setEditingBike(null);
+                            setBikeName(activeCategoryConfig?.sampleItemName || '');
+                            setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
+                            setBikePrice('80');
+                            setBikeImage(activeCategoryConfig?.defaultImage || '');
+                            setBikeHelmets('2');
+                            setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
+                            setBikeAddonDetails(activeCategoryConfig?.defaultAddonPlaceholder || '');
+                            setShowBikeForm(true);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold hover:bg-emerald-600/50 cursor-pointer"
+                        >
+                          + Pre-fill {activeSector.addItemLabel}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {activeVendor.motorbikePackages.map((pkg) => (
+                          <div key={pkg.id} className="p-3.5 rounded-xl bg-stone-900 border border-white/10 flex flex-col justify-between space-y-2">
+                            <div className="flex items-start gap-3">
+                              <img
+                                src={pkg.imageUrl || activeCategoryConfig?.defaultImage}
+                                alt={pkg.name}
+                                className="w-14 h-14 rounded-xl object-cover shrink-0 border border-stone-800"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-bold text-white truncate">{pkg.name}</div>
+                                <div className="text-[11px] text-emerald-400 font-mono font-bold mt-0.5">
+                                  RM {pkg.dailyRateRm} <span className="text-[9px] text-stone-400 font-sans font-normal">/ {activeCategoryConfig?.unitLabel || 'unit'}</span>
+                                </div>
+                                <div className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-stone-800 text-stone-300 border border-stone-700">
+                                  {pkg.cc}
+                                </div>
+                                {pkg.packageDetails && (
+                                  <div className="text-[10px] text-stone-400 line-clamp-1 mt-1">
+                                    {pkg.packageDetails}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-2 border-t border-white/5 pt-2">
+                              <button
+                                onClick={() => {
+                                  setEditingBike(pkg.id);
+                                  setBikeName(pkg.name);
+                                  setBikeCc(pkg.cc);
+                                  setBikePrice(String(pkg.dailyRateRm));
+                                  setBikeImage(pkg.imageUrl);
+                                  setBikeHelmets(String(pkg.helmetsIncluded));
+                                  setBikePkgDetails(pkg.packageDetails || '');
+                                  setBikeAddonDetails(pkg.addonDetails || '');
+                                  setShowBikeForm(true);
+                                }}
+                                className="px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[10px] font-bold cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const updatedPackages = (activeVendor.motorbikePackages || []).filter((p) => p.id !== pkg.id);
+                                  const updatedVendor = { ...activeVendor, motorbikePackages: updatedPackages };
+                                  setActiveVendor(updatedVendor);
+                                  await firebaseService.saveVendorListing(updatedVendor);
+                                  setSaveNotification(`Removed ${pkg.name}!`);
+                                  setTimeout(() => setSaveNotification(null), 3000);
+                                }}
+                                className="px-2.5 py-1 rounded bg-rose-950/60 hover:bg-rose-900 border border-rose-500/30 text-rose-300 text-[10px] font-bold cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 rounded-2xl bg-stone-900/50 border border-stone-800 text-center text-xs text-stone-400">
+                  Please select a business to manage its {activeSector.itemNoun.toLowerCase()} catalog.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: INCOMING ORDERS & RESERVATIONS */}
           {activeTab === 'reservations' && (
             <div className="space-y-6">
               <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-emerald-400" />
-                  Incoming Motorbike Reservations
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-emerald-400" />
+                    Incoming {activeSector.shortName} Customer Orders &amp; Reservations
+                  </h3>
+                  <button
+                    onClick={() => setMotorbikeBookings(firebaseService.getMotorbikeBookings())}
+                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                  >
+                    Refresh Bookings
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {motorbikeBookings
-                    .filter((b) => b.partnerId === activeVendor?.id)
+                    .filter((b) => b.partnerId === activeVendor?.id || (activeVendor && b.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase())))
                     .map((booking) => (
-                      <div key={booking.id} className="p-3 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between text-xs">
+                      <div key={booking.id} className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                         <div>
-                          <span className="font-bold text-white block">{booking.renterName}</span>
-                          <span className="text-[10px] text-stone-400">{booking.packageName} • {booking.startDate} to {booking.endDate}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white block">{booking.renterName}</span>
+                            <span className="text-[10px] text-stone-400 font-mono">({booking.renterPhone})</span>
+                          </div>
+                          <span className="text-[11px] text-emerald-300 font-medium">
+                            {booking.packageName} • {booking.startDate} to {booking.endDate} ({booking.pickupTownship})
+                          </span>
                         </div>
-                        <div className="text-right">
-                          <span className="text-emerald-400 font-bold block">RM {booking.totalRm}</span>
-                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase ${booking.status === 'pending' ? 'bg-amber-900 text-amber-200' : 'bg-emerald-900 text-emerald-200'}`}>{booking.status}</span>
+                        <div className="flex items-center gap-3 self-end sm:self-auto">
+                          <div className="text-right">
+                            <span className="text-emerald-400 font-mono font-bold block">RM {booking.totalRm}</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${booking.status === 'pending' ? 'bg-amber-900/60 text-amber-300 border border-amber-500/30' : 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/30'}`}>
+                              {booking.status}
+                            </span>
+                          </div>
+                          <a
+                            href={`https://wa.me/${booking.renterPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                              `Salam ${booking.renterName}! This is ${booking.partnerName}. Your booking #${booking.id} for ${booking.packageName} is CONFIRMED!`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>WhatsApp</span>
+                          </a>
                         </div>
                       </div>
                     ))}
-                  {motorbikeBookings.filter((b) => b.partnerId === activeVendor?.id).length === 0 && (
-                    <div className="p-6 rounded-2xl bg-stone-900/50 border border-dashed border-stone-800 text-center text-xs text-stone-400">
-                      No incoming motorbike reservations.
+                  {motorbikeBookings.filter((b) => b.partnerId === activeVendor?.id || (activeVendor && b.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))).length === 0 && (
+                    <div className="p-8 rounded-2xl bg-stone-900/50 border border-dashed border-stone-800 text-center text-xs text-stone-400">
+                      No incoming {activeSector.itemNoun.toLowerCase()} reservations or orders recorded for {activeVendor?.businessName || 'this business'}.
                     </div>
                   )}
                 </div>
@@ -2652,99 +3047,40 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     </select>
                   </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-stone-300 mb-1">Category *</label>
-                    <select
-                      value={newBizCategory}
-                      onChange={(e) => {
-                        const cat = e.target.value as MainCategory;
-                        setNewBizCategory(cat);
-                        if (cat === 'transport') setNewBizSubCategory('car_bike_rentals');
-                        else if (cat === 'food') setNewBizSubCategory('dining');
-                        else if (cat === 'travel_tourism') setNewBizSubCategory('attractions_sightseeing');
-                        else if (cat === 'accommodation') setNewBizSubCategory('hotels_resorts');
-                        else if (cat === 'services_utilities') setNewBizSubCategory('plumbing_electrical');
-                        else if (cat === 'shopping') setNewBizSubCategory('fresh_markets_produce');
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
-                    >
-                      <option value="services_utilities">Services & Utilities</option>
-                      <option value="food">Food & Beverages</option>
-                      <option value="travel_tourism">Travel & Highland Tourism</option>
-                      <option value="accommodation">Accommodation</option>
-                      <option value="transport">Transport & Mobility Services</option>
-                      <option value="local_services">Local Services & Amenities</option>
-                      <option value="shopping">Shopping & Local Produce</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-stone-300 mb-1">Sub-Category *</label>
-                    <select
-                      value={newBizSubCategory}
-                      onChange={(e) => setNewBizSubCategory(e.target.value as SubCategory)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
-                    >
-                      {newBizCategory === 'transport' && (
-                        <>
-                          <option value="car_bike_rentals">Car & Bike Rentals</option>
-                          <option value="taxi_ehailing">Taxi & E-Hailing</option>
-                          <option value="auto_repair_roadside">Auto Repair & Roadside</option>
-                          <option value="fuel_ev_charging">Fuel & EV Charging</option>
-                        </>
-                      )}
-                      {newBizCategory === 'food' && (
-                        <>
-                          <option value="dining">Dining & Restaurants</option>
-                          <option value="steamboats">Steamboats & BBQ</option>
-                          <option value="cafes">Cafes & Teahouses</option>
-                          <option value="night_markets_street">Night Market & Street Food</option>
-                        </>
-                      )}
-                      {newBizCategory === 'travel_tourism' && (
-                        <>
-                          <option value="attractions_sightseeing">Attractions & Sightseeing</option>
-                          <option value="agrotourism_farms">Agrotourism & Strawberry Farms</option>
-                          <option value="outdoor_adventure">Outdoor Adventure & Hiking</option>
-                          <option value="tour_agencies_guides">Tour Agencies & Guides</option>
-                        </>
-                      )}
-                      {newBizCategory === 'accommodation' && (
-                        <>
-                          <option value="hotels_resorts">Hotels & Resorts</option>
-                          <option value="guesthouses">Guesthouses</option>
-                          <option value="chalets">Chalets & Cottages</option>
-                          <option value="homestay_apartment">Homestay (Apartment)</option>
-                          <option value="homestay_landed">Homestay (Landed)</option>
-                          <option value="camping_glamping">Camping & Glamping</option>
-                        </>
-                      )}
-                      {newBizCategory === 'services_utilities' && (
-                        <>
-                          <option value="plumbing_electrical">Plumbing & Electrical</option>
-                          <option value="locksmith_access">Locksmith & Security</option>
-                          <option value="carpentry_construction">Carpentry & Construction</option>
-                          <option value="laundry_dry_cleaning">Laundry & Dry Cleaning</option>
-                        </>
-                      )}
-                      {newBizCategory === 'local_services' && (
-                        <>
-                          <option value="health_wellness">Health & Wellness</option>
-                          <option value="banking_financial">Banking & Financial</option>
-                          <option value="logistics_freight">Logistics & Freight</option>
-                        </>
-                      )}
-                      {newBizCategory === 'shopping' && (
-                        <>
-                          <option value="fresh_markets_produce">Fresh Markets & Produce</option>
-                          <option value="souvenirs_handicrafts">Souvenirs & Handicrafts</option>
-                          <option value="convenience_groceries">Convenience & Groceries</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
                 </div>
+
+                <div>
+                  <label className="block text-stone-300 mb-1 font-semibold">Business Sector &amp; Category Nature *</label>
+                  <select
+                    value={newBizSubCategory}
+                    onChange={(e) => {
+                      const selectedSub = e.target.value;
+                      setNewBizSubCategory(selectedSub);
+                      const sector = findBusinessSector(selectedSub);
+                      let mainCat: MainCategory = 'services_utilities';
+                      if (sector.id === 'food_beverage') mainCat = 'food';
+                      else if (sector.id === 'retail_products') mainCat = 'shopping';
+                      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
+                      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
+                      else if (sector.id === 'professional_services') mainCat = 'services_utilities';
+                      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
+                      setNewBizCategory(mainCat);
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-medium"
+                  >
+                    {BUSINESS_TAXONOMY.map((sector) => (
+                      <optgroup key={sector.id} label={sector.name}>
+                        {sector.categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-stone-400 mt-1">
+                    Select your specific business type. Forms, catalog items, and booking options dynamically adapt to this choice.
+                  </p>
                 </div>
 
                 <div>
