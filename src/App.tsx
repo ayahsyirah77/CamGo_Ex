@@ -172,16 +172,21 @@ export default function App() {
     if (place) setIsMapModalOpen(true);
   };
 
+  const handleCloseChat = () => {
+    setIsStandaloneChatView(false);
+    setIsChatOpen(false);
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  };
+
   // If launched via shortcut (/?chat=true or standalone mode), render ONLY Chat Lounge full-screen
   if (isStandaloneChatView) {
     return (
       <div className="fixed inset-0 bg-stone-950 text-stone-100 flex flex-col font-sans overflow-hidden">
         <ChatLoungeModal
           isOpen={true}
-          onClose={() => {
-            setIsStandaloneChatView(false);
-            setIsChatOpen(false);
-          }}
+          onClose={handleCloseChat}
           currentUser={currentUser}
           initialDmUserId={chatInitialDmUserId}
           initialChannelId={chatInitialChannelId}
@@ -456,7 +461,7 @@ export default function App() {
       {/* Standalone Chat Lounge Modal */}
       <ChatLoungeModal
         isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
+        onClose={handleCloseChat}
         currentUser={currentUser}
         initialDmUserId={chatInitialDmUserId}
         initialChannelId={chatInitialChannelId}
