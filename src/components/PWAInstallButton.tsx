@@ -24,12 +24,12 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     );
   }
 
-  if (!isInstallable) return null;
+
 
   const handleClick = async () => {
     if (hasPrompt) {
       await installPWA();
-    } else if (isIOS) {
+    } else {
       setShowIosModal(true);
     }
   };
@@ -88,7 +88,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                   <Smartphone className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-white">Install on iOS</h3>
+                  <h3 className="font-bold text-base text-white">Install CamGo App</h3>
                   <p className="text-xs text-stone-400">Add CamGo to your Home Screen</p>
                 </div>
               </div>

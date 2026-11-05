@@ -189,6 +189,41 @@ service cloud.firestore {
       }
     }
 
+    match /chat_lounge_messages/{messageId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /chat_lounge_channels/{channelId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /chat_lounge_dms/{dmId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /chat_lounge_presence/{userId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /push_subscriptions/{subId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
     // Default deny for unmatched documents
     match /{document=**} {
       allow read, write: if false;

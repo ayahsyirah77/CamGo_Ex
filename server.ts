@@ -925,6 +925,23 @@ Only return valid JSON without markdown wrapping.`;
         const parsed = JSON.parse(data.toString());
         if (parsed.action === 'ping') {
           ws.send(JSON.stringify({ event: 'pong', priority: 'low', payload: {}, timestamp: new Date().toISOString() }));
+          return;
+        }
+
+        // Broadcast real-time chat messages, reactions, and typing events across all connected clients
+        if (
+          parsed.event === 'chat_message' ||
+          parsed.event === 'chat_reaction' ||
+          parsed.event === 'chat_typing' ||
+          parsed.event === 'chat_channel_created' ||
+          parsed.event === 'chat_presence'
+        ) {
+          const payloadStr = JSON.stringify(parsed);
+          for (const client of connectedClients) {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(payloadStr);
+            }
+          }
         }
       } catch (e) {
         // ignore

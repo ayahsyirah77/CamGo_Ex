@@ -113,6 +113,7 @@ interface DirectorySectionProps {
   bookmarkedIds: string[];
   onToggleBookmark: (placeId: string) => void;
   onOpenFarmMatrix: () => void;
+  initialTownship?: Township | 'all';
 }
 
 export const DirectorySection: React.FC<DirectorySectionProps> = ({
@@ -125,12 +126,32 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
   bookmarkedIds,
   onToggleBookmark,
   onOpenFarmMatrix,
+  initialTownship = 'all',
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTown, setSelectedTown] = useState<Township | 'all'>('all');
+  const [selectedTown, setSelectedTown] = useState<Township | 'all'>(initialTownship);
   const [selectedPlacePopup, setSelectedPlacePopup] = useState<Place | null>(null);
   const [scheduleModalPlace, setScheduleModalPlace] = useState<Place | null>(null);
   const [farmTickets, setFarmTickets] = useState<FarmTicket[]>(() => firebaseService.getFarmTickets());
+
+  // Keep selectedTown in sync with initialTownship prop changes
+  React.useEffect(() => {
+    if (initialTownship) {
+      setSelectedTown(initialTownship);
+    }
+  }, [initialTownship]);
+
+  // Listen to filter-directory-by-township events from interactive map popups
+  React.useEffect(() => {
+    const handleTownshipFilter = (e: any) => {
+      const town = e?.detail as Township;
+      if (town) {
+        setSelectedTown(town);
+      }
+    };
+    window.addEventListener('filter-directory-by-township', handleTownshipFilter);
+    return () => window.removeEventListener('filter-directory-by-township', handleTownshipFilter);
+  }, []);
 
   React.useEffect(() => {
     const handleTicketUpdate = (e: any) => {

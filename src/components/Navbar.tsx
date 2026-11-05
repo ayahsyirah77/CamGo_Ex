@@ -802,15 +802,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{getTranslation(language, 'nav_gallery')}</span>
             </motion.button>
 
-
           </motion.div>
 
-          {/* Right Action Container: User Profile & PWA Install (Aligned with Nav Links) */}
+          {/* Right Action Container: User Profile (Aligned with Nav Links) */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-            {/* PWA Install Button */}
-            <div className="hidden sm:flex items-center shrink-0">
-              <PWAInstallButton variant="button" />
-            </div>
 
             {/* Desktop / PC View: User Profile / Sign In Button */}
             <div className="hidden sm:flex sm:items-center shrink-0 relative" ref={userMenuRef}>
@@ -1139,6 +1134,33 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-cyan-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+
+                  {/* Community Chat Lounge & DMs */}
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      if (onOpenChat) onOpenChat();
+                    }}
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform relative">
+                      <MessageSquare className="w-4 h-4 text-emerald-400" />
+                      {hasNewChat && (
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute -top-0.5 -right-0.5" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors">
+                          {language === 'bm' ? 'Lounge Komuniti & Mesej' : 'Community Lounge & DMs'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                          Live
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
 

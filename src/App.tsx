@@ -12,115 +12,65 @@ import {
   HazardAlert,
   EventNotification,
   GalleryItem,
-  LoungePost,
   Language,
   MainCategory,
   SubCategory,
   Township,
 } from './types';
-import {
-  INITIAL_PLACES,
-  INITIAL_WEATHER,
-  INITIAL_TRAFFIC,
-  INITIAL_HAZARDS,
-  INITIAL_EVENTS,
-  INITIAL_GALLERY,
-  INITIAL_LOUNGE,
-} from './data/initialData';
 import { weatherService } from './services/weather';
 import { firebaseService, UserProfile } from './services/firebase';
-import { hazardFeedService } from './services/hazardFeedService';
 import { getTranslation } from './services/i18n';
 
 import { LoadingScreen } from './components/LoadingScreen';
 import { Navbar } from './components/Navbar';
 import { BackToTop } from './components/BackToTop';
-import { WeatherWidget } from './components/WeatherWidget';
-import { TrafficWidget } from './components/TrafficWidget';
-import { HazardWidget } from './components/HazardWidget';
-import { EventsWidget } from './components/EventsWidget';
 import { InteractiveMap } from './components/InteractiveMap';
 import { GalleryCarousel } from './components/GalleryCarousel';
-import { DirectorySection } from './components/DirectorySection';
-import { PortalsSection } from './components/PortalsSection';
-import { UserLounge } from './components/UserLounge';
+import { ChatLoungeModal } from './components/ChatLoungeModal';
 import { GsapLoopGallery } from './components/GsapLoopGallery';
 import { AiChatModal } from './components/AiChatModal';
-import { MobileFooterNav } from './components/MobileFooterNav';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLoginPage } from './components/AdminLoginPage';
 import { UserDashboard } from './components/UserDashboard';
 import { AuthModal } from './components/AuthModal';
 import { VisualSplitItinerary } from './components/VisualSplitItinerary';
 import { Footer } from './components/Footer';
-import { CamLogo } from './components/CamLogo';
-import { EmergencySosWidget } from './components/EmergencySosWidget';
-import { MobileRadialMenu } from './components/MobileRadialMenu';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { MasjidSurauModal } from './components/MasjidSurauModal';
 import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
-import { OfflineIndicator } from './components/OfflineIndicator';
-import { VendorDashboard } from './components/VendorDashboard';
-import { VendorOnboardingModal } from './components/VendorOnboardingModal';
-import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
-import { FindMyPartyModal } from './components/FindMyPartyModal';
-import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
-import { ClassifiedsModal } from './components/ClassifiedsModal';
-import { CurrencyConverterModal } from './components/CurrencyConverterModal';
-import { SmartParkingEvModal } from './components/SmartParkingEvModal';
-import { useMultiChannelNotifications } from './hooks/useMultiChannelNotifications';
-import { NotificationCenter } from './components/NotificationCenter';
-import { NavigationPromptModal } from './components/NavigationPromptModal';
+import { EmergencySosWidget } from './components/EmergencySosWidget';
+import { MobileRadialMenu } from './components/MobileRadialMenu';
+import { PWAInstallButton } from './components/PWAInstallButton';
 import {
   Sparkles,
   Compass,
   MapPin,
-  CloudSun,
-  Sun,
-  ShieldAlert,
-  Calendar,
   MessageSquare,
   ArrowRight,
   Navigation,
-  CheckCircle,
-  Mountain,
-  Car,
-  X,
-  Layers,
-  Route,
-  Menu,
-  Users,
   Bike,
+  Route,
   Megaphone,
   Camera,
+  Smartphone,
+  X,
+  Menu,
+  ShieldAlert,
+  Users,
 } from 'lucide-react';
 
 export default function App() {
-  // Localization
   const [language, setLanguage] = useState<Language>('en');
-
-  // Loading Screen State
-  const [loadingFinished, setLoadingFinished] = useState(false);
-
-  // App Data (synced with Firebase / Local Storage)
   const [places, setPlaces] = useState<Place[]>([]);
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [weatherList, setWeatherList] = useState<WeatherData[]>([]);
   const [trafficAlerts, setTrafficAlerts] = useState<TrafficAlert[]>([]);
   const [hazards, setHazards] = useState<HazardAlert[]>([]);
-  const [events, setEvents] = useState<EventNotification[]>([]);
-  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
-  const [loungePosts, setLoungePosts] = useState<LoungePost[]>([]);
-  const [hasNewChat, setHasNewChat] = useState(false);
-  const loungeCountRef = useRef(0);
-
-  // User State
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(firebaseService.getCurrentUser());
 
-  // Navigation & Selection States
-  const [selectedCategory, setSelectedCategory] = useState<MainCategory>('attraction');
-  const [selectedSubCategory, setSelectedSubCategory] = useState<SubCategory | undefined>(undefined);
   const [selectedPlaceForMap, setSelectedPlaceForMap] = useState<Place | null>(null);
 
-  // Modals & Capsule Popups
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
@@ -130,231 +80,80 @@ export default function App() {
   >('bookmarks');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInitialDmUserId, setChatInitialDmUserId] = useState<string | null>(null);
+  const [chatInitialChannelId, setChatInitialChannelId] = useState<string | null>(null);
   const [isDirectoriesModalOpen, setIsDirectoriesModalOpen] = useState(false);
   const [isPortalsModalOpen, setIsPortalsModalOpen] = useState(false);
   const [isClassifiedsModalOpen, setIsClassifiedsModalOpen] = useState(false);
   const [isItineraryOpen, setIsItineraryOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [isMasjidModalOpen, setIsMasjidModalOpen] = useState(false);
-  const [isGalleryModalOpen, setIsGalleryModalOpen] = useState(false);
-  const [isWidgetMenuOpen, setIsWidgetMenuOpen] = useState(false);
   const [isTrailEngineOpen, setIsTrailEngineOpen] = useState(false);
   const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState(false);
-  const [isVendorDashboardOpen, setIsVendorDashboardOpen] = useState(false);
-  const [isVendorOnboardingOpen, setIsVendorOnboardingOpen] = useState(false);
-  const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
-  const [isCurrencyConverterOpen, setIsCurrencyConverterOpen] = useState(false);
-  const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
+  const [isWidgetMenuOpen, setIsWidgetMenuOpen] = useState(false);
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
     null | 'microclimate' | 'traffic' | 'hazard' | 'events'
   >(null);
 
-  // Multi-Channel Real-Time Notification Engine
-  const notificationEngine = useMultiChannelNotifications();
-
-  // Refresh data from storage
   const refreshStorageData = () => {
     setPlaces(firebaseService.getPlaces());
     setGalleryItems(firebaseService.getGallery());
-    setEvents(firebaseService.getEvents());
-    setLoungePosts(firebaseService.getLoungePosts());
     setTrafficAlerts(firebaseService.getTrafficAlerts());
     setHazards(firebaseService.getHazardAlerts());
     setCurrentUser(firebaseService.getCurrentUser());
   };
 
-  const fetchLiveWeather = async () => {
-    const liveWeather = await weatherService.fetchLiveWeather();
-    if (liveWeather.length > 0) {
-      setWeatherList(liveWeather);
-    }
-  };
-
   useEffect(() => {
     refreshStorageData();
-    fetchLiveWeather();
-    const handlePlacesUpdated = (e: any) => {
-      const updated = e?.detail || firebaseService.getPlaces();
-      console.log('[Debug] App.tsx handlePlacesUpdated updated:', updated);
-      setPlaces(updated);
-    };
-    const handleGalleryUpdated = (e: any) => {
-      const updated = e?.detail || firebaseService.getGallery();
-      setGalleryItems(updated);
-    };
-    const handleEventsUpdated = (e: any) => {
-      const updated = e?.detail || firebaseService.getEvents();
-      setEvents(updated);
-    };
-    const handleGsapImagesUpdated = () => {
-      refreshStorageData();
-    };
-    const handleTownshipHubUpdated = () => {
-      refreshStorageData();
-    };
-
-    const handleVendorListingsUpdated = () => {
-      refreshStorageData();
-    };
-
-    const handleHazardsUpdated = (e: any) => {
-      const updated = e?.detail || firebaseService.getHazardAlerts();
-      setHazards(updated);
-    };
-
-    // Trigger initial background sync with official JKR & MDCH feeds
-    hazardFeedService.syncFeeds().then((res) => {
-      if (res.success && res.alerts.length > 0) {
-        setHazards(res.alerts);
-      }
+    weatherService.fetchLiveWeather().then((res) => {
+      if (res.length > 0) setWeatherList(res);
     });
-
-    window.addEventListener('places-updated', handlePlacesUpdated);
-    window.addEventListener('gallery-updated', handleGalleryUpdated);
-    window.addEventListener('events-updated', handleEventsUpdated);
-    window.addEventListener('gsap-images-updated', handleGsapImagesUpdated);
-    window.addEventListener('township-hub-updated', handleTownshipHubUpdated);
-    window.addEventListener('vendor-listings-updated', handleVendorListingsUpdated);
-    window.addEventListener('hazard-alerts-updated', handleHazardsUpdated);
-
-    const handleFilterDirectoryByTownship = (e: any) => {
-      const town = e.detail as Township;
-      if (town) {
-        setIsMapModalOpen(false);
-        setIsDirectoriesModalOpen(true);
-      }
-    };
-    window.addEventListener('filter-directory-by-township', handleFilterDirectoryByTownship);
 
     const unsubUser = firebaseService.subscribeUser(() => {
       setCurrentUser(firebaseService.getCurrentUser());
       refreshStorageData();
     });
-    const unsubLounge = firebaseService.subscribeLoungePosts((livePosts) => {
-      if (loungeCountRef.current > 0 && livePosts.length > loungeCountRef.current) {
-        setHasNewChat(true);
-      }
-      loungeCountRef.current = livePosts.length;
-      setLoungePosts(livePosts);
-    });
 
-    console.log('[Debug] App.tsx places state:', places);
-    const handleOpenEmergencyCard = () => {
-      let user = firebaseService.getCurrentUser();
-      if (!user) {
-        firebaseService.signInWithEmail('traveler@camgo.my', 'Highland Explorer');
-        user = firebaseService.getCurrentUser();
-      }
-      setCurrentUser(user);
-      setUserDashboardInitialTab('emergency-card');
-      setIsUserDashboardOpen(true);
+    const handleOpenChatLounge = (e: any) => {
+      if (e?.detail?.channelId) setChatInitialChannelId(e.detail.channelId);
+      if (e?.detail?.dmUserId) setChatInitialDmUserId(e.detail.dmUserId);
+      setIsChatOpen(true);
     };
-    window.addEventListener('open-emergency-card', handleOpenEmergencyCard);
-    const handleOpenTrafficAlerts = () => {
-      setActiveCapsuleModal('traffic');
-    };
-    window.addEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
-    const handleOpenMotorbikeRental = () => {
-      setIsMotorbikeRentalOpen(true);
-    };
-    window.addEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
+    window.addEventListener('open-chat-lounge', handleOpenChatLounge);
 
-    const handleOpenClassifiedsModal = () => {
-      setIsClassifiedsModalOpen(true);
-    };
-    window.addEventListener('open-classifieds-modal', handleOpenClassifiedsModal);
-
-    const handleOpenCurrencyConverter = () => {
-      let user = firebaseService.getCurrentUser();
-      if (!user) {
-        firebaseService.signInWithEmail('traveler@camgo.my', 'Highland Explorer');
-        user = firebaseService.getCurrentUser();
-      }
-      setCurrentUser(user);
-      setUserDashboardInitialTab('online-payment');
-      setIsUserDashboardOpen(true);
-    };
-    const handleOpenSmartParkingEv = () => {
-      setIsParkingEvOpen(true);
-    };
-    window.addEventListener('open-smart-parking-ev-modal', handleOpenSmartParkingEv);
-
-    // Auto-open Find My Party Beacon if URL has beacon or party query parameter
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('beacon') || urlParams.get('party')) {
-      setIsFindMyPartyOpen(true);
+    if (urlParams.get('chat') || window.location.hash === '#chat') {
+      setIsChatOpen(true);
     }
 
     return () => {
-      window.removeEventListener('places-updated', handlePlacesUpdated);
-      window.removeEventListener('gallery-updated', handleGalleryUpdated);
-      window.removeEventListener('events-updated', handleEventsUpdated);
-      window.removeEventListener('gsap-images-updated', handleGsapImagesUpdated);
-      window.removeEventListener('township-hub-updated', handleTownshipHubUpdated);
-      window.removeEventListener('vendor-listings-updated', handleVendorListingsUpdated);
-      window.removeEventListener('hazard-alerts-updated', handleHazardsUpdated);
-      window.removeEventListener('filter-directory-by-township', handleFilterDirectoryByTownship);
-      window.removeEventListener('open-emergency-card', handleOpenEmergencyCard);
-      window.removeEventListener('open-traffic-alerts-modal', handleOpenTrafficAlerts);
-      window.removeEventListener('open-motorbike-rental', handleOpenMotorbikeRental);
-      window.removeEventListener('open-classifieds-modal', handleOpenClassifiedsModal);
-      window.removeEventListener('open-currency-converter', handleOpenCurrencyConverter);
-      window.removeEventListener('open-smart-parking-ev-modal', handleOpenSmartParkingEv);
+      window.removeEventListener('open-chat-lounge', handleOpenChatLounge);
       unsubUser();
-      unsubLounge();
     };
   }, []);
 
-  const handleOpenCurrencyConverter = () => {
-    setIsCurrencyConverterOpen(true);
-  };
-
-  const handleOpenVendorPortal = () => {
-    setIsVendorDashboardOpen(true);
-  };
-
-  // Smooth scroll helper
   const navigateToSection = (sectionId: string) => {
     const el = document.getElementById(sectionId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Directory Category Selection Handler
   const handleSelectCategory = (cat: MainCategory, sub?: SubCategory) => {
-    setSelectedCategory(cat);
-    setSelectedSubCategory(sub);
     setIsDirectoriesModalOpen(true);
     navigateToSection('directories-section');
   };
 
-  // Place Selection for Map
   const handleSelectPlaceForMap = (place: Place | null) => {
     setSelectedPlaceForMap(place);
-    if (place) {
-      setIsMapModalOpen(true);
-    }
-  };
-
-  // Bookmark Toggle
-  const handleToggleBookmark = (placeId: string) => {
-    firebaseService.toggleBookmark(placeId);
-    setCurrentUser(firebaseService.getCurrentUser());
+    if (place) setIsMapModalOpen(true);
   };
 
   return (
-    <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative">
+    <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950">
+      {/* 1. Intro Loading Screen */}
+      <LoadingScreen language={language} onFinish={() => {}} />
 
-
-      {/* 1. Intro Loading Screen with CamGo Logo Animation */}
-      <LoadingScreen
-        language={language}
-        onFinish={() => setLoadingFinished(true)}
-      />
-
-      {/* 2. Transparent / Glassmorphism Animated Navbar */}
+      {/* 2. Navbar */}
       <Navbar
         language={language}
         onLanguageChange={setLanguage}
@@ -365,38 +164,23 @@ export default function App() {
         onOpenUserDashboard={() => setIsUserDashboardOpen(true)}
         onSelectCategory={handleSelectCategory}
         onNavigateSection={navigateToSection}
-        onOpenDirectoriesModal={() => {
-          setIsDirectoriesModalOpen(true);
-          navigateToSection('directories-section');
-        }}
-        onOpenPortalsModal={() => {
-          setIsPortalsModalOpen(true);
-          navigateToSection('portals-section');
-        }}
+        onOpenDirectoriesModal={() => setIsDirectoriesModalOpen(true)}
+        onOpenPortalsModal={() => setIsPortalsModalOpen(true)}
         onOpenClassifiedsModal={() => setIsClassifiedsModalOpen(true)}
         onOpenItinerary={() => setIsItineraryOpen(true)}
         onOpenMap={() => setIsMapModalOpen(true)}
-        onOpenChat={() => {
-          setHasNewChat(false);
-          setIsChatOpen(true);
-        }}
-        onOpenGalleryModal={() => setIsGalleryModalOpen(true)}
-        onOpenCurrencyConverter={handleOpenCurrencyConverter}
-        onOpenVendorPortal={handleOpenVendorPortal}
-        onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
-        onOpenParkingEvModal={() => setIsParkingEvOpen(true)}
+        onOpenChat={() => setIsChatOpen(true)}
+        onOpenGalleryModal={() => {}}
+        onOpenCurrencyConverter={() => {}}
+        onOpenVendorPortal={() => {}}
+        onOpenFarmMatrix={() => {}}
+        onOpenParkingEvModal={() => {}}
         places={places}
-        events={events}
+        events={[]}
         onSelectPlace={handleSelectPlaceForMap}
-        onSelectEvent={() => setActiveCapsuleModal('events')}
-        onSelectTownship={(town) => {
-          const match = places.find((p) => p.township === town);
-          if (match) setSelectedPlaceForMap(match);
-          setIsMapModalOpen(true);
-        }}
       />
 
-      {/* Offline Status Bar & Quick Actions */}
+      {/* Offline Status Bar */}
       <OfflineIndicator
         onOpenOfflineTrailsModal={() => setIsTrailEngineOpen(true)}
         onOpenEmergencyModal={() => {
@@ -406,14 +190,12 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 break-words">
-        {/* 3. Hero Section: Cinematic Highlands Mist & Live Telemetry */}
-        <section id="hero-section" className="relative min-h-0 sm:min-h-[85vh] flex items-center justify-center pt-24 sm:pt-24 pb-4 sm:pb-12 px-4 sm:px-6 lg:px-8 overflow-hidden">
-          {/* Subtle gradient overlay to enhance glass text readability */}
+      <main className="flex-1">
+        {/* 3. Hero Section */}
+        <section id="hero-section" className="relative min-h-0 sm:min-h-[75vh] flex items-center justify-center pt-24 sm:pt-28 pb-4 sm:pb-8 px-4 sm:px-6 lg:px-8 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/60 to-stone-950/90 pointer-events-none" />
 
           <div className="relative z-10 max-w-5xl mx-auto text-center space-y-4 sm:space-y-6">
-            {/* Main Headline */}
             <h1 className="text-3xl sm:text-6xl lg:text-7xl font-heading font-black tracking-tight text-stone-50 leading-[1.1]">
               {getTranslation(language, 'hero_title')}{' '}
               <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-500 bg-clip-text text-transparent">
@@ -421,15 +203,14 @@ export default function App() {
               </span>
             </h1>
 
-            {/* Subtitle */}
             <p className="text-xs sm:text-lg text-stone-300 max-w-2xl mx-auto leading-relaxed">
               {getTranslation(language, 'hero_subtitle')}
             </p>
           </div>
         </section>
 
-        {/* Advanced GSAP Infinitely Looping Gallery replacing old separate capsule sections */}
-        <section id="loop-gallery-section" className="mt-1 sm:mt-6 mb-6 sm:mb-8">
+        {/* GSAP Loop Gallery */}
+        <section className="my-4">
           <GsapLoopGallery
             language={language}
             onOpenDirectoriesModal={() => setIsDirectoriesModalOpen(true)}
@@ -439,438 +220,238 @@ export default function App() {
           />
         </section>
 
-        {/* Experience Hub Cards: Motorbike Rental Marketplace & Intelligent Map Navigator */}
-        <section className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mb-6 sm:mb-10">
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-6">
-            {/* Card 1: Motorbike & Scooter Rental Marketplace */}
+        {/* Experience Cards in 2x2 Grid (100% Fully Visible Titles) */}
+        <section className="max-w-4xl mx-auto px-2 sm:px-6 mb-12">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 max-w-4xl mx-auto">
+            {/* Card 1: Motorbike Rental */}
             <div
               onClick={() => setIsMotorbikeRentalOpen(true)}
-              className="group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-emerald-950/90 via-stone-900 to-teal-950/90 border border-emerald-500/40 p-2.5 sm:p-6 shadow-2xl hover:border-emerald-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-emerald-500/30 p-2.5 sm:p-4 shadow-lg hover:border-emerald-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.15),transparent_50%)] pointer-events-none" />
-              
-              <div className="space-y-1.5 sm:space-y-3 z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">
-                    Rental Hub
-                  </span>
-                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                    <Bike className="w-3 h-3 sm:w-5 sm:h-5" />
-                  </div>
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Bike className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
-
-                <div>
-                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-emerald-300 transition-colors leading-tight sm:leading-snug">
-                    Motorbike &amp; Scooter
-                  </h3>
-                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
-                    Fleet rentals in Tanah Rata, Brinchang &amp; Kea Farm with direct WhatsApp booking.
-                  </p>
-                </div>
+                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-emerald-300 leading-tight min-w-0">
+                  Motorbike Rental
+                </h3>
               </div>
-
-              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-emerald-400 group-hover:text-emerald-300">
-                <span>Rentals Hub</span>
-                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
+              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-emerald-400">
+                <span>Rentals</span>
+                <ArrowRight className="w-3 h-3 shrink-0" />
               </div>
             </div>
 
-            {/* Card 2: Intelligent Map Navigator */}
+            {/* Card 2: GPS Map */}
             <div
               onClick={() => setIsMapModalOpen(true)}
-              className="group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-cyan-950/90 via-stone-900 to-blue-950/90 border border-cyan-500/40 p-2.5 sm:p-6 shadow-2xl hover:border-cyan-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-cyan-500/30 p-2.5 sm:p-4 shadow-lg hover:border-cyan-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(6,182,212,0.15),transparent_50%)] pointer-events-none" />
-              
-              <div className="space-y-1.5 sm:space-y-3 z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">
-                    Live GPS Map
-                  </span>
-                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                    <Navigation className="w-3 h-3 sm:w-5 sm:h-5" />
-                  </div>
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                  <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
-
-                <div>
-                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-cyan-300 transition-colors leading-tight sm:leading-snug">
-                    Map Navigator
-                  </h3>
-                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
-                    Interactive GPS map, live traffic telemetry, hazard alerts &amp; route optimizer.
-                  </p>
-                </div>
+                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-cyan-300 leading-tight min-w-0">
+                  GPS Map
+                </h3>
               </div>
-
-              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-cyan-400 group-hover:text-cyan-300">
+              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-cyan-400">
                 <span>Open Map</span>
-                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
+                <ArrowRight className="w-3 h-3 shrink-0" />
               </div>
             </div>
 
-            {/* Card 3: Visual Split Itinerary & Trip Planner */}
+            {/* Card 3: Route Itinerary */}
             <div
               onClick={() => setIsItineraryOpen(true)}
-              className="col-span-1 sm:col-span-1 group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-amber-950/90 via-stone-900 to-emerald-950/90 border border-amber-500/40 p-2.5 sm:p-5 shadow-2xl hover:border-amber-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-amber-500/30 p-2.5 sm:p-4 shadow-lg hover:border-amber-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.15),transparent_50%)] pointer-events-none" />
-              
-              <div className="space-y-1.5 sm:space-y-3 z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-amber-400">
-                    {language === 'bm' ? 'Perancang Jadual' : 'Itinerary Planner'}
-                  </span>
-                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                    <Route className="w-3 h-3 sm:w-5 sm:h-5" />
-                  </div>
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                  <Route className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
-
-                <div>
-                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-amber-300 transition-colors leading-tight sm:leading-snug">
-                    {language === 'bm' ? 'Jadual Perjalanan Pintar' : 'Itinerary Planner'}
-                  </h3>
-                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
-                    {language === 'bm'
-                      ? 'Rancang jadual harian automatik, elak kesesakan masa puncak, bajet & susun masa percutian.'
-                      : 'Personalized day-by-day split route planner, crowd bypass schedules, budgets & time slots.'}
-                  </p>
-                </div>
+                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-amber-300 leading-tight min-w-0">
+                  Itinerary
+                </h3>
               </div>
-
-              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-amber-400 group-hover:text-amber-300">
-                <span>{language === 'bm' ? 'Buka Jadual' : 'Open Planner'}</span>
-                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
+              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-amber-400">
+                <span>Planner</span>
+                <ArrowRight className="w-3 h-3 shrink-0" />
               </div>
             </div>
 
-            {/* Card 4: Jobs & Classifieds Hub (Side-by-side with Itinerary in Mobile & PC) */}
+            {/* Card 4: Chat Lounge */}
             <div
-              onClick={() => setIsClassifiedsModalOpen(true)}
-              className="col-span-1 sm:col-span-1 group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-indigo-950/90 via-stone-900 to-purple-950/90 border border-indigo-500/40 p-2.5 sm:p-5 shadow-2xl hover:border-indigo-400 transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2 sm:gap-4 text-left active:scale-[0.98]"
+              onClick={() => setIsChatOpen(true)}
+              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-indigo-500/30 p-2.5 sm:p-4 shadow-lg hover:border-indigo-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.15),transparent_50%)] pointer-events-none" />
-              
-              <div className="space-y-1.5 sm:space-y-3 z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[8px] sm:text-xs font-mono font-bold uppercase tracking-wider text-indigo-400">
-                    {language === 'bm' ? 'Peluang Kerja & Iklan' : 'Jobs & Classifieds'}
-                  </span>
-                  <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                    <Megaphone className="w-3 h-3 sm:w-5 sm:h-5" />
-                  </div>
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                  <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
-
-                <div>
-                  <h3 className="text-[11px] sm:text-lg font-heading font-black text-white group-hover:text-indigo-300 transition-colors leading-tight sm:leading-snug">
-                    {language === 'bm' ? 'Papan Iklan & Kerjaya' : 'Jobs & Classifieds Hub'}
-                  </h3>
-                  <p className="text-[8.5px] sm:text-xs text-stone-300 mt-1 sm:mt-1.5 leading-snug sm:leading-relaxed">
-                    {language === 'bm'
-                      ? 'Cari peluang pekerjaan tanah tinggi, barangan terpakai & pengumuman komuniti.'
-                      : 'Explore highland career openings, marketplace buy/sell listings & community notices.'}
-                  </p>
-                </div>
+                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-indigo-300 leading-tight min-w-0">
+                  Chat Lounge
+                </h3>
               </div>
-
-              <div className="z-10 pt-1.5 sm:pt-2 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-xs font-bold text-indigo-400 group-hover:text-indigo-300">
-                <span>{language === 'bm' ? 'Buka Iklan' : 'View Classifieds'}</span>
-                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
+              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-indigo-400">
+                <span>Open Lounge</span>
+                <ArrowRight className="w-3 h-3 shrink-0" />
               </div>
             </div>
           </div>
         </section>
 
-        {/* Visual Highland Gallery Carousel Showcase (Placed directly below the 4 cards) */}
-        <section id="interactive-gallery" className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mb-6 sm:mb-10">
-          <div className="rounded-2xl sm:rounded-3xl bg-stone-900/90 border border-emerald-500/30 p-3 sm:p-6 shadow-2xl backdrop-blur-xl">
-            <div className="flex items-center justify-between mb-3 px-1">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
-                  <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-base font-heading font-black text-white">
-                    {language === 'bm' ? 'Galeri Foto & Panorama Tanah Tinggi' : 'Highland Photo & Panorama Gallery'}
-                  </h3>
-                  <p className="text-[10px] sm:text-xs text-stone-400">
-                    {language === 'bm' ? 'Pemandangan indah koridor Cameron Highlands' : 'Breathtaking moments & viewpoints across the plateau'}
-                  </p>
-                </div>
-              </div>
-            </div>
+        {/* Gallery Carousel */}
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
+          <div className="rounded-3xl bg-stone-900 border border-emerald-500/30 p-6 shadow-2xl">
+            <h3 className="text-lg font-heading font-black text-white mb-4">Highland Photo Gallery</h3>
             <GalleryCarousel items={galleryItems} onSelectPlace={handleSelectPlaceForMap} />
           </div>
         </section>
-
-        {/* Back To Top */}
-        <div className="flex justify-center my-8">
-            <BackToTop />
-        </div>
       </main>
 
-      {/* 10. Rich Footer with Townships, Emergency Contacts, Official Portals, Language Toggle */}
-      <footer id="footer-section">
-        <Footer
-          language={language}
-          onLanguageChange={setLanguage}
-          onSelectTown={(town) => {
-            const match = places.find((p) => p.township === town);
-            if (match) setSelectedPlaceForMap(match);
-            navigateToSection('interactive-map');
-          }}
-          onOpenAdmin={() => {
-            if (currentUser?.role === 'admin') {
-              setIsAdminOpen(true);
-            } else {
-              setIsAdminLoginOpen(true);
-            }
-          }}
-        />
-      </footer>
+      {/* Footer */}
+      <Footer
+        language={language}
+        onLanguageChange={setLanguage}
+        onSelectTown={(town) => {
+          const match = places.find((p) => p.township === town);
+          if (match) setSelectedPlaceForMap(match);
+          setIsMapModalOpen(true);
+        }}
+        onOpenAdmin={() => {
+          if (currentUser?.role === 'admin') setIsAdminOpen(true);
+          else setIsAdminLoginOpen(true);
+        }}
+      />
 
-      {/* PC View Floating Circle Widget (Bottom Right) with Three Horizontal Lines */}
-      <div className="fixed bottom-6 right-6 z-50 hidden sm:flex flex-col items-end">
-        {/* Expanded Floating Popover Menu */}
+      {/* Floating Circle Quick Links Widget at Bottom Right */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
         {isWidgetMenuOpen && (
-          <div className="mb-3 w-60 rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 p-3 shadow-2xl space-y-2 animate-in fade-in slide-in-from-bottom-3 duration-200 text-stone-100">
+          <div className="mb-3 w-60 rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 p-3 shadow-2xl space-y-2 text-stone-100 animate-in fade-in slide-in-from-bottom-3 duration-200">
             <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2 pt-1 pb-1 border-b border-white/10 flex items-center justify-between">
               <span>Quick Links</span>
               <Sparkles className="w-3 h-3 text-emerald-400" />
             </div>
 
-            {/* 1. Community Chat */}
             <button
               onClick={() => {
                 setIsWidgetMenuOpen(false);
-                setHasNewChat(false);
                 setIsChatOpen(true);
               }}
-              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 hover:border-emerald-500/40 border border-white/5 transition-all text-left text-xs font-bold text-stone-200 hover:text-white cursor-pointer group"
+              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 border border-white/5 transition-all text-left text-xs font-bold text-stone-200 hover:text-white cursor-pointer"
             >
-              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-black transition-colors">
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
                 <MessageSquare className="w-4 h-4" />
               </div>
-              <div className="flex-1">
-                <span>Community Chat</span>
-                {hasNewChat && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />}
-              </div>
+              <span>Community Chat</span>
             </button>
 
-            {/* 2. CamGo AI */}
             <button
               onClick={() => {
                 setIsWidgetMenuOpen(false);
                 setIsAiOpen(true);
               }}
-              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-stone-800/80 hover:bg-teal-600/20 hover:border-teal-500/40 border border-white/5 transition-all text-left text-xs font-bold text-stone-200 hover:text-white cursor-pointer group"
+              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-teal-600/20 border border-white/5 transition-all text-left text-xs font-bold text-stone-200 hover:text-white cursor-pointer"
             >
-              <div className="p-2 rounded-lg bg-teal-500/20 text-teal-400 group-hover:bg-teal-500 group-hover:text-black transition-colors">
-                <Sparkles className="w-4 h-4 animate-spin duration-3000" />
+              <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-400">
+                <Sparkles className="w-4 h-4" />
               </div>
               <span>CamGo AI</span>
             </button>
 
-            {/* 3. Find My Party / Group Beacon */}
             <button
               onClick={() => {
                 setIsWidgetMenuOpen(false);
                 setIsFindMyPartyOpen(true);
               }}
-              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 hover:border-emerald-500/40 border border-white/5 transition-all text-left text-xs font-bold text-emerald-300 hover:text-emerald-100 cursor-pointer group"
+              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 border border-white/5 transition-all text-left text-xs font-bold text-emerald-300 hover:text-emerald-100 cursor-pointer"
             >
-              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-black transition-colors">
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
                 <Users className="w-4 h-4" />
               </div>
-              <div className="flex-1">
-                <span>Find My Party</span>
-                <span className="block text-[10px] text-stone-400 font-normal">Live Group Beacon &amp; Map</span>
-              </div>
+              <span>Find My Party</span>
             </button>
 
-            {/* 4. Trail Engine */}
             <button
               onClick={() => {
                 setIsWidgetMenuOpen(false);
                 setIsTrailEngineOpen(true);
               }}
-              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-stone-800/80 hover:bg-indigo-600/20 hover:border-indigo-500/40 border border-white/5 transition-all text-left text-xs font-bold text-indigo-300 hover:text-indigo-100 cursor-pointer group"
+              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-indigo-600/20 border border-white/5 transition-all text-left text-xs font-bold text-indigo-300 hover:text-indigo-100 cursor-pointer"
             >
-              <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+              <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
                 <Compass className="w-4 h-4" />
               </div>
               <span>Offline Trail Engine</span>
             </button>
 
-            {/* 5. SOS */}
             <button
               onClick={() => {
                 setIsWidgetMenuOpen(false);
                 window.dispatchEvent(new CustomEvent('open-emergency-sos'));
               }}
-              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-stone-800/80 hover:bg-rose-600/20 hover:border-rose-500/40 border border-white/5 transition-all text-left text-xs font-bold text-rose-300 hover:text-rose-100 cursor-pointer group"
+              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-rose-600/20 border border-white/5 transition-all text-left text-xs font-bold text-rose-300 hover:text-rose-100 cursor-pointer"
             >
-              <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400 group-hover:bg-rose-500 group-hover:text-white transition-colors">
-                <ShieldAlert className="w-4 h-4 animate-pulse" />
+              <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400">
+                <ShieldAlert className="w-4 h-4" />
               </div>
               <span>SOS Emergency</span>
-            </button>
-
-            {/* 6. Masjid & Surau */}
-            <button
-              onClick={() => {
-                setIsWidgetMenuOpen(false);
-                setIsMasjidModalOpen(true);
-              }}
-              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 hover:border-emerald-500/40 border border-white/5 transition-all text-left text-xs font-bold text-emerald-300 hover:text-emerald-100 cursor-pointer group"
-            >
-              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-black transition-colors">
-                <span className="text-base">🕌</span>
-              </div>
-              <div className="flex-1">
-                <span>Masjid &amp; Surau</span>
-                <span className="block text-[10px] text-stone-400 font-normal">Prayer Times &amp; Directions</span>
-              </div>
             </button>
           </div>
         )}
 
-        {/* Floating Circle Button with 3 Horizontal Lines */}
         <button
           onClick={() => setIsWidgetMenuOpen(!isWidgetMenuOpen)}
           aria-label="Toggle Quick Navigation Menu"
           className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl shadow-emerald-950/80 border border-emerald-400/40 flex items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95"
-          title="Quick Links: Community Chat, CamGo AI, Find My Party, SOS"
+          title="Quick Links"
         >
-          {isWidgetMenuOpen ? (
-            <X className="w-6 h-6 text-white" />
-          ) : (
-            <Menu className="w-6 h-6 text-white" />
-          )}
+          {isWidgetMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
       </div>
 
-      {/* Emergency SOS Widget Controller */}
-      <EmergencySosWidget language={language} hideTriggerOnMobile={true} />
-
-      {/* Mobile-Only Radial Circle Menu Widget */}
-      <MobileRadialMenu
-        language={language}
-        onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
-        onOpenFindMyParty={() => setIsFindMyPartyOpen(true)}
-        onOpenMasjidSurau={() => setIsMasjidModalOpen(true)}
-        onOpenAiChat={() => setIsAiOpen(true)}
-        onOpenChatLounge={() => {
-          setHasNewChat(false);
-          setIsChatOpen(true);
-        }}
-        onOpenTrailEngine={() => setIsTrailEngineOpen(true)}
-        hasNewChat={hasNewChat}
-        onClearNewChat={() => setHasNewChat(false)}
-        hasUrgentSos={hazards.some(h => h.severity === 'critical' || h.type === 'landslide')}
+      {/* Standalone Chat Lounge Modal */}
+      <ChatLoungeModal
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        currentUser={currentUser}
+        initialDmUserId={chatInitialDmUserId}
+        initialChannelId={chatInitialChannelId}
       />
 
-      {/* Masjid & Surau Dedicated Scrollable Modal */}
-      <MasjidSurauModal
-        isOpen={isMasjidModalOpen}
-        onClose={() => setIsMasjidModalOpen(false)}
-        language={language}
-        places={places}
-        onSelectPlaceForMap={handleSelectPlaceForMap}
-      />
+      {/* AI Chat Modal */}
+      <AiChatModal isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} language={language} />
 
-      {/* Smart Parking & EV Charging Bay Finder Modal */}
-      <SmartParkingEvModal
-        isOpen={isParkingEvOpen}
-        onClose={() => setIsParkingEvOpen(false)}
-        language={language}
-        onSelectOnMap={(lat, lng) => {
-          setIsParkingEvOpen(false);
-          setIsMapModalOpen(true);
-          setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('focus-hotspot-on-map', { detail: [lat, lng] }));
-          }, 250);
-        }}
-      />
-
-      {/* Chat Modal */}
-      {isChatOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 overflow-hidden animate-in fade-in duration-200"
-          onClick={() => setIsChatOpen(false)}
-        >
-          <div
-            className="w-full max-w-2xl h-[92vh] sm:h-[86vh] bg-stone-900 rounded-3xl border border-emerald-500/30 shadow-2xl flex flex-col overflow-hidden relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <UserLounge
-              posts={loungePosts}
+      {/* Map Modal */}
+      {isMapModalOpen && (
+        <div className="fixed inset-0 z-[110] bg-stone-950 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 bg-stone-900 border-b border-stone-800">
+            <h3 className="font-bold text-emerald-400 text-sm">Cameron Highlands Interactive Map</h3>
+            <button onClick={() => setIsMapModalOpen(false)} className="p-1.5 rounded-lg bg-stone-800 text-white cursor-pointer">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 relative">
+            <InteractiveMap
+              places={places}
               language={language}
-              currentUser={currentUser}
-              onPostUpdate={refreshStorageData}
-              onClose={() => setIsChatOpen(false)}
+              selectedPlace={selectedPlaceForMap}
+              onSelectPlace={(p) => setSelectedPlaceForMap(p)}
+              onClose={() => setIsMapModalOpen(false)}
             />
           </div>
         </div>
       )}
 
-      {/* AI Chat Modal */}
-      <AiChatModal
-        isOpen={isAiOpen}
-        onClose={() => setIsAiOpen(false)}
+      {/* Motorbike Rental Modal */}
+      <MotorbikeRentalModal
+        isOpen={isMotorbikeRentalOpen}
+        onClose={() => setIsMotorbikeRentalOpen(false)}
         language={language}
       />
 
-     {/* Admin Login Gateway Modal */}
-{isAdminLoginOpen && (
-  <AdminLoginPage
-    onClose={() => setIsAdminLoginOpen(false)}
-    onSuccess={(user) => {
-      // 1. Explicitly store admin user profile
-      setCurrentUser(user);
-      
-      // 2. Close gateway modal and open full Control Room
-      setIsAdminLoginOpen(false);
-      setIsAdminOpen(true);
-      
-      // 3. Sync local storage state
-      refreshStorageData();
-    }}
-  />
-)}
-
-{/* Full Admin Dashboard Control Room */}
-{isAdminOpen && (
-  <AdminDashboard
-    language={language}
-    currentUser={currentUser || {
-      uid: 'admin-hazry-01',
-      email: 'ayahsyirah77@gmail.com',
-      displayName: 'Muhammad Hazry (Admin)',
-      role: 'admin',
-      bookmarks: [],
-      createdAt: new Date().toISOString(),
-    }}
-    onClose={() => setIsAdminOpen(false)}
-    onRefreshData={refreshStorageData}
-    places={places}
-    gallery={galleryItems}
-    events={events}
-  />
-)}
-      {/* User Profile & Itinerary Dashboard Modal */}
-      {isUserDashboardOpen && currentUser && (
-        <UserDashboard
-          currentUser={currentUser}
-          language={language}
-          places={places}
-          initialTab={userDashboardInitialTab}
-          onClose={() => setIsUserDashboardOpen(false)}
-          onSelectPlaceForMap={handleSelectPlaceForMap}
-          onToggleBookmark={handleToggleBookmark}
-        />
-      )}
-
-      {/* Visual Split-Screen Itinerary & Interactive Mapping */}
+      {/* Itinerary Modal */}
       {isItineraryOpen && (
         <VisualSplitItinerary
           places={places}
@@ -883,382 +464,8 @@ export default function App() {
         />
       )}
 
-      {/* Full-Screen Map Modal */}
-      {isMapModalOpen && (
-        <div className="fixed inset-0 z-[110] bg-stone-950 flex flex-col animate-in fade-in duration-200">
-          {/* Header visible ONLY on desktop (sm:flex), completely removed in mobile view */}
-          <div className="sticky top-0 z-50 hidden sm:flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <h2 className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
-                {language === 'bm' ? 'Peta Interaktif & Navigasi GPS' : 'Intelligent Map Navigator'}
-              </h2>
-            </div>
-            <button
-              onClick={() => setIsMapModalOpen(false)}
-              className="p-1.5 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
-              aria-label="Close map"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col h-full w-full">
-            <InteractiveMap
-              places={places}
-              language={language}
-              selectedPlace={selectedPlaceForMap}
-              onSelectPlace={(place) => {
-                setSelectedPlaceForMap(place);
-              }}
-              onClose={() => setIsMapModalOpen(false)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* User Auth Modal */}
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        language={language}
-        onSuccess={(accountType) => {
-          const user = firebaseService.getCurrentUser();
-          setCurrentUser(user);
-          setIsAuthOpen(false);
-          refreshStorageData();
-
-          if (accountType === 'business') {
-            if (user) {
-              const userListings = firebaseService.getVendorListings().filter(
-                (l) => l.ownerUid === user.uid || l.ownerEmail === user.email
-              );
-              if (userListings.length > 0 || user.role === 'admin') {
-                setIsVendorDashboardOpen(true);
-              } else {
-                setIsVendorOnboardingOpen(true);
-              }
-            } else {
-              setIsVendorOnboardingOpen(true);
-            }
-          }
-        }}
-      />
-
-      {/* Capsule Popup Modal */}
-      {activeCapsuleModal && (
-        <div
-          className="fixed inset-0 z-[120] p-2 sm:p-4 overflow-y-auto bg-black/90 backdrop-blur-2xl flex justify-center items-start sm:items-center py-4 sm:py-8"
-          onClick={() => setActiveCapsuleModal(null)}
-        >
-          <div
-            className="glass-panel w-full max-w-5xl max-h-[90vh] flex flex-col rounded-3xl p-4 sm:p-6 bg-stone-900/95 border border-emerald-500/50 shadow-[0_0_60px_rgba(16,185,129,0.25)] relative backdrop-blur-2xl my-auto overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Always-visible Sticky Top Header with Close Button */}
-            <div className="sticky top-0 z-30 flex items-center justify-between pb-3 mb-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
-              <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                {activeCapsuleModal === 'traffic'
-                  ? (language === 'bm' ? 'Pusat Trafik & Status Jalan Raya' : 'Highlands Traffic Hub & Telemetry')
-                  : activeCapsuleModal === 'microclimate'
-                  ? (language === 'bm' ? 'Mikroiklim & Ketinggian' : 'Highlands Microclimate & Altitude')
-                  : activeCapsuleModal === 'hazard'
-                  ? (language === 'bm' ? 'Amaran Bahaya & Keselamatan' : 'Highlands Hazard Alerts & Safety')
-                  : (language === 'bm' ? 'Acara & Festival Tanah Tinggi' : 'Highland Events & Festivals')}
-              </span>
-              <button
-                onClick={() => setActiveCapsuleModal(null)}
-                className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
-                aria-label="Close modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Scrollable Content Body */}
-            <div className="flex-1 overflow-y-auto touch-pan-y space-y-6 pr-1">
-
-            {/* Microclimate (Includes Altitude) */}
-            {activeCapsuleModal === 'microclimate' && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    <Mountain className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-heading font-extrabold text-stone-100">
-                      Microclimate & Altitude (1,440m - 2,032m ASL)
-                    </h3>
-                  </div>
-                </div>
-                <WeatherWidget weatherList={weatherList} language={language} />
-              </div>
-            )}
-
-            {/* Traffic Modal Content */}
-            {activeCapsuleModal === 'traffic' && (
-              <div className="space-y-6">
-                <TrafficWidget
-                  alerts={trafficAlerts}
-                  language={language}
-                  onSelectRouteOnMap={(roadName, coords) => {
-                    setActiveCapsuleModal(null);
-                    setIsMapModalOpen(true);
-                    if (coords) {
-                      setTimeout(() => {
-                        window.dispatchEvent(new CustomEvent('focus-hotspot-on-map', { detail: coords }));
-                      }, 250);
-                    } else {
-                      window.dispatchEvent(new CustomEvent('focus-approach-routes'));
-                    }
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Hazard Modal Content */}
-            {activeCapsuleModal === 'hazard' && (
-              <div className="space-y-4">
-                <h3 className="text-xl font-bold text-stone-100">Live Hazard Alerts</h3>
-                <HazardWidget hazards={hazards} language={language} />
-              </div>
-            )}
-
-            {/* Events Modal Content */}
-            {activeCapsuleModal === 'events' && (
-              <div className="space-y-4">
-                <EventsWidget events={events} language={language} />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    )}
-
-      {/* Verified Directories Modal Popup (click outside to close) */}
-      {isDirectoriesModalOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center bg-black/85 backdrop-blur-md p-2 overflow-y-auto"
-          onClick={() => setIsDirectoriesModalOpen(false)}
-        >
-          <div
-            className="glass-panel w-full max-w-7xl mt-16 mb-20 pb-28 overflow-y-auto rounded-3xl p-4 sm:p-6 bg-stone-900 border border-emerald-500/30 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Sticky Top Close Bar */}
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10 sticky top-0 bg-stone-900/95 backdrop-blur-md z-30 pt-1">
-              <span className="text-xs font-mono font-bold text-emerald-400">Verified Highland Directories</span>
-              <button
-                onClick={() => setIsDirectoriesModalOpen(false)}
-                className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <DirectorySection
-              places={places}
-              language={language}
-              selectedCategory={selectedCategory}
-              selectedSubCategory={selectedSubCategory}
-              onSelectCategory={(cat, sub) => {
-                setSelectedCategory(cat);
-                setSelectedSubCategory(sub);
-              }}
-              onSelectPlaceForMap={(place) => {
-                setIsDirectoriesModalOpen(false);
-                handleSelectPlaceForMap(place);
-              }}
-              bookmarkedIds={currentUser?.bookmarks || []}
-              onToggleBookmark={handleToggleBookmark}
-              onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Portals Hub Modal Popup (click outside to close) */}
-      {isPortalsModalOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center bg-black/85 backdrop-blur-md p-2 overflow-y-auto"
-          onClick={() => setIsPortalsModalOpen(false)}
-        >
-          <div
-            className="glass-panel w-full max-w-7xl mt-16 mb-20 pb-28 overflow-y-auto rounded-3xl p-4 sm:p-6 bg-stone-900 border border-teal-500/30 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Sticky Top Close Bar */}
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10 sticky top-0 bg-stone-900/95 backdrop-blur-md z-30 pt-1">
-              <span className="text-xs font-mono font-bold text-teal-400">Highlands Portal Hub</span>
-              <button
-                onClick={() => setIsPortalsModalOpen(false)}
-                className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <PortalsSection
-              language={language}
-              onExploreTownOnMap={(town) => {
-                setIsPortalsModalOpen(false);
-                const match = places.find((p) => p.township === town);
-                if (match) setSelectedPlaceForMap(match);
-                setIsMapModalOpen(true);
-              }}
-              onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
-              onOpenVendorPortal={() => {
-                setIsPortalsModalOpen(false);
-                handleOpenVendorPortal();
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Dedicated Classifieds & Job Postings Modal */}
-      <ClassifiedsModal
-        isOpen={isClassifiedsModalOpen}
-        onClose={() => setIsClassifiedsModalOpen(false)}
-        language={language}
-        currentUser={currentUser}
-        onOpenPostClassified={() => {
-          setIsClassifiedsModalOpen(false);
-          setUserDashboardInitialTab('classifieds');
-          setIsUserDashboardOpen(true);
-        }}
-      />
-      {/* Interactive Gallery Modal Popup (click outside to close) */}
-      {isGalleryModalOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
-          onClick={() => setIsGalleryModalOpen(false)}
-        >
-          <div
-            className="glass-panel w-full max-w-7xl mt-12 mb-20 pb-12 overflow-y-auto rounded-3xl p-4 sm:p-6 bg-stone-900 border border-emerald-500/30 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Sticky Top Close Bar */}
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10 sticky top-0 bg-stone-900/95 backdrop-blur-md z-30 pt-1">
-              <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                Visual Highlights &amp; Highland Horizons
-              </span>
-              <button
-                onClick={() => setIsGalleryModalOpen(false)}
-                className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <GalleryCarousel items={galleryItems} onSelectPlace={handleSelectPlaceForMap} />
-          </div>
-        </div>
-      )}
-
-      {/* Offline Trail Engine Modal */}
-      <OfflineTrailEngineModal
-        isOpen={isTrailEngineOpen}
-        onClose={() => setIsTrailEngineOpen(false)}
-        language={language}
-        currentUser={currentUser}
-        onOpenAuth={() => setIsAuthOpen(true)}
-      />
-
-      {/* Vendor Management Dashboard Modal */}
-      <VendorDashboard
-        isOpen={isVendorDashboardOpen}
-        onClose={() => setIsVendorDashboardOpen(false)}
-        currentUser={currentUser}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenOnboarding={() => {
-          setIsVendorDashboardOpen(false);
-          setIsVendorOnboardingOpen(true);
-        }}
-        onSignOut={() => {
-          setCurrentUser(null);
-          refreshStorageData();
-        }}
-        onOpenAdmin={() => {
-          if (currentUser?.role === 'admin' || currentUser?.email === 'ayahsyirah77@gmail.com') {
-            setIsAdminOpen(true);
-          } else {
-            setIsAdminLoginOpen(true);
-          }
-        }}
-      />
-
-      {/* Vendor Onboarding Modal */}
-      <VendorOnboardingModal
-        isOpen={isVendorOnboardingOpen}
-        onClose={() => setIsVendorOnboardingOpen(false)}
-        currentUser={currentUser}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onOnboardingComplete={() => {
-          setIsVendorOnboardingOpen(false);
-          setIsVendorDashboardOpen(true);
-        }}
-      />
-
-      {/* Farm Pass & Ticket Comparison Matrix Modal */}
-      <FarmTicketMatrixModal
-        isOpen={isFarmMatrixOpen}
-        onClose={() => setIsFarmMatrixOpen(false)}
-        language={language}
-        onAddAttractionCost={(ticket) => {
-          window.dispatchEvent(
-            new CustomEvent('add-itinerary-budget-item', {
-              detail: {
-                title: ticket.name,
-                estimatedCost: ticket.adultPriceRm,
-                township: ticket.township,
-              },
-            })
-          );
-        }}
-      />
-
-      {/* Find My Party (Group Beacon) Modal */}
-      <FindMyPartyModal
-        isOpen={isFindMyPartyOpen}
-        onClose={() => setIsFindMyPartyOpen(false)}
-        language={language}
-      />
-
-      {/* Motorbike & Scooter Rental Marketplace Modal */}
-      <MotorbikeRentalModal
-        isOpen={isMotorbikeRentalOpen}
-        onClose={() => setIsMotorbikeRentalOpen(false)}
-        language={language}
-        currentUser={currentUser}
-      />
-
-      {/* Standalone Real-Time Traveler Currency Converter Modal */}
-      <CurrencyConverterModal
-        isOpen={isCurrencyConverterOpen}
-        onClose={() => setIsCurrencyConverterOpen(false)}
-        language={language}
-      />
-
-      {/* Back To Top Floating Action */}
-      <BackToTop />
-
-      {/* Multi-Channel Real-Time Notification Center & Simulation Dock */}
-      <NotificationCenter {...notificationEngine} language={language} />
-
-      {/* Navigation Prompt Modal */}
-      <NavigationPromptModal
-        language={language}
-        onNavigateInternal={(place) => {
-          setSelectedPlaceForMap(place);
-          setIsMapModalOpen(true);
-          const fireRoute = () => {
-            window.dispatchEvent(new CustomEvent('trigger-route-to-place', { detail: place }));
-          };
-          fireRoute();
-          setTimeout(fireRoute, 150);
-          setTimeout(fireRoute, 400);
-        }}
-      />
+      {/* Auth Modal */}
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onSuccess={() => setCurrentUser(firebaseService.getCurrentUser())} />
     </div>
   );
 }
