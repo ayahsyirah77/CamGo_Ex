@@ -46,10 +46,13 @@ export function usePWAInstall() {
 
   const installPWA = async (): Promise<{ success: boolean; reason?: string }> => {
     if (!deferredPrompt) {
-      // If inside an iframe, top-level window open allows native beforeinstallprompt to capture
-      if (typeof window !== 'undefined' && window.self !== window.top) {
-        window.open(window.location.href, '_blank');
-        return { success: false, reason: 'opened-top-level' };
+      if (typeof window !== 'undefined') {
+        if (window.self !== window.top) {
+          window.open('/?chat=true#chat', '_blank');
+        } else {
+          window.location.href = '/?chat=true#chat';
+        }
+        return { success: true, reason: 'launched-chat' };
       }
       return { success: false, reason: 'no-prompt' };
     }
