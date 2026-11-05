@@ -19,8 +19,8 @@ interface MasjidSurauModalProps {
   isOpen: boolean;
   onClose: () => void;
   language: Language;
-  places: Place[];
-  onSelectPlaceForMap: (place: Place) => void;
+  places?: Place[];
+  onSelectPlaceForMap?: (place: Place) => void;
 }
 
 // Cameron Highlands falls under Zon 3 Pahang (Cameron Highlands, Genting Highlands, Bukit Fraser)
@@ -30,8 +30,8 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
   isOpen,
   onClose,
   language,
-  places,
-  onSelectPlaceForMap,
+  places = [],
+  onSelectPlaceForMap = () => {},
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTownFilter, setSelectedTownFilter] = useState<string>('all');
@@ -87,7 +87,7 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
 
   // Filter only masjid_surau places
   const allMasjidPlaces = useMemo(() => {
-    return places.filter(
+    return (places || []).filter(
       (p) =>
         p.subCategory === 'masjid_surau' ||
         p.subCategory === 'jumaat_masjid' ||

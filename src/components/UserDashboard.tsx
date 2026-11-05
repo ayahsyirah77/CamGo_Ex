@@ -35,9 +35,9 @@ import { CurrencyConverterWidget } from './CurrencyConverterWidget';
 
 
 interface UserDashboardProps {
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   language: Language;
-  places: Place[];
+  places?: Place[];
   onClose: () => void;
   onSelectPlaceForMap: (place: Place) => void;
   onToggleBookmark: (placeId: string) => void;
@@ -161,7 +161,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   onToggleBookmark,
   initialTab = 'bookmarks',
 }) => {
-  const isLocalUser = Boolean(currentUser.isLocal) || currentUser.email === 'ayahsyirah77@gmail.com';
+  const isLocalUser = Boolean(currentUser?.isLocal) || currentUser?.email === 'ayahsyirah77@gmail.com';
   const [activeTab, setActiveTab] = useState<'bookmarks' | 'itinerary' | 'classifieds' | 'profile' | 'emergency-card' | 'online-payment'>(
     initialTab === 'itinerary' && isLocalUser ? 'profile' : initialTab
   );
@@ -232,17 +232,17 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   }, [activeTab]);
 
   // Profile & Address State (New Security Measure: Visitor vs Local)
-  const [editName, setEditName] = useState(currentUser.displayName);
-  const [editFullName, setEditFullName] = useState(currentUser.fullName || currentUser.displayName);
-  const [editEmail, setEditEmail] = useState(currentUser.email);
-  const [editContact, setEditContact] = useState(currentUser.contactNumber || '');
-  const [editIsLocal, setEditIsLocal] = useState<boolean>(currentUser.isLocal ?? false);
-  const [editStreet, setEditStreet] = useState<string>((currentUser as any).street || currentUser.address || '');
-  const [editPostcode, setEditPostcode] = useState<string>((currentUser as any).postcode || '39000');
-  const [editTown, setEditTown] = useState<Township>((currentUser as any).town || 'Tanah Rata');
-  const [editDistrict, setEditDistrict] = useState<string>((currentUser as any).district || '');
-  const [editState, setEditState] = useState<string>((currentUser as any).state || 'Perak');
-  const [editPhotoUrl, setEditPhotoUrl] = useState(currentUser.photoURL || '');
+  const [editName, setEditName] = useState(currentUser?.displayName || 'Traveler');
+  const [editFullName, setEditFullName] = useState(currentUser?.fullName || currentUser?.displayName || 'Traveler');
+  const [editEmail, setEditEmail] = useState(currentUser?.email || '');
+  const [editContact, setEditContact] = useState(currentUser?.contactNumber || '');
+  const [editIsLocal, setEditIsLocal] = useState<boolean>(currentUser?.isLocal ?? false);
+  const [editStreet, setEditStreet] = useState<string>((currentUser as any)?.street || currentUser?.address || '');
+  const [editPostcode, setEditPostcode] = useState<string>((currentUser as any)?.postcode || '39000');
+  const [editTown, setEditTown] = useState<Township>((currentUser as any)?.town || 'Tanah Rata');
+  const [editDistrict, setEditDistrict] = useState<string>((currentUser as any)?.district || '');
+  const [editState, setEditState] = useState<string>((currentUser as any)?.state || 'Perak');
+  const [editPhotoUrl, setEditPhotoUrl] = useState(currentUser?.photoURL || '');
   const [profileSuccessMessage, setProfileSuccessMessage] = useState('');
   const [profileErrorMessage, setProfileErrorMessage] = useState('');
   const [uploadMeta, setUploadMeta] = useState<string | null>(null);
@@ -368,8 +368,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   // Bookmarked places
-  const bookmarkedPlaces = places.filter((p) =>
-    currentUser.bookmarks.includes(p.id)
+  const bookmarkedPlaces = (places || []).filter((p) =>
+    currentUser?.bookmarks?.includes(p.id)
   );
 
   // User Classifieds state
@@ -426,12 +426,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const handleOpenAddJob = () => {
     setEditingJobId(null);
     setJobTitle('');
-    setJobCompany(currentUser.displayName || 'Highland Community Member');
+    setJobCompany(currentUser?.displayName || 'Highland Community Member');
     setJobTownship('Tanah Rata');
     setJobType('Job Offer');
     setJobSalary('RM 2,000 / month');
     setJobDescription('');
-    setJobContact(currentUser.email || '');
+    setJobContact(currentUser?.email || '');
     setShowJobModal(true);
   };
 
@@ -461,8 +461,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       contact: jobContact,
       postedDate: new Date().toISOString().split('T')[0],
       isUserCreated: true,
-      authorEmail: currentUser.email,
-      authorName: currentUser.displayName,
+      authorEmail: currentUser?.email || 'guest@camgo.my',
+      authorName: currentUser?.displayName || 'Highland Explorer',
     };
 
     const updated = firebaseService.saveJob(newJob);
@@ -813,22 +813,22 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         {/* User Profile Card - Circular Avatar & Auto-Fit for Mobile */}
         <div className="p-3 sm:p-5 rounded-2xl sm:rounded-3xl glass-panel bg-stone-900/80 border border-white/5 flex flex-row items-center gap-3 sm:gap-4">
           <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-emerald-400 shadow-md shrink-0 aspect-square bg-emerald-950/80 flex items-center justify-center">
-            {currentUser.photoURL ? (
+            {currentUser?.photoURL ? (
               <img
                 src={currentUser.photoURL}
-                alt={currentUser.displayName}
+                alt={currentUser.displayName || 'User'}
                 className="w-full h-full object-cover object-center rounded-full"
               />
             ) : (
               <span className="text-lg sm:text-xl font-black text-emerald-300 uppercase">
-                {currentUser.displayName ? currentUser.displayName.charAt(0) : 'U'}
+                {currentUser?.displayName ? currentUser.displayName.charAt(0) : 'U'}
               </span>
             )}
           </div>
           <div className="text-left flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <h4 className="text-sm sm:text-lg font-bold text-stone-100 truncate">{currentUser.displayName}</h4>
-              {currentUser.email === 'ayahsyirah77@gmail.com' && (
+              <h4 className="text-sm sm:text-lg font-bold text-stone-100 truncate">{currentUser?.displayName || 'Traveler'}</h4>
+              {currentUser?.email === 'ayahsyirah77@gmail.com' && (
                 <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-[9px] sm:text-xs font-bold uppercase tracking-wider">
                   MASTER ADMIN
                 </span>
@@ -837,11 +837,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 Highland Explorer Level 2
               </span>
             </div>
-            <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 font-mono truncate">{currentUser.email}</p>
+            <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 font-mono truncate">{currentUser?.email || 'guest@camgo.my'}</p>
             <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[10px] sm:text-xs text-stone-300">
               <span className="flex items-center gap-1">
                 <Bookmark className="w-3 h-3 text-emerald-400" />
-                <span>{currentUser.bookmarks.length} Bookmarked</span>
+                <span>{currentUser?.bookmarks?.length || 0} Bookmarked</span>
               </span>
               <span className="flex items-center gap-1">
                 <CheckCircle className="w-3 h-3 text-teal-400" />

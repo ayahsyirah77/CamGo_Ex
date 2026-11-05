@@ -35,6 +35,8 @@ import {
   ArrowRightLeft,
   Car,
   Zap,
+  ShieldAlert,
+  Users,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -59,6 +61,10 @@ interface NavbarProps {
   onOpenVendorPortal?: () => void;
   onOpenFarmMatrix?: () => void;
   onOpenParkingEvModal?: () => void;
+  onOpenMasjidModal?: () => void;
+  onOpenTrailEngine?: () => void;
+  onOpenFindMyParty?: () => void;
+  onOpenSos?: () => void;
   places?: Place[];
   events?: EventNotification[];
   onSelectPlace?: (place: Place) => void;
@@ -88,6 +94,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenVendorPortal,
   onOpenFarmMatrix,
   onOpenParkingEvModal,
+  onOpenMasjidModal,
+  onOpenTrailEngine,
+  onOpenFindMyParty,
+  onOpenSos,
   places = [],
   events = [],
   onSelectPlace,
@@ -859,21 +869,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span>Business Vendor Portal</span>
                       </button>
 
-                      {(currentUser.email === 'ayahsyirah77@gmail.com' || currentUser.role === 'admin') && (
-                        <button
-                          onClick={() => {
-                            setUserDropdownOpen(false);
-                            onOpenAdmin();
-                          }}
-                          className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-red-300 hover:text-red-200 flex items-center justify-between transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4 text-red-400" />
-                            <span>Admin Control Room</span>
-                          </div>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">Admin</span>
-                        </button>
-                      )}
+                      <button
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          onOpenAdmin();
+                        }}
+                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-red-300 hover:text-red-200 flex items-center justify-between transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-red-400" />
+                          <span>Admin Control Room</span>
+                        </div>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">Admin</span>
+                      </button>
 
                       <div className="border-t border-white/10 pt-1 mt-1">
                         <button
@@ -892,18 +900,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                   )}
                 </div>
               ) : (
-                <button
-                  onClick={onOpenAuth}
-                  className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-xs font-bold text-emerald-300 hover:text-white transition-colors cursor-pointer shadow-sm shrink-0"
-                  title="Sign In"
-                >
-                  <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="leading-none whitespace-nowrap">{getTranslation(language, 'nav_signin')}</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={onOpenAuth}
+                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-xs font-bold text-emerald-300 hover:text-white transition-colors cursor-pointer shadow-sm shrink-0"
+                    title="Sign In"
+                  >
+                    <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="leading-none whitespace-nowrap">{getTranslation(language, 'nav_signin')}</span>
+                  </button>
+                </div>
               )}
             </div>
 
-            {/* Mobile Hamburger Menu Icon in Top-Right Corner */}
+            {/* Mobile Hamburger Navigation Menu Icon (Mobile & Tablet only) */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
               aria-label="Open Navigation Menu"
@@ -918,7 +928,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Graphic & Unique Mobile Slide-Out Navigation Drawer */}
       <AnimatePresence>
         {isMobileMenuOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="fixed inset-0 z-[120] lg:hidden">
             {/* Semi-transparent dark backdrop overlay */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -1241,41 +1251,65 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span className="text-xs font-bold text-amber-200 block group-hover:text-white transition-colors">
                           Business Vendor Portal
                         </span>
-                        {(currentUser?.email === 'ayahsyirah77@gmail.com' || currentUser?.role === 'admin') && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold">
-                            Admin
-                          </span>
-                        )}
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold">
+                          Vendor
+                        </span>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-                  {/* 10. Admin Control Room (if admin) */}
-                  {(currentUser?.email === 'ayahsyirah77@gmail.com' || currentUser?.role === 'admin') && (
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        onOpenAdmin();
-                      }}
-                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-red-950/30 hover:bg-red-900/50 text-red-300 hover:text-white border border-red-500/30 transition-all cursor-pointer text-left group shadow-md"
-                    >
-                      <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                        <ShieldCheck className="w-4 h-4 text-red-400" />
+                  {/* 10. Admin Control Room */}
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onOpenAdmin();
+                    }}
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-red-950/30 hover:bg-red-900/50 text-red-300 hover:text-white border border-red-500/30 transition-all cursor-pointer text-left group shadow-md"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <ShieldCheck className="w-4 h-4 text-red-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-red-200 block group-hover:text-white transition-colors">
+                          Admin Control Room
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">
+                          Admin
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-red-200 block group-hover:text-white transition-colors">
-                            Admin Control Room
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">
-                            Super
-                          </span>
-                        </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-red-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+
+                  {/* SOS Emergency Link */}
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      if (onOpenSos) {
+                        onOpenSos();
+                      } else {
+                        window.dispatchEvent(new CustomEvent('open-emergency-sos'));
+                      }
+                    }}
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-red-950/40 hover:bg-red-900/60 text-red-200 hover:text-white border border-red-500/40 transition-all cursor-pointer text-left group shadow-md"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform animate-pulse">
+                      <ShieldAlert className="w-4 h-4 text-red-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-red-200 block group-hover:text-white transition-colors">
+                          {language === 'bm' ? 'Kecemasan SOS 24/7' : 'SOS Emergency 24/7'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/30 text-red-300 font-mono font-bold">
+                          999
+                        </span>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-red-400 group-hover:translate-x-1 transition-all shrink-0" />
-                    </button>
-                  )}
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-red-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
 
                   {currentUser && (
                     <button

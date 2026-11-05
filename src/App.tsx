@@ -42,6 +42,14 @@ import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
 import { EmergencySosWidget } from './components/EmergencySosWidget';
 import { MobileRadialMenu } from './components/MobileRadialMenu';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { ClassifiedsModal } from './components/ClassifiedsModal';
+import { DirectorySection } from './components/DirectorySection';
+import { PortalsSection } from './components/PortalsSection';
+import { FindMyPartyModal } from './components/FindMyPartyModal';
+import { VendorDashboard } from './components/VendorDashboard';
+import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
+import { SmartParkingEvModal } from './components/SmartParkingEvModal';
+import { CurrencyConverterModal } from './components/CurrencyConverterModal';
 import {
   Sparkles,
   Compass,
@@ -119,6 +127,11 @@ export default function App() {
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
     null | 'microclimate' | 'traffic' | 'hazard' | 'events'
   >(null);
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+  const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
+  const [isVendorPortalOpen, setIsVendorPortalOpen] = useState(false);
+  const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
+  const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
 
   const refreshStorageData = () => {
     setPlaces(firebaseService.getPlaces());
@@ -127,21 +140,6 @@ export default function App() {
     setHazards(firebaseService.getHazardAlerts());
     setCurrentUser(firebaseService.getCurrentUser());
   };
-
-  // Lock body scroll when Chat Lounge modal is open
-  useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    if (isChatOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = originalOverflow;
-    }
-    
-    // Cleanup on unmount to ensure scrolling is always restored
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [isChatOpen]);
 
   useEffect(() => {
     refreshStorageData();
@@ -160,6 +158,21 @@ export default function App() {
       setIsChatOpen(true);
     };
     window.addEventListener('open-chat-lounge', handleOpenChatLounge);
+    
+    const handleOpenMasjid = () => setIsMasjidModalOpen(true);
+    window.addEventListener('open-masjid-modal', handleOpenMasjid);
+
+    const handleOpenTrails = () => setIsTrailEngineOpen(true);
+    window.addEventListener('open-offline-trails-modal', handleOpenTrails);
+
+    const handleOpenParty = () => setIsFindMyPartyOpen(true);
+    window.addEventListener('open-find-my-party', handleOpenParty);
+
+    const handleOpenCurrency = () => setIsCurrencyOpen(true);
+    window.addEventListener('open-currency-converter', handleOpenCurrency);
+
+    const handleOpenParking = () => setIsParkingEvOpen(true);
+    window.addEventListener('open-smart-parking-ev-modal', handleOpenParking);
 
     if (checkIsStandaloneChat()) {
       setIsStandaloneChatView(true);
@@ -168,18 +181,30 @@ export default function App() {
 
     return () => {
       window.removeEventListener('open-chat-lounge', handleOpenChatLounge);
+      window.removeEventListener('open-masjid-modal', handleOpenMasjid);
+      window.removeEventListener('open-offline-trails-modal', handleOpenTrails);
+      window.removeEventListener('open-find-my-party', handleOpenParty);
+      window.removeEventListener('open-currency-converter', handleOpenCurrency);
+      window.removeEventListener('open-smart-parking-ev-modal', handleOpenParking);
       unsubUser();
     };
   }, []);
 
   const navigateToSection = (sectionId: string) => {
+    if (sectionId === 'directories-section') {
+      setIsDirectoriesModalOpen(true);
+      return;
+    }
+    if (sectionId === 'portals-section') {
+      setIsPortalsModalOpen(true);
+      return;
+    }
     const el = document.getElementById(sectionId);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleSelectCategory = (cat: MainCategory, sub?: SubCategory) => {
     setIsDirectoriesModalOpen(true);
-    navigateToSection('directories-section');
   };
 
   const handleSelectPlaceForMap = (place: Place | null) => {
@@ -221,7 +246,13 @@ export default function App() {
         onLanguageChange={setLanguage}
         currentUser={currentUser}
         onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenAdmin={() => setIsAdminLoginOpen(true)}
+        onOpenAdmin={() => {
+          if (currentUser?.role === 'admin' || currentUser?.email === 'ayahsyirah77@gmail.com') {
+            setIsAdminOpen(true);
+          } else {
+            setIsAdminLoginOpen(true);
+          }
+        }}
         onOpenAi={() => setIsAiOpen(true)}
         onOpenUserDashboard={() => setIsUserDashboardOpen(true)}
         onSelectCategory={handleSelectCategory}
@@ -232,11 +263,15 @@ export default function App() {
         onOpenItinerary={() => setIsItineraryOpen(true)}
         onOpenMap={() => setIsMapModalOpen(true)}
         onOpenChat={() => setIsChatOpen(true)}
-        onOpenGalleryModal={() => {}}
-        onOpenCurrencyConverter={() => {}}
-        onOpenVendorPortal={() => {}}
-        onOpenFarmMatrix={() => {}}
-        onOpenParkingEvModal={() => {}}
+        onOpenGalleryModal={() => setIsGalleryOpen(true)}
+        onOpenCurrencyConverter={() => setIsCurrencyOpen(true)}
+        onOpenVendorPortal={() => setIsVendorPortalOpen(true)}
+        onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
+        onOpenParkingEvModal={() => setIsParkingEvOpen(true)}
+        onOpenMasjidModal={() => setIsMasjidModalOpen(true)}
+        onOpenTrailEngine={() => setIsTrailEngineOpen(true)}
+        onOpenFindMyParty={() => setIsFindMyPartyOpen(true)}
+        onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
         places={places}
         events={[]}
         onSelectPlace={handleSelectPlaceForMap}
@@ -387,8 +422,8 @@ export default function App() {
         }}
       />
 
-      {/* Floating Circle Quick Links Widget at Bottom Right */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+      {/* Floating Circle Quick Links Widget at Bottom Right (PC only) */}
+      <div className="hidden sm:flex fixed bottom-6 right-6 z-50 flex-col items-end">
         {isWidgetMenuOpen && (
           <div className="mb-3 w-60 rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 p-3 shadow-2xl space-y-2 text-stone-100 animate-in fade-in slide-in-from-bottom-3 duration-200">
             <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2 pt-1 pb-1 border-b border-white/10 flex items-center justify-between">
@@ -420,6 +455,19 @@ export default function App() {
                 <Sparkles className="w-4 h-4" />
               </div>
               <span>CamGo AI</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setIsWidgetMenuOpen(false);
+                setIsMasjidModalOpen(true);
+              }}
+              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 border border-white/5 transition-all text-left text-xs font-bold text-emerald-300 hover:text-emerald-100 cursor-pointer"
+            >
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                <Compass className="w-4 h-4" />
+              </div>
+              <span>Masjid & Surau</span>
             </button>
 
             <button
@@ -528,6 +576,192 @@ export default function App() {
 
       {/* Auth Modal */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onSuccess={() => setCurrentUser(firebaseService.getCurrentUser())} />
+      
+      {/* Vendor Portal Modal */}
+      {isVendorPortalOpen && (
+        <VendorDashboard
+          isOpen={isVendorPortalOpen}
+          onClose={() => setIsVendorPortalOpen(false)}
+          currentUser={currentUser}
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onOpenOnboarding={() => {}}
+        />
+      )}
+      
+      {/* Farm Matrix Modal */}
+      {isFarmMatrixOpen && (
+        <FarmTicketMatrixModal
+          isOpen={isFarmMatrixOpen}
+          onClose={() => setIsFarmMatrixOpen(false)}
+          language={language}
+        />
+      )}
+      
+      {/* Parking EV Modal */}
+      {isParkingEvOpen && (
+        <SmartParkingEvModal
+          isOpen={isParkingEvOpen}
+          onClose={() => setIsParkingEvOpen(false)}
+          language={language}
+        />
+      )}
+      
+      {/* Currency Modal */}
+      {isCurrencyOpen && (
+        <CurrencyConverterModal
+          isOpen={isCurrencyOpen}
+          onClose={() => setIsCurrencyOpen(false)}
+          language={language}
+        />
+      )}
+      
+      {/* Emergency SOS Widget */}
+      <EmergencySosWidget language={language} hideTriggerOnMobile={true} />
+
+      {/* User Dashboard */}
+      {isUserDashboardOpen && (
+        <UserDashboard
+          currentUser={currentUser}
+          language={language}
+          places={places}
+          onClose={() => setIsUserDashboardOpen(false)}
+          onSelectPlaceForMap={handleSelectPlaceForMap}
+          onToggleBookmark={(id) => {}}
+          initialTab={userDashboardInitialTab}
+        />
+      )}
+
+      {/* Admin Dashboards */}
+      {isAdminOpen && (
+        <AdminDashboard
+          language={language}
+          currentUser={currentUser}
+          onClose={() => setIsAdminOpen(false)}
+          onRefreshData={refreshStorageData}
+          places={places}
+          gallery={galleryItems}
+          events={[]}
+        />
+      )}
+      {isAdminLoginOpen && (
+        <AdminLoginPage
+          onClose={() => setIsAdminLoginOpen(false)}
+          onSuccess={(profile) => {
+            setCurrentUser(profile);
+            setIsAdminLoginOpen(false);
+            setIsAdminOpen(true);
+          }}
+        />
+      )}
+
+      {/* Masjid & Trail Modals */}
+      {isMasjidModalOpen && (
+        <MasjidSurauModal
+          isOpen={true}
+          onClose={() => setIsMasjidModalOpen(false)}
+          language={language}
+          places={places}
+          onSelectPlaceForMap={handleSelectPlaceForMap}
+        />
+      )}
+      {isTrailEngineOpen && (
+        <OfflineTrailEngineModal
+          isOpen={true}
+          onClose={() => setIsTrailEngineOpen(false)}
+          language={language}
+          currentUser={currentUser}
+          onOpenAuth={() => setIsAuthOpen(true)}
+        />
+      )}
+
+      {/* Mobile Radial Menu */}
+      <MobileRadialMenu
+        language={language}
+        onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
+        onOpenMasjidSurau={() => setIsMasjidModalOpen(true)}
+        onOpenAiChat={() => setIsAiOpen(true)}
+        onOpenChatLounge={() => setIsChatOpen(true)}
+        onOpenTrailEngine={() => setIsTrailEngineOpen(true)}
+        onOpenFindMyParty={() => setIsFindMyPartyOpen(true)}
+      />
+
+      {/* Directories Modal Dialog Wrapper */}
+      {isDirectoriesModalOpen && (
+        <div className="fixed inset-0 z-[120] bg-stone-950/95 backdrop-blur-xl overflow-y-auto p-3 sm:p-6 flex flex-col items-center">
+          <div className="w-full max-w-6xl relative">
+            <button
+              onClick={() => setIsDirectoriesModalOpen(false)}
+              className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-emerald-500/30 shadow-xl cursor-pointer"
+              aria-label="Close Directories"
+            >
+              <X className="w-5 h-5 text-emerald-400" />
+            </button>
+            <DirectorySection
+              places={places}
+              language={language}
+              selectedCategory="food"
+              onSelectCategory={handleSelectCategory}
+              onSelectPlaceForMap={(place) => {
+                setIsDirectoriesModalOpen(false);
+                handleSelectPlaceForMap(place);
+              }}
+              bookmarkedIds={currentUser?.bookmarks || []}
+              onToggleBookmark={() => {}}
+              onOpenFarmMatrix={() => {
+                setIsDirectoriesModalOpen(false);
+                setIsFarmMatrixOpen(true);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Portals / Hub Modal Dialog Wrapper */}
+      {isPortalsModalOpen && (
+        <div className="fixed inset-0 z-[120] bg-stone-950/95 backdrop-blur-xl overflow-y-auto p-3 sm:p-6 flex flex-col items-center">
+          <div className="w-full max-w-6xl relative">
+            <button
+              onClick={() => setIsPortalsModalOpen(false)}
+              className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-teal-500/30 shadow-xl cursor-pointer"
+              aria-label="Close Hub Portals"
+            >
+              <X className="w-5 h-5 text-teal-400" />
+            </button>
+            <PortalsSection
+              language={language}
+              onExploreTownOnMap={() => {
+                setIsPortalsModalOpen(false);
+                setIsMapModalOpen(true);
+              }}
+              onOpenFarmMatrix={() => {
+                setIsPortalsModalOpen(false);
+                setIsFarmMatrixOpen(true);
+              }}
+              onOpenVendorPortal={() => {
+                setIsPortalsModalOpen(false);
+                setIsVendorPortalOpen(true);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {isClassifiedsModalOpen && (
+        <ClassifiedsModal
+          isOpen={isClassifiedsModalOpen}
+          onClose={() => setIsClassifiedsModalOpen(false)}
+          language={language}
+          currentUser={currentUser}
+          onOpenPostClassified={() => {}}
+        />
+      )}
+      {isFindMyPartyOpen && (
+        <FindMyPartyModal
+          isOpen={isFindMyPartyOpen}
+          onClose={() => setIsFindMyPartyOpen(false)}
+          language={language}
+        />
+      )}
     </div>
   );
 }
