@@ -52,7 +52,7 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
     };
   }, [onInstalled]);
 
-  // 3. Trigger native Android prompt sheet or launch standalone chat app tab
+  // 3. Trigger native Android prompt sheet or navigate directly to standalone chat
   const handleInstallClick = async () => {
     if (deferredPrompt) {
       try {
@@ -64,12 +64,12 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
           if (onInstalled) onInstalled();
         }
       } catch (err) {
-        console.warn('[PWA INSTALL] Prompt error, launching standalone tab:', err);
-        window.open('/?chat=true#chat', '_blank');
+        console.warn('[PWA INSTALL] Prompt notice, launching standalone chat:', err);
+        window.location.href = '/?chat=true#chat';
       }
     } else {
-      // If inside an iframe preview or prompt pending, open direct standalone chat tab
-      window.open('/?chat=true#chat', '_blank');
+      // Direct navigation is never blocked by browser popup blockers
+      window.location.href = '/?chat=true#chat';
     }
   };
 
