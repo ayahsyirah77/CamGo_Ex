@@ -65,15 +65,14 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
           setDeferredPrompt(null);
           setShowGuideNotice(false);
           if (onInstalled) onInstalled();
+          return;
         }
       } catch (err) {
         console.warn('[PWA INSTALL] Prompt error:', err);
-        setShowGuideNotice(true);
       }
-    } else {
-      // When prompt is null (e.g. PC browser or prompt pending), display helpful guidance banner
-      setShowGuideNotice(!showGuideNotice);
     }
+    // Show instruction notice whenever button is clicked if prompt not available
+    setShowGuideNotice(!showGuideNotice);
   };
 
   if (isInstalled) {
