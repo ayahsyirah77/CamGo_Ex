@@ -114,9 +114,8 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
   }, []);
 
   const handleInstallPwa = async () => {
-    if (hasPrompt) {
-      await installPWA();
-    } else {
+    const res = await installPWA();
+    if (!res.success && res.reason !== 'opened-top-level') {
       setShowInstallGuideModal(true);
     }
   };
@@ -1484,8 +1483,8 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                 {/* Primary Automated Android Install Trigger */}
                 <button
                   onClick={async () => {
-                    const success = await installPWA();
-                    if (success) {
+                    const res = await installPWA();
+                    if (res.success || res.reason === 'opened-top-level') {
                       setShowInstallGuideModal(false);
                     }
                   }}
@@ -1495,16 +1494,28 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                   <span>📲 Install Android Shortcut Now</span>
                 </button>
 
-                {/* Safari / iOS Helper Reference */}
-                <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 space-y-1 text-[11px] text-stone-300 text-left">
+                {/* Android Chrome Browser Guidance */}
+                <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 space-y-1.5 text-[11px] text-stone-300 text-left">
                   <div className="font-bold text-emerald-400 flex items-center gap-1.5 text-[11px]">
-                    <span>🍏</span>
-                    <span>For iPhone &amp; iPad (Safari):</span>
+                    <span>🤖</span>
+                    <span>For Android (Chrome / Edge):</span>
                   </div>
                   <p className="text-stone-400">
-                    Tap the <strong>Share button (⎋)</strong> below and select <strong>"Add to Home Screen"</strong>.
+                    If prompt does not appear, tap Chrome menu <strong>(⋮ 3 dots)</strong> at top right and select <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong>.
                   </p>
                 </div>
+
+                {/* Open Standalone Chat Lounge Direct App Link */}
+                <button
+                  onClick={() => {
+                    window.open('/?chat=true#chat', '_blank');
+                    setShowInstallGuideModal(false);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-stone-700 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Launch Standalone Chat App Window</span>
+                </button>
 
                 <button
                   onClick={() => setShowInstallGuideModal(false)}

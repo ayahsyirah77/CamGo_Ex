@@ -60,6 +60,29 @@ import {
   Users,
 } from 'lucide-react';
 
+function checkIsStandaloneChat(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  // 1. Check browser display mode FIRST
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true;
+
+  if (isStandalone) return true;
+
+  // 2. Check URL query parameters and hash
+  const href = window.location.href.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+
+  return (
+    search.includes('chat') ||
+    hash.includes('chat') ||
+    hash.includes('dms') ||
+    href.includes('chat')
+  );
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>('en');
   const [places, setPlaces] = useState<Place[]>([]);
@@ -79,7 +102,8 @@ export default function App() {
     'bookmarks' | 'itinerary' | 'classifieds' | 'profile' | 'emergency-card' | 'online-payment'
   >('bookmarks');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isStandaloneChatView, setIsStandaloneChatView] = useState<boolean>(checkIsStandaloneChat);
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(checkIsStandaloneChat);
   const [chatInitialDmUserId, setChatInitialDmUserId] = useState<string | null>(null);
   const [chatInitialChannelId, setChatInitialChannelId] = useState<string | null>(null);
   const [isDirectoriesModalOpen, setIsDirectoriesModalOpen] = useState(false);
@@ -122,8 +146,8 @@ export default function App() {
     };
     window.addEventListener('open-chat-lounge', handleOpenChatLounge);
 
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('chat') || window.location.hash === '#chat') {
+    if (checkIsStandaloneChat()) {
+      setIsStandaloneChatView(true);
       setIsChatOpen(true);
     }
 
@@ -147,6 +171,24 @@ export default function App() {
     setSelectedPlaceForMap(place);
     if (place) setIsMapModalOpen(true);
   };
+
+  // If launched via shortcut (/?chat=true or standalone mode), render ONLY Chat Lounge full-screen
+  if (isStandaloneChatView) {
+    return (
+      <div className="fixed inset-0 bg-stone-950 text-stone-100 flex flex-col font-sans overflow-hidden">
+        <ChatLoungeModal
+          isOpen={true}
+          onClose={() => {
+            setIsStandaloneChatView(false);
+            setIsChatOpen(false);
+          }}
+          currentUser={currentUser}
+          initialDmUserId={chatInitialDmUserId}
+          initialChannelId={chatInitialChannelId}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950">

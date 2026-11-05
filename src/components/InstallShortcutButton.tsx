@@ -52,19 +52,24 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
     };
   }, [onInstalled]);
 
-  // 3. Trigger native Android prompt sheet on click
+  // 3. Trigger native Android prompt sheet or launch standalone chat app tab
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-
-    // Launch native Android installation prompt
-    await deferredPrompt.prompt();
-
-    // Await user's selection
-    const choiceResult = await deferredPrompt.userChoice;
-    if (choiceResult.outcome === 'accepted') {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-      if (onInstalled) onInstalled();
+    if (deferredPrompt) {
+      try {
+        await deferredPrompt.prompt();
+        const choiceResult = await deferredPrompt.userChoice;
+        if (choiceResult.outcome === 'accepted') {
+          setIsInstalled(true);
+          setDeferredPrompt(null);
+          if (onInstalled) onInstalled();
+        }
+      } catch (err) {
+        console.warn('[PWA INSTALL] Prompt error, launching standalone tab:', err);
+        window.open('/?chat=true#chat', '_blank');
+      }
+    } else {
+      // If inside an iframe preview or prompt pending, open direct standalone chat tab
+      window.open('/?chat=true#chat', '_blank');
     }
   };
 
@@ -75,11 +80,6 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
         <span>Installed</span>
       </div>
     );
-  }
-
-  if (!deferredPrompt) {
-    // Hidden until browser fires beforeinstallprompt or when already installed
-    return null;
   }
 
   if (variant === 'full') {

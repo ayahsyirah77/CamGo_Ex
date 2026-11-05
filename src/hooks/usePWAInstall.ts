@@ -44,16 +44,29 @@ export function usePWAInstall() {
     };
   }, []);
 
-  const installPWA = async () => {
-    if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-      return true;
+  const installPWA = async (): Promise<{ success: boolean; reason?: string }> => {
+    if (!deferredPrompt) {
+      // If inside an iframe, top-level window open allows native beforeinstallprompt to capture
+      if (typeof window !== 'undefined' && window.self !== window.top) {
+        window.open(window.location.href, '_blank');
+        return { success: false, reason: 'opened-top-level' };
+      }
+      return { success: false, reason: 'no-prompt' };
     }
-    return false;
+
+    try {
+      await deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setIsInstalled(true);
+        setDeferredPrompt(null);
+        return { success: true };
+      }
+      return { success: false, reason: 'dismissed' };
+    } catch (err: any) {
+      console.warn('[PWA INSTALL] Error calling prompt:', err);
+      return { success: false, reason: 'error' };
+    }
   };
 
   return {
