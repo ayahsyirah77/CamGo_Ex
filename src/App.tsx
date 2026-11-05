@@ -128,6 +128,21 @@ export default function App() {
     setCurrentUser(firebaseService.getCurrentUser());
   };
 
+  // Lock body scroll when Chat Lounge modal is open
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    if (isChatOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = originalOverflow;
+    }
+    
+    // Cleanup on unmount to ensure scrolling is always restored
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isChatOpen]);
+
   useEffect(() => {
     refreshStorageData();
     weatherService.fetchLiveWeather().then((res) => {
