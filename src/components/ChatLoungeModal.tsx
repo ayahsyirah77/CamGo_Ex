@@ -1467,23 +1467,42 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                   <X className="w-4 h-4" />
                 </button>
 
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-stone-950 border border-emerald-500/40 p-1 flex items-center justify-center shadow-lg shrink-0">
-                    <CamLogo size="sm" showTagline={false} />
+                <div className="flex flex-col items-center text-center space-y-2 pt-2">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 p-3 flex items-center justify-center text-white shadow-xl shrink-0">
+                    <MessageSquare className="w-8 h-8" />
                   </div>
                   <div>
-                    <h3 className="font-heading font-bold text-sm text-white">Install CamGo Chat App</h3>
-                    <p className="text-[11px] text-stone-400">Add to your Phone Home Screen</p>
+                    <h3 className="font-heading font-extrabold text-base text-white">
+                      Install CamGo Chat App
+                    </h3>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      Add 1-tap shortcut to your phone home screen
+                    </p>
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2 text-xs text-stone-300">
-                  <div className="font-bold text-emerald-400 flex items-center gap-1.5 text-xs">
+                {/* Primary Automated Android Install Trigger */}
+                <button
+                  onClick={async () => {
+                    const success = await installPWA();
+                    if (success) {
+                      setShowInstallGuideModal(false);
+                    }
+                  }}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/40 active:scale-95 transition-transform"
+                >
+                  <Smartphone className="w-4 h-4 text-emerald-200 animate-pulse" />
+                  <span>📲 Install Android Shortcut Now</span>
+                </button>
+
+                {/* Safari / iOS Helper Reference */}
+                <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 space-y-1 text-[11px] text-stone-300 text-left">
+                  <div className="font-bold text-emerald-400 flex items-center gap-1.5 text-[11px]">
                     <span>🍏</span>
                     <span>For iPhone &amp; iPad (Safari):</span>
                   </div>
-                  <p>
-                    Tap the <strong>Share button (⎋)</strong> below and select <strong>"Add to Home Screen"</strong> to install CamGo Chat.
+                  <p className="text-stone-400">
+                    Tap the <strong>Share button (⎋)</strong> below and select <strong>"Add to Home Screen"</strong>.
                   </p>
                 </div>
 
