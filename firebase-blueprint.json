@@ -254,6 +254,10 @@
     "gsap_card_images/{cardId}": {
       "schema": { "$ref": "GsapImage" },
       "description": "Collection of GSAP gallery card background images"
+    },
+    "broadcast_notifications/{notificationId}": {
+      "schema": { "$ref": "Notification" },
+      "description": "Collection of real-time multi-channel broadcast notifications"
     }
   }
 }

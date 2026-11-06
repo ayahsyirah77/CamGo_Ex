@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Place, Language, JobClassified, Township, ItineraryPlan } from '../types';
 import { INITIAL_JOBS } from '../data/initialData';
 import { UserProfile, firebaseService } from '../services/firebase';
+import { db } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import { CamLogo } from './CamLogo';
 import {
   Bookmark,
@@ -470,19 +472,29 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     setShowJobModal(false);
     setEditingJobId(null);
 
-    // Broadcast real-time posting alert over WebSocket Grid to all connected visitors
+    // Broadcast real-time posting alert over Firestore Grid to all connected visitors
     try {
+      const notifId = 'bc-job-' + Date.now();
+      const notifPayload = {
+        title: `New ${newJob.type}: ${newJob.title}`,
+        message: `${newJob.company || 'Community Listing'} (${newJob.township}) • ${newJob.salary || 'Terms negotiable'}`,
+        sender: newJob.authorName || 'Highland Explorer',
+      };
+      setDoc(doc(db, 'broadcast_notifications', notifId), {
+        event: 'job_posted',
+        priority: 'low',
+        payload: notifPayload,
+        createdAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+
       fetch('/api/notifications/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           event: 'job_posted',
           priority: 'low',
-          payload: {
-            title: `New ${newJob.type}: ${newJob.title}`,
-            message: `${newJob.company || 'Community Listing'} (${newJob.township}) • ${newJob.salary || 'Terms negotiable'}`,
-            sender: newJob.authorName || 'Highland Explorer',
-          },
+          payload: notifPayload,
         }),
       }).catch(() => {});
     } catch {

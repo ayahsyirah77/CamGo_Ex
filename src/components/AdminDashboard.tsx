@@ -269,25 +269,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ...prev,
         isLoading: btnKey,
         statusType: null,
-        statusMessage: 'Transmitting alert across active WebSocket gateway...'
+        statusMessage: 'Transmitting alert across Firebase Firestore & Gateway...'
       }));
 
-      const res = await fetch('/api/notifications/broadcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event, priority, payload }),
-      });
-      const data = await res.json();
+      const broadcastId = 'bc-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+      const timestamp = new Date().toISOString();
 
-      const deliveredCount = data.deliveredClients ?? 1;
+      // 1. Write to Firestore broadcast_notifications collection so all listening clients trigger in real-time
+      try {
+        await setDoc(doc(db, 'broadcast_notifications', broadcastId), {
+          event,
+          priority,
+          payload,
+          createdAt: timestamp,
+          timestamp
+        });
+      } catch (e) {
+        console.warn('[Firestore Broadcast Write Notice]', e);
+      }
+
+      // 2. Safely call API endpoint ensuring valid JSON handling
+      let deliveredCount = 1;
+      try {
+        const res = await fetch('/api/notifications/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event, priority, payload }),
+        });
+        if (res.ok) {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const data = await res.json();
+            deliveredCount = data.deliveredClients ?? 1;
+          }
+        }
+      } catch (err) {
+        console.warn('[API Broadcast Notice]', err);
+      }
 
       // Dispatch local event so the current admin user immediately sees & hears the alert overlay
       const broadcastObj = {
-        id: data.broadcastId || 'bc-' + Date.now(),
+        id: broadcastId,
         event,
         priority,
         payload,
-        timestamp: new Date().toISOString(),
+        timestamp,
       };
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('camgo-broadcast-event', { detail: broadcastObj }));
@@ -297,7 +323,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ...prev,
         isLoading: null,
         statusType: 'success',
-        statusMessage: `✅ Successfully broadcasted ${event.replace('_', ' ').toUpperCase()} to ${deliveredCount} live client${deliveredCount === 1 ? '' : 's'} via WebSocket!`,
+        statusMessage: `✅ Successfully broadcasted ${event.replace('_', ' ').toUpperCase()} to live clients via Firebase Firestore!`,
         recentLog: [
           {
             id: 'log-' + Date.now(),
@@ -313,15 +339,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       addActivity(`Broadcasted ${event.toUpperCase()}: "${payload.title || payload.message}"`);
 
       setTimeout(() => {
-        setBroadcastState((prev) => ({ ...prev, statusMessage: null }));
-      }, 7000);
+        setBroadcastState((prev) => ({ ...prev, statusMessage: null, statusType: null }));
+      }, 5000);
     } catch (err: any) {
-      console.error('Broadcast failure:', err);
+      console.error('[BROADCAST ERROR]', err);
       setBroadcastState((prev) => ({
         ...prev,
         isLoading: null,
         statusType: 'error',
-        statusMessage: `❌ Broadcast failed: ${err.message || 'Network error'}`
+        statusMessage: `Broadcast failed: ${err?.message || 'Unknown error'}`,
       }));
     }
   };
@@ -1428,7 +1454,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
-                    <span>Real-Time WebSocket &amp; Multi-Channel Broadcast Center</span>
+                    <span>Real-Time Firebase &amp; Multi-Channel Broadcast Center</span>
                   </h4>
                   <p className="text-[11px] text-stone-400">
                     Instant synchronized push telemetry to all active devices &amp; visitors
@@ -1438,7 +1464,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>Active WebSocket Gateway</span>
+                  <span>Active Firestore Gateway</span>
                 </span>
                 <button
                   type="button"

@@ -235,34 +235,8 @@ class ChatLoungeService {
   }
 
   private initWebSocket(): void {
-    if (typeof window === 'undefined') return;
-
-    try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}`;
-      this.ws = new WebSocket(wsUrl);
-
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.event === 'chat_message' && data.payload) {
-            this.handleIncomingMessage(data.payload, false);
-          } else if (data.event === 'chat_reaction' && data.payload) {
-            this.handleIncomingReaction(data.payload, false);
-          } else if (data.event === 'chat_typing' && data.payload) {
-            this.handleIncomingTyping(data.payload);
-          }
-        } catch {
-          // ignore
-        }
-      };
-
-      this.ws.onclose = () => {
-        setTimeout(() => this.initWebSocket(), 5000);
-      };
-    } catch {
-      // WebSocket fallback to local BroadcastChannel and state
-    }
+    // Real-time synchronization is fully handled by Firebase Firestore onSnapshot listeners
+    this.ws = null;
   }
 
   /**

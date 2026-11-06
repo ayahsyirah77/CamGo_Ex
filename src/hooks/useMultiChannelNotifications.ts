@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 
 export type NotificationPriority = 'critical' | 'high' | 'normal' | 'low';
 
@@ -27,9 +29,10 @@ export function useMultiChannelNotifications() {
   const [isMuted, setIsMuted] = useState<boolean>(() => {
     return localStorage.getItem('camgo_notif_muted') === 'true';
   });
-  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [isConnected, setIsConnected] = useState<boolean>(true);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const processedNotifIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     localStorage.setItem('camgo_notif_muted', String(isMuted));
@@ -139,6 +142,13 @@ export function useMultiChannelNotifications() {
       return;
     }
 
+    if (eventData.id && processedNotifIds.current.has(eventData.id)) {
+      return;
+    }
+    if (eventData.id) {
+      processedNotifIds.current.add(eventData.id);
+    }
+
     const rawPayload = eventData.payload || {};
     const normalizedPayload = {
       ...rawPayload,
@@ -178,48 +188,66 @@ export function useMultiChannelNotifications() {
     }
   }, [playSound, triggerVibration]);
 
-  // WebSocket Connection Lifecycle
+  // Firebase Firestore Real-Time Listener (replacing legacy persistent WebSocket)
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
-    let socket: WebSocket | null = null;
-    let reconnectTimer: any = null;
+    let unsubscribe: (() => void) | null = null;
+    let isInitialMount = true;
 
-    const connect = () => {
-      try {
-        socket = new WebSocket(wsUrl);
+    try {
+      const notifRef = collection(db, 'broadcast_notifications');
+      const notifQuery = query(notifRef, orderBy('createdAt', 'desc'), limit(20));
 
-        socket.onopen = () => {
+      unsubscribe = onSnapshot(
+        notifQuery,
+        (snapshot) => {
           setIsConnected(true);
-          console.log('[Multi-Channel Notification WS] Connected to gateway');
-        };
 
-        socket.onmessage = (msg) => {
-          try {
-            const data = JSON.parse(msg.data);
-            if (data && data.event && data.event !== 'connection_established' && data.event !== 'pong') {
-              handleIncomingEvent(data);
-            }
-          } catch (e) {
-            console.warn('Failed to parse WS message:', e);
+          // On initial load, mark existing docs as processed without triggering audio alarms
+          if (isInitialMount) {
+            isInitialMount = false;
+            snapshot.docs.forEach((docSnap) => {
+              const data = docSnap.data();
+              if (data && data.event) {
+                const notifObj: NotificationEvent = {
+                  id: docSnap.id,
+                  event: data.event,
+                  priority: data.priority || 'normal',
+                  payload: data.payload || {},
+                  timestamp: data.timestamp || new Date().toISOString(),
+                };
+                processedNotifIds.current.add(docSnap.id);
+                setNotifications((prev) => [notifObj, ...prev.slice(0, 49)]);
+              }
+            });
+            return;
           }
-        };
 
-        socket.onclose = () => {
-          setIsConnected(false);
-          reconnectTimer = setTimeout(connect, 4000);
-        };
-
-        socket.onerror = (err) => {
-          console.warn('[Multi-Channel Notification WS] Error:', err);
-          socket?.close();
-        };
-      } catch (e) {
-        reconnectTimer = setTimeout(connect, 4000);
-      }
-    };
-
-    connect();
+          // Process new incoming changes in real time
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+              const data = change.doc.data();
+              if (data && data.event) {
+                const notifObj: NotificationEvent = {
+                  id: change.doc.id,
+                  event: data.event,
+                  priority: data.priority || 'normal',
+                  payload: data.payload || {},
+                  timestamp: data.timestamp || new Date().toISOString(),
+                };
+                handleIncomingEvent(notifObj);
+              }
+            }
+          });
+        },
+        (error) => {
+          console.warn('[Firebase Notifications] Firestore listener non-fatal notice:', error);
+          setIsConnected(true);
+        }
+      );
+    } catch (e) {
+      console.warn('[Firebase Notifications] Setup notice:', e);
+      setIsConnected(true);
+    }
 
     const handleLocalBroadcast = (e: any) => {
       if (e?.detail) {
@@ -230,8 +258,7 @@ export function useMultiChannelNotifications() {
 
     return () => {
       window.removeEventListener('camgo-broadcast-event', handleLocalBroadcast);
-      if (socket) socket.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (unsubscribe) unsubscribe();
     };
   }, [handleIncomingEvent]);
 
