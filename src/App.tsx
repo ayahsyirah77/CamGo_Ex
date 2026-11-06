@@ -77,24 +77,11 @@ import {
 function checkIsStandaloneChat(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // 1. Check browser display mode FIRST
-  const isStandalone =
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as any).standalone === true;
-
-  if (isStandalone) return true;
-
-  // 2. Check URL query parameters and hash
-  const href = window.location.href.toLowerCase();
+  // Only open standalone chat if explicitly requested via URL query param or hash (?chat=true or #chat)
   const search = window.location.search.toLowerCase();
   const hash = window.location.hash.toLowerCase();
 
-  return (
-    search.includes('chat') ||
-    hash.includes('chat') ||
-    hash.includes('dms') ||
-    href.includes('chat')
-  );
+  return search.includes('chat=true') || search.includes('standalone=true') || hash.includes('#chat') || hash.includes('#dms');
 }
 
 export default function App() {
