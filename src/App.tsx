@@ -50,6 +50,12 @@ import { VendorDashboard } from './components/VendorDashboard';
 import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
+import { WeatherWidget } from './components/WeatherWidget';
+import { TrafficWidget } from './components/TrafficWidget';
+import { HazardWidget } from './components/HazardWidget';
+import { EventsWidget } from './components/EventsWidget';
+import { useMultiChannelNotifications } from './hooks/useMultiChannelNotifications';
+import { NotificationCenter } from './components/NotificationCenter';
 import {
   Sparkles,
   Compass,
@@ -93,11 +99,13 @@ function checkIsStandaloneChat(): boolean {
 
 export default function App() {
   const [language, setLanguage] = useState<Language>('en');
+  const notificationCenter = useMultiChannelNotifications();
   const [places, setPlaces] = useState<Place[]>([]);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [weatherList, setWeatherList] = useState<WeatherData[]>([]);
   const [trafficAlerts, setTrafficAlerts] = useState<TrafficAlert[]>([]);
   const [hazards, setHazards] = useState<HazardAlert[]>([]);
+  const [events, setEvents] = useState<EventNotification[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(firebaseService.getCurrentUser());
 
   const [selectedPlaceForMap, setSelectedPlaceForMap] = useState<Place | null>(null);
@@ -132,12 +140,32 @@ export default function App() {
   const [isVendorPortalOpen, setIsVendorPortalOpen] = useState(false);
   const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<MainCategory>('food');
+  const [selectedSubCategory, setSelectedSubCategory] = useState<SubCategory | undefined>(undefined);
+
+  // Lock body scroll when capsule modal is open
+  useEffect(() => {
+    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen;
+    if (isAnyModalOpen) {
+      const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
+      document.body.style.overflow = 'hidden';
+      document.body.style.paddingRight = `${scrollBarWidth}px`;
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+    };
+  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen]);
 
   const refreshStorageData = () => {
     setPlaces(firebaseService.getPlaces());
     setGalleryItems(firebaseService.getGallery());
     setTrafficAlerts(firebaseService.getTrafficAlerts());
     setHazards(firebaseService.getHazardAlerts());
+    setEvents(firebaseService.getEvents());
     setCurrentUser(firebaseService.getCurrentUser());
   };
 
@@ -204,6 +232,8 @@ export default function App() {
   };
 
   const handleSelectCategory = (cat: MainCategory, sub?: SubCategory) => {
+    setSelectedCategory(cat);
+    setSelectedSubCategory(sub);
     setIsDirectoriesModalOpen(true);
   };
 
@@ -314,85 +344,110 @@ export default function App() {
             onOpenPortalsModal={() => setIsPortalsModalOpen(true)}
             setActiveCapsuleModal={setActiveCapsuleModal}
             activeCapsuleModal={activeCapsuleModal}
+            weatherList={weatherList}
+            trafficAlerts={trafficAlerts}
+            hazards={hazards}
+            events={events}
+            places={places}
           />
         </section>
 
-        {/* Experience Cards in 2x2 Grid (100% Fully Visible Titles) */}
-        <section className="max-w-4xl mx-auto px-2 sm:px-6 mb-12">
-          <div className="grid grid-cols-2 gap-2 sm:gap-4 max-w-4xl mx-auto">
+        {/* Experience Cards - Reverted to original state with description and prominent icon on PC */}
+        <section className="max-w-6xl mx-auto px-3 sm:px-6 mb-12">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 max-w-6xl mx-auto">
             {/* Card 1: Motorbike Rental */}
             <div
               onClick={() => setIsMotorbikeRentalOpen(true)}
-              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-emerald-500/30 p-2.5 sm:p-4 shadow-lg hover:border-emerald-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
+              className="group rounded-2xl bg-stone-900/90 border border-emerald-500/30 hover:border-emerald-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
             >
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                  <Bike className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <div>
+                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
+                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 sm:mb-3">
+                    <Bike className="w-4 h-4 sm:w-6 sm:h-6" />
+                  </div>
+                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-emerald-300 leading-tight">
+                    Motorbike Rental
+                  </h3>
                 </div>
-                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-emerald-300 leading-tight min-w-0">
-                  Motorbike Rental
-                </h3>
+                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
+                  Explore winding mountain trails, farm bypasses &amp; tea valleys on two wheels with verified rental fleets.
+                </p>
               </div>
-              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-emerald-400">
+              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-emerald-400 mt-2 sm:mt-4">
                 <span>Rentals</span>
-                <ArrowRight className="w-3 h-3 shrink-0" />
+                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>
 
             {/* Card 2: GPS Map */}
             <div
               onClick={() => setIsMapModalOpen(true)}
-              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-cyan-500/30 p-2.5 sm:p-4 shadow-lg hover:border-cyan-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
+              className="group rounded-2xl bg-stone-900/90 border border-cyan-500/30 hover:border-cyan-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
             >
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
-                  <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <div>
+                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
+                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 sm:mb-3">
+                    <Navigation className="w-4 h-4 sm:w-6 sm:h-6" />
+                  </div>
+                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-cyan-300 leading-tight">
+                    GPS Map
+                  </h3>
                 </div>
-                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-cyan-300 leading-tight min-w-0">
-                  GPS Map
-                </h3>
+                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
+                  Interactive satellite navigation, live traffic hotspots, hazard markers &amp; elevation profiles.
+                </p>
               </div>
-              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-cyan-400">
+              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-cyan-400 mt-2 sm:mt-4">
                 <span>Open Map</span>
-                <ArrowRight className="w-3 h-3 shrink-0" />
+                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>
 
             {/* Card 3: Route Itinerary */}
             <div
               onClick={() => setIsItineraryOpen(true)}
-              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-amber-500/30 p-2.5 sm:p-4 shadow-lg hover:border-amber-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
+              className="group rounded-2xl bg-stone-900/90 border border-amber-500/30 hover:border-amber-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
             >
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                  <Route className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <div>
+                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
+                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 sm:mb-3">
+                    <Route className="w-4 h-4 sm:w-6 sm:h-6" />
+                  </div>
+                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-amber-300 leading-tight">
+                    Itinerary
+                  </h3>
                 </div>
-                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-amber-300 leading-tight min-w-0">
-                  Itinerary
-                </h3>
+                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
+                  Visual split-screen itinerary planner with real-time waypoint timing and distance estimates.
+                </p>
               </div>
-              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-amber-400">
+              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-amber-400 mt-2 sm:mt-4">
                 <span>Planner</span>
-                <ArrowRight className="w-3 h-3 shrink-0" />
+                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>
 
             {/* Card 4: Chat Lounge */}
             <div
               onClick={() => setIsChatOpen(true)}
-              className="group rounded-xl sm:rounded-2xl bg-stone-900 border border-indigo-500/30 p-2.5 sm:p-4 shadow-lg hover:border-indigo-400 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left min-w-0"
+              className="group rounded-2xl bg-stone-900/90 border border-indigo-500/30 hover:border-indigo-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
             >
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                  <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <div>
+                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
+                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 sm:mb-3">
+                    <MessageSquare className="w-4 h-4 sm:w-6 sm:h-6" />
+                  </div>
+                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-indigo-300 leading-tight">
+                    Chat Lounge
+                  </h3>
                 </div>
-                <h3 className="text-[10px] sm:text-xs font-extrabold text-white group-hover:text-indigo-300 leading-tight min-w-0">
-                  Chat Lounge
-                </h3>
+                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
+                  Connect live with fellow highland travelers &amp; local community for instant road tips &amp; advice.
+                </p>
               </div>
-              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-bold text-indigo-400">
+              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-indigo-400 mt-2 sm:mt-4">
                 <span>Open Lounge</span>
-                <ArrowRight className="w-3 h-3 shrink-0" />
+                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>
           </div>
@@ -687,61 +742,76 @@ export default function App() {
 
       {/* Directories Modal Dialog Wrapper */}
       {isDirectoriesModalOpen && (
-        <div className="fixed inset-0 z-[120] bg-stone-950/95 backdrop-blur-xl overflow-y-auto p-3 sm:p-6 flex flex-col items-center">
-          <div className="w-full max-w-6xl relative">
-            <button
-              onClick={() => setIsDirectoriesModalOpen(false)}
-              className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-emerald-500/30 shadow-xl cursor-pointer"
-              aria-label="Close Directories"
-            >
-              <X className="w-5 h-5 text-emerald-400" />
-            </button>
-            <DirectorySection
-              places={places}
-              language={language}
-              selectedCategory="food"
-              onSelectCategory={handleSelectCategory}
-              onSelectPlaceForMap={(place) => {
-                setIsDirectoriesModalOpen(false);
-                handleSelectPlaceForMap(place);
-              }}
-              bookmarkedIds={currentUser?.bookmarks || []}
-              onToggleBookmark={() => {}}
-              onOpenFarmMatrix={() => {
-                setIsDirectoriesModalOpen(false);
-                setIsFarmMatrixOpen(true);
-              }}
-            />
+        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
+          <div className="min-h-full flex flex-col items-center justify-start p-3 sm:p-6 py-10 sm:py-16" onClick={() => setIsDirectoriesModalOpen(false)}>
+            <div className="w-full max-w-6xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setIsDirectoriesModalOpen(false)}
+                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-emerald-500/30 shadow-xl cursor-pointer"
+                aria-label="Close Directories"
+              >
+                <X className="w-5 h-5 text-emerald-400" />
+              </button>
+              <DirectorySection
+                places={places}
+                language={language}
+                selectedCategory={selectedCategory}
+                selectedSubCategory={selectedSubCategory}
+                onSelectCategory={(cat, sub) => {
+                  setSelectedCategory(cat);
+                  setSelectedSubCategory(sub);
+                }}
+                onSelectPlaceForMap={(place) => {
+                  setIsDirectoriesModalOpen(false);
+                  handleSelectPlaceForMap(place);
+                }}
+                bookmarkedIds={currentUser?.bookmarks || []}
+                onToggleBookmark={(placeId) => {
+                  if (currentUser) {
+                    firebaseService.toggleBookmark(placeId);
+                    setCurrentUser(firebaseService.getCurrentUser());
+                  } else {
+                    setIsAuthOpen(true);
+                  }
+                }}
+                onOpenFarmMatrix={() => {
+                  setIsDirectoriesModalOpen(false);
+                  setIsFarmMatrixOpen(true);
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
 
       {/* Portals / Hub Modal Dialog Wrapper */}
       {isPortalsModalOpen && (
-        <div className="fixed inset-0 z-[120] bg-stone-950/95 backdrop-blur-xl overflow-y-auto p-3 sm:p-6 flex flex-col items-center">
-          <div className="w-full max-w-6xl relative">
-            <button
-              onClick={() => setIsPortalsModalOpen(false)}
-              className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-teal-500/30 shadow-xl cursor-pointer"
-              aria-label="Close Hub Portals"
-            >
-              <X className="w-5 h-5 text-teal-400" />
-            </button>
-            <PortalsSection
-              language={language}
-              onExploreTownOnMap={() => {
-                setIsPortalsModalOpen(false);
-                setIsMapModalOpen(true);
-              }}
-              onOpenFarmMatrix={() => {
-                setIsPortalsModalOpen(false);
-                setIsFarmMatrixOpen(true);
-              }}
-              onOpenVendorPortal={() => {
-                setIsPortalsModalOpen(false);
-                setIsVendorPortalOpen(true);
-              }}
-            />
+        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
+          <div className="min-h-full flex flex-col items-center justify-start p-3 sm:p-6 py-10 sm:py-16" onClick={() => setIsPortalsModalOpen(false)}>
+            <div className="w-full max-w-6xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setIsPortalsModalOpen(false)}
+                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-teal-500/30 shadow-xl cursor-pointer"
+                aria-label="Close Hub Portals"
+              >
+                <X className="w-5 h-5 text-teal-400" />
+              </button>
+              <PortalsSection
+                language={language}
+                onExploreTownOnMap={() => {
+                  setIsPortalsModalOpen(false);
+                  setIsMapModalOpen(true);
+                }}
+                onOpenFarmMatrix={() => {
+                  setIsPortalsModalOpen(false);
+                  setIsFarmMatrixOpen(true);
+                }}
+                onOpenVendorPortal={() => {
+                  setIsPortalsModalOpen(false);
+                  setIsVendorPortalOpen(true);
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -762,6 +832,103 @@ export default function App() {
           language={language}
         />
       )}
+
+      {/* Capsule Modal: Microclimate (WeatherWidget) */}
+      {activeCapsuleModal === 'microclimate' && (
+        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
+          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
+            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setActiveCapsuleModal(null)}
+                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-cyan-500/30 shadow-xl cursor-pointer"
+                aria-label="Close Microclimate"
+              >
+                <X className="w-5 h-5 text-cyan-400" />
+              </button>
+              <WeatherWidget weatherList={weatherList} language={language} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Capsule Modal: Traffic (TrafficWidget) */}
+      {activeCapsuleModal === 'traffic' && (
+        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
+          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
+            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setActiveCapsuleModal(null)}
+                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-amber-500/30 shadow-xl cursor-pointer"
+                aria-label="Close Traffic Hub"
+              >
+                <X className="w-5 h-5 text-amber-400" />
+              </button>
+              <TrafficWidget
+                alerts={trafficAlerts}
+                language={language}
+                onSelectRouteOnMap={() => {
+                  setActiveCapsuleModal(null);
+                  setIsMapModalOpen(true);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Capsule Modal: Hazard & Slope Alerts (HazardWidget) */}
+      {activeCapsuleModal === 'hazard' && (
+        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
+          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
+            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setActiveCapsuleModal(null)}
+                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-rose-500/30 shadow-xl cursor-pointer"
+                aria-label="Close Hazard Alerts"
+              >
+                <X className="w-5 h-5 text-rose-400" />
+              </button>
+              <HazardWidget hazards={hazards} language={language} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Capsule Modal: Highland Events (EventsWidget) */}
+      {activeCapsuleModal === 'events' && (
+        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
+          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
+            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setActiveCapsuleModal(null)}
+                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-purple-500/30 shadow-xl cursor-pointer"
+                aria-label="Close Events"
+              >
+                <X className="w-5 h-5 text-purple-400" />
+              </button>
+              <EventsWidget events={events} language={language} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Real-Time WebSocket Multi-Channel Notification Grid Overlay */}
+      <NotificationCenter
+        activeSos={notificationCenter.activeSos}
+        setActiveSos={notificationCenter.setActiveSos}
+        activeWeatherBanner={notificationCenter.activeWeatherBanner}
+        setActiveWeatherBanner={notificationCenter.setActiveWeatherBanner}
+        activeChatPreview={notificationCenter.activeChatPreview}
+        setActiveChatPreview={notificationCenter.setActiveChatPreview}
+        toasts={notificationCenter.toasts}
+        setToasts={notificationCenter.setToasts}
+        isMuted={notificationCenter.isMuted}
+        setIsMuted={notificationCenter.setIsMuted}
+        isConnected={notificationCenter.isConnected}
+        simulateEvent={notificationCenter.simulateEvent}
+        language={language}
+        onOpenChat={() => setIsChatOpen(true)}
+      />
     </div>
   );
 }

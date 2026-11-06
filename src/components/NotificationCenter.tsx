@@ -29,6 +29,7 @@ interface NotificationCenterProps {
   isConnected: boolean;
   simulateEvent: (event: string, priority: any, payload: any) => void;
   language?: 'en' | 'bm';
+  onOpenChat?: () => void;
 }
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({
@@ -41,13 +42,14 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   toasts,
   setToasts,
   language = 'en',
+  onOpenChat,
 }) => {
   return (
     <>
       {/* 1. CRITICAL SOS EMERGENCY MODAL OVERLAY */}
       <AnimatePresence>
         {activeSos && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-red-950/80 backdrop-blur-md animate-pulse">
+          <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-red-950/85 backdrop-blur-md animate-pulse">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -128,14 +130,14 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             initial={{ y: -50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -50, opacity: 0 }}
-            className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 text-white shadow-lg border-b border-white/20 p-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm"
+            className="fixed top-0 left-0 right-0 z-[99999] bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 text-white shadow-2xl border-b border-white/20 p-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm animate-in slide-in-from-top duration-300"
           >
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-black/20 animate-pulse">
+              <div className="p-2 rounded-xl bg-black/25 animate-pulse">
                 <CloudRain className="w-5 h-5 text-amber-200" />
               </div>
               <div>
-                <span className="font-extrabold uppercase tracking-wide mr-2 bg-black/30 px-2 py-0.5 rounded text-[11px]">
+                <span className="font-extrabold uppercase tracking-wide mr-2 bg-black/40 px-2 py-0.5 rounded text-[11px]">
                   {language === 'bm' ? 'AMARAN CUACA' : 'WEATHER ALERT'}
                 </span>
                 <span className="font-medium">
@@ -146,13 +148,13 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveWeatherBanner(null)}
-                className="px-3 py-1 bg-black/30 hover:bg-black/50 rounded-lg text-xs font-bold transition-colors"
+                className="px-3 py-1 bg-black/30 hover:bg-black/50 rounded-lg text-xs font-bold transition-colors cursor-pointer"
               >
                 {language === 'bm' ? 'Faham' : 'Got It'}
               </button>
               <button
                 onClick={() => setActiveWeatherBanner(null)}
-                className="p-1 text-white/80 hover:text-white"
+                className="p-1 text-white/80 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -168,32 +170,39 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             initial={{ x: 100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 100, opacity: 0 }}
-            className="fixed bottom-20 right-4 z-40 max-w-sm bg-stone-900 border border-emerald-500/40 rounded-2xl p-4 shadow-xl text-stone-100"
+            onClick={() => {
+              setActiveChatPreview(null);
+              onOpenChat?.();
+            }}
+            className="fixed bottom-20 right-4 z-[99999] max-w-sm bg-stone-900/95 backdrop-blur-md border border-emerald-500/50 rounded-2xl p-4 shadow-2xl text-stone-100 cursor-pointer hover:border-emerald-400 transition-all hover:scale-[1.02]"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
                 <MessageSquare className="w-4 h-4" />
-                <span>{language === 'bm' ? 'Mesej Sembang Baharu' : 'New Lounge Chat'}</span>
+                <span>{language === 'bm' ? 'Mesej Sembang Baharu (Klik untuk buka)' : 'New Lounge Chat (Click to open)'}</span>
               </div>
               <button
-                onClick={() => setActiveChatPreview(null)}
-                className="text-stone-400 hover:text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveChatPreview(null);
+                }}
+                className="text-stone-400 hover:text-white p-1"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
             <div className="text-xs font-semibold text-stone-200">
-              {activeChatPreview.payload.sender || 'Highland Visitor'}
+              {activeChatPreview.payload.sender || activeChatPreview.payload.senderName || 'Highland Visitor'}
             </div>
             <p className="text-xs text-stone-400 mt-1 line-clamp-2">
-              {activeChatPreview.payload.message || 'Sent a new message in Chat Lounge.'}
+              {activeChatPreview.payload.message || activeChatPreview.payload.text || 'Sent a new message in Chat Lounge.'}
             </p>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* 4. TOAST CONTAINER FOR JOBS, CLASSIFIEDS, SERVICES (BOTTOM LEFT) */}
-      <div className="fixed bottom-6 left-6 z-40 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
+      <div className="fixed bottom-6 left-6 z-[99999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
         <AnimatePresence>
           {toasts.map((toast) => (
             <motion.div
@@ -201,36 +210,43 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               initial={{ opacity: 0, x: -50, scale: 0.95 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: -50, scale: 0.95 }}
-              className="pointer-events-auto bg-stone-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-xl text-stone-100 flex items-start gap-3 relative overflow-hidden"
+              className="pointer-events-auto bg-stone-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-2xl text-stone-100 flex items-start gap-3 relative overflow-hidden"
             >
               <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-emerald-500" />
-              <div className="p-2 rounded-xl bg-emerald-600/20 text-emerald-400 mt-0.5">
+              <div className="p-2 rounded-xl bg-emerald-600/20 text-emerald-400 mt-0.5 shrink-0">
                 {toast.event === 'job_posted' ? (
                   <Briefcase className="w-4 h-4" />
                 ) : toast.event === 'classified_item' ? (
                   <ShoppingBag className="w-4 h-4" />
+                ) : toast.event === 'weather_alert' ? (
+                  <CloudRain className="w-4 h-4 text-amber-400" />
                 ) : (
                   <Wrench className="w-4 h-4" />
                 )}
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
                     {toast.event.replace('_', ' ')}
                   </span>
                   <button
                     onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-                    className="text-stone-400 hover:text-white"
+                    className="text-stone-400 hover:text-white p-0.5 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <div className="text-xs font-bold text-stone-100 mt-0.5">
+                <div className="text-xs font-bold text-stone-100 mt-0.5 truncate">
                   {toast.payload.title || 'New Update Available'}
                 </div>
                 <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-2">
                   {toast.payload.message || 'Check out the latest posting on CamGo directory grid.'}
                 </p>
+                {toast.payload.sender && (
+                  <span className="text-[10px] text-stone-500 mt-1 block">
+                    By {toast.payload.sender}
+                  </span>
+                )}
               </div>
             </motion.div>
           ))}

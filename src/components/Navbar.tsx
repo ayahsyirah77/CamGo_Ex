@@ -796,7 +796,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Itinerary</span>
             </motion.button>
 
-            {/* Gallery */}
+            {/* Gallery - Hidden in PC view as requested */}
             <motion.button
               variants={itemVariants}
               onClick={() => {
@@ -806,7 +806,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onNavigateSection('interactive-gallery');
                 }
               }}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
+              className="hidden items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-400" />
               <span>{getTranslation(language, 'nav_gallery')}</span>
@@ -1030,34 +1030,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 {/* Vertical Graphic Card Links */}
                 <nav className="space-y-2">
-                  {/* 1. User Sign In / Sign Up */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (currentUser) {
-                        onOpenUserDashboard();
-                      } else {
-                        onOpenAuth();
-                      }
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-blue-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      {currentUser ? (
-                        <User className="w-4 h-4 text-blue-400" />
-                      ) : (
-                        <LogIn className="w-4 h-4 text-blue-400" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-blue-300 transition-colors">
-                        {currentUser
-                          ? (language === 'bm' ? 'Akaun Saya' : 'My Account')
-                          : (language === 'bm' ? 'Daftar / Log Masuk' : 'User Sign In / Sign Up')}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-blue-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
+                  {/* Removed User Sign In / Account link as requested */}
+
 
                   {/* Directories Modal Link */}
                   <button

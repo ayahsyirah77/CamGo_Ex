@@ -134,6 +134,26 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
   const [scheduleModalPlace, setScheduleModalPlace] = useState<Place | null>(null);
   const [farmTickets, setFarmTickets] = useState<FarmTicket[]>(() => firebaseService.getFarmTickets());
 
+  const [currentCategory, setCurrentCategory] = useState<MainCategory>(selectedCategory || 'food');
+  const [currentSubCategory, setCurrentSubCategory] = useState<SubCategory | undefined>(selectedSubCategory);
+
+  // Sync with prop changes if parent updates
+  React.useEffect(() => {
+    if (selectedCategory) {
+      setCurrentCategory(selectedCategory);
+    }
+  }, [selectedCategory]);
+
+  React.useEffect(() => {
+    setCurrentSubCategory(selectedSubCategory);
+  }, [selectedSubCategory]);
+
+  const handleSelectCategoryInternal = (cat: MainCategory, sub?: SubCategory) => {
+    setCurrentCategory(cat);
+    setCurrentSubCategory(sub);
+    onSelectCategory(cat, sub);
+  };
+
   // Keep selectedTown in sync with initialTownship prop changes
   React.useEffect(() => {
     if (initialTownship) {
@@ -172,7 +192,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     }
   }, [selectedPlacePopup]);
 
-  console.log('[Debug] DirectorySection props.places:', places);
+
 
   const mainCategories: { key: MainCategory; labelKey: any; icon: string }[] = [
     { key: 'food', labelKey: 'dir_food', icon: '🍲' },
@@ -268,16 +288,16 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
 
   // Resolve active subcategories list with fallback to places data
   const normalizedCategoryKey =
-    selectedCategory === 'attraction' ? 'travel_tourism' :
-    selectedCategory === 'business' ? 'shopping' :
-    selectedCategory;
+    currentCategory === 'attraction' ? 'travel_tourism' :
+    currentCategory === 'business' ? 'shopping' :
+    currentCategory;
 
-  const baseSubList = subCategoryFilters[normalizedCategoryKey] || subCategoryFilters[selectedCategory] || [];
+  const baseSubList = subCategoryFilters[normalizedCategoryKey] || subCategoryFilters[currentCategory] || [];
   const knownSubKeys = new Set(baseSubList.map((s) => s.key));
   const discoveredSubs: { key: SubCategory; label: string; icon?: React.ReactNode }[] = [];
 
   for (const p of dedupedPlaces) {
-    if (isCategoryMatch(p.category, selectedCategory) && p.subCategory) {
+    if (isCategoryMatch(p.category, currentCategory) && p.subCategory) {
       if (!knownSubKeys.has(p.subCategory)) {
         knownSubKeys.add(p.subCategory);
         discoveredSubs.push({
@@ -294,8 +314,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     // Completely remove motorbike and scooter rentals from general directory listings
     if (p.category === 'transport' && p.subCategory === 'car_bike_rentals') return false;
 
-    if (!isCategoryMatch(p.category, selectedCategory)) return false;
-    if (selectedSubCategory && p.subCategory !== selectedSubCategory) return false;
+    if (!isCategoryMatch(p.category, currentCategory)) return false;
+    if (currentSubCategory && p.subCategory !== currentSubCategory) return false;
     if (selectedTown !== 'all' && p.township !== selectedTown) return false;
 
     if (searchQuery.trim() !== '') {
@@ -309,7 +329,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     return true;
   });
 
-  console.log('[Debug] DirectorySection filteredPlaces:', filteredPlaces);
+
 
   return (
     <div className="space-y-6" id="directories-section">
@@ -407,9 +427,9 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
               {language === 'bm' ? 'Kategori Aktif:' : 'Active Category:'}
             </span>
             <span className="font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs">
-              {mainCategories.find((c) => c.key === selectedCategory)?.labelKey
-                ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey)
-                : selectedCategory}
+              {mainCategories.find((c) => c.key === currentCategory)?.labelKey
+                ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey)
+                : currentCategory}
             </span>
           </div>
         </div>
@@ -417,7 +437,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
         {/* Category Cards Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2.5">
           {mainCategories.map((cat) => {
-            const isActive = isCategoryMatch(selectedCategory, cat.key);
+            const isActive = isCategoryMatch(currentCategory, cat.key);
             // Exclude motorbike rentals from the count for transport category
             const catPlaceCount = places.filter((p) => 
               isCategoryMatch(p.category, cat.key) && !(p.category === 'transport' && p.subCategory === 'car_bike_rentals')
@@ -426,7 +446,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
               <button
                 key={cat.key}
                 type="button"
-                onClick={() => onSelectCategory(cat.key)}
+                onClick={() => handleSelectCategoryInternal(cat.key, undefined)}
                 className={`p-1.5 min-[380px]:p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-1.5 sm:gap-2 relative overflow-hidden group min-h-[46px] min-[380px]:min-h-[50px] sm:min-h-[58px] ${
                   isActive
                     ? 'bg-gradient-to-br from-emerald-950/90 via-emerald-900/50 to-stone-900 border-emerald-500/80 shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-500/30 text-white'
@@ -497,19 +517,19 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                 </div>
                 <h3 className="text-sm sm:text-base font-heading font-extrabold text-white mt-0.5">
                   {language === 'bm'
-                    ? `Senarai Tempat: ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`
-                    : `Places in ${mainCategories.find((c) => c.key === selectedCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === selectedCategory)!.labelKey) : selectedCategory}`}
+                    ? `Senarai Tempat: ${mainCategories.find((c) => c.key === currentCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey) : currentCategory}`
+                    : `Places in ${mainCategories.find((c) => c.key === currentCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey) : currentCategory}`}
                 </h3>
               </div>
             </div>
 
             {/* Right Action & Place Counter */}
             <div className="flex items-center gap-2 self-start sm:self-auto">
-              {(selectedCategory !== 'food' || selectedSubCategory || selectedTown !== 'all' || searchQuery.trim()) && (
+              {(currentCategory !== 'food' || currentSubCategory || selectedTown !== 'all' || searchQuery.trim()) && (
                 <button
                   type="button"
                   onClick={() => {
-                    onSelectCategory('food', undefined);
+                    handleSelectCategoryInternal('food', undefined);
                     setSelectedTown('all');
                     setSearchQuery('');
                   }}
@@ -531,9 +551,9 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
             <div className="hidden sm:flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => onSelectCategory(selectedCategory, undefined)}
+                onClick={() => handleSelectCategoryInternal(currentCategory, undefined)}
                 className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-                  !selectedSubCategory
+                  !currentSubCategory
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'bg-stone-800 text-stone-400 hover:text-white'
                 }`}
@@ -544,9 +564,9 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                 <button
                   key={sub.key}
                   type="button"
-                  onClick={() => onSelectCategory(selectedCategory, sub.key)}
+                  onClick={() => handleSelectCategoryInternal(currentCategory, sub.key)}
                   className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 ${
-                    selectedSubCategory === sub.key
+                    currentSubCategory === sub.key
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'bg-stone-800 text-stone-400 hover:text-white'
                   }`}
@@ -562,10 +582,10 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
                 <Filter className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <select
-                  value={selectedSubCategory || 'all'}
+                  value={currentSubCategory || 'all'}
                   onChange={(e) => {
                     const val = e.target.value;
-                    onSelectCategory(selectedCategory, val === 'all' ? undefined : (val as SubCategory));
+                    handleSelectCategoryInternal(currentCategory, val === 'all' ? undefined : (val as SubCategory));
                   }}
                   className="bg-stone-800 text-stone-100 text-xs px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer w-full truncate font-medium"
                 >
@@ -618,10 +638,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
               return (
                 <div
                   key={place.id}
-                  onClick={() => {
-                    window.scrollTo({ top: 0, behavior: 'instant' });
-                    setSelectedPlacePopup(place);
-                  }}
+                  onClick={() => setSelectedPlacePopup(place)}
                   className="glass-card-hover no-mobile-clamp group p-3 sm:p-3.5 rounded-2xl bg-stone-900/95 border border-stone-800 hover:border-emerald-500/60 hover:bg-stone-850 flex flex-col justify-between gap-2 cursor-pointer transition-all shadow-md h-full min-h-[110px] sm:min-h-[120px] text-left relative overflow-hidden"
                 >
                   {/* Top Row: Live Status Dot + Township badge & Bookmark */}
@@ -691,178 +708,180 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       {selectedPlacePopup &&
         createPortal(
           <div 
-            className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+            className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200"
             onClick={() => setSelectedPlacePopup(null)}
           >
-            <div 
-              className="w-full max-w-xl bg-stone-900 border border-emerald-500/40 rounded-3xl overflow-hidden shadow-2xl relative max-h-[90vh] flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Top Cover Image & Floating Badges */}
-              <div className="h-56 sm:h-64 relative overflow-hidden bg-stone-950 shrink-0">
-                <img
-                  src={selectedPlacePopup.imageUrl}
-                  alt={selectedPlacePopup.name}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-stone-900 via-stone-900/30 to-transparent" />
-
-                {/* Elevation & Open Status */}
-                <div className="absolute top-4 left-4 flex items-center gap-2">
-                  <span className="px-3 py-1 rounded-full bg-black/75 backdrop-blur-md text-xs font-mono font-bold text-emerald-400 border border-white/10 shadow-lg">
-                    {selectedPlacePopup.elevation} ASL
-                  </span>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase shadow-lg ${
-                      isCurrentlyOpen(selectedPlacePopup.operatingHours)
-                        ? 'bg-emerald-500/90 text-white'
-                        : 'bg-stone-800/90 text-stone-300'
-                    }`}
-                  >
-                    {isCurrentlyOpen(selectedPlacePopup.operatingHours) ? getTranslation(language, 'open_now') : getTranslation(language, 'closed')}
-                  </span>
-                </div>
-
-                {/* Bookmark Button */}
-                <button
-                  onClick={() => onToggleBookmark(selectedPlacePopup.id)}
-                  className="absolute top-4 right-4 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white cursor-pointer transition-colors shadow-lg"
-                >
-                  <Bookmark
-                    className={`w-5 h-5 ${
-                      bookmarkedIds.includes(selectedPlacePopup.id) ? 'fill-emerald-400 text-emerald-400' : 'text-stone-200'
-                    }`}
+            <div className="min-h-full flex items-center justify-center p-3 sm:p-4 py-8 sm:py-12">
+              <div 
+                className="w-full max-w-xl bg-stone-900 border border-emerald-500/40 rounded-3xl overflow-hidden shadow-2xl relative my-auto shrink-0 max-h-[90vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Top Cover Image & Floating Badges */}
+                <div className="h-56 sm:h-64 relative overflow-hidden bg-stone-950 shrink-0">
+                  <img
+                    src={selectedPlacePopup.imageUrl}
+                    alt={selectedPlacePopup.name}
+                    className="w-full h-full object-cover"
                   />
-                </button>
+                  <div className="absolute inset-0 bg-gradient-to-t from-stone-900 via-stone-900/30 to-transparent" />
 
-                {/* Close Button */}
-                <button
-                  onClick={() => setSelectedPlacePopup(null)}
-                  className="absolute top-4 right-16 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white cursor-pointer transition-colors shadow-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-
-                {/* Rating Tag */}
-                <div className="absolute bottom-4 left-4 flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md text-sm font-bold text-amber-400 border border-white/10 shadow-lg">
-                    ★ {selectedPlacePopup.rating}
-                  </span>
-                  <span className="text-xs text-stone-200 font-medium">
-                    ({selectedPlacePopup.reviewsCount} {language === 'bm' ? 'ulasan' : 'reviews'})
-                  </span>
-                </div>
-              </div>
-
-              {/* Modal Body Content */}
-              <div className="p-6 overflow-y-auto space-y-4 flex-1">
-                <div>
-                  <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-1 font-medium flex-wrap">
-                    <MapPin className="w-4 h-4 text-emerald-400" />
-                    <span>{selectedPlacePopup.township}</span>
-                    <span>•</span>
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/30 font-semibold font-mono text-[11px]">
-                      🏷️ {getSubCategoryLabel(selectedPlacePopup.subCategory)}
+                  {/* Elevation & Open Status */}
+                  <div className="absolute top-4 left-4 flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-black/75 backdrop-blur-md text-xs font-mono font-bold text-emerald-400 border border-white/10 shadow-lg">
+                      {selectedPlacePopup.elevation} ASL
                     </span>
-                    {selectedPlacePopup.priceRange && (
-                      <>
-                        <span>•</span>
-                        <span className="text-emerald-400 font-semibold">{selectedPlacePopup.priceRange}</span>
-                      </>
-                    )}
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase shadow-lg ${
+                        isCurrentlyOpen(selectedPlacePopup.operatingHours)
+                          ? 'bg-emerald-500/90 text-white'
+                          : 'bg-stone-800/90 text-stone-300'
+                      }`}
+                    >
+                      {isCurrentlyOpen(selectedPlacePopup.operatingHours) ? getTranslation(language, 'open_now') : getTranslation(language, 'closed')}
+                    </span>
                   </div>
 
-                  <h3 className="text-xl sm:text-2xl font-heading font-extrabold text-emerald-400 tracking-tight">
-                    {language === 'bm' ? selectedPlacePopup.nameBm || selectedPlacePopup.name : selectedPlacePopup.name}
-                  </h3>
-
-                  <p className="text-xs sm:text-sm text-stone-300 mt-2.5 leading-relaxed">
-                    {language === 'bm' ? selectedPlacePopup.descriptionBm : selectedPlacePopup.description}
-                  </p>
-
-                  {/* Operational Status Badges */}
-                  <div className="mt-3">
-                    <OperationalStatusBadges
-                      realTimeStatus={selectedPlacePopup.realTimeStatus}
-                      diyHarvestStatus={selectedPlacePopup.diyHarvestStatus}
-                      parkingStatus={selectedPlacePopup.parkingStatus}
-                      roomAvailabilityStatus={selectedPlacePopup.roomAvailabilityStatus}
-                      language={language}
+                  {/* Bookmark Button */}
+                  <button
+                    onClick={() => onToggleBookmark(selectedPlacePopup.id)}
+                    className="absolute top-4 right-4 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white cursor-pointer transition-colors shadow-lg"
+                  >
+                    <Bookmark
+                      className={`w-5 h-5 ${
+                        bookmarkedIds.includes(selectedPlacePopup.id) ? 'fill-emerald-400 text-emerald-400' : 'text-stone-200'
+                      }`}
                     />
-                  </div>
+                  </button>
 
-                  {/* Tags */}
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {selectedPlacePopup.tags.map((tag, i) => (
-                      <span
-                        key={i}
-                        className="px-2.5 py-1 rounded-lg bg-stone-800 text-xs text-stone-300 border border-white/5 font-mono"
-                      >
-                        #{tag}
-                      </span>
-                    ))}
+                  {/* Close Button */}
+                  <button
+                    onClick={() => setSelectedPlacePopup(null)}
+                    className="absolute top-4 right-16 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white cursor-pointer transition-colors shadow-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+
+                  {/* Rating Tag */}
+                  <div className="absolute bottom-4 left-4 flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md text-sm font-bold text-amber-400 border border-white/10 shadow-lg">
+                      ★ {selectedPlacePopup.rating}
+                    </span>
+                    <span className="text-xs text-stone-200 font-medium">
+                      ({selectedPlacePopup.reviewsCount} {language === 'bm' ? 'ulasan' : 'reviews'})
+                    </span>
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-col gap-1 text-xs text-stone-300 font-mono">
-                    {(() => {
-                      const todaySched = getTodayDaySchedule(selectedPlacePopup.operatingHours);
-                      const hasWeekly = !!(selectedPlacePopup.operatingHours.weeklySchedule && selectedPlacePopup.operatingHours.weeklySchedule.length > 0);
-                      const todayName = getTodayDayName();
+                {/* Modal Body Content */}
+                <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-1 font-medium flex-wrap">
+                      <MapPin className="w-4 h-4 text-emerald-400" />
+                      <span>{selectedPlacePopup.township}</span>
+                      <span>•</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/30 font-semibold font-mono text-[11px]">
+                        🏷️ {getSubCategoryLabel(selectedPlacePopup.subCategory)}
+                      </span>
+                      {selectedPlacePopup.priceRange && (
+                        <>
+                          <span>•</span>
+                          <span className="text-emerald-400 font-semibold">{selectedPlacePopup.priceRange}</span>
+                        </>
+                      )}
+                    </div>
 
-                      return (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
-                          {selectedPlacePopup.operatingHours.isOpen24Hours ? (
-                            <span>{language === 'bm' ? '24 Jam' : '24 Hours'}</span>
-                          ) : todaySched ? (
-                            todaySched.isOpen ? (
-                              <span className="text-stone-200 font-medium">
-                                {todayName}: {formatTimeTo12Hour(todaySched.from)} – {formatTimeTo12Hour(todaySched.to)}
-                              </span>
-                            ) : (
-                              <span className="text-rose-400 font-semibold">
-                                {todayName}: {language === 'bm' ? 'Tutup' : 'Closed'}
-                              </span>
-                            )
-                          ) : (
-                            <span>
-                              {selectedPlacePopup.operatingHours.from} - {selectedPlacePopup.operatingHours.to}
-                            </span>
-                          )}
+                    <h3 className="text-xl sm:text-2xl font-heading font-extrabold text-emerald-400 tracking-tight">
+                      {language === 'bm' ? selectedPlacePopup.nameBm || selectedPlacePopup.name : selectedPlacePopup.name}
+                    </h3>
 
-                          {hasWeekly && (
-                            <button
-                              type="button"
-                              onClick={() => setScheduleModalPlace(selectedPlacePopup)}
-                              className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline font-sans cursor-pointer bg-emerald-500/15 px-2 py-0.5 rounded-lg border border-emerald-500/30 font-bold ml-2"
-                            >
-                              {language === 'bm' ? 'Jadual 7 Hari' : '7-Day Hours'}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    <p className="text-xs sm:text-sm text-stone-300 mt-2.5 leading-relaxed">
+                      {language === 'bm' ? selectedPlacePopup.descriptionBm : selectedPlacePopup.description}
+                    </p>
+
+                    {/* Operational Status Badges */}
+                    <div className="mt-3">
+                      <OperationalStatusBadges
+                        realTimeStatus={selectedPlacePopup.realTimeStatus}
+                        diyHarvestStatus={selectedPlacePopup.diyHarvestStatus}
+                        parkingStatus={selectedPlacePopup.parkingStatus}
+                        roomAvailabilityStatus={selectedPlacePopup.roomAvailabilityStatus}
+                        language={language}
+                      />
+                    </div>
+
+                    {/* Tags */}
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {selectedPlacePopup.tags.map((tag, i) => (
+                        <span
+                          key={i}
+                          className="px-2.5 py-1 rounded-lg bg-stone-800 text-xs text-stone-300 border border-white/5 font-mono"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      const placeToNavigate = selectedPlacePopup;
-                      setSelectedPlacePopup(null);
-                      if (placeToNavigate) {
-                        onSelectPlaceForMap(placeToNavigate);
-                        setTimeout(() => {
-                          window.dispatchEvent(new CustomEvent('trigger-route-to-place', { detail: placeToNavigate }));
-                        }, 150);
-                      }
-                    }}
-                    className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
-                  >
-                    <Sparkles className="w-4 h-4 text-emerald-200" />
-                    <span>Map &amp; Live GPS Route</span>
-                    <ArrowUpRight className="w-4 h-4" />
-                  </button>
+                  <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-col gap-1 text-xs text-stone-300 font-mono">
+                      {(() => {
+                        const todaySched = getTodayDaySchedule(selectedPlacePopup.operatingHours);
+                        const hasWeekly = !!(selectedPlacePopup.operatingHours.weeklySchedule && selectedPlacePopup.operatingHours.weeklySchedule.length > 0);
+                        const todayName = getTodayDayName();
+
+                        return (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+                            {selectedPlacePopup.operatingHours.isOpen24Hours ? (
+                              <span>{language === 'bm' ? '24 Jam' : '24 Hours'}</span>
+                            ) : todaySched ? (
+                              todaySched.isOpen ? (
+                                <span className="text-stone-200 font-medium">
+                                  {todayName}: {formatTimeTo12Hour(todaySched.from)} – {formatTimeTo12Hour(todaySched.to)}
+                                </span>
+                              ) : (
+                                <span className="text-rose-400 font-semibold">
+                                  {todayName}: {language === 'bm' ? 'Tutup' : 'Closed'}
+                                </span>
+                              )
+                            ) : (
+                              <span>
+                                {selectedPlacePopup.operatingHours.from} - {selectedPlacePopup.operatingHours.to}
+                              </span>
+                            )}
+
+                            {hasWeekly && (
+                              <button
+                                type="button"
+                                onClick={() => setScheduleModalPlace(selectedPlacePopup)}
+                                className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline font-sans cursor-pointer bg-emerald-500/15 px-2 py-0.5 rounded-lg border border-emerald-500/30 font-bold ml-2"
+                              >
+                                {language === 'bm' ? 'Jadual 7 Hari' : '7-Day Hours'}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        const placeToNavigate = selectedPlacePopup;
+                        setSelectedPlacePopup(null);
+                        if (placeToNavigate) {
+                          onSelectPlaceForMap(placeToNavigate);
+                          setTimeout(() => {
+                            window.dispatchEvent(new CustomEvent('trigger-route-to-place', { detail: placeToNavigate }));
+                          }, 150);
+                        }
+                      }}
+                      className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Sparkles className="w-4 h-4 text-emerald-200" />
+                      <span>Map &amp; Live GPS Route</span>
+                      <ArrowUpRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -873,65 +892,73 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       {/* 7-Day Weekly Operating Schedule Modal */}
       {scheduleModalPlace &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-stone-900 border border-white/10 rounded-3xl p-6 shadow-2xl relative">
-              <button
-                onClick={() => setScheduleModalPlace(null)}
-                className="absolute top-4 right-4 p-2 text-stone-400 hover:text-white rounded-full bg-stone-800/80 cursor-pointer"
+          <div 
+            className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-sm overflow-y-auto p-4"
+            onClick={() => setScheduleModalPlace(null)}
+          >
+            <div className="min-h-full flex items-center justify-center py-6">
+              <div 
+                className="w-full max-w-md bg-stone-900 border border-white/10 rounded-3xl p-6 shadow-2xl relative my-auto shrink-0"
+                onClick={(e) => e.stopPropagation()}
               >
-                <X className="w-4 h-4" />
-              </button>
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-bold text-base text-stone-100">
-                  {language === 'bm' ? 'Waktu Operasi Mingguan' : 'Weekly Operating Schedule'}
-                </h3>
-              </div>
-              <p className="text-xs text-stone-400 mb-4">{scheduleModalPlace.name}</p>
+                <button
+                  onClick={() => setScheduleModalPlace(null)}
+                  className="absolute top-4 right-4 p-2 text-stone-400 hover:text-white rounded-full bg-stone-800/80 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock className="w-4 h-4 text-emerald-400" />
+                  <h3 className="font-bold text-base text-stone-100">
+                    {language === 'bm' ? 'Waktu Operasi Mingguan' : 'Weekly Operating Schedule'}
+                  </h3>
+                </div>
+                <p className="text-xs text-stone-400 mb-4">{scheduleModalPlace.name}</p>
 
-              <div className="space-y-2">
-                {scheduleModalPlace.operatingHours.weeklySchedule?.map((day) => {
-                  const isToday = day.day === getTodayDayName();
-                  return (
-                    <div
-                      key={day.day}
-                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-mono border transition-colors ${
-                        isToday
-                          ? 'bg-emerald-500/10 border-emerald-500/30 font-semibold'
-                          : 'bg-stone-800/60 border-white/5 text-stone-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className={isToday ? 'text-emerald-400 font-bold' : 'text-stone-200'}>
-                          {day.day}
-                        </span>
-                        {isToday && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-sans uppercase font-bold">
-                            Today
+                <div className="space-y-2">
+                  {scheduleModalPlace.operatingHours.weeklySchedule?.map((day) => {
+                    const isToday = day.day === getTodayDayName();
+                    return (
+                      <div
+                        key={day.day}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-mono border transition-colors ${
+                          isToday
+                            ? 'bg-emerald-500/10 border-emerald-500/30 font-semibold'
+                            : 'bg-stone-800/60 border-white/5 text-stone-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={isToday ? 'text-emerald-400 font-bold' : 'text-stone-200'}>
+                            {day.day}
+                          </span>
+                          {isToday && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-sans uppercase font-bold">
+                              Today
+                            </span>
+                          )}
+                        </div>
+                        {day.isOpen ? (
+                          <span className="text-stone-300">
+                            {formatTimeTo12Hour(day.from)} – {formatTimeTo12Hour(day.to)}
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 font-bold px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
+                            CLOSED
                           </span>
                         )}
                       </div>
-                      {day.isOpen ? (
-                        <span className="text-stone-300">
-                          {formatTimeTo12Hour(day.from)} – {formatTimeTo12Hour(day.to)}
-                        </span>
-                      ) : (
-                        <span className="text-rose-400 font-bold px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
-                          CLOSED
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
 
-              <div className="mt-5 pt-3 border-t border-white/10 flex justify-end">
-                <button
-                  onClick={() => setScheduleModalPlace(null)}
-                  className="px-4 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold cursor-pointer"
-                >
-                  Close
-                </button>
+                <div className="mt-5 pt-3 border-t border-white/10 flex justify-end">
+                  <button
+                    onClick={() => setScheduleModalPlace(null)}
+                    className="px-4 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>,

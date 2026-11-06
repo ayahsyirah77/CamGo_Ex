@@ -893,13 +893,15 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       };
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center p-2 sm:p-4 bg-stone-950/90 backdrop-blur-lg overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.98 }}
-        className="relative w-full max-w-6xl h-[92vh] bg-stone-900 border border-emerald-500/30 rounded-3xl shadow-2xl flex flex-col lg:flex-row overflow-hidden text-stone-100"
-      >
+    <div className="fixed inset-0 z-[95] bg-stone-950/90 backdrop-blur-lg overflow-y-auto">
+      <div className="min-h-full flex items-center justify-center p-0 sm:p-4" onClick={onClose}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          className="relative w-full max-w-6xl h-[92vh] bg-stone-900 border border-emerald-500/30 rounded-3xl shadow-2xl flex flex-col lg:flex-row overflow-hidden text-stone-100 my-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Save Notification Toast */}
         <AnimatePresence>
           {saveNotification && (
@@ -3374,6 +3376,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           </div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 };

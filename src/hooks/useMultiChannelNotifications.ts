@@ -135,9 +135,22 @@ export function useMultiChannelNotifications() {
 
   // Central Event Dispatch & Router
   const handleIncomingEvent = useCallback((eventData: NotificationEvent) => {
+    if (!eventData || !eventData.event || eventData.event === 'connection_established' || eventData.event === 'pong') {
+      return;
+    }
+
+    const rawPayload = eventData.payload || {};
+    const normalizedPayload = {
+      ...rawPayload,
+      sender: rawPayload.sender || rawPayload.senderName || (eventData.event === 'chat_message' ? 'Lounge Member' : 'CamGo Dispatch'),
+      message: rawPayload.message || rawPayload.text || (eventData.event === 'chat_message' ? 'Sent a new message in Chat Lounge' : 'New notification received'),
+      title: rawPayload.title || (eventData.event === 'chat_message' ? `Chat: ${rawPayload.sender || rawPayload.senderName || 'Lounge Member'}` : 'Highland Alert'),
+    };
+
     const enrichedEvent: NotificationEvent = {
       ...eventData,
       id: eventData.id || 'notif-' + Math.random().toString(36).substring(2, 9),
+      payload: normalizedPayload,
       timestamp: eventData.timestamp || new Date().toISOString()
     };
 
@@ -155,13 +168,13 @@ export function useMultiChannelNotifications() {
     } else if (enrichedEvent.event === 'chat_message') {
       setActiveChatPreview(enrichedEvent);
       setTimeout(() => {
-        setActiveChatPreview(null);
-      }, 6000);
+        setActiveChatPreview((curr) => (curr?.id === enrichedEvent.id ? null : curr));
+      }, 7000);
     } else {
       setToasts((prev) => [enrichedEvent, ...prev.slice(0, 4)]);
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== enrichedEvent.id));
-      }, 5000);
+      }, 6000);
     }
   }, [playSound, triggerVibration]);
 
@@ -178,13 +191,13 @@ export function useMultiChannelNotifications() {
 
         socket.onopen = () => {
           setIsConnected(true);
-          console.log('[Multi-Channel Notification WS] Connected');
+          console.log('[Multi-Channel Notification WS] Connected to gateway');
         };
 
         socket.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
-            if (data && data.event) {
+            if (data && data.event && data.event !== 'connection_established' && data.event !== 'pong') {
               handleIncomingEvent(data);
             }
           } catch (e) {
@@ -208,7 +221,15 @@ export function useMultiChannelNotifications() {
 
     connect();
 
+    const handleLocalBroadcast = (e: any) => {
+      if (e?.detail) {
+        handleIncomingEvent(e.detail);
+      }
+    };
+    window.addEventListener('camgo-broadcast-event', handleLocalBroadcast);
+
     return () => {
+      window.removeEventListener('camgo-broadcast-event', handleLocalBroadcast);
       if (socket) socket.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };

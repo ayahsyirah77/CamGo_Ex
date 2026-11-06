@@ -349,9 +349,7 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
       <button
         onClick={() => setIsOpen(true)}
         aria-label="Open Emergency SOS Hotlines & Native GPS Dispatch"
-        className={`group relative ${
-          hideTriggerOnMobile ? 'hidden sm:flex' : 'flex'
-        } h-11 w-11 sm:w-auto p-3.5 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs shadow-2xl shadow-red-950/90 border border-red-400/40 active:scale-95 transition-transform cursor-pointer items-center justify-center gap-2`}
+        className={`group relative hidden h-11 w-11 sm:w-auto p-3.5 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs shadow-2xl shadow-red-950/90 border border-red-400/40 active:scale-95 transition-transform cursor-pointer items-center justify-center gap-2`}
         title="Emergency SOS 999 & Native SMS Protocol Dispatch"
       >
         {/* Animated beacon ring */}

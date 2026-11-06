@@ -14,6 +14,9 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Real-Time WebSocket Connected Clients Registry
+  const connectedClients = new Set<WebSocket>();
+
   app.use(express.json());
 
   // Automated Backend API: Emergency SOS Dispatch
@@ -84,6 +87,28 @@ async function startServer() {
           }
         } catch (twilioErr) {
           console.warn('Twilio dispatch error:', twilioErr);
+        }
+      }
+
+      // Broadcast Critical SOS Alert over WebSocket Grid to all connected visitors and admins
+      const sosBroadcastMsg = JSON.stringify({
+        id: dispatchId,
+        event: 'sos_alert',
+        priority: 'critical',
+        payload: {
+          title: `CRITICAL SOS: ${emergencyCard?.fullLegalName || senderName || 'Highland Visitor'}`,
+          message: `Emergency beacon activated. Location: ${coordinates ? `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}` : 'Cameron Highlands'}.`,
+          sender: emergencyCard?.fullLegalName || senderName || 'Highland Visitor',
+          location: coordinates ? `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}` : 'Cameron Highlands',
+          phone: recipientPhone || '999',
+          dispatchId,
+          mapsUrl
+        },
+        timestamp
+      });
+      for (const client of connectedClients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(sosBroadcastMsg);
         }
       }
 
@@ -859,16 +884,17 @@ Only return valid JSON without markdown wrapping.`;
 
 
   // Multi-Category Real-Time WebSocket Broadcaster & Connection Manager
-  const connectedClients = new Set<WebSocket>();
-
   app.post('/api/notifications/broadcast', (req, res) => {
     try {
       const { event, priority = 'normal', payload } = req.body;
+      const broadcastId = 'bc-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+      const timestamp = new Date().toISOString();
       const message = JSON.stringify({
+        id: broadcastId,
         event: event || 'general_notification',
         priority: priority || 'normal', // 'critical' | 'high' | 'normal' | 'low'
         payload: payload || {},
-        timestamp: new Date().toISOString()
+        timestamp
       });
 
       let count = 0;
@@ -880,7 +906,15 @@ Only return valid JSON without markdown wrapping.`;
       }
 
       console.log(`[WS BROADCAST] Event: ${event} | Priority: ${priority} | Delivered to ${count} clients`);
-      return res.json({ success: true, deliveredClients: count, timestamp: new Date().toISOString() });
+      return res.json({
+        success: true,
+        broadcastId,
+        event: event || 'general_notification',
+        priority,
+        payload,
+        deliveredClients: count,
+        timestamp
+      });
     } catch (err: any) {
       console.error('[WS BROADCAST ERROR]', err);
       return res.status(500).json({ success: false, error: err.message });
@@ -928,15 +962,16 @@ Only return valid JSON without markdown wrapping.`;
           return;
         }
 
-        // Broadcast real-time chat messages, reactions, and typing events across all connected clients
-        if (
-          parsed.event === 'chat_message' ||
-          parsed.event === 'chat_reaction' ||
-          parsed.event === 'chat_typing' ||
-          parsed.event === 'chat_channel_created' ||
-          parsed.event === 'chat_presence'
-        ) {
-          const payloadStr = JSON.stringify(parsed);
+        // Forward real-time events (chat, typing, reactions, posts, alerts) across all connected clients
+        if (parsed.event) {
+          const outgoing = {
+            id: parsed.id || 'ws-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6),
+            event: parsed.event,
+            priority: parsed.priority || 'normal',
+            payload: parsed.payload || {},
+            timestamp: parsed.timestamp || new Date().toISOString()
+          };
+          const payloadStr = JSON.stringify(outgoing);
           for (const client of connectedClients) {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(payloadStr);

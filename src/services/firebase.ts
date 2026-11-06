@@ -337,7 +337,7 @@ class FirebaseStorageService {
         }
       });
       onSnapshot(collection(db, 'places'), (snap) => {
-        console.log('[Debug] Places listener fired, docs:', snap.size);
+
         const cloudPlaces = snap.docs.map((d) => d.data() as Place);
         this.places = cloudPlaces;
         this.setLocalStorageItem(STORAGE_KEYS.PLACES, JSON.stringify(cloudPlaces));
@@ -452,7 +452,7 @@ class FirebaseStorageService {
         this.notify();
       });
       onSnapshot(collection(db, 'vendor_listings'), (snap) => {
-        console.log('[Debug] Vendor listings listener fired, docs:', snap.size);
+
         const cloudListings = snap.docs
           .map((d) => d.data() as VendorListing)
           .filter((v) => !isMockVendorListing(v));
@@ -844,12 +844,12 @@ class FirebaseStorageService {
   }
 
   public getPlaces(): Place[] {
-    console.log('[Debug] getPlaces this.places length:', this.places.length);
+
     let places: Place[] = this.places.length > 0 ? this.places : INITIAL_PLACES;
 
     if (this.places.length === 0 && typeof window !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEYS.PLACES);
-      console.log('[Debug] getPlaces localStorage saved:', !!saved);
+
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -860,7 +860,7 @@ class FirebaseStorageService {
         } catch {}
       }
     }
-    console.log('[Debug] getPlaces final count:', places.length);
+
 
 
     // Auto-sync vendor listings directly into main directory places
@@ -2010,7 +2010,7 @@ class FirebaseStorageService {
         const cleanPlace = Object.fromEntries(
           Object.entries(matchIndex >= 0 ? updatedPlaces[matchIndex] : placeFromVendor).filter(([_, v]) => v !== undefined)
         );
-        console.log('[Debug] Attempting to save to Firestore:', listing.businessName, listing.id);
+
         await Promise.all([
           setDoc(doc(db, 'vendor_listings', listing.id), cleanListing),
           setDoc(doc(db, 'places', matchIndex >= 0 ? updatedPlaces[matchIndex].id : listing.id), cleanPlace),
@@ -2247,10 +2247,29 @@ class FirebaseStorageService {
     return JSON.stringify(payload, null, 2);
   }
   public async uploadImage(file: File, folder: string): Promise<string> {
-    if (!storage) throw new Error("Storage not initialized");
-    const storageRef = ref(storage, `${folder}/${Date.now()}-${file.name}`);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+    try {
+      if (storage) {
+        const storageRef = ref(storage, `${folder}/${Date.now()}-${file.name}`);
+        await uploadBytes(storageRef, file);
+        return await getDownloadURL(storageRef);
+      }
+    } catch (storageErr) {
+      console.warn('[Firebase Storage] Cloud upload failed, falling back to local base64 data URL:', storageErr);
+    }
+
+    // Fallback: Read file as base64 data URL for instant offline preview & persistence
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to convert file to data URL'));
+        }
+      };
+      reader.onerror = (error) => reject(error);
+      reader.readAsDataURL(file);
+    });
   }
 
   public async saveAiChatMessage(

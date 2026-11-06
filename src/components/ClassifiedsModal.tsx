@@ -160,14 +160,13 @@ export const ClassifiedsModal: React.FC<ClassifiedsModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="glass-panel w-full max-w-6xl mt-4 sm:mt-10 mb-20 rounded-3xl p-4 sm:p-6 bg-stone-900/95 border border-amber-500/40 shadow-2xl relative space-y-4"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[110] bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+      <div className="min-h-full flex flex-col items-center justify-start p-2 sm:p-4 py-8 sm:py-16" onClick={onClose}>
+        <div
+          className="glass-panel w-full max-w-6xl rounded-3xl p-4 sm:p-6 bg-stone-900/95 border border-amber-500/40 shadow-2xl relative space-y-4 my-auto shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+
         {/* Sticky Top Header Bar */}
         <div className="sticky top-0 z-30 pb-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md -mx-4 -mt-4 p-4 sm:-mx-6 sm:-mt-6 sm:p-6 rounded-t-3xl flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -432,6 +431,7 @@ export const ClassifiedsModal: React.FC<ClassifiedsModalProps> = ({
           </p>
         </div>
       </div>
+    </div>
     </div>
   );
 };

@@ -377,14 +377,13 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-[130] flex items-center justify-center bg-black/90 backdrop-blur-xl p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-7xl max-h-[96vh] bg-stone-900 border border-emerald-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[130] overflow-y-auto bg-black/90 backdrop-blur-xl animate-in fade-in duration-200">
+      <div className="min-h-full flex flex-col items-center justify-center p-2 sm:p-4 py-8 sm:py-12" onClick={onClose}>
+        <div
+          className="w-full max-w-7xl max-h-[96vh] bg-stone-900 border border-emerald-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative my-auto shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+
         {/* Sticky Header - Mobile Optimized */}
         <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 p-3 sm:p-5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -886,6 +885,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                   </div>
                 </>
               )}
+              </div>
             </div>
           </div>
         </div>

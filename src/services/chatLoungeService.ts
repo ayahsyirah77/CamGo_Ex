@@ -584,7 +584,17 @@ class ChatLoungeService {
     }
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ event: 'chat_message', payload: message }));
+      this.ws.send(JSON.stringify({
+        event: 'chat_message',
+        priority: 'normal',
+        payload: {
+          ...message,
+          sender: message.senderName,
+          senderName: message.senderName,
+          message: message.text,
+          text: message.text,
+        }
+      }));
     }
   }
 

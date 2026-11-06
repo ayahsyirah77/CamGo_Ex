@@ -469,6 +469,25 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     setUserJobs(updated);
     setShowJobModal(false);
     setEditingJobId(null);
+
+    // Broadcast real-time posting alert over WebSocket Grid to all connected visitors
+    try {
+      fetch('/api/notifications/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'job_posted',
+          priority: 'low',
+          payload: {
+            title: `New ${newJob.type}: ${newJob.title}`,
+            message: `${newJob.company || 'Community Listing'} (${newJob.township}) • ${newJob.salary || 'Terms negotiable'}`,
+            sender: newJob.authorName || 'Highland Explorer',
+          },
+        }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
   };
 
   const handleDeleteJob = (id: string) => {
@@ -500,7 +519,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   ];
 
   return (
-    <div ref={dashboardContainerRef} className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/95 backdrop-blur-2xl p-2.5 sm:p-6 text-stone-100 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
       {/* Full screen backdrop for mobile hamburger menu */}
       {showMobileMenu && (
         <div
@@ -509,7 +528,16 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           aria-hidden="true"
         />
       )}
-      <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6 pb-12">
+      <div 
+        ref={dashboardContainerRef} 
+        className="min-h-full flex flex-col items-center justify-start p-2.5 sm:p-6 py-10 sm:py-16"
+        onClick={onClose}
+      >
+        <div 
+          className="w-full max-w-5xl space-y-4 sm:space-y-6 pb-12 relative my-auto shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+
         {/* Top Navbar */}
         {/* Desktop Header (PC View Only - no hamburger link) */}
         <div className="hidden md:flex items-center justify-between gap-4 p-4 rounded-3xl glass-panel bg-stone-900/90 border border-emerald-500/30 relative">
@@ -2352,5 +2380,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         )}
       </div>
     </div>
-  );
+  </div>
+);
 };

@@ -60,14 +60,12 @@ export const FarmTicketMatrixModal: React.FC<FarmTicketMatrixModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/95 sm:bg-black/85 backdrop-blur-md p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-5xl bg-stone-900 sm:border sm:border-emerald-500/40 sm:rounded-3xl rounded-none shadow-2xl flex flex-col overflow-hidden relative"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[140] overflow-y-auto bg-black/95 sm:bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="min-h-full flex items-center justify-center p-0 sm:p-4" onClick={onClose}>
+        <div
+          className="w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-5xl bg-stone-900 sm:border sm:border-emerald-500/40 sm:rounded-3xl rounded-none shadow-2xl flex flex-col overflow-hidden relative my-auto shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Sticky Header */}
         <div className="sticky top-0 z-30 flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
           <div className="flex items-center gap-3">
@@ -235,5 +233,6 @@ export const FarmTicketMatrixModal: React.FC<FarmTicketMatrixModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };

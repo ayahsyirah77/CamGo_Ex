@@ -15,7 +15,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { Language } from '../types';
+import { Language, WeatherData, TrafficAlert, HazardAlert, EventNotification, Place } from '../types';
 import { firebaseService } from '../services/firebase';
 
 export interface GsapLoopGalleryProps {
@@ -24,6 +24,11 @@ export interface GsapLoopGalleryProps {
   onOpenPortalsModal?: () => void;
   setActiveCapsuleModal?: (modal: 'microclimate' | 'traffic' | 'hazard' | 'events' | null) => void;
   activeCapsuleModal?: 'microclimate' | 'traffic' | 'hazard' | 'events' | null;
+  weatherList?: WeatherData[];
+  trafficAlerts?: TrafficAlert[];
+  hazards?: HazardAlert[];
+  events?: EventNotification[];
+  places?: Place[];
 }
 
 export interface GalleryCardData {
@@ -44,13 +49,34 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
   onOpenPortalsModal,
   setActiveCapsuleModal,
   activeCapsuleModal,
+  weatherList = [],
+  trafficAlerts = [],
+  hazards = [],
+  events = [],
+  places = [],
 }) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedCard, setSelectedCard] = useState<GalleryCardData | null>(null);
   const [customImages, setCustomImages] = useState<Record<string, string>>(() => firebaseService.getGsapCardImages());
 
-  const isModalOpen = Boolean(selectedCard || activeCapsuleModal);
+  const isModalOpen = Boolean(selectedCard);
   const isBm = language === 'bm';
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isModalOpen) {
+      const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
+      document.body.style.overflow = 'hidden';
+      document.body.style.paddingRight = `${scrollBarWidth}px`;
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+    };
+  }, [isModalOpen]);
 
   useEffect(() => {
     const handleImagesUpdated = () => {
@@ -64,9 +90,11 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
     {
       id: 'card-1',
       title: isBm ? 'Mikroiklim' : 'Microclimate',
-      subtitle: isBm ? '14°C - 22°C Tanah Tinggi' : '14°C - 22°C Altitude',
+      subtitle: weatherList && weatherList.length > 0 
+        ? `${weatherList[0].temp}°C • ${isBm ? (weatherList[0].conditionBm || weatherList[0].condition) : weatherList[0].condition}`
+        : (isBm ? '14°C - 22°C Tanah Tinggi' : '14°C - 22°C Altitude'),
       category: isBm ? 'Iklim' : 'Climate',
-      imageUrl: customImages['card-1'] || 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1200&q=80', // Highland mist
+      imageUrl: customImages['card-1'] || 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1200&q=80',
       icon: (
         <div className="relative flex items-center">
           <CloudSun className="w-6 h-6 text-cyan-400 animate-pulse" />
@@ -93,10 +121,12 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
     {
       id: 'card-2',
       title: isBm ? 'Pusat Trafik' : 'Traffic Hub',
-      subtitle: isBm ? 'Laluan 59 & 185 Langsung' : 'Route 59 & 185 Live',
+      subtitle: trafficAlerts && trafficAlerts.length > 0
+        ? `${trafficAlerts.length} ${isBm ? 'Amaran Aktif' : 'Active Alerts'}`
+        : (isBm ? 'Laluan 59 & 185 Langsung' : 'Route 59 & 185 Live'),
       category: isBm ? 'Transit' : 'Transit',
-      imageUrl: customImages['card-2'] || 'https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=1200&q=80', // Winding mountain road
-      icon: <Car className="w-6 h-6 text-amber-400" />,
+      imageUrl: customImages['card-2'] || 'https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=1200&q=80',
+      icon: <Car className={`w-6 h-6 ${trafficAlerts && trafficAlerts.length > 0 ? 'text-rose-500 animate-bounce' : 'text-amber-400'}`} />,
       description: isBm
         ? 'Pemantauan masa nyata Laluan Persekutuan 59 (Tapah / Simpang Pulai) dan jalan utama tanah tinggi untuk kelancaran percutian.'
         : 'Real-time monitoring of Federal Route 59 (Tapah / Simpang Pulai) and major highland arterial roads for smooth holiday transit.',
@@ -116,34 +146,38 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
     },
     {
       id: 'card-3',
-      title: isBm ? 'Amaran Bencana & Cerun' : 'Hazard & Slope Alerts',
-      subtitle: isBm ? 'Suapan Rasmi JKR & MDCH' : 'Official JKR & MDCH Feeds',
+      title: isBm ? 'Amaran Bencana' : 'Hazard & Slope',
+      subtitle: hazards && hazards.length > 0
+        ? `${hazards.length} ${isBm ? 'Notis Rasmi' : 'Official Notices'}`
+        : (isBm ? 'Suapan JKR & MDCH' : 'Official JKR & MDCH Feeds'),
       category: isBm ? 'Keselamatan' : 'Safety',
-      imageUrl: customImages['card-3'] || 'https://images.unsplash.com/photo-1516912481808-3406841bd33c?auto=format&fit=crop&w=1200&q=80', // Stormy weather / heavy rain
-      icon: <ShieldAlert className="w-6 h-6 text-rose-400" />,
+      imageUrl: customImages['card-3'] || 'https://images.unsplash.com/photo-1516912481808-3406841bd33c?auto=format&fit=crop&w=1200&q=80',
+      icon: <ShieldAlert className={`w-6 h-6 ${hazards && hazards.length > 0 ? 'text-red-500 animate-pulse' : 'text-rose-400'}`} />,
       description: isBm
-        ? 'Pemantauan cerun masa nyata Laluan FT059 (Tapah) dan FT185 (Simpang Pulai) oleh JKR Cameron Highlands serta notis perbandaran Majlis Daerah Cameron Highlands (MDCH).'
-        : 'Real-time slope and landslide surveillance for FT059 (Tapah) & FT185 (Simpang Pulai) by JKR Cameron Highlands and MDCH municipal safety dispatches.',
+        ? 'Pemantauan cerun masa nyata Laluan FT059 (Tapah) dan FT185 (Simpang Pulai) oleh JKR Cameron Highlands serta notis perbandaran MDCH.'
+        : 'Real-time slope and landslide surveillance for FT059 (Tapah) & FT185 (Simpang Pulai) by JKR Cameron Highlands and MDCH municipal dispatches.',
       details: isBm
         ? [
-            'Suapan masa nyata JKR Cameron Highlands (Portal eBencana & Facebook Rasmi)',
-            'Notis keselamatan perbandaran & pasar malam oleh Majlis Daerah Cameron Highlands (MDCH)',
-            'Status pembersihan tanah runtuh dan laluan satu lorong terkawal',
-            'Talian Bilik Gerakan Bencana JKR (+60 5-491 1040) & Hotline SOS 999'
+            'Suapan masa nyata JKR Cameron Highlands (Portal eBencana)',
+            'Notis keselamatan perbandaran MDCH',
+            'Status pembersihan tanah runtuh dan laluan terkawal',
+            'Hotline SOS 999 response hotlines'
           ]
         : [
-            'Real-time feeds from JKR Cameron Highlands (eBencana Disaster Portal & Official FB)',
-            'Municipal safety, market rerouting & fallen trees by Majlis Daerah Cameron Highlands (MDCH)',
-            'Landslide clearance progress and controlled one-lane contraflow status',
-            'JKR Disaster Room (+60 5-491 1040) & Highland SOS 999 response hotlines'
+            'Real-time feeds from JKR Cameron Highlands (eBencana Portal)',
+            'Municipal safety & tree clearance by MDCH',
+            'Landslide clearance progress and lane status',
+            'Highland SOS 999 response hotlines'
           ]
     },
     {
       id: 'card-4',
       title: isBm ? 'Acara Tanah Tinggi' : 'Highland Events',
-      subtitle: isBm ? 'Pesta & Pasar Malam' : 'Festivals & Night Markets',
+      subtitle: events && events.length > 0
+        ? `${events.length} ${isBm ? 'Acara Akan Datang' : 'Upcoming Events'}`
+        : (isBm ? 'Pesta & Pasar Malam' : 'Festivals & Night Markets'),
       category: isBm ? 'Budaya' : 'Culture',
-      imageUrl: customImages['card-4'] || 'https://images.unsplash.com/photo-1533900298318-6b8da08a523e?auto=format&fit=crop&w=1200&q=80', // Market/Market stalls
+      imageUrl: customImages['card-4'] || 'https://images.unsplash.com/photo-1533900298318-6b8da08a523e?auto=format&fit=crop&w=1200&q=80',
       icon: <Calendar className="w-6 h-6 text-purple-400" />,
       description: isBm
         ? 'Terokai pasar malam hujung minggu yang meriah, pameran pertanian, pesta bunga, dan sambutan budaya tempatan.'
@@ -153,61 +187,63 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
             'Pasar Malam Hujung Minggu Golden Hills & Brinchang',
             'Pesta Flora Cameron Highlands Tahunan',
             'Lawatan sambutan penuaian Ladang Teh BOH',
-            'Muzik tradisional langsung dan bazar kraf tempatan'
+            'Bazar kraf tempatan'
           ]
         : [
             'Golden Hills & Brinchang Weekend Night Markets',
             'Annual Cameron Highlands Flora Festival',
             'BOH Tea Plantation harvest celebration tours',
-            'Live traditional music and local artisan bazaars'
+            'Local artisan bazaars'
           ]
     },
     {
       id: 'card-5',
       title: isBm ? 'Direktori Terkini' : 'Verified Directories',
-      subtitle: isBm ? 'Jelajah Cameron Highlands' : 'Explore Cameron Highlands',
+      subtitle: places && places.length > 0
+        ? `${places.length}+ ${isBm ? 'Bisnes Highland' : 'Highland Businesses'}`
+        : (isBm ? '100+ Bisnes Highland' : '100+ Highland Businesses'),
       category: isBm ? 'Direktori' : 'Directory',
-      imageUrl: customImages['card-5'] || 'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1200&q=80', // Map/Town street
+      imageUrl: customImages['card-5'] || 'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1200&q=80',
       icon: <Compass className="w-6 h-6 text-emerald-400" />,
       description: isBm
         ? 'Senarai disahkan hotel, resort, homestay, restoran stimbot, ladang strawberi, dan rumah teh di seluruh 9 bandar.'
         : 'Curated list of verified hotels, resorts, homestays, steamboat restaurants, strawberry farms, and tea houses across all 9 townships.',
       details: isBm
         ? [
-            'Lebih 100+ perniagaan dan kedai makan yang disahkan',
+            'Lebih 100+ perniagaan yang disahkan',
             'Navigasi GPS terus dan waktu operasi',
-            'Simpanan penanda buku dan ulasan pelawat eksklusif',
-            'Lawatan agropelancongan dan panduan memetik strawberi'
+            'Simpanan penanda buku',
+            'Panduan memetik strawberi'
           ]
         : [
-            'Over 100+ verified highland businesses and eateries',
+            'Over 100+ verified highland businesses',
             'Direct GPS navigation and operational hours',
-            'Exclusive visitor bookmarks and reviews',
-            'Agritourism farm tours and strawberry picking guides'
+            'Exclusive visitor bookmarks',
+            'Strawberry picking guides'
           ]
     },
     {
       id: 'card-6',
       title: isBm ? 'Pusat Portal' : 'Portals Hub',
-      subtitle: isBm ? 'Bandar & Pautan Rasmi' : 'Townships & Official Links',
+      subtitle: isBm ? '9 Bandar & MDCH' : '9 Townships & MDCH',
       category: isBm ? 'Portal' : 'Portal',
-      imageUrl: customImages['card-6'] || 'https://images.unsplash.com/photo-1577086664693-894d8405334a?auto=format&fit=crop&w=1200&q=80', // Official building/Town hall
+      imageUrl: customImages['card-6'] || 'https://images.unsplash.com/photo-1577086664693-894d8405334a?auto=format&fit=crop&w=1200&q=80',
       icon: <Layers className="w-6 h-6 text-teal-400" />,
       description: isBm
         ? 'Laluan terus ke 9 bandar utama, permit Majlis Daerah Cameron Highlands (MDCH), notis jalan JKR, dan pentadbiran daerah.'
         : 'Direct gateway to the 9 distinct highland townships, MDCH municipal council permits, JKR road notices, and district administration.',
       details: isBm
         ? [
-            'Panduan zon untuk Tanah Rata, Brinchang, Kea Farm, Ringlet & banyak lagi',
-            'Pelesenan perniagaan rasmi MDCH dan permit pelancongan',
-            'Direktori hospital daerah dan klinik',
-            'Iklan jawatan kosong tempatan dan papan komuniti'
+            'Panduan zon untuk Tanah Rata & Brinchang',
+            'Pelesenan perniagaan rasmi MDCH',
+            'Direktori hospital daerah',
+            'Papan komuniti'
           ]
         : [
-            'Township guides for Tanah Rata, Brinchang, Kea Farm, Ringlet & more',
-            'MDCH official business licensing and tourism permits',
-            'District hospital and clinic directories',
-            'Local job classifieds and community boards'
+            'Township guides for Tanah Rata & Brinchang',
+            'MDCH official business licensing',
+            'District hospital directories',
+            'Community boards'
           ]
     }
   ];
@@ -248,19 +284,7 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
   const handleCardClick = (card: GalleryCardData) => {
     const cardId = card.id || baseCards[(card.index ?? 0) % baseCards.length]?.id;
 
-    if (cardId === 'card-1') {
-      if (setActiveCapsuleModal) setActiveCapsuleModal('microclimate');
-      else setSelectedCard(card);
-    } else if (cardId === 'card-2') {
-      if (setActiveCapsuleModal) setActiveCapsuleModal('traffic');
-      else setSelectedCard(card);
-    } else if (cardId === 'card-3') {
-      if (setActiveCapsuleModal) setActiveCapsuleModal('hazard');
-      else setSelectedCard(card);
-    } else if (cardId === 'card-4') {
-      if (setActiveCapsuleModal) setActiveCapsuleModal('events');
-      else setSelectedCard(card);
-    } else if (cardId === 'card-5' && onOpenDirectoriesModal) {
+    if (cardId === 'card-5' && onOpenDirectoriesModal) {
       onOpenDirectoriesModal();
     } else if (cardId === 'card-6' && onOpenPortalsModal) {
       onOpenPortalsModal();
@@ -390,13 +414,14 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
       {/* Modal Popup for Card Info */}
       {selectedCard && (
         <div
-          className="fixed inset-0 z-[120] p-2 sm:p-4 overflow-y-auto bg-black/90 backdrop-blur-2xl flex justify-center items-start sm:items-center py-4 sm:py-8"
+          className="fixed inset-0 z-[130] overflow-y-auto bg-black/90 backdrop-blur-2xl"
           onClick={() => setSelectedCard(null)}
         >
-          <div
-            className="w-full max-w-xl max-h-[90vh] my-auto rounded-3xl bg-stone-900/95 border border-emerald-500/50 shadow-[0_0_60px_rgba(16,185,129,0.3)] relative backdrop-blur-2xl overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16">
+            <div
+              className="w-full max-w-xl rounded-3xl bg-stone-900/95 border border-emerald-500/50 shadow-[0_0_60px_rgba(16,185,129,0.3)] relative backdrop-blur-2xl overflow-hidden flex flex-col my-auto shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* Always-visible Sticky Top Header with Close Button */}
             <div className="sticky top-0 z-30 flex items-center justify-between p-3.5 sm:p-4 bg-stone-900/95 border-b border-white/10 backdrop-blur-md">
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-mono font-bold border border-emerald-500/30">
@@ -468,7 +493,32 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
                     }}
                     className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white text-xs font-bold cursor-pointer transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95"
                   >
+                    <CloudSun className="w-4 h-4" />
                     <span>{isBm ? 'Buka Cuaca & Ketinggian' : 'Open Microclimate & Altitude'}</span>
+                  </button>
+                )}
+                {selectedCard.id === 'card-3' && setActiveCapsuleModal && (
+                  <button
+                    onClick={() => {
+                      setSelectedCard(null);
+                      setActiveCapsuleModal('hazard');
+                    }}
+                    className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white text-xs font-bold cursor-pointer transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                    <span>{isBm ? 'Buka Amaran Bencana & Cerun' : 'Open Hazard & Slope Alerts'}</span>
+                  </button>
+                )}
+                {selectedCard.id === 'card-4' && setActiveCapsuleModal && (
+                  <button
+                    onClick={() => {
+                      setSelectedCard(null);
+                      setActiveCapsuleModal('events');
+                    }}
+                    className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold cursor-pointer transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    <span>{isBm ? 'Buka Kalendar Acara' : 'Open Highland Events'}</span>
                   </button>
                 )}
                 <button
@@ -481,6 +531,7 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
             </div>
           </div>
         </div>
+      </div>
       )}
     </div>
   );

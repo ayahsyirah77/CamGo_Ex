@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { firebaseService } from '../services/firebase';
 import { CamLogo } from './CamLogo';
 import { Language } from '../types';
@@ -81,17 +82,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto">
-      <div className="glass-panel w-full max-w-md rounded-3xl p-5 sm:p-7 bg-stone-900 border border-emerald-500/40 shadow-2xl relative my-auto animate-in fade-in duration-200">
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-full bg-stone-800/80 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
-          aria-label="Close"
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-4 py-8 sm:py-12" onClick={onClose}>
+        <div 
+          className="glass-panel w-full max-w-md rounded-3xl p-5 sm:p-7 bg-stone-900 border border-emerald-500/40 shadow-2xl relative my-auto animate-in fade-in duration-200"
+          onClick={(e) => e.stopPropagation()}
         >
-          <X className="w-5 h-5" />
-        </button>
+          {/* Close Button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-full bg-stone-800/80 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
 
         {/* Top Logo & Title */}
         <div className="text-center mb-5">
@@ -379,5 +387,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>,
+  document.body
+);
 };

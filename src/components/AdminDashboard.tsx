@@ -57,6 +57,7 @@ import {
   Check,
   Navigation,
   CloudRain,
+  Sparkles,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -238,6 +239,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showFarmTicketModal, setShowFarmTicketModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportDataJson, setExportDataJson] = useState('');
+
+  // Real-Time WebSocket Multi-Channel Broadcast Center State
+  const [broadcastState, setBroadcastState] = useState<{
+    isLoading: string | null;
+    statusMessage: string | null;
+    statusType: 'success' | 'error' | null;
+    recentLog: Array<{ id: string; event: string; title: string; time: string; delivered: number }>;
+  }>({
+    isLoading: null,
+    statusMessage: null,
+    statusType: null,
+    recentLog: [],
+  });
+
+  const [showCustomBroadcastModal, setShowCustomBroadcastModal] = useState(false);
+  const [customEventTitle, setCustomEventTitle] = useState('');
+  const [customEventMessage, setCustomEventMessage] = useState('');
+  const [customEventPriority, setCustomEventPriority] = useState<'critical' | 'high' | 'normal' | 'low'>('high');
+
+  const handleTriggerBroadcast = async (
+    btnKey: string,
+    event: string,
+    priority: 'critical' | 'high' | 'normal' | 'low',
+    payload: Record<string, any>
+  ) => {
+    try {
+      setBroadcastState((prev) => ({
+        ...prev,
+        isLoading: btnKey,
+        statusType: null,
+        statusMessage: 'Transmitting alert across active WebSocket gateway...'
+      }));
+
+      const res = await fetch('/api/notifications/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event, priority, payload }),
+      });
+      const data = await res.json();
+
+      const deliveredCount = data.deliveredClients ?? 1;
+
+      // Dispatch local event so the current admin user immediately sees & hears the alert overlay
+      const broadcastObj = {
+        id: data.broadcastId || 'bc-' + Date.now(),
+        event,
+        priority,
+        payload,
+        timestamp: new Date().toISOString(),
+      };
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('camgo-broadcast-event', { detail: broadcastObj }));
+      }
+
+      setBroadcastState((prev) => ({
+        ...prev,
+        isLoading: null,
+        statusType: 'success',
+        statusMessage: `✅ Successfully broadcasted ${event.replace('_', ' ').toUpperCase()} to ${deliveredCount} live client${deliveredCount === 1 ? '' : 's'} via WebSocket!`,
+        recentLog: [
+          {
+            id: 'log-' + Date.now(),
+            event,
+            title: payload.title || payload.message || event,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            delivered: deliveredCount,
+          },
+          ...prev.recentLog.slice(0, 4),
+        ],
+      }));
+
+      addActivity(`Broadcasted ${event.toUpperCase()}: "${payload.title || payload.message}"`);
+
+      setTimeout(() => {
+        setBroadcastState((prev) => ({ ...prev, statusMessage: null }));
+      }, 7000);
+    } catch (err: any) {
+      console.error('Broadcast failure:', err);
+      setBroadcastState((prev) => ({
+        ...prev,
+        isLoading: null,
+        statusType: 'error',
+        statusMessage: `❌ Broadcast failed: ${err.message || 'Network error'}`
+      }));
+    }
+  };
 
   // Place Form States
   const [placeName, setPlaceName] = useState('');
@@ -1154,8 +1241,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/95 backdrop-blur-2xl p-3 sm:p-6 text-stone-100 animate-in fade-in duration-300">
-        <div className="max-w-7xl mx-auto space-y-6 pb-12">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
+        <div className="min-h-full flex flex-col items-center justify-start p-3 sm:p-6 py-10 sm:py-16" onClick={onClose}>
+          <div className="w-full max-w-7xl space-y-6 pb-12 relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+
           {/* Top Navbar */}
           <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-3xl glass-panel bg-stone-900/90 border border-emerald-500/30">
             <div className="flex items-center gap-3">
@@ -1330,97 +1419,256 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Real-Time WebSocket Notification & Broadcast Test Center */}
-          <div className="p-6 rounded-3xl bg-stone-900/90 border border-emerald-500/30 space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-emerald-400" />
-                <span>Real-Time WebSocket & Multi-Channel Broadcast Center</span>
-              </h4>
-              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                Active WebSocket Gateway
-              </span>
+          {/* Real-Time WebSocket Notification & Broadcast Center */}
+          <div className="p-6 rounded-3xl bg-stone-900/95 border border-emerald-500/40 shadow-2xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Activity className="w-4 h-4 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
+                    <span>Real-Time WebSocket &amp; Multi-Channel Broadcast Center</span>
+                  </h4>
+                  <p className="text-[11px] text-stone-400">
+                    Instant synchronized push telemetry to all active devices &amp; visitors
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span>Active WebSocket Gateway</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomBroadcastModal(!showCustomBroadcastModal)}
+                  className="px-3 py-1 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold border border-white/10 flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Custom Broadcast</span>
+                </button>
+              </div>
             </div>
-            <p className="text-xs text-stone-400">
-              Trigger real-time categorized priority alerts to all connected visitors and devices across CamGo.
-            </p>
+
+            {/* Live Status Feedback Banner */}
+            {broadcastState.statusMessage && (
+              <div
+                className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 duration-200 ${
+                  broadcastState.statusType === 'error'
+                    ? 'bg-rose-950/80 border-rose-500/40 text-rose-200'
+                    : 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {broadcastState.isLoading ? (
+                    <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                  ) : broadcastState.statusType === 'error' ? (
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  )}
+                  <span>{broadcastState.statusMessage}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBroadcastState((prev) => ({ ...prev, statusMessage: null }))}
+                  className="text-stone-400 hover:text-white p-1 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Custom Broadcast Accordion Form */}
+            {showCustomBroadcastModal && (
+              <div className="p-4 rounded-2xl bg-stone-950/80 border border-emerald-500/30 space-y-3 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <h5 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Send Custom Real-Time Broadcast Alert</span>
+                  </h5>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomBroadcastModal(false)}
+                    className="text-stone-400 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={customEventTitle}
+                    onChange={(e) => setCustomEventTitle(e.target.value)}
+                    placeholder="Alert Title (e.g., Heavy Traffic at Kea Farm)"
+                    className="sm:col-span-2 px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+                  />
+                  <select
+                    value={customEventPriority}
+                    onChange={(e) => setCustomEventPriority(e.target.value as any)}
+                    className="px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="critical">Critical (SOS Modal)</option>
+                    <option value="high">High (Weather Banner)</option>
+                    <option value="normal">Normal (Chat Preview)</option>
+                    <option value="low">Low (Toast Notification)</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customEventMessage}
+                    onChange={(e) => setCustomEventMessage(e.target.value)}
+                    placeholder="Alert details / instructions for travelers..."
+                    className="flex-1 px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={!customEventTitle.trim() || !!broadcastState.isLoading}
+                    onClick={() => {
+                      handleTriggerBroadcast('custom', 'admin_custom_alert', customEventPriority, {
+                        title: customEventTitle.trim(),
+                        message: customEventMessage.trim() || 'Official announcement from CamGo Admin Center.',
+                        sender: 'Admin Control Center'
+                      });
+                      setCustomEventTitle('');
+                      setCustomEventMessage('');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors shadow-lg shadow-emerald-950"
+                  >
+                    {broadcastState.isLoading === 'custom' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Activity className="w-3.5 h-3.5" />
+                    )}
+                    <span>Broadcast Now</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 4 Preset Category Broadcast Triggers */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* Button 1: SOS */}
               <button
                 type="button"
-                onClick={async () => {
-                  await fetch('/api/notifications/broadcast', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      event: 'sos_alert',
-                      priority: 'critical',
-                      payload: { title: 'Admin SOS Broadcast at Mossy Forest', sender: 'Admin Dispatch', location: '4.5123, 101.3912', phone: '999' }
-                    })
-                  });
-                }}
-                className="p-3 rounded-2xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+                disabled={!!broadcastState.isLoading}
+                onClick={() =>
+                  handleTriggerBroadcast('sos', 'sos_alert', 'critical', {
+                    title: 'CRITICAL: Admin SOS Broadcast at Mossy Forest',
+                    message: 'Emergency search and rescue dispatch test beacon active along trail sector.',
+                    sender: 'Admin Emergency Dispatch',
+                    location: '4.5123, 101.3912',
+                    phone: '999',
+                  })
+                }
+                className="p-3.5 rounded-2xl bg-red-600/20 hover:bg-red-600/30 active:scale-95 border border-red-500/40 text-red-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg hover:border-red-400 group disabled:opacity-50"
               >
-                <ShieldAlert className="w-4 h-4" />
+                {broadcastState.isLoading === 'sos' ? (
+                  <Loader2 className="w-5 h-5 text-red-400 animate-spin" />
+                ) : (
+                  <ShieldAlert className="w-5 h-5 text-red-400 group-hover:scale-110 transition-transform" />
+                )}
                 <span>Broadcast SOS</span>
+                <span className="text-[10px] text-red-400/80 font-mono font-normal">Full Screen Modal</span>
               </button>
 
+              {/* Button 2: Weather */}
               <button
                 type="button"
-                onClick={async () => {
-                  await fetch('/api/notifications/broadcast', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      event: 'weather_alert',
-                      priority: 'high',
-                      payload: { title: 'Highland Heavy Rain & Mist Advisory', message: 'Federal Route 59 slippery conditions: Drive with caution.' }
-                    })
-                  });
-                }}
-                className="p-3 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+                disabled={!!broadcastState.isLoading}
+                onClick={() =>
+                  handleTriggerBroadcast('weather', 'weather_alert', 'high', {
+                    title: 'Highland Heavy Rain & Mist Advisory',
+                    message: 'Federal Route 59 slippery conditions: Drive with caution and maintain headlights.',
+                    sender: 'CamGo Meteorological Desk',
+                  })
+                }
+                className="p-3.5 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 active:scale-95 border border-amber-500/40 text-amber-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg hover:border-amber-400 group disabled:opacity-50"
               >
-                <CloudRain className="w-4 h-4" />
+                {broadcastState.isLoading === 'weather' ? (
+                  <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+                ) : (
+                  <CloudRain className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
+                )}
                 <span>Broadcast Weather</span>
+                <span className="text-[10px] text-amber-400/80 font-mono font-normal">Top Sticky Banner</span>
               </button>
 
+              {/* Button 3: Chat */}
               <button
                 type="button"
-                onClick={async () => {
-                  await fetch('/api/notifications/broadcast', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      event: 'chat_message',
-                      priority: 'normal',
-                      payload: { sender: 'Highland Guide Cikgu Razak', message: 'Simpang Pulai traffic smooth and weather cool. Welcome visitors!' }
-                    })
-                  });
-                }}
-                className="p-3 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+                disabled={!!broadcastState.isLoading}
+                onClick={() =>
+                  handleTriggerBroadcast('chat', 'chat_message', 'normal', {
+                    sender: 'Highland Guide Cikgu Razak',
+                    senderName: 'Highland Guide Cikgu Razak',
+                    message: 'Simpang Pulai traffic smooth and weather cool (17°C). Welcome to Cameron Highlands!',
+                    text: 'Simpang Pulai traffic smooth and weather cool (17°C). Welcome to Cameron Highlands!',
+                  })
+                }
+                className="p-3.5 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 active:scale-95 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg hover:border-emerald-400 group disabled:opacity-50"
               >
-                <Users className="w-4 h-4" />
+                {broadcastState.isLoading === 'chat' ? (
+                  <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+                ) : (
+                  <Users className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                )}
                 <span>Broadcast Chat</span>
+                <span className="text-[10px] text-emerald-400/80 font-mono font-normal">Floating Preview</span>
               </button>
 
+              {/* Button 4: Job / Classified */}
               <button
                 type="button"
-                onClick={async () => {
-                  await fetch('/api/notifications/broadcast', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      event: 'job_posted',
-                      priority: 'low',
-                      payload: { title: 'New Job Opening: Farm Tour Guide', message: 'Kea Farm Agro Tourism is hiring local guides.' }
-                    })
-                  });
-                }}
-                className="p-3 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold text-xs flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+                disabled={!!broadcastState.isLoading}
+                onClick={() =>
+                  handleTriggerBroadcast('job', 'job_posted', 'low', {
+                    title: 'New Job Opening: Farm Tour Guide',
+                    message: 'Kea Farm Agro Tourism is hiring bilingual local tour guides.',
+                    sender: 'Kea Farm Agro Tourism',
+                  })
+                }
+                className="p-3.5 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 active:scale-95 border border-blue-500/40 text-blue-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg hover:border-blue-400 group disabled:opacity-50"
               >
-                <Ticket className="w-4 h-4" />
+                {broadcastState.isLoading === 'job' ? (
+                  <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                ) : (
+                  <Ticket className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
+                )}
                 <span>Broadcast Job / Ad</span>
+                <span className="text-[10px] text-blue-400/80 font-mono font-normal">Bottom-Left Toast</span>
               </button>
             </div>
+
+            {/* Recent Broadcast Log */}
+            {broadcastState.recentLog.length > 0 && (
+              <div className="pt-2 border-t border-white/5 space-y-1.5">
+                <span className="text-[10px] font-mono text-stone-500 uppercase tracking-wider block">
+                  Recent Broadcast Activity Log
+                </span>
+                <div className="space-y-1">
+                  {broadcastState.recentLog.map((log) => (
+                    <div
+                      key={log.id}
+                      className="flex items-center justify-between text-[11px] font-mono px-3 py-1.5 rounded-xl bg-stone-950/60 border border-white/5 text-stone-300"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="text-emerald-400 font-bold">[{log.event}]</span>
+                        <span className="truncate">{log.title}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 text-stone-400">
+                        <span className="text-stone-500">{log.time}</span>
+                        <span className="text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/20 text-[10px]">
+                          {log.delivered} clients
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Real-Time Registered Users Management Table */}
@@ -2032,6 +2280,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       </div>
+    </div>
 
       {/* ============================ MODALS ============================ */}
 

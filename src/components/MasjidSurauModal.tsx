@@ -153,14 +153,13 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-[125] flex items-end sm:items-center justify-center bg-black/85 backdrop-blur-md p-0 sm:p-4 overflow-hidden animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-4xl h-[92vh] sm:h-[88vh] max-h-[94vh] sm:max-h-[88vh] bg-stone-900 border-t sm:border border-emerald-500/40 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col min-h-0 overflow-hidden relative"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[125] overflow-y-auto bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="min-h-full flex flex-col items-center justify-end sm:justify-center p-0 sm:p-4" onClick={onClose}>
+        <div
+          className="w-full max-w-4xl h-[92vh] sm:h-[88vh] max-h-[94vh] sm:max-h-[88vh] bg-stone-900 border-t sm:border border-emerald-500/40 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col min-h-0 overflow-hidden relative my-auto shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+
         {/* Mobile Pull Handle */}
         <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
 
@@ -497,5 +496,6 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };
