@@ -122,7 +122,7 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
       description: item.description,
       descriptionBm: item.descriptionBm || item.description,
       location: `${item.township}, Cameron Highlands, Pahang`,
-      contact: '+60 5-491 1234',
+      contact: '',
       coordinates: coords,
       elevation: item.elevation || '1,560 m',
       rating: 4.9,

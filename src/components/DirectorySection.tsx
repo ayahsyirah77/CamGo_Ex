@@ -730,15 +730,33 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                     <span className="px-3 py-1 rounded-full bg-black/75 backdrop-blur-md text-xs font-mono font-bold text-emerald-400 border border-white/10 shadow-lg">
                       {selectedPlacePopup.elevation} ASL
                     </span>
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase shadow-lg ${
-                        isCurrentlyOpen(selectedPlacePopup.operatingHours)
-                          ? 'bg-emerald-500/90 text-white'
-                          : 'bg-stone-800/90 text-stone-300'
-                      }`}
-                    >
-                      {isCurrentlyOpen(selectedPlacePopup.operatingHours) ? getTranslation(language, 'open_now') : getTranslation(language, 'closed')}
-                    </span>
+                    {(() => {
+                      const isOpen = isCurrentlyOpen(selectedPlacePopup.operatingHours);
+                      const rtStatus = selectedPlacePopup.realTimeStatus;
+
+                      let badgeText = isOpen ? getTranslation(language, 'open_now') : getTranslation(language, 'closed');
+                      let badgeColor = isOpen ? 'bg-emerald-500/90 text-white' : 'bg-stone-800/90 text-stone-300 border border-stone-700';
+
+                      if (rtStatus === 'closed_roadworks') {
+                        badgeText = language === 'bm' ? 'TUTUP / KERJA JALAN' : 'CLOSED / ROADWORKS';
+                        badgeColor = 'bg-rose-900/90 text-rose-200 border border-rose-500/40';
+                      } else if (rtStatus === 'sold_out') {
+                        badgeText = language === 'bm' ? 'SLOT / TIKET HABIS' : 'SLOTS FULL';
+                        badgeColor = 'bg-purple-900/90 text-purple-200 border border-purple-500/40';
+                      } else if (rtStatus === 'busy') {
+                        badgeText = language === 'bm' ? 'RAMAI / SESAK' : 'HIGH CROWD';
+                        badgeColor = 'bg-amber-900/90 text-amber-200 border border-amber-500/40';
+                      } else if (rtStatus === 'open' && !isOpen) {
+                        badgeText = getTranslation(language, 'closed');
+                        badgeColor = 'bg-stone-800/90 text-stone-300 border border-stone-700';
+                      }
+
+                      return (
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase shadow-lg ${badgeColor}`}>
+                          {badgeText}
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Bookmark Button */}
@@ -802,6 +820,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                     <div className="mt-3">
                       <OperationalStatusBadges
                         realTimeStatus={selectedPlacePopup.realTimeStatus}
+                        isClosed={!isCurrentlyOpen(selectedPlacePopup.operatingHours)}
                         diyHarvestStatus={selectedPlacePopup.diyHarvestStatus}
                         parkingStatus={selectedPlacePopup.parkingStatus}
                         roomAvailabilityStatus={selectedPlacePopup.roomAvailabilityStatus}

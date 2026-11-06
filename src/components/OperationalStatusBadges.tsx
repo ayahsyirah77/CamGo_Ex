@@ -31,52 +31,62 @@ interface OperationalStatusBadgesProps {
   roomAvailabilityStatus?: RoomAvailabilityStatus;
   language?: Language;
   compact?: boolean;
+  isClosed?: boolean;
 }
 
 export const OperationalStatusBadges: React.FC<OperationalStatusBadgesProps> = ({
-  realTimeStatus = 'open',
+  realTimeStatus,
   diyHarvestStatus,
   parkingStatus = 'private_available',
   roomAvailabilityStatus,
   language = 'en',
   compact = false,
+  isClosed = false,
 }) => {
   const isBm = language === 'bm';
 
   // 1. Operating Status Config
   const getOperatingBadge = () => {
-    switch (realTimeStatus) {
-      case 'open':
-        return {
-          label: isBm ? 'Dibuka Masa Nyata' : 'Open Now',
-          icon: <CheckCircle2 className="w-3 h-3 text-emerald-400" />,
-          color: 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40',
-          dot: 'bg-emerald-400 animate-pulse',
-        };
-      case 'busy':
-        return {
-          label: isBm ? 'Orang Ramai / Sesak' : 'High Crowd / Busy',
-          icon: <AlertTriangle className="w-3 h-3 text-amber-400" />,
-          color: 'bg-amber-950/80 text-amber-300 border-amber-500/40',
-          dot: 'bg-amber-400',
-        };
-      case 'sold_out':
-        return {
-          label: isBm ? 'Tiket / Slot Habis' : 'Tickets Sold Out',
-          icon: <Ban className="w-3 h-3 text-purple-400" />,
-          color: 'bg-purple-950/80 text-purple-300 border-purple-500/40',
-          dot: 'bg-purple-400',
-        };
-      case 'closed_roadworks':
-        return {
-          label: isBm ? 'Tutup / Kerjajalan' : 'Closed / Roadworks',
-          icon: <Ban className="w-3 h-3 text-rose-400" />,
-          color: 'bg-rose-950/80 text-rose-300 border-rose-500/40',
-          dot: 'bg-rose-400',
-        };
-      default:
-        return null;
+    if (realTimeStatus === 'busy') {
+      return {
+        label: isBm ? 'Orang Ramai / Sesak' : 'High Crowd / Busy',
+        icon: <AlertTriangle className="w-3 h-3 text-amber-400" />,
+        color: 'bg-amber-950/80 text-amber-300 border-amber-500/40',
+        dot: 'bg-amber-400',
+      };
     }
+    if (realTimeStatus === 'sold_out') {
+      return {
+        label: isBm ? 'Tiket / Slot Habis' : 'Tickets Sold Out',
+        icon: <Ban className="w-3 h-3 text-purple-400" />,
+        color: 'bg-purple-950/80 text-purple-300 border-purple-500/40',
+        dot: 'bg-purple-400',
+      };
+    }
+    if (realTimeStatus === 'closed_roadworks') {
+      return {
+        label: isBm ? 'Tutup / Kerjajalan' : 'Closed / Roadworks',
+        icon: <Ban className="w-3 h-3 text-rose-400" />,
+        color: 'bg-rose-950/80 text-rose-300 border-rose-500/40',
+        dot: 'bg-rose-400',
+      };
+    }
+
+    if (isClosed) {
+      return {
+        label: isBm ? 'Premis Ditutup' : 'Premises Closed',
+        icon: <Ban className="w-3 h-3 text-rose-400" />,
+        color: 'bg-stone-800/80 text-stone-300 border-stone-700/50',
+        dot: 'bg-stone-500',
+      };
+    }
+
+    return {
+      label: isBm ? 'Dibuka Masa Nyata' : 'Open Now',
+      icon: <CheckCircle2 className="w-3 h-3 text-emerald-400" />,
+      color: 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40',
+      dot: 'bg-emerald-400 animate-pulse',
+    };
   };
 
   // 2. DIY Harvest Config

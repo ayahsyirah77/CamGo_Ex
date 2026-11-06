@@ -4010,7 +4010,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     <p className="leading-relaxed break-words">
                       {language === 'bm' ? selectedPlace.descriptionBm : selectedPlace.description}
                     </p>
-                    {selectedPlace.contact && (
+                    {selectedPlace.contact && selectedPlace.contact.trim() !== '' && selectedPlace.contact !== '+60 5-491 1234' && (
                       <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px] break-all">
                         <Phone className="w-3 h-3 shrink-0" />
                         <a href={`tel:${selectedPlace.contact}`} className="underline hover:text-emerald-300 truncate">

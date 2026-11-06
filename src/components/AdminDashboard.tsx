@@ -18,6 +18,10 @@ import {
   DaySchedule,
   FarmTicket,
   VendorListing,
+  VendorRealTimeStatus,
+  DiyHarvestStatus,
+  ParkingStatus,
+  RoomAvailabilityStatus,
 } from '../types';
 import { firebaseService, UserProfile } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
@@ -368,6 +372,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isOpen24Hours, setIsOpen24Hours] = useState(false);
   const [isPlaceClosed, setIsPlaceClosed] = useState(false);
   const [placeIncludeInPlanner, setPlaceIncludeInPlanner] = useState(false);
+
+  // Operational Badges & Live Status Controls
+  const [placeRealTimeStatus, setPlaceRealTimeStatus] = useState<VendorRealTimeStatus>('open');
+  const [placeDiyHarvestStatus, setPlaceDiyHarvestStatus] = useState<DiyHarvestStatus | 'none'>('none');
+  const [placeParkingStatus, setPlaceParkingStatus] = useState<ParkingStatus>('private_available');
+  const [placeRoomAvailabilityStatus, setPlaceRoomAvailabilityStatus] = useState<RoomAvailabilityStatus | 'none'>('none');
 
   const DAYS_OF_WEEK: DayOfWeek[] = [
     'Monday',
@@ -772,6 +782,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setPlaceCheckIn('14:00');
     setPlaceCheckOut('12:00');
     setPlaceIncludeInPlanner(false);
+    setPlaceRealTimeStatus('open');
+    setPlaceDiyHarvestStatus('none');
+    setPlaceParkingStatus('private_available');
+    setPlaceRoomAvailabilityStatus('none');
     setShowAddPlaceModal(true);
   };
 
@@ -791,6 +805,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsOpenNow(place.operatingHours?.isOpen ?? true);
     setIsOpen24Hours(place.operatingHours?.isOpen24Hours ?? false);
     setIsPlaceClosed(false);
+    setPlaceRealTimeStatus(place.realTimeStatus || 'open');
+    setPlaceDiyHarvestStatus(place.diyHarvestStatus || 'none');
+    setPlaceParkingStatus(place.parkingStatus || 'private_available');
+    setPlaceRoomAvailabilityStatus(place.roomAvailabilityStatus || 'none');
 
     if (place.operatingHours?.weeklySchedule && place.operatingHours.weeklySchedule.length > 0) {
       const scheduleMap = new Map(place.operatingHours.weeklySchedule.map((s) => [s.day, s]));
@@ -876,7 +894,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         description: placeDescription,
         descriptionBm: placeDescriptionBm || placeDescription,
         location: placeLocation || `${placeTownship}, Cameron Highlands, Pahang`,
-        contact: placeContact || '+60 5-491 1234',
+        contact: placeContact || '',
         operatingHours: {
           from: isPlaceClosed ? '-' : (firstOpenDay ? firstOpenDay.from : timeFrom),
           to: isPlaceClosed ? '-' : (firstOpenDay ? firstOpenDay.to : timeTo),
@@ -898,7 +916,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         imageUrl: placeImageUrl,
         includeInPlanner: placeIncludeInPlanner,
         trafficStatus: existingPlace?.trafficStatus ?? 'smooth',
+        realTimeStatus: placeRealTimeStatus,
+        parkingStatus: placeParkingStatus,
       };
+
+      if (placeDiyHarvestStatus !== 'none') {
+        rawPlace.diyHarvestStatus = placeDiyHarvestStatus;
+      }
+      if (placeRoomAvailabilityStatus !== 'none') {
+        rawPlace.roomAvailabilityStatus = placeRoomAvailabilityStatus;
+      }
 
       // Safely attach check times if enabled, otherwise omit them completely
       if (hasCheckTimes) {
@@ -2538,6 +2565,79 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
                 )}
+
+                {/* Operational Badges & Facilities Status */}
+                <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-white/10 space-y-3">
+                  <h4 className="text-xs font-extrabold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Operational Badges &amp; Status Indicators</span>
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">
+                        Real-Time Status
+                      </label>
+                      <select
+                        value={placeRealTimeStatus}
+                        onChange={(e) => setPlaceRealTimeStatus(e.target.value as VendorRealTimeStatus)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      >
+                        <option value="open">🟢 Open Now (Dibuka Masa Nyata)</option>
+                        <option value="busy">🟡 High Crowd / Busy (Sesak / Orang Ramai)</option>
+                        <option value="sold_out">🟣 Tickets / Slots Full (Tiket / Slot Habis)</option>
+                        <option value="closed_roadworks">🔴 Closed / Roadworks (Tutup / Kerja Jalan)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">
+                        Parking Facilities
+                      </label>
+                      <select
+                        value={placeParkingStatus}
+                        onChange={(e) => setPlaceParkingStatus(e.target.value as ParkingStatus)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      >
+                        <option value="private_available">🅿️ Private Park Available (Parkir Khas Ada)</option>
+                        <option value="street_busy">🚘 Street Parking Busy (Parkir Tepi Jalan Sesak)</option>
+                        <option value="valet_only">🔑 Valet Parking Only (Parkir Valet Sahaja)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">
+                        DIY Farm Harvest Status
+                      </label>
+                      <select
+                        value={placeDiyHarvestStatus}
+                        onChange={(e) => setPlaceDiyHarvestStatus(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      >
+                        <option value="none">Not Applicable (Tidak Berkaitan)</option>
+                        <option value="picking_open">🍓 DIY Harvest Open (Petik Buah Dibuka)</option>
+                        <option value="farm_open_no_picking">🧺 Farm Open - No DIY (Ladang Buka / Tiada Petik)</option>
+                        <option value="closed_season">❄ Off-Season Harvest (Luar Musim Tuai)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">
+                        Room / Homestay Availability
+                      </label>
+                      <select
+                        value={placeRoomAvailabilityStatus}
+                        onChange={(e) => setPlaceRoomAvailabilityStatus(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      >
+                        <option value="none">Not Applicable (Tidak Berkaitan)</option>
+                        <option value="rooms_available">🏨 Rooms Available (Bilik / Apartment Ada)</option>
+                        <option value="limited_units">⚡ Limited Units Left (Unit Terhad Sahaja)</option>
+                        <option value="fully_booked">🔴 Fully Booked (Penuh Tempah)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
 
                 <div>
                   <label className="text-xs font-bold text-stone-300 block mb-1">
