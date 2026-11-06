@@ -225,7 +225,7 @@ class PushNotificationService {
       tag: payload.tag || `chat-${Date.now()}`,
       renotify: true,
       data: {
-        url: payload.url || '/#chat',
+        url: payload.url || '/chat',
         threadId: payload.threadId,
         channelId: payload.channelId,
         senderId: payload.senderId,

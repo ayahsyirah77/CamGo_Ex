@@ -643,7 +643,7 @@ class ChatLoungeService {
         channelId: msg.channelId,
         senderId: msg.senderId,
         senderName: msg.senderName,
-        url: msg.dmThreadId ? `/#dms` : `/#chat`,
+        url: msg.dmThreadId ? `/chat#dms` : `/chat`,
       });
     } else {
       pushNotificationService.playChime('incoming');

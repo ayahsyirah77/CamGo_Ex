@@ -969,14 +969,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </button>
                 </div>
 
-                {/* Graphic Profile Card with Small Circular Avatar & Username Below Icon - Unlinked Display Section */}
+                {/* Graphic Profile Card with Small Circular Avatar & Username Below Icon - Interactive Account Link */}
                 <div
-                  className="p-4 rounded-2xl bg-stone-900/90 border border-emerald-500/35 flex flex-col items-center justify-center text-center shadow-xl relative overflow-hidden select-none"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    if (currentUser) {
+                      onOpenUserDashboard();
+                    } else {
+                      onOpenAuth();
+                    }
+                  }}
+                  className="p-4 rounded-2xl bg-stone-900/90 border border-emerald-500/35 hover:border-emerald-400 flex flex-col items-center justify-center text-center shadow-xl relative overflow-hidden select-none cursor-pointer group transition-all"
                   aria-label="User Profile Info"
+                  title={currentUser ? 'Open Traveler & Local Dashboard' : 'Sign In / Register'}
                 >
                   {/* Small Circle Avatar Container with Ring */}
                   <div className="relative shrink-0">
-                    <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr from-emerald-400 via-teal-300 to-emerald-500 shadow-md shadow-emerald-950">
+                    <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr from-emerald-400 via-teal-300 to-emerald-500 shadow-md shadow-emerald-950 group-hover:scale-105 transition-transform">
                       <img
                         src={
                           currentUser?.photoURL ||
@@ -992,13 +1001,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {/* Username & Info Placed Below Icon */}
                   <div className="mt-2.5 space-y-0.5 w-full">
                     <div className="flex items-center justify-center gap-1.5">
-                      <p className="font-bold text-sm text-stone-100 truncate">
-                        {currentUser?.displayName || (language === 'bm' ? 'Pelawat' : 'Guest Visitor')}
+                      <p className="font-bold text-sm text-stone-100 group-hover:text-emerald-300 transition-colors truncate">
+                        {currentUser?.displayName || (language === 'bm' ? 'Pelawat (Log Masuk)' : 'Guest (Tap to Sign In)')}
                       </p>
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     </div>
                     <p className="text-[11px] text-stone-400 truncate">
-                      {currentUser?.email || (language === 'bm' ? 'Pelawat Berdaftar' : 'Registered Visitor')}
+                      {currentUser?.email || (language === 'bm' ? 'Klik untuk akses akaun' : 'Tap for account settings')}
                     </p>
                   </div>
                 </div>

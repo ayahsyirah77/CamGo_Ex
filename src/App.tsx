@@ -77,11 +77,28 @@ import {
 function checkIsStandaloneChat(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // Only open standalone chat if explicitly requested via URL query param or hash (?chat=true or #chat)
+  const pathname = window.location.pathname.toLowerCase();
   const search = window.location.search.toLowerCase();
   const hash = window.location.hash.toLowerCase();
 
-  return search.includes('chat=true') || search.includes('standalone=true') || hash.includes('#chat') || hash.includes('#dms');
+  // Root domain ('/') strictly defaults to clean main homepage with chat closed
+  if (pathname === '/' || pathname === '') {
+    return (
+      search.includes('chat=true') ||
+      search.includes('standalone=true') ||
+      hash === '#chat' ||
+      hash === '#dms'
+    );
+  }
+
+  // Dedicated routes like /chat or /dms open into standalone chat mode
+  return (
+    pathname.startsWith('/chat') ||
+    pathname.startsWith('/dms') ||
+    search.includes('chat=true') ||
+    hash === '#chat' ||
+    hash === '#dms'
+  );
 }
 
 export default function App() {
@@ -189,9 +206,24 @@ export default function App() {
     const handleOpenParking = () => setIsParkingEvOpen(true);
     window.addEventListener('open-smart-parking-ev-modal', handleOpenParking);
 
+    const handleLocationChange = () => {
+      const isChatRoute = checkIsStandaloneChat();
+      setIsStandaloneChatView(isChatRoute);
+      if (isChatRoute) {
+        setIsChatOpen(true);
+      } else {
+        setIsChatOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+
     if (checkIsStandaloneChat()) {
       setIsStandaloneChatView(true);
       setIsChatOpen(true);
+    } else {
+      setIsStandaloneChatView(false);
+      setIsChatOpen(false);
     }
 
     return () => {
@@ -201,6 +233,8 @@ export default function App() {
       window.removeEventListener('open-find-my-party', handleOpenParty);
       window.removeEventListener('open-currency-converter', handleOpenCurrency);
       window.removeEventListener('open-smart-parking-ev-modal', handleOpenParking);
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
       unsubUser();
     };
   }, []);
@@ -233,7 +267,7 @@ export default function App() {
     setIsStandaloneChatView(false);
     setIsChatOpen(false);
     if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({}, document.title, '/');
     }
   };
 

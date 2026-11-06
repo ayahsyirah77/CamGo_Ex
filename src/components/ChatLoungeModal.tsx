@@ -1508,7 +1508,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                 {/* Open Standalone Chat Lounge Direct App Link */}
                 <button
                   onClick={() => {
-                    window.location.href = '/?chat=true#chat';
+                    window.location.href = '/chat';
                     setShowInstallGuideModal(false);
                   }}
                   className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-stone-700 transition-colors"
