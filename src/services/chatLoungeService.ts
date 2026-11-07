@@ -323,6 +323,21 @@ class ChatLoungeService {
     }
   }
 
+  private sanitizeObject(obj: any): any {
+    const cleaned: any = {};
+    if (!obj || typeof obj !== 'object') return obj;
+    Object.keys(obj).forEach((key) => {
+      if (obj[key] !== undefined) {
+        if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+          cleaned[key] = this.sanitizeObject(obj[key]);
+        } else {
+          cleaned[key] = obj[key];
+        }
+      }
+    });
+    return cleaned;
+  }
+
   // --- Public Getters ---
 
   public getCurrentUser(): ChatUser {
@@ -367,7 +382,7 @@ class ChatLoungeService {
 
     if (db) {
       try {
-        setDoc(doc(db, 'chat_lounge_channels', newChan.id), newChan).catch(() => {});
+        setDoc(doc(db, 'chat_lounge_channels', newChan.id), this.sanitizeObject(newChan)).catch(() => {});
       } catch {
         // ignore
       }
@@ -462,7 +477,7 @@ class ChatLoungeService {
     // Persist to Cloud Firestore for real-time multi-device sync
     if (db) {
       try {
-        setDoc(doc(db, 'chat_lounge_messages', newMsg.id), newMsg);
+        setDoc(doc(db, 'chat_lounge_messages', newMsg.id), this.sanitizeObject(newMsg));
       } catch (err) {
         console.error('[ChatLoungeService] Firestore sendMessage error:', err);
       }
@@ -503,7 +518,7 @@ class ChatLoungeService {
 
     if (db) {
       try {
-        setDoc(doc(db, 'chat_lounge_messages', messageId), { reactions: msg.reactions }, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'chat_lounge_messages', messageId), this.sanitizeObject({ reactions: msg.reactions }), { merge: true }).catch(() => {});
       } catch {
         // ignore
       }
