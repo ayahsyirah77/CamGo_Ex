@@ -77,15 +77,21 @@ class BeaconService {
    * Joins an existing beacon session. If the session exists, adds the user as a designated member.
    * If not found, throws a NOT_FOUND error so the UI can prompt the user to create it.
    */
+  /**
+   * Joins an existing beacon session. If the session exists, adds the user as a designated member.
+   * If not found, throws a NOT_FOUND error so the UI can prompt the user to create it.
+   */
   async joinSession(
     rawCode: string,
     member: BeaconMember
   ): Promise<BeaconSession> {
     const code = rawCode.trim().toUpperCase().replace(/\s+/g, '');
+    console.log('[BeaconService] Joining session:', code, 'Member:', member.id);
     const sessionRef = doc(db, 'beacon_sessions', code);
 
     const snap = await getDoc(sessionRef);
     if (!snap.exists()) {
+      console.error('[BeaconService] Session not found:', code);
       throw new Error('SESSION_NOT_FOUND');
     }
 
@@ -95,9 +101,11 @@ class BeaconService {
     }
 
     // Add designated member to existing session in Firestore
+    console.log('[BeaconService] Updating members in Firestore...');
     await updateDoc(sessionRef, {
       [`members.${member.id}`]: member,
     });
+    console.log('[BeaconService] Successfully updated members.');
 
     const updatedSession: BeaconSession = {
       ...sessionData,
@@ -124,6 +132,7 @@ class BeaconService {
     onError: (err: any) => void
   ): Unsubscribe {
     const code = rawCode.trim().toUpperCase().replace(/\s+/g, '');
+    console.log('[BeaconService] Subscribing to session:', code);
     const sessionRef = doc(db, 'beacon_sessions', code);
 
     return onSnapshot(
@@ -131,6 +140,7 @@ class BeaconService {
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data() as BeaconSession;
+          console.log('[BeaconService] Received snapshot for:', code, 'Members count:', Object.keys(data.members || {}).length);
           if (new Date(data.expiresAt).getTime() < Date.now() || data.status === 'ended') {
             onExpired();
             return;
@@ -144,6 +154,7 @@ class BeaconService {
           }
 
           // Document does not exist in Firestore - strictly trigger onNotFound
+          console.warn('[BeaconService] Snapshot document does not exist:', code);
           this.clearCachedSession();
           onNotFound(code);
         }
@@ -171,7 +182,8 @@ class BeaconService {
         updatePayload[`members.${memberId}.${key}`] = val;
       });
       updatePayload[`members.${memberId}.updatedAt`] = new Date().toISOString();
-
+      
+      console.log('[BeaconService] Updating location for member:', memberId);
       await updateDoc(sessionRef, updatePayload);
     } catch (e) {
       console.warn('[BeaconService] updateMemberLocation fallback:', e);
@@ -182,13 +194,15 @@ class BeaconService {
    * Remove self from session
    */
   async leaveSession(code: string, memberId: string): Promise<void> {
+    console.log('[BeaconService] Leaving session:', code, 'Member:', memberId);
     try {
       const sessionRef = doc(db, 'beacon_sessions', code);
       await updateDoc(sessionRef, {
         [`members.${memberId}`]: deleteField(),
       });
+      console.log('[BeaconService] Successfully removed member from Firestore.');
     } catch (e) {
-      console.warn('[BeaconService] leaveSession notice:', e);
+      console.error('[BeaconService] leaveSession error:', e);
     }
     this.clearCachedSession();
   }

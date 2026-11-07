@@ -563,6 +563,14 @@ export interface BeaconChatMessage {
   senderColor?: string;
   text: string;
   timestamp: string;
+  imageUrl?: string;
+  audioUrl?: string;
+  attachment?: {
+    name: string;
+    url: string;
+    size: string;
+    type: 'image' | 'document' | 'audio';
+  };
 }
 
 export interface BeaconSession {

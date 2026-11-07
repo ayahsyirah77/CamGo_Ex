@@ -245,18 +245,22 @@ class ChatLoungeService {
   private initFirestore(): void {
     if (typeof window === 'undefined' || !db) return;
     try {
+      console.log('[ChatLoungeService] Initializing Firestore listener...');
       const msgsCol = collection(db, 'chat_lounge_messages');
       onSnapshot(
         msgsCol,
         (snapshot) => {
+          console.log('[ChatLoungeService] Received snapshot update. Changes:', snapshot.docChanges().length);
           let updated = false;
           snapshot.docChanges().forEach((change) => {
             const data = change.doc.data() as ChatMessage;
             if (!data || !data.id) return;
+            console.log('[ChatLoungeService] Snapshot change:', change.type, 'Message ID:', data.id);
 
             if (change.type === 'added') {
               const exists = this.messages.some((m) => m.id === data.id);
               if (!exists) {
+                console.log('[ChatLoungeService] Adding new message:', data.id);
                 this.messages.push(data);
                 updated = true;
                 // If sent by someone else, play incoming message chime
@@ -267,6 +271,7 @@ class ChatLoungeService {
             } else if (change.type === 'modified') {
               const idx = this.messages.findIndex((m) => m.id === data.id);
               if (idx >= 0) {
+                console.log('[ChatLoungeService] Updating message:', data.id);
                 this.messages[idx] = { ...this.messages[idx], ...data };
                 updated = true;
               }
@@ -281,11 +286,11 @@ class ChatLoungeService {
           }
         },
         (err) => {
-          console.warn('[FIRESTORE CHAT] Realtime listener notice:', err);
+          console.error('[FIRESTORE CHAT] Realtime listener error:', err);
         }
       );
     } catch (err) {
-      console.warn('[FIRESTORE CHAT] init error:', err);
+      console.error('[FIRESTORE CHAT] init error:', err);
     }
   }
 
@@ -428,9 +433,9 @@ class ChatLoungeService {
     // Persist to Cloud Firestore for real-time multi-device sync
     if (db) {
       try {
-        setDoc(doc(db, 'chat_lounge_messages', newMsg.id), newMsg).catch(() => {});
-      } catch {
-        // ignore
+        setDoc(doc(db, 'chat_lounge_messages', newMsg.id), newMsg);
+      } catch (err) {
+        console.error('[ChatLoungeService] Firestore sendMessage error:', err);
       }
     }
 

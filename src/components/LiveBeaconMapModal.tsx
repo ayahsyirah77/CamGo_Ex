@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Users,
   Footprints,
+  Car,
   AlertTriangle,
   ExternalLink,
   RefreshCw,
@@ -73,6 +74,65 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [showQrPreview, setShowQrPreview] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+
+  // Dynamic Route & Path overlay state
+  const [routeTravelMode, setRouteTravelMode] = useState<'walking' | 'driving'>('walking');
+  const [routePoints, setRoutePoints] = useState<[number, number][] | null>(null);
+  const [routeEtaInfo, setRouteEtaInfo] = useState<{ distanceText: string; durationText: string } | null>(null);
+
+  // Fetch dynamic walking or driving path geometry from OSRM
+  useEffect(() => {
+    const creatorId = session?.createdBy;
+    const hostMember = session?.members && creatorId ? session.members[creatorId] : null;
+
+    if (!isOpen || !myCoords || !hostMember || hostMember.id === memberId) {
+      setRoutePoints(null);
+      setRouteEtaInfo(null);
+      return;
+    }
+
+    let isMounted = true;
+    const mode = routeTravelMode === 'walking' ? 'foot' : 'driving';
+    const url = `https://router.project-osrm.org/route/v1/${mode}/${myCoords.longitude},${myCoords.latitude};${hostMember.longitude},${hostMember.latitude}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!isMounted) return;
+        if (data && data.routes && data.routes[0] && data.routes[0].geometry?.coordinates) {
+          const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
+            ([lng, lat]: [number, number]) => [lat, lng]
+          );
+          setRoutePoints(coords);
+
+          const distM = data.routes[0].distance;
+          const durS = data.routes[0].duration;
+
+          const distKm = (distM / 1000).toFixed(1);
+          const distStr = distM < 1000 ? `${Math.round(distM)}m` : `${distKm}km`;
+          const durMin = Math.max(1, Math.round(durS / 60));
+          const durStr = durMin >= 60 ? `${Math.floor(durMin / 60)}h ${durMin % 60}m` : `${durMin} min`;
+
+          setRouteEtaInfo({
+            distanceText: distStr,
+            durationText: durStr,
+          });
+        } else {
+          setRoutePoints([[myCoords.latitude, myCoords.longitude], [hostMember.latitude, hostMember.longitude]]);
+          setRouteEtaInfo(null);
+        }
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.warn('OSRM route fetch notice in map modal:', err);
+        setRoutePoints([[myCoords.latitude, myCoords.longitude], [hostMember.latitude, hostMember.longitude]]);
+        setRouteEtaInfo(null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, myCoords?.latitude, myCoords?.longitude, session?.members, session?.createdBy, memberId, routeTravelMode]);
 
   // Generate QR code for this active session
   useEffect(() => {
@@ -266,25 +326,30 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
       }
     });
 
-    // Draw in-app live navigation route connecting user to Beacon Host
+    // Draw dynamic walking or driving path overlay connecting user to Beacon Host
     if (navPolylineRef.current) {
       navPolylineRef.current.remove();
       navPolylineRef.current = null;
     }
     const hostMember = sortedMembers.find((m) => m.id === session.createdBy);
     if (map && myCoords && hostMember && hostMember.id !== memberId) {
-      navPolylineRef.current = L.polyline(
-        [
-          [myCoords.latitude, myCoords.longitude],
-          [hostMember.latitude, hostMember.longitude],
-        ],
-        {
-          color: '#10b981',
-          weight: 4,
-          dashArray: '8, 8',
-          opacity: 0.85,
-        }
-      ).addTo(map);
+      const pointsToUse: [number, number][] =
+        routePoints && routePoints.length > 0
+          ? routePoints
+          : [
+              [myCoords.latitude, myCoords.longitude],
+              [hostMember.latitude, hostMember.longitude],
+            ];
+
+      const isWalking = routeTravelMode === 'walking';
+      navPolylineRef.current = L.polyline(pointsToUse, {
+        color: isWalking ? '#10b981' : '#3b82f6',
+        weight: isWalking ? 5 : 6,
+        dashArray: isWalking ? '8, 10' : undefined,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
     }
 
     // Cleanup departed markers
@@ -299,7 +364,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
         }
       }
     });
-  }, [isOpen, session, myCoords, memberId, memberName, avatarColor, batteryLevel]);
+  }, [isOpen, session, myCoords, memberId, memberName, avatarColor, batteryLevel, routePoints, routeTravelMode]);
 
   // Recenter / Locate Me directly on user's exact current GPS location
   const handleRecenter = () => {
@@ -441,6 +506,37 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     ? Object.values(session.members).filter((m) => m.id !== memberId)
     : [];
 
+  const creatorId = session?.createdBy;
+  const hostMember =
+    (session?.members && creatorId && session.members[creatorId]) ||
+    (session?.members && Object.values(session.members)[0]) ||
+    null;
+  const isMeHost = memberId === creatorId;
+  const hostName = session?.createdByName || hostMember?.name || 'Beacon Host';
+
+  const handleNavigateToHost = (app: 'google' | 'waze' | 'apple' = 'google') => {
+    if (!hostMember) {
+      setRecenterToast(
+        language === 'bm'
+          ? '⚠️ Koordinat pencipta suar belum tersedia'
+          : '⚠️ Host GPS fix not available yet'
+      );
+      setTimeout(() => setRecenterToast(null), 3000);
+      return;
+    }
+    const lat = hostMember.latitude;
+    const lon = hostMember.longitude;
+    const travelParam = routeTravelMode === 'walking' ? 'walking' : 'driving';
+    let url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=${travelParam}`;
+    if (app === 'waze') {
+      url = `https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`;
+    } else if (app === 'apple') {
+      const appleDir = routeTravelMode === 'walking' ? 'w' : 'd';
+      url = `https://maps.apple.com/?daddr=${lat},${lon}&dirflg=${appleDir}`;
+    }
+    window.open(url, '_blank');
+  };
+
   const myLandmark = myCoords
     ? getNearestHighlandLandmark(myCoords.latitude, myCoords.longitude)
     : 'Cameron Highlands';
@@ -564,6 +660,103 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Quick Navigation Banner to Beacon Host (when user is not the host) */}
+          {!isMeHost && hostMember && (
+            <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-stone-900 border-2 border-emerald-500/50 flex flex-col space-y-2.5 shadow-xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center font-bold shrink-0 shadow-md">
+                    <Navigation className="w-4 h-4 text-amber-400 stroke-[2.5]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-mono uppercase font-black px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                        👑 BEACON HOST
+                      </span>
+                      <span className="text-xs font-extrabold text-white truncate">{hostName}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-emerald-300 font-mono mt-0.5 truncate">
+                      {myCoords && (
+                        <span className="font-bold text-white bg-emerald-900/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                          {formatDistance(calculateHaversineDistance(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude))}
+                        </span>
+                      )}
+                      <span className="text-stone-300 truncate">• {hostMember.nearestLandmark || 'Cameron Highlands'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {/* Travel Mode Switcher */}
+                  <div className="flex items-center p-1 rounded-xl bg-stone-900 border border-white/10 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setRouteTravelMode('walking')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        routeTravelMode === 'walking'
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'text-stone-400 hover:text-white'
+                      }`}
+                      title="Display walking path"
+                    >
+                      <Footprints className="w-3.5 h-3.5" />
+                      <span>{language === 'bm' ? 'Jalan' : 'Walk'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRouteTravelMode('driving')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        routeTravelMode === 'driving'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'text-stone-400 hover:text-white'
+                      }`}
+                      title="Display driving path"
+                    >
+                      <Car className="w-3.5 h-3.5" />
+                      <span>{language === 'bm' ? 'Pandu' : 'Drive'}</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateToHost('google')}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                    title="Open Turn-by-Turn Navigation in Google Maps"
+                  >
+                    <Navigation className="w-3.5 h-3.5" />
+                    <span>Google Maps</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateToHost('waze')}
+                    className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                    title="Open Navigation in Waze"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Waze</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Dynamic Route Info Pill */}
+              {routeEtaInfo && (
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-stone-300 font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${routeTravelMode === 'walking' ? 'bg-emerald-400 animate-ping' : 'bg-blue-400 animate-pulse'}`} />
+                    <span>
+                      {routeTravelMode === 'walking' ? '🚶 Footpath Route:' : '🚗 Driving Route:'}{' '}
+                      <span className="font-extrabold text-white">{routeEtaInfo.distanceText}</span> (~{routeEtaInfo.durationText})
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-stone-400 font-sans">
+                    {language === 'bm' ? 'Polyline Leaflet' : 'Dynamic Polyline Path'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Collapsible QR Code Preview Card */}
           {showQrPreview && (
@@ -797,6 +990,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                   : null;
 
                 const cardinal = bearing !== null ? getCompassCardinal(bearing) : null;
+                const isHost = comp.id === session?.createdBy;
 
                 return (
                   <div
@@ -809,7 +1003,9 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                       });
                     }}
                     className={`p-3 rounded-2xl bg-stone-800/60 hover:bg-stone-800 border flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                      isConnectionActive
+                      isHost
+                        ? 'border-amber-400/60 ring-1 ring-amber-400/30 bg-stone-850'
+                        : isConnectionActive
                         ? 'border-emerald-500/30 hover:border-emerald-500/50'
                         : stale
                         ? 'border-amber-500/40'
@@ -842,8 +1038,13 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                         />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
                           <span className="truncate">{comp.name}</span>
+                          {isHost && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-black bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                              👑 Host
+                            </span>
+                          )}
                           <span
                             className={`px-1.5 py-0.2 rounded text-[9px] font-bold flex items-center gap-1 border ${
                               isConnectionActive
@@ -877,16 +1078,33 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="text-right shrink-0">
-                      {dist && (
-                        <div className="text-xs font-bold font-mono text-emerald-400">
-                          {dist}
-                        </div>
-                      )}
-                      {cardinal && (
-                        <div className="text-[10px] text-stone-400 font-mono">
-                          {cardinal} ({bearing}°)
-                        </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right">
+                        {dist && (
+                          <div className="text-xs font-bold font-mono text-emerald-400">
+                            {dist}
+                          </div>
+                        )}
+                        {cardinal && (
+                          <div className="text-[10px] text-stone-400 font-mono">
+                            {cardinal} ({bearing}°)
+                          </div>
+                        )}
+                      </div>
+
+                      {isHost && !isMeHost && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNavigateToHost('google');
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
+                          title="Navigate to Host in Google Maps"
+                        >
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>Nav</span>
+                        </button>
                       )}
                     </div>
                   </div>

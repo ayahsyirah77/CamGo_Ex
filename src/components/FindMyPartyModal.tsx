@@ -24,6 +24,7 @@ import {
   EyeOff,
   Crosshair,
   Footprints,
+  Car,
   Info,
   Maximize2,
   X,
@@ -38,11 +39,15 @@ import {
   Route,
   MessageSquare,
   Send,
+  Mic,
+  Paperclip,
+  Download,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
-import { db } from '../lib/firebase';
+import { db, storage } from '../lib/firebase';
 import { doc, updateDoc, Unsubscribe } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { beaconService, LOCAL_STORAGE_KEY_SESSION } from '../services/beaconService';
 import {
   calculateHaversineDistance,
@@ -137,6 +142,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [chatInputText, setChatInputText] = useState<string>('');
   const [sendingChat, setSendingChat] = useState<boolean>(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  // Dynamic Route & Path overlay state
+  const [routeTravelMode, setRouteTravelMode] = useState<'walking' | 'driving'>('walking');
+  const [routePoints, setRoutePoints] = useState<[number, number][] | null>(null);
+  const [routeEtaInfo, setRouteEtaInfo] = useState<{ distanceText: string; durationText: string } | null>(null);
+
+  // Walkie-Talkie state
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     if (activeTab === 'chat' && chatBottomRef.current) {
@@ -325,7 +340,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           });
         },
         () => {},
-        { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 }
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 3000 }
       );
     }
   }, [isOpen]);
@@ -445,6 +460,60 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     }
   };
 
+  // Fetch dynamic walking or driving path geometry from OSRM
+  useEffect(() => {
+    const creatorId = session?.createdBy;
+    const hostMember = session?.members && creatorId ? session.members[creatorId] : null;
+
+    if (!myCoords || !hostMember || hostMember.id === memberId) {
+      setRoutePoints(null);
+      setRouteEtaInfo(null);
+      return;
+    }
+
+    let isMounted = true;
+    const mode = routeTravelMode === 'walking' ? 'foot' : 'driving';
+    const url = `https://router.project-osrm.org/route/v1/${mode}/${myCoords.longitude},${myCoords.latitude};${hostMember.longitude},${hostMember.latitude}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!isMounted) return;
+        if (data && data.routes && data.routes[0] && data.routes[0].geometry?.coordinates) {
+          const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
+            ([lng, lat]: [number, number]) => [lat, lng]
+          );
+          setRoutePoints(coords);
+
+          const distM = data.routes[0].distance;
+          const durS = data.routes[0].duration;
+
+          const distKm = (distM / 1000).toFixed(1);
+          const distStr = distM < 1000 ? `${Math.round(distM)}m` : `${distKm}km`;
+          const durMin = Math.max(1, Math.round(durS / 60));
+          const durStr = durMin >= 60 ? `${Math.floor(durMin / 60)}h ${durMin % 60}m` : `${durMin} min`;
+
+          setRouteEtaInfo({
+            distanceText: distStr,
+            durationText: durStr,
+          });
+        } else {
+          setRoutePoints([[myCoords.latitude, myCoords.longitude], [hostMember.latitude, hostMember.longitude]]);
+          setRouteEtaInfo(null);
+        }
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.warn('OSRM route fetch notice:', err);
+        setRoutePoints([[myCoords.latitude, myCoords.longitude], [hostMember.latitude, hostMember.longitude]]);
+        setRouteEtaInfo(null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [myCoords?.latitude, myCoords?.longitude, session?.members, session?.createdBy, memberId, routeTravelMode]);
+
   // Continuous Geolocation Watcher
   useEffect(() => {
     if (!isSharing) {
@@ -489,9 +558,9 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         }
       },
       {
-        enableHighAccuracy: false,
-        timeout: 25000,
-        maximumAge: 10000,
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 3000,
       }
     );
 
@@ -657,7 +726,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     }
 
     const effectiveMemberName = memberName.trim() || 'Highland Companion';
-    if (!memberName.trim()) setMemberName('Highland Companion');
 
     setLoading(true);
     setErrorMsg(null);
@@ -726,7 +794,9 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
   // Leave session
   const handleLeaveSession = async () => {
-    if (!session) return;
+    const currentCode = session?.code || localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
+    console.log('[FindMyParty] Attempting to leave session:', currentCode, 'MemberID:', memberId);
+    
     const confirmLeave = window.confirm(
       language === 'bm'
         ? 'Adakah anda pasti mahu keluar dari kumpulan penjejakan ini?'
@@ -735,20 +805,26 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     if (!confirmLeave) return;
 
     if (sessionUnsubRef.current) {
+      console.log('[FindMyParty] Unsubscribing from Firestore session...');
       sessionUnsubRef.current();
       sessionUnsubRef.current = null;
     }
 
-    const currentCode = session.code;
     setSession(null);
     setIsSharing(false);
     localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
     beaconService.clearCachedSession();
 
-    try {
-      await beaconService.leaveSession(currentCode, memberId);
-    } catch (e) {
-      console.warn('Error during leaveSession:', e);
+    if (currentCode) {
+      try {
+        console.log('[FindMyParty] Calling beaconService.leaveSession...');
+        await beaconService.leaveSession(currentCode, memberId);
+        console.log('[FindMyParty] Successfully left session.');
+      } catch (e) {
+        console.error('[FindMyParty] Error during leaveSession:', e);
+      }
+    } else {
+        console.warn('[FindMyParty] No session code found to leave.');
     }
   };
 
@@ -773,6 +849,61 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     setSession(null);
     beaconService.clearCachedSession();
     setEntryMode('join');
+  }; // end handleJoinSession
+
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await handleUploadAudio(audioBlob);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Error starting audio recording:', err);
+      setErrorMsg(language === 'bm' ? 'Gagal mengakses mikrofon.' : 'Failed to access microphone.');
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleUploadAudio = async (audioBlob: Blob) => {
+    if (!session) return;
+    setLoading(true);
+    try {
+      const storageRef = ref(storage, `beacon_audio/${session.code}/${Date.now()}.webm`);
+      await uploadBytes(storageRef, audioBlob);
+      const audioUrl = await getDownloadURL(storageRef);
+
+      const newMessage = {
+        id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        senderId: memberId,
+        senderName: memberName || 'Highland Companion',
+        senderColor: avatarColor,
+        text: '🎤 Voice Message',
+        timestamp: new Date().toISOString(),
+        audioUrl,
+      };
+
+      await beaconService.sendBeaconChatMessage(session.code, newMessage);
+    } catch (err) {
+      console.error('Error uploading audio:', err);
+      setErrorMsg(language === 'bm' ? 'Gagal menghantar mesej suara.' : 'Failed to send voice message.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Toggle Sharing ON/OFF
@@ -978,25 +1109,30 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       }
     });
 
-    // Draw in-app live navigation route connecting user to Beacon Host
+    // Draw dynamic walking or driving path overlay connecting user to Beacon Host
     if (navPolylineRef.current) {
       navPolylineRef.current.remove();
       navPolylineRef.current = null;
     }
     const hostMember = activeList.find((m) => m.id === session?.createdBy);
     if (map && myCoords && hostMember && hostMember.id !== memberId) {
-      navPolylineRef.current = L.polyline(
-        [
-          [myCoords.latitude, myCoords.longitude],
-          [hostMember.latitude, hostMember.longitude],
-        ],
-        {
-          color: '#10b981',
-          weight: 4,
-          dashArray: '8, 8',
-          opacity: 0.85,
-        }
-      ).addTo(map);
+      const pointsToUse: [number, number][] =
+        routePoints && routePoints.length > 0
+          ? routePoints
+          : [
+              [myCoords.latitude, myCoords.longitude],
+              [hostMember.latitude, hostMember.longitude],
+            ];
+
+      const isWalking = routeTravelMode === 'walking';
+      navPolylineRef.current = L.polyline(pointsToUse, {
+        color: isWalking ? '#10b981' : '#3b82f6',
+        weight: isWalking ? 5 : 6,
+        dashArray: isWalking ? '8, 10' : undefined,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
     }
 
     // Cleanup departed members
@@ -1010,11 +1146,14 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         }
       }
     });
-  }, [designatedMembers, myCoords, activeTab, memberId, memberName, avatarColor, session?.createdBy]);
+  }, [designatedMembers, myCoords, activeTab, memberId, memberName, avatarColor, session?.createdBy, routePoints, routeTravelMode]);
 
   // Identify Beacon Creator / Host
   const creatorId = session?.createdBy;
-  const creatorMember = session?.members && creatorId ? session.members[creatorId] : null;
+  const creatorMember =
+    (session?.members && creatorId && session.members[creatorId]) ||
+    (session?.members && Object.values(session.members)[0]) ||
+    null;
   const isMeCreator = memberId === creatorId;
   const creatorName = session?.createdByName || creatorMember?.name || 'Beacon Host';
 
@@ -1052,11 +1191,13 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     }
     const lat = creatorMember.latitude;
     const lon = creatorMember.longitude;
-    let url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+    const travelParam = routeTravelMode === 'walking' ? 'walking' : 'driving';
+    let url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=${travelParam}`;
     if (app === 'waze') {
       url = `https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`;
     } else if (app === 'apple') {
-      url = `https://maps.apple.com/?daddr=${lat},${lon}&dirflg=d`;
+      const appleDir = routeTravelMode === 'walking' ? 'w' : 'd';
+      url = `https://maps.apple.com/?daddr=${lat},${lon}&dirflg=${appleDir}`;
     }
     window.open(url, '_blank');
   };
@@ -1076,11 +1217,14 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const handleShowRouteToHost = () => {
     if (!creatorMember || !myCoords || !mapInstanceRef.current) return;
     setActiveTab('map');
-    const bounds = L.latLngBounds([
-      [myCoords.latitude, myCoords.longitude],
-      [creatorMember.latitude, creatorMember.longitude],
-    ]);
-    mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 17 });
+    const boundsToUse =
+      routePoints && routePoints.length > 0
+        ? L.latLngBounds(routePoints)
+        : L.latLngBounds([
+            [myCoords.latitude, myCoords.longitude],
+            [creatorMember.latitude, creatorMember.longitude],
+          ]);
+    mapInstanceRef.current.fitBounds(boundsToUse, { padding: [60, 60], maxZoom: 17 });
     setSelectedCompanionId(creatorMember.id);
   };
 
@@ -1496,64 +1640,112 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
             <div className="space-y-4">
               {/* FEATURE: NAVIGATE TO BEACON CREATOR (HOST) */}
               {!isMeCreator && creatorMember ? (
-                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/95 via-teal-950/80 to-stone-900 border-2 border-emerald-500/60 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center text-stone-950 shadow-lg shrink-0 font-bold">
-                      <Navigation className="w-5 h-5 text-stone-950 stroke-[2.5]" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-mono uppercase font-black px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/50">
-                          👑 BEACON HOST
-                        </span>
-                        <span className="text-xs text-stone-300 font-bold truncate">{creatorName}</span>
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/95 via-teal-950/80 to-stone-900 border-2 border-emerald-500/60 shadow-2xl flex flex-col space-y-3 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center text-stone-950 shadow-lg shrink-0 font-bold">
+                        <Navigation className="w-5 h-5 text-stone-950 stroke-[2.5]" />
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-emerald-300 font-mono mt-0.5 flex-wrap">
-                        {hostDistanceMeters !== null && (
-                          <span className="font-extrabold text-white bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
-                            {formatDistance(hostDistanceMeters)}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-mono uppercase font-black px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/50">
+                            👑 BEACON HOST
                           </span>
-                        )}
-                        {hostCardinal && (
-                          <span>Bearing {hostCardinal} ({hostBearingDegrees}°)</span>
-                        )}
-                        <span className="text-stone-300">• {creatorMember.nearestLandmark || 'Cameron Highlands'}</span>
+                          <span className="text-xs text-stone-300 font-bold truncate">{creatorName}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-emerald-300 font-mono mt-0.5 flex-wrap">
+                          {hostDistanceMeters !== null && (
+                            <span className="font-extrabold text-white bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
+                              {formatDistance(hostDistanceMeters)}
+                            </span>
+                          )}
+                          {hostCardinal && (
+                            <span>Bearing {hostCardinal} ({hostBearingDegrees}°)</span>
+                          )}
+                          <span className="text-stone-300">• {creatorMember.nearestLandmark || 'Cameron Highlands'}</span>
+                        </div>
                       </div>
+                    </div>
+
+                    {/* Mode Selector & One-Click Navigation Buttons to Creator */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {/* Dynamic Travel Mode Selector */}
+                      <div className="flex items-center p-1 rounded-xl bg-stone-900 border border-white/10 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setRouteTravelMode('walking')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                            routeTravelMode === 'walking'
+                              ? 'bg-emerald-600 text-white shadow-md'
+                              : 'text-stone-400 hover:text-white'
+                          }`}
+                          title="Display dynamic walking path"
+                        >
+                          <Footprints className="w-3.5 h-3.5" />
+                          <span>{language === 'bm' ? 'Jalan' : 'Walk'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRouteTravelMode('driving')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                            routeTravelMode === 'driving'
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'text-stone-400 hover:text-white'
+                          }`}
+                          title="Display dynamic driving route"
+                        >
+                          <Car className="w-3.5 h-3.5" />
+                          <span>{language === 'bm' ? 'Pandu' : 'Drive'}</span>
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleNavigateToHost('google')}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all active:scale-95"
+                        title="Open Turn-by-Turn Navigation in Google Maps"
+                      >
+                        <Navigation className="w-3.5 h-3.5" />
+                        <span>Google Maps</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleNavigateToHost('waze')}
+                        className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                        title="Open in Waze"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Waze</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleShowRouteToHost}
+                        className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/15 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                        title="Center and fit visual route on map"
+                      >
+                        <Route className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{language === 'bm' ? 'Laluan Peta' : 'Fit Route'}</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* One-Click Navigation Buttons to Creator */}
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleNavigateToHost('google')}
-                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all active:scale-95"
-                      title="Open Turn-by-Turn Navigation in Google Maps"
-                    >
-                      <Navigation className="w-3.5 h-3.5" />
-                      <span>Google Maps</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleNavigateToHost('waze')}
-                      className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
-                      title="Open in Waze"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Waze</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleShowRouteToHost}
-                      className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/15 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
-                      title="Center and fit visual route on map"
-                    >
-                      <Route className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{language === 'bm' ? 'Laluan Peta' : 'Fit Route'}</span>
-                    </button>
-                  </div>
+                  {/* Route ETA / Path Info Overlay */}
+                  {routeEtaInfo && (
+                    <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-stone-300 font-mono">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${routeTravelMode === 'walking' ? 'bg-emerald-400 animate-ping' : 'bg-blue-400 animate-pulse'}`} />
+                        <span>
+                          {routeTravelMode === 'walking' ? '🚶 Walking Path:' : '🚗 Driving Path:'}{' '}
+                          <span className="font-extrabold text-white">{routeEtaInfo.distanceText}</span> (~{routeEtaInfo.durationText})
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-stone-400 font-sans">
+                        {language === 'bm' ? 'Laluan Leaflet Aktif' : 'Dynamic Leaflet Polyline Overlay'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : isMeCreator ? (
                 <div className="p-3 sm:p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between gap-3 text-xs">
@@ -1956,6 +2148,44 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                                   : 'bg-stone-850 text-stone-100 border border-white/10 rounded-tl-none'
                               }`}
                             >
+                              {/* Attached Image if present */}
+                              {msg.imageUrl && (
+                                <div className="mb-2 rounded-xl overflow-hidden border border-white/10 max-h-72">
+                                  <img
+                                    src={msg.imageUrl}
+                                    alt="Attachment"
+                                    className="w-full h-full object-cover cursor-pointer hover:scale-[1.02] transition-transform"
+                                    onClick={() => window.open(msg.imageUrl, '_blank')}
+                                  />
+                                </div>
+                              )}
+
+                              {/* Audio Attachment if present */}
+                              {msg.audioUrl && (
+                                <div className="mb-2 flex items-center gap-2">
+                                  <audio controls className="h-8 w-48 sm:w-60">
+                                    <source src={msg.audioUrl} type="audio/webm" />
+                                    Your browser does not support the audio element.
+                                  </audio>
+                                </div>
+                              )}
+
+                              {/* Attached File if present */}
+                              {msg.attachment && (
+                                <div className="mb-2 p-2 rounded-lg bg-stone-950/50 border border-white/10 flex items-center gap-2 text-[10px] text-stone-300">
+                                  <div className="p-1.5 rounded-lg bg-stone-800">
+                                    <Paperclip className="w-3 h-3" />
+                                  </div>
+                                  <div className="truncate">
+                                    <span className="block font-bold truncate">{msg.attachment.name}</span>
+                                    <span>{msg.attachment.size}</span>
+                                  </div>
+                                  <a href={msg.attachment.url} target="_blank" rel="noreferrer" className="ml-auto p-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400">
+                                    <Download className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              )}
+                              
                               {msg.text}
                             </div>
                           </div>
@@ -1967,6 +2197,22 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
                   {/* Message Input Box */}
                   <form onSubmit={handleSendChatMessage} className="flex items-center gap-2">
+                    {/* Walkie-Talkie PTT Button */}
+                    <button
+                      type="button"
+                      onMouseDown={handleStartRecording}
+                      onMouseUp={handleStopRecording}
+                      onTouchStart={handleStartRecording}
+                      onTouchEnd={handleStopRecording}
+                      className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                        isRecording
+                          ? 'bg-rose-600 border-rose-400 text-white animate-pulse'
+                          : 'bg-stone-900 border-white/15 text-stone-400 hover:text-emerald-400'
+                      }`}
+                      title="Push to Talk"
+                    >
+                      <Mic className="w-5 h-5" />
+                    </button>
                     <input
                       type="text"
                       value={chatInputText}
