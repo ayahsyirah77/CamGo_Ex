@@ -104,6 +104,7 @@ class ChatLoungeService {
     this.initBroadcastChannel();
     this.initWebSocket();
     this.initFirestore();
+    this.initPresence();
   }
 
   private loadCurrentUser(): ChatUser {
@@ -171,6 +172,7 @@ class ChatLoungeService {
       // ignore
     }
 
+    this.initPresence();
     this.notifySubscribers();
   }
 
@@ -183,10 +185,10 @@ class ChatLoungeService {
     }
 
     try {
-      if (!localStorage.getItem('camgo_chat_cleared_v3')) {
+      if (!localStorage.getItem('camgo_chat_cleared_v4')) {
         localStorage.removeItem(STORAGE_MESSAGES_KEY);
         localStorage.removeItem(STORAGE_DMS_KEY);
-        localStorage.setItem('camgo_chat_cleared_v3', 'true');
+        localStorage.setItem('camgo_chat_cleared_v4', 'true');
       }
 
       const storedChannels = localStorage.getItem(STORAGE_CHANNELS_KEY);
@@ -291,6 +293,33 @@ class ChatLoungeService {
       );
     } catch (err) {
       console.error('[FIRESTORE CHAT] init error:', err);
+    }
+  }
+
+  private initPresence(): void {
+    if (typeof window === 'undefined' || !db) return;
+    try {
+      const presenceRef = doc(db, 'chat_lounge_presence', this.currentChatUser.id);
+      setDoc(presenceRef, {
+        ...this.currentChatUser,
+        lastSeen: Date.now(),
+      }, { merge: true }).catch(() => {});
+
+      const presenceCol = collection(db, 'chat_lounge_presence');
+      onSnapshot(presenceCol, (snapshot) => {
+        const firestoreUsers: ChatUser[] = [];
+        snapshot.forEach((docSnap) => {
+          const userData = docSnap.data() as ChatUser;
+          if (userData && userData.id) {
+            firestoreUsers.push(userData);
+          }
+        });
+
+        this.users = firestoreUsers;
+        this.notifySubscribers();
+      }, () => {});
+    } catch {
+      // ignore
     }
   }
 

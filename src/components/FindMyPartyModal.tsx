@@ -826,6 +826,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     } else {
         console.warn('[FindMyParty] No session code found to leave.');
     }
+    onClose();
   };
 
   // Switch to creating a different beacon
@@ -882,28 +883,47 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const handleUploadAudio = async (audioBlob: Blob) => {
     if (!session) return;
     setLoading(true);
+    let audioUrl: string | undefined = undefined;
+    let audioDataUrl: string | undefined = undefined;
+
     try {
       const storageRef = ref(storage, `beacon_audio/${session.code}/${Date.now()}.webm`);
       await uploadBytes(storageRef, audioBlob);
-      const audioUrl = await getDownloadURL(storageRef);
+      audioUrl = await getDownloadURL(storageRef);
+    } catch (err) {
+      console.warn('Firebase Storage upload failed (CORS/network), falling back to Base64 data URL:', err);
+    }
 
+    if (!audioUrl) {
+      try {
+        audioDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(audioBlob);
+        });
+      } catch (base64Err) {
+        console.error('Error converting audio to base64:', base64Err);
+      }
+    }
+
+    if (audioUrl || audioDataUrl) {
       const newMessage = {
         id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
         senderId: memberId,
         senderName: memberName || 'Highland Companion',
         senderColor: avatarColor,
-        text: '🎤 Voice Message',
+        text: '🎤 Walkie-Talkie Voice Message',
         timestamp: new Date().toISOString(),
         audioUrl,
+        audioDataUrl,
       };
 
       await beaconService.sendBeaconChatMessage(session.code, newMessage);
-    } catch (err) {
-      console.error('Error uploading audio:', err);
+    } else {
       setErrorMsg(language === 'bm' ? 'Gagal menghantar mesej suara.' : 'Failed to send voice message.');
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   // Toggle Sharing ON/OFF
@@ -1150,11 +1170,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
   // Identify Beacon Creator / Host
   const creatorId = session?.createdBy;
-  const creatorMember =
-    (session?.members && creatorId && session.members[creatorId]) ||
-    (session?.members && Object.values(session.members)[0]) ||
-    null;
-  const isMeCreator = memberId === creatorId;
+  const creatorMember = useMemo(() => {
+    if (!session?.members) return null;
+    if (creatorId && session.members[creatorId]) {
+      return session.members[creatorId];
+    }
+    const membersList = Object.values(session.members);
+    return membersList[0] || null;
+  }, [session?.members, creatorId]);
+
+  const isMeCreator = memberId === creatorId || (creatorMember ? creatorMember.id === memberId : false);
   const creatorName = session?.createdByName || creatorMember?.name || 'Beacon Host';
 
   // Live Navigation Metrics to Creator
@@ -2160,11 +2185,11 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                                 </div>
                               )}
 
-                              {/* Audio Attachment if present */}
-                              {msg.audioUrl && (
+                              {/* Audio Attachment / Walkie-Talkie Voice Message if present */}
+                              {(msg.audioUrl || (msg as any).audioDataUrl) && (
                                 <div className="mb-2 flex items-center gap-2">
                                   <audio controls className="h-8 w-48 sm:w-60">
-                                    <source src={msg.audioUrl} type="audio/webm" />
+                                    <source src={msg.audioUrl || (msg as any).audioDataUrl} type="audio/webm" />
                                     Your browser does not support the audio element.
                                   </audio>
                                 </div>
