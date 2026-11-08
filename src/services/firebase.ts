@@ -504,6 +504,19 @@ class FirebaseStorageService {
         this.notify();
       }, (err) => console.warn('Realtime motorbike bookings listener warning:', err));
 
+      // 12. Real-time Home Glass Cards Listener
+      onSnapshot(collection(db, 'home_glass_cards'), (snap) => {
+        if (!snap.empty) {
+          const cloudCards = snap.docs.map((d) => d.data() as MobileHomeCard);
+          cloudCards.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+          this.setLocalStorageItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(cloudCards));
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('home-cards-updated', { detail: cloudCards }));
+          }
+          this.notify();
+        }
+      }, (err) => console.warn('Realtime home glass cards listener warning:', err));
+
     } catch (e) {
       console.warn("Cloud sync offline mode active, using local cache:", e);
     }
@@ -1419,21 +1432,11 @@ class FirebaseStorageService {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const needsMigration = parsed.some(
-            (c) =>
-              c.type === 'sos' ||
-              c.id === 'card-6-sos' ||
-              c.title === 'The Misty Lodge' ||
-              c.title === 'Bike Rentals' ||
-              c.title === 'Highland Weather' ||
-              c.title === 'Live Traffic Camera' ||
-              (c.id === 'card-6-bike' && c.buttonAction === 'open-party')
-          );
-          if (needsMigration) {
-            localStorage.setItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(INITIAL_MOBILE_HOME_CARDS));
-            return INITIAL_MOBILE_HOME_CARDS;
-          }
-          return parsed.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+          const cardMap = new Map<string, MobileHomeCard>();
+          INITIAL_MOBILE_HOME_CARDS.forEach((c) => cardMap.set(c.id, c));
+          parsed.forEach((c) => cardMap.set(c.id, c));
+          const merged = Array.from(cardMap.values());
+          return merged.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         }
       } catch {
         return INITIAL_MOBILE_HOME_CARDS;

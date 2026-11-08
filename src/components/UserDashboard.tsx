@@ -268,6 +268,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     setTimeout(() => setItineraryNoticeMessage(''), 4000);
   };
 
+  useEffect(() => {
+    if (currentUser?.photoURL) {
+      setEditPhotoUrl(currentUser.photoURL);
+    }
+  }, [currentUser?.photoURL]);
+
   const processFile = async (file: File) => {
     setProfileErrorMessage('');
     if (!file.type.startsWith('image/')) {
@@ -276,14 +282,31 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       return;
     }
     try {
-      const downloadUrl = await firebaseService.uploadImage(file, 'user_avatars');
-      setEditPhotoUrl(downloadUrl);
-      setUploadMeta(`Uploaded to Firebase Storage`);
-      setProfileSuccessMessage('Image uploaded successfully!');
-      setTimeout(() => setProfileSuccessMessage(''), 3000);
+      // 1. Process via HTML5 Canvas & FileReader for instant 1:1 auto-fit base64
+      const result = await compressAndAdaptAvatar(file, 300, 0.88);
+      let photoUrl = result.dataUrl;
+
+      // 2. Try uploading to Cloud Storage, otherwise fallback seamlessly
+      try {
+        const cloudUrl = await firebaseService.uploadImage(file, 'user_avatars');
+        if (cloudUrl) photoUrl = cloudUrl;
+      } catch (err) {
+        console.warn('[Storage] Cloud upload fallback, using compressed base64 avatar:', err);
+      }
+
+      setEditPhotoUrl(photoUrl);
+      setUploadMeta(`Auto-fitted • ${result.aspectRatioLabel}`);
+
+      // 3. Immediately persist updated photoURL so avatar everywhere updates live
+      firebaseService.updateUserProfile({
+        photoURL: photoUrl,
+      });
+
+      setProfileSuccessMessage('Profile photo uploaded and saved successfully!');
+      setTimeout(() => setProfileSuccessMessage(''), 3500);
     } catch (e) {
-      console.error(e);
-      setProfileErrorMessage('Could not upload avatar image file. Please try another image.');
+      console.error('Failed to process image file:', e);
+      setProfileErrorMessage('Could not process image file. Please try another image.');
       setTimeout(() => setProfileErrorMessage(''), 4000);
     }
   };
@@ -321,6 +344,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     const defaultAvatar = `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80`;
     setEditPhotoUrl(defaultAvatar);
     setUploadMeta('Default avatar loaded • 300×300 px container fit');
+    firebaseService.updateUserProfile({
+      photoURL: defaultAvatar,
+    });
+    setProfileSuccessMessage('Profile photo reset to default!');
+    setTimeout(() => setProfileSuccessMessage(''), 3000);
   };
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
