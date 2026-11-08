@@ -161,8 +161,8 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
       <div className="flex items-center justify-between">
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-mono font-bold tracking-wider uppercase mb-1">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Interactive Gallery Spotlight</span>
+            <Camera className="w-3.5 h-3.5" />
+            <span>Highland Horizons</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-stone-100">
             Visual Highlights & Highland Horizons

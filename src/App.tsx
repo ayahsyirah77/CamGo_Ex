@@ -27,7 +27,7 @@ import { BackToTop } from './components/BackToTop';
 import { InteractiveMap } from './components/InteractiveMap';
 import { GalleryCarousel } from './components/GalleryCarousel';
 import { ChatLoungeModal } from './components/ChatLoungeModal';
-import { GsapLoopGallery } from './components/GsapLoopGallery';
+import { MobileHomeCards } from './components/MobileHomeCards';
 import { AiChatModal } from './components/AiChatModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLoginPage } from './components/AdminLoginPage';
@@ -40,7 +40,7 @@ import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { MasjidSurauModal } from './components/MasjidSurauModal';
 import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
 import { EmergencySosWidget } from './components/EmergencySosWidget';
-import { MobileRadialMenu } from './components/MobileRadialMenu';
+import { MobileStickyFooter } from './components/MobileStickyFooter';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
 import { DirectorySection } from './components/DirectorySection';
@@ -287,7 +287,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950">
+    <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950 pb-20 sm:pb-0">
       {/* 1. Intro Loading Screen */}
       <LoadingScreen language={language} onFinish={() => {}} />
 
@@ -323,8 +323,12 @@ export default function App() {
         onOpenTrailEngine={() => setIsTrailEngineOpen(true)}
         onOpenFindMyParty={() => setIsFindMyPartyOpen(true)}
         onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
+        onOpenTraffic={() => setActiveCapsuleModal('traffic')}
         places={places}
-        events={[]}
+        events={events}
+        trafficAlerts={trafficAlerts}
+        hazards={hazards}
+        weatherList={weatherList}
         onSelectPlace={handleSelectPlaceForMap}
       />
 
@@ -340,7 +344,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1">
         {/* 3. Hero Section */}
-        <section id="hero-section" className="relative min-h-0 sm:min-h-[75vh] flex items-center justify-center pt-24 sm:pt-28 pb-4 sm:pb-8 px-4 sm:px-6 lg:px-8 overflow-hidden">
+        <section id="hero-section" className="relative min-h-0 sm:min-h-[75vh] flex items-center justify-center pt-52 sm:pt-28 pb-4 sm:pb-8 px-4 sm:px-6 lg:px-8 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/60 to-stone-950/90 pointer-events-none" />
 
           <div className="relative z-10 max-w-5xl mx-auto text-center space-y-4 sm:space-y-6">
@@ -350,31 +354,26 @@ export default function App() {
                 Cameron Highlands
               </span>
             </h1>
-
-            <p className="text-xs sm:text-lg text-stone-300 max-w-2xl mx-auto leading-relaxed">
-              {getTranslation(language, 'hero_subtitle')}
-            </p>
           </div>
         </section>
 
-        {/* GSAP Loop Gallery */}
-        <section className="my-4">
-          <GsapLoopGallery
-            language={language}
-            onOpenDirectoriesModal={() => setIsDirectoriesModalOpen(true)}
-            onOpenPortalsModal={() => setIsPortalsModalOpen(true)}
-            setActiveCapsuleModal={setActiveCapsuleModal}
-            activeCapsuleModal={activeCapsuleModal}
-            weatherList={weatherList}
-            trafficAlerts={trafficAlerts}
-            hazards={hazards}
-            events={events}
-            places={places}
-          />
-        </section>
+        {/* Mobile Transparent Glass Cards matching screenshot (weather, hazard, map, itinerary, find my party, SOS) */}
+        <MobileHomeCards
+          language={language}
+          onOpenWeather={() => setActiveCapsuleModal('microclimate')}
+          onOpenHazard={() => setActiveCapsuleModal('hazard')}
+          onOpenMap={() => setIsMapModalOpen(true)}
+          onOpenItinerary={() => setIsItineraryOpen(true)}
+          onOpenParty={() => setIsFindMyPartyOpen(true)}
+          onOpenMotorbike={() => setIsMotorbikeRentalOpen(true)}
+          onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
+          weatherList={weatherList}
+          trafficAlerts={trafficAlerts}
+          hazards={hazards}
+        />
 
-        {/* Experience Cards - Reverted to original state with description and prominent icon on PC */}
-        <section className="max-w-6xl mx-auto px-3 sm:px-6 mb-12">
+        {/* Experience Cards (Desktop only) */}
+        <section className="hidden sm:block max-w-6xl mx-auto px-3 sm:px-6 mb-12">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 max-w-6xl mx-auto">
             {/* Card 1: Motorbike Rental */}
             <div
@@ -474,11 +473,38 @@ export default function App() {
           </div>
         </section>
 
-        {/* Gallery Carousel */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
-          <div className="rounded-3xl bg-stone-900 border border-emerald-500/30 p-6 shadow-2xl">
-            <h3 className="text-lg font-heading font-black text-white mb-4">Highland Photo Gallery</h3>
-            <GalleryCarousel items={galleryItems} onSelectPlace={handleSelectPlaceForMap} />
+        {/* Highland Photo Gallery Smart Transparent Capsule */}
+        <section className="max-w-6xl mx-auto px-3 sm:px-6 mb-12">
+          <div
+            onClick={() => setIsGalleryOpen(true)}
+            className="group rounded-3xl bg-stone-900/80 backdrop-blur-xl border border-emerald-500/30 hover:border-emerald-400 p-5 sm:p-6 shadow-2xl transition-all cursor-pointer flex flex-wrap items-center justify-between gap-4 relative overflow-hidden text-left"
+          >
+            {/* Subtle ambient glow */}
+            <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none group-hover:bg-emerald-500/20 transition-all duration-500" />
+            
+            <div className="flex items-center gap-3.5 relative z-10">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-inner group-hover:scale-110 transition-transform">
+                <Camera className="w-6 h-6 text-emerald-300" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base sm:text-lg font-heading font-black text-white group-hover:text-emerald-300 transition-colors">
+                    Highland Photo Gallery
+                  </h3>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {galleryItems.length} Photos
+                  </span>
+                </div>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Tap to open visual lightbox with high-elevation photography &amp; scenic horizons.
+                </p>
+              </div>
+            </div>
+
+            <div className="relative z-10 flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all shadow-md group-hover:translate-x-0.5">
+              <span>View Gallery</span>
+              <ArrowRight className="w-4 h-4" />
+            </div>
           </div>
         </section>
       </main>
@@ -750,16 +776,81 @@ export default function App() {
         />
       )}
 
-      {/* Mobile Radial Menu */}
-      <MobileRadialMenu
+      {/* Bottom Sticky Footer for Mobile: Home, Offline Trail Engine, Chat, CamGo AI */}
+      <MobileStickyFooter
         language={language}
-        onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
-        onOpenMasjidSurau={() => setIsMasjidModalOpen(true)}
-        onOpenAiChat={() => setIsAiOpen(true)}
-        onOpenChatLounge={() => setIsChatOpen(true)}
-        onOpenTrailEngine={() => setIsTrailEngineOpen(true)}
-        onOpenFindMyParty={() => setIsFindMyPartyOpen(true)}
+        activeModal={isTrailEngineOpen ? 'trail' : isChatOpen ? 'chat' : isAiOpen ? 'ai' : null}
+        onGoHome={() => {
+          setIsMapModalOpen(false);
+          setIsItineraryOpen(false);
+          setIsChatOpen(false);
+          setIsAiOpen(false);
+          setIsTrailEngineOpen(false);
+          setIsDirectoriesModalOpen(false);
+          setIsPortalsModalOpen(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenTrailEngine={() => {
+          setIsChatOpen(false);
+          setIsAiOpen(false);
+          setIsTrailEngineOpen(true);
+        }}
+        onOpenChat={() => {
+          setIsTrailEngineOpen(false);
+          setIsAiOpen(false);
+          setIsChatOpen(true);
+        }}
+        onOpenAi={() => {
+          setIsTrailEngineOpen(false);
+          setIsChatOpen(false);
+          setIsAiOpen(true);
+        }}
+        onOpenSos={() => {
+          window.dispatchEvent(new CustomEvent('open-emergency-sos'));
+        }}
       />
+      {/* Highland Photo Gallery Popup Modal */}
+      {isGalleryOpen && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-6 overflow-y-auto"
+          onClick={() => setIsGalleryOpen(false)}
+        >
+          <div
+            className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-3xl bg-stone-950 border border-emerald-500/40 shadow-2xl p-4 sm:p-8 space-y-6 relative text-stone-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Camera className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-heading font-black text-stone-100">
+                    Highland Photo Gallery
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    High-elevation photography, tea valley horizons, &amp; cultural spotlights
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsGalleryOpen(false)}
+                className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <GalleryCarousel
+              items={galleryItems}
+              onSelectPlace={(place) => {
+                setIsGalleryOpen(false);
+                handleSelectPlaceForMap(place);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Directories Modal Dialog Wrapper */}
       {isDirectoriesModalOpen && (

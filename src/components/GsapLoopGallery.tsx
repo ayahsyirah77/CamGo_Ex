@@ -296,10 +296,6 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
   return (
     <div className="relative w-full py-2 sm:py-8 bg-stone-950 overflow-hidden font-sans">
       <div className="max-w-7xl mx-auto px-4 mb-3 sm:mb-6 text-center">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-mono font-bold tracking-wider uppercase mb-2 border border-emerald-500/30">
-          <Sparkles className="w-3.5 h-3.5 animate-spin duration-3000" />
-          <span>{isBm ? 'Galeri Pengalaman Interaktif' : 'Interactive Experience Gallery'}</span>
-        </div>
         <h3 className="text-2xl sm:text-4xl font-heading font-black text-stone-100 tracking-tight">
           {isBm ? 'Hab Pengalaman Cameron Highlands' : 'Cameron Highlands Experience Hub'}
         </h3>

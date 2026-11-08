@@ -2,7 +2,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CamLogo } from './CamLogo';
-import { Language, MainCategory, SubCategory, Place, EventNotification, Township } from '../types';
+import {
+  Language,
+  MainCategory,
+  SubCategory,
+  Place,
+  EventNotification,
+  Township,
+  TrafficAlert,
+  HazardAlert,
+  WeatherData,
+} from '../types';
 import { getTranslation } from '../services/i18n';
 import { UserProfile, firebaseService } from '../services/firebase';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -37,7 +47,40 @@ import {
   Zap,
   ShieldAlert,
   Users,
+  Bell,
+  BellRing,
 } from 'lucide-react';
+
+// Dedicated Masjid / Mosque silhouette icon with central dome, crescent & minarets
+export const MasjidIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    {/* Crescent Finial on Main Dome */}
+    <path d="M12 2a1.2 1.2 0 1 0 1 1.2" strokeWidth="1.5" />
+    {/* Central Onion Dome */}
+    <path d="M12 3.8c-3 1.8-4.2 4.8-4.2 6.7h8.4c0-1.9-1.2-4.9-4.2-6.7z" fill="currentColor" fillOpacity="0.15" />
+    {/* Main Structure Base */}
+    <path d="M7.8 10.5v9h8.4v-9" />
+    {/* Arched Doorway */}
+    <path d="M10.2 19.5v-3.2a1.8 1.8 0 0 1 3.6 0v3.2" />
+    {/* Left Minaret with Spire */}
+    <path d="M4.5 7.5l1.5-1.5v13.5H4.5V7.5z" />
+    <path d="M5.2 4.5v1.5" />
+    {/* Right Minaret with Spire */}
+    <path d="M19.5 7.5l-1.5-1.5v13.5h1.5V7.5z" />
+    <path d="M18.8 4.5v1.5" />
+    {/* Base Line */}
+    <path d="M2.5 19.5h19" />
+  </svg>
+);
 
 interface NavbarProps {
   language: Language;
@@ -65,8 +108,12 @@ interface NavbarProps {
   onOpenTrailEngine?: () => void;
   onOpenFindMyParty?: () => void;
   onOpenSos?: () => void;
+  onOpenTraffic?: () => void;
   places?: Place[];
   events?: EventNotification[];
+  trafficAlerts?: TrafficAlert[];
+  hazards?: HazardAlert[];
+  weatherList?: WeatherData[];
   onSelectPlace?: (place: Place) => void;
   onSelectEvent?: (event: EventNotification) => void;
   onSelectTownship?: (town: Township) => void;
@@ -98,8 +145,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenTrailEngine,
   onOpenFindMyParty,
   onOpenSos,
+  onOpenTraffic,
   places = [],
   events = [],
+  trafficAlerts = [],
+  hazards = [],
+  weatherList = [],
   onSelectPlace,
   onSelectEvent,
   onSelectTownship,
@@ -111,11 +162,34 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [portalsOpen, setPortalsOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  const isUserAdmin =
+    currentUser?.role === 'admin' ||
+    currentUser?.email === 'ayahsyirah77@gmail.com' ||
+    currentUser?.email?.toLowerCase().includes('admin');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const mobileSearchRef = useRef<HTMLDivElement>(null);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Mobile Notification Center State
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const [isFilterToggled, setIsFilterToggled] = useState(true);
+
+  // Sync unread notification state on new live events
+  useEffect(() => {
+    const handleNewEvent = () => setHasUnreadNotifications(true);
+    window.addEventListener('new-live-event', handleNewEvent);
+    window.addEventListener('socket-broadcast', handleNewEvent);
+    return () => {
+      window.removeEventListener('new-live-event', handleNewEvent);
+      window.removeEventListener('socket-broadcast', handleNewEvent);
+    };
+  }, []);
 
   // Live Classifieds Count State synced in real-time
   const [jobsCount, setJobsCount] = useState<number>(() => firebaseService.getJobs().length);
@@ -129,14 +203,22 @@ export const Navbar: React.FC<NavbarProps> = ({
     return () => window.removeEventListener('jobs-updated', handleJobsUpdated);
   }, []);
 
-  // Close search dropdown and user menu on outside click
+  // Close search dropdown, user menu and notifications on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+      if (
+        searchRef.current &&
+        !searchRef.current.contains(e.target as Node) &&
+        mobileSearchRef.current &&
+        !mobileSearchRef.current.contains(e.target as Node)
+      ) {
         setIsSearchOpen(false);
       }
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setUserDropdownOpen(false);
+      }
+      if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
+        setIsNotificationOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -283,6 +365,116 @@ export const Navbar: React.FC<NavbarProps> = ({
     visible: { opacity: 1, y: 0 },
   };
 
+  // Real-time live notifications consolidation
+  const notificationItems = [
+    {
+      id: 'sos-active',
+      category: 'SOS',
+      title: language === 'bm' ? 'Kecemasan SOS 24/7' : '24/7 SOS Emergency Ready',
+      desc: language === 'bm' ? 'Talian terus Polis, Bomba & Hospital Cameron bersiap sedia.' : 'Direct hotlines to Police, Hospital & Civil Defence on standby.',
+      tag: 'CRITICAL',
+      tagColor: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+      action: () => {
+        setIsNotificationOpen(false);
+        if (onOpenSos) {
+          onOpenSos();
+        } else {
+          window.dispatchEvent(new CustomEvent('open-emergency-sos'));
+        }
+      },
+    },
+    ...(trafficAlerts && trafficAlerts.length > 0
+      ? trafficAlerts.slice(0, 2).map((alert, idx) => ({
+          id: `traffic-${idx}`,
+          category: 'Traffic',
+          title: alert.location || alert.roadName || (language === 'bm' ? 'Amaran Trafik Tanah Tinggi' : 'Highland Traffic Alert'),
+          desc: alert.description || alert.message || `${alert.location || 'Route'}: ${alert.status.toUpperCase()} traffic`,
+          tag: alert.status.toUpperCase(),
+          tagColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+          action: () => {
+            setIsNotificationOpen(false);
+            if (onOpenTraffic) onOpenTraffic();
+          },
+        }))
+      : [
+          {
+            id: 'traffic-keafarm',
+            category: 'Traffic',
+            title: language === 'bm' ? 'Trafik Sesak di Kea Farm' : 'Kea Farm Traffic Choke-Point',
+            desc: language === 'bm' ? 'Aliran perlahan sekitar pasar pagi & ladang strawberi. Laluan Habu dibuka.' : 'Slow-moving traffic around market & strawberry farms. Habu bypass alternate clear.',
+            tag: 'LIVE',
+            tagColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+            action: () => {
+              setIsNotificationOpen(false);
+              if (onOpenTraffic) onOpenTraffic();
+            },
+          },
+        ]),
+    ...(hazards && hazards.length > 0
+      ? hazards.slice(0, 2).map((hazard, idx) => ({
+          id: `hazard-${idx}`,
+          category: 'Hazard',
+          title: hazard.title || (language === 'bm' ? 'Amaran Bahaya Jalan Raya' : 'Road Hazard Warning'),
+          desc: hazard.description || `${hazard.location} - ${hazard.type}`,
+          tag: 'HAZARD',
+          tagColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+          action: () => {
+            setIsNotificationOpen(false);
+            if (onOpenTraffic) onOpenTraffic();
+          },
+        }))
+      : [
+          {
+            id: 'hazard-slope',
+            category: 'Hazard',
+            title: language === 'bm' ? 'Amaran Cerun & Jalan Licin' : 'Slippery Curves & Slope Caution',
+            desc: language === 'bm' ? 'Laluan Tapah-Cameron berwaspada kabus tebal & selekoh basah.' : 'Tapah-Cameron corridor wet corners & thick mist. Maintain safe braking distance.',
+            tag: 'CAUTION',
+            tagColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+            action: () => {
+              setIsNotificationOpen(false);
+              if (onOpenTraffic) onOpenTraffic();
+            },
+          },
+        ]),
+    {
+      id: 'weather-mist',
+      category: 'Weather',
+      title: language === 'bm' ? 'Cuaca Tanah Tinggi: 18°C Kabus' : 'Highland Weather: 18°C Misty Fog',
+      desc: language === 'bm' ? 'Suhu dingin 18°C, kelembapan 85%. Berpotensi gerimis petang.' : 'Cool 18°C temperature, 85% humidity. Light afternoon drizzle expected.',
+      tag: '18°C',
+      tagColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+      action: () => {
+        setIsNotificationOpen(false);
+        if (onOpenTraffic) onOpenTraffic();
+      },
+    },
+    {
+      id: 'chat-lounge-update',
+      category: 'Chat',
+      title: language === 'bm' ? 'Lounge Komuniti & Mesej' : 'Community Chat Active',
+      desc: language === 'bm' ? 'Pelawat & komuniti berkongsi tips jalan raya & ulasan steamboat.' : 'Travelers & local community sharing live road tips & tea plantation recommendations.',
+      tag: 'NEW',
+      tagColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+      action: () => {
+        setIsNotificationOpen(false);
+        if (onOpenChat) onOpenChat();
+      },
+    },
+    {
+      id: 'places-update',
+      category: 'Places',
+      title: language === 'bm' ? 'Direktori Disahkan Terkini' : 'New Verified Places & Directories',
+      desc: language === 'bm' ? 'Pusat penginapan glamping & ladang strawberi baharu telah disahkan.' : 'New glamping lodges, scenic tea spots & verified steamboat listings updated.',
+      tag: 'PLACES',
+      tagColor: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
+      action: () => {
+        setIsNotificationOpen(false);
+        if (onOpenDirectoriesModal) onOpenDirectoriesModal();
+      },
+    },
+  ];
+
   return (
     <>
       <nav
@@ -311,8 +503,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Header Navigation Search Bar */}
-          <div ref={searchRef} className="relative flex-1 max-w-[170px] sm:max-w-xs md:max-w-sm mx-2 sm:mx-4">
+          {/* Header Navigation Search Bar (Desktop only) */}
+          <div ref={searchRef} className="hidden sm:block relative flex-1 max-w-xs md:max-w-sm mx-2 sm:mx-4">
             <div className="relative flex items-center">
               <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 absolute left-2.5 sm:left-3 pointer-events-none" />
               <input
@@ -869,19 +1061,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span>Business Vendor Portal</span>
                       </button>
 
-                      <button
-                        onClick={() => {
-                          setUserDropdownOpen(false);
-                          onOpenAdmin();
-                        }}
-                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-red-300 hover:text-red-200 flex items-center justify-between transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck className="w-4 h-4 text-red-400" />
-                          <span>Admin Control Room</span>
-                        </div>
-                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">Admin</span>
-                      </button>
+                      {isUserAdmin && (
+                        <button
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            onOpenAdmin();
+                          }}
+                          className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-red-300 hover:text-red-200 flex items-center justify-between transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-red-400" />
+                            <span>Admin Control Room</span>
+                          </div>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">Admin</span>
+                        </button>
+                      )}
 
                       <div className="border-t border-white/10 pt-1 mt-1">
                         <button
@@ -913,13 +1107,342 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Mobile Hamburger Navigation Menu Icon (Mobile & Tablet only) */}
+            {/* Mobile View: Notification Bell + Circular User Avatar (Replaces 3 horizontal lines) */}
+            <div className="flex sm:hidden items-center gap-2.5">
+              {/* Notification Bell */}
+              <div className="relative" ref={notificationRef}>
+                <button
+                  onClick={() => {
+                    setIsNotificationOpen(!isNotificationOpen);
+                    setHasUnreadNotifications(false);
+                  }}
+                  aria-label="Highland Notifications"
+                  className="relative flex items-center justify-center w-9 h-9 rounded-full bg-stone-900/90 border border-white/15 text-stone-200 hover:text-white hover:border-emerald-500/40 transition-all cursor-pointer shadow-md active:scale-95"
+                >
+                  <Bell className="w-4 h-4 text-stone-200" />
+                  {/* Alert Indicator Dot - ONLY when hasUnreadNotifications is true */}
+                  {hasUnreadNotifications && (
+                    <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-stone-950 animate-pulse" />
+                  )}
+                </button>
+
+                {/* Mobile Notification Dropdown Panel */}
+                <AnimatePresence>
+                  {isNotificationOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute top-full right-0 mt-2 w-[88vw] max-w-sm rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-3 z-50 text-stone-100 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                        <div className="flex items-center gap-1.5">
+                          <BellRing className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs font-black text-white">
+                            {language === 'bm' ? 'Pemberitahuan & Amaran' : 'Highland Live Updates'}
+                          </span>
+                        </div>
+                        <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                          {notificationItems.length} Live
+                        </span>
+                      </div>
+
+                      <div
+                        onScroll={() => setHasUnreadNotifications(false)}
+                        className="max-h-72 overflow-y-auto space-y-1.5 pr-0.5 scrollbar-thin"
+                      >
+                        {notificationItems.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={item.action}
+                            className="w-full p-2 rounded-xl bg-stone-950/60 hover:bg-stone-800/80 border border-white/5 text-left transition-colors cursor-pointer group flex items-start gap-2.5"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1 mb-0.5">
+                                <span className="font-bold text-xs text-stone-200 group-hover:text-emerald-300 truncate">
+                                  {item.title}
+                                </span>
+                                <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase shrink-0 ${item.tagColor}`}>
+                                  {item.tag}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-stone-400 leading-relaxed line-clamp-2">
+                                {item.desc}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="pt-1 border-t border-white/10 flex items-center justify-between text-[10px] text-stone-400">
+                        <span>Tap item to view live status</span>
+                        <button
+                          onClick={() => setIsNotificationOpen(false)}
+                          className="text-emerald-400 font-bold hover:underline cursor-pointer"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* User Profile Avatar with Emerald Ring Border */}
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                aria-label="User Profile & Menu"
+                className="relative w-9 h-9 rounded-full p-[2px] bg-gradient-to-tr from-emerald-400 via-teal-300 to-emerald-500 shadow-md ring-2 ring-emerald-500/25 active:scale-95 transition-transform cursor-pointer overflow-hidden flex items-center justify-center shrink-0"
+              >
+                <img
+                  src={
+                    currentUser?.photoURL ||
+                    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'
+                  }
+                  alt={currentUser?.displayName || 'User Avatar'}
+                  className="w-full h-full rounded-full object-cover bg-stone-950"
+                />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-stone-950" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile View Row 2: Search field matching attached image */}
+        <div className="block sm:hidden px-4 pt-2.5 pb-1 max-w-7xl mx-auto">
+          <div ref={mobileSearchRef} className="relative w-full">
+            <div className="relative flex items-center bg-stone-900/80 backdrop-blur-xl border border-white/15 focus-within:border-emerald-400/80 rounded-2xl px-3.5 py-2 shadow-lg transition-all">
+              <Search className="w-4 h-4 text-emerald-400 shrink-0 mr-2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchOpen(true);
+                }}
+                onFocus={() => setIsSearchOpen(true)}
+                placeholder="Find stays, activities & transport..."
+                className="w-full bg-transparent text-xs text-stone-100 placeholder-stone-400 outline-none"
+              />
+              {searchQuery ? (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIsSearchOpen(false);
+                  }}
+                  className="p-1 text-stone-400 hover:text-white cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsFilterToggled(!isFilterToggled)}
+                  className={`w-10 h-5 rounded-full p-0.5 transition-colors flex items-center cursor-pointer shrink-0 ${
+                    isFilterToggled ? 'bg-emerald-500 justify-end' : 'bg-stone-700 justify-start'
+                  }`}
+                  title={isFilterToggled ? 'Filter Active' : 'Filter Off'}
+                >
+                  <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+                </button>
+              )}
+            </div>
+
+            {/* Mobile Autocomplete Search Dropdown */}
+            {isSearchOpen && q.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 z-50 text-stone-100 space-y-2">
+                {totalResults === 0 ? (
+                  <div className="p-3 text-center text-xs text-stone-400">
+                    <p className="font-medium text-stone-300">
+                      {language === 'bm' ? `Tiada hasil untuk "${searchQuery}"` : `No results found for "${searchQuery}"`}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {matchingPlaces.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 px-2 py-0.5 flex items-center gap-1 border-b border-white/5">
+                          <Compass className="w-3 h-3" />
+                          <span>Places ({matchingPlaces.length})</span>
+                        </div>
+                        {matchingPlaces.map((place) => (
+                          <button
+                            key={place.id}
+                            onClick={() => handleSelectSearchResultPlace(place)}
+                            className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2 transition-colors cursor-pointer group"
+                          >
+                            <img
+                              src={place.imageUrl}
+                              alt={place.name}
+                              className="w-8 h-8 rounded-lg object-cover bg-stone-950 border border-white/10 shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-xs text-stone-100 group-hover:text-emerald-300 truncate">
+                                {place.name}
+                              </div>
+                              <div className="text-[10px] text-stone-400 truncate flex items-center gap-1 mt-0.5">
+                                <span className="text-emerald-400 font-mono font-bold">{place.township}</span>
+                                <span>•</span>
+                                <span className="capitalize">{place.category}</span>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {matchingEvents.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400 px-2 py-0.5 flex items-center gap-1 border-b border-white/5">
+                          <Calendar className="w-3 h-3" />
+                          <span>Events ({matchingEvents.length})</span>
+                        </div>
+                        {matchingEvents.map((event) => (
+                          <button
+                            key={event.id}
+                            onClick={() => handleSelectSearchResultEvent(event)}
+                            className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2 transition-colors cursor-pointer group"
+                          >
+                            <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
+                              <Calendar className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-xs text-stone-100 group-hover:text-amber-300 truncate">
+                                {event.title}
+                              </div>
+                              <div className="text-[10px] text-stone-400 truncate">
+                                {event.date} • {event.township}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {matchingTownships.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-teal-400 px-2 py-0.5 flex items-center gap-1 border-b border-white/5">
+                          <Building2 className="w-3 h-3" />
+                          <span>Townships ({matchingTownships.length})</span>
+                        </div>
+                        {matchingTownships.map((town) => (
+                          <button
+                            key={town}
+                            onClick={() => handleSelectSearchResultTownship(town)}
+                            className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2 transition-colors cursor-pointer group"
+                          >
+                            <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-400 shrink-0">
+                              <MapPin className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-xs text-stone-100 group-hover:text-teal-300 truncate">
+                                {town}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile View Row 3: 5 Transparent Glassmorphism Cards matching attached image */}
+        <div className="block sm:hidden px-4 pt-1.5 pb-2 max-w-7xl mx-auto">
+          <div className="grid grid-cols-5 gap-1.5 w-full">
+            {/* 1. Traffic (Active emerald glow as in image) */}
             <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="Open Navigation Menu"
-              className="lg:hidden flex items-center justify-center p-2 rounded-xl min-h-[44px] min-w-[44px] bg-stone-900/90 border border-emerald-500/30 text-emerald-400 hover:text-white hover:bg-stone-800 transition-all cursor-pointer shrink-0 shadow-lg shadow-emerald-950/60 active:scale-95"
+              onClick={() => {
+                if (onOpenTraffic) {
+                  onOpenTraffic();
+                } else {
+                  window.dispatchEvent(new CustomEvent('open-traffic-modal'));
+                }
+              }}
+              className="flex flex-col items-center justify-center p-1.5 rounded-2xl bg-emerald-500/15 border-2 border-emerald-400/80 shadow-[0_0_15px_rgba(52,211,153,0.3)] active:scale-95 transition-all text-emerald-400 cursor-pointer min-h-[62px]"
             >
-              <Menu className="w-6 h-6 text-emerald-400" />
+              <div className="p-0.5">
+                <Car className="w-5 h-5 text-emerald-400" />
+              </div>
+              <span className="text-[8.5px] font-bold text-center leading-none mt-1 text-emerald-300 tracking-tight truncate w-full px-0.5">
+                Traffic
+              </span>
+            </button>
+
+            {/* 2. Masjid & Surau (Using authentic Masjid silhouette icon) */}
+            <button
+              onClick={() => {
+                if (onOpenMasjidModal) {
+                  onOpenMasjidModal();
+                } else {
+                  window.dispatchEvent(new CustomEvent('open-masjid-modal'));
+                }
+              }}
+              className="flex flex-col items-center justify-center p-1.5 rounded-2xl bg-stone-900/60 backdrop-blur-md border border-white/10 hover:border-emerald-500/40 active:scale-95 transition-all text-stone-300 hover:text-white cursor-pointer min-h-[62px]"
+            >
+              <div className="p-0.5">
+                <MasjidIcon className="w-5 h-5 text-teal-400" />
+              </div>
+              <span className="text-[8.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tight truncate w-full px-0.5">
+                Masjid
+              </span>
+            </button>
+
+            {/* 3. Hub */}
+            <button
+              onClick={() => {
+                if (onOpenPortalsModal) {
+                  onOpenPortalsModal();
+                }
+              }}
+              className="flex flex-col items-center justify-center p-1.5 rounded-2xl bg-stone-900/60 backdrop-blur-md border border-white/10 hover:border-emerald-500/40 active:scale-95 transition-all text-stone-300 hover:text-white cursor-pointer min-h-[62px]"
+            >
+              <div className="p-0.5">
+                <Layers className="w-5 h-5 text-indigo-400" />
+              </div>
+              <span className="text-[8.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tight truncate w-full px-0.5">
+                Hub
+              </span>
+            </button>
+
+            {/* 4. Currency (Real-Time Currency Converter - fits perfectly) */}
+            <button
+              onClick={() => {
+                if (onOpenCurrencyConverter) {
+                  onOpenCurrencyConverter();
+                } else {
+                  window.dispatchEvent(new CustomEvent('open-currency-converter'));
+                }
+              }}
+              className="flex flex-col items-center justify-center p-1.5 rounded-2xl bg-stone-900/60 backdrop-blur-md border border-white/10 hover:border-emerald-500/40 active:scale-95 transition-all text-stone-300 hover:text-white cursor-pointer min-h-[62px]"
+            >
+              <div className="p-0.5">
+                <ArrowRightLeft className="w-5 h-5 text-amber-400" />
+              </div>
+              <span className="text-[8.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tight truncate w-full px-0.5">
+                Currency
+              </span>
+            </button>
+
+            {/* 5. Jobs (Classified & Job Postings) */}
+            <button
+              onClick={() => {
+                if (onOpenClassifiedsModal) {
+                  onOpenClassifiedsModal();
+                }
+              }}
+              className="flex flex-col items-center justify-center p-1.5 rounded-2xl bg-stone-900/60 backdrop-blur-md border border-white/10 hover:border-emerald-500/40 active:scale-95 transition-all text-stone-300 hover:text-white cursor-pointer min-h-[62px]"
+            >
+              <div className="p-0.5">
+                <Briefcase className="w-5 h-5 text-rose-400" />
+              </div>
+              <span className="text-[8.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tight truncate w-full px-0.5">
+                Jobs
+              </span>
             </button>
           </div>
         </div>
@@ -1039,8 +1562,31 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 {/* Vertical Graphic Card Links */}
                 <nav className="space-y-2">
-                  {/* Removed User Sign In / Account link as requested */}
-
+                  {/* First Link: Traveler Profile & Dedicated Dashboard (as requested) */}
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      if (currentUser) {
+                        onOpenUserDashboard();
+                      } else {
+                        onOpenAuth();
+                      }
+                    }}
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-gradient-to-r from-emerald-600/30 via-emerald-500/20 to-teal-500/20 hover:from-emerald-600/40 hover:to-teal-500/30 text-white border border-emerald-400/50 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer text-left group"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <User className="w-4 h-4 text-emerald-300" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-black text-white block group-hover:text-emerald-300 transition-colors">
+                        {language === 'bm' ? 'Profil Pelawat & Papan Pemuka' : 'Traveler Profile & Dedicated Dashboard'}
+                      </span>
+                      <span className="text-[10px] text-emerald-300/80 block truncate">
+                        {currentUser ? currentUser.displayName : (language === 'bm' ? 'Akses akaun & tempahan' : 'Access bookings, saves & settings')}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
 
                   {/* Directories Modal Link */}
                   <button
@@ -1243,28 +1789,30 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </button>
 
                   {/* 10. Admin Control Room */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      onOpenAdmin();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-red-950/30 hover:bg-red-900/50 text-red-300 hover:text-white border border-red-500/30 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <ShieldCheck className="w-4 h-4 text-red-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-red-200 block group-hover:text-white transition-colors">
-                          Admin Control Room
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">
-                          Admin
-                        </span>
+                  {isUserAdmin && (
+                    <button
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        onOpenAdmin();
+                      }}
+                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-red-950/30 hover:bg-red-900/50 text-red-300 hover:text-white border border-red-500/30 transition-all cursor-pointer text-left group shadow-md"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <ShieldCheck className="w-4 h-4 text-red-400" />
                       </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-red-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-red-200 block group-hover:text-white transition-colors">
+                            Admin Control Room
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">
+                            Admin
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-red-400 group-hover:translate-x-1 transition-all shrink-0" />
+                    </button>
+                  )}
 
                   {/* SOS Emergency Link */}
                   <button

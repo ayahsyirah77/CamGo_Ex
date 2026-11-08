@@ -88,7 +88,7 @@ export const Footer: React.FC<FooterProps> = ({
                 ? 'Portal panduan langsung dan direktori pintar Cameron Highlands. Ramalan cuaca mikro, amaran trafik masa nyata, peta satelit interaktif, dan sembang komuniti.'
                 : 'The official-grade live travel companion for Cameron Highlands. Live weather microclimates, real-time traffic choke point alerts, satellite navigator, and verified directories.'}
             </p>
-            <div className="flex items-center gap-2 pt-2">
+            <div className="flex flex-wrap items-center gap-2 pt-2">
               <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-mono">
                 1,440m - 2,032m ASL
               </span>
@@ -96,6 +96,9 @@ export const Footer: React.FC<FooterProps> = ({
                 Pahang Darul Makmur
               </span>
             </div>
+            <p className="text-[11px] sm:text-xs text-stone-400 font-medium pt-1">
+              © 2026 CamGo - Explore the Highlands. All rights reserved.
+            </p>
           </div>
 
           {/* 1. Highlands Townships (Visible on tablet/desktop) */}
@@ -195,10 +198,6 @@ export const Footer: React.FC<FooterProps> = ({
 
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
-          <div className="flex items-center gap-3">
-            <span>© 2026 CamGo - Explore the Highlands. All rights reserved.</span>
-          </div>
-
           {/* GitHub & Firebase Ready Badge */}
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-900 border border-white/10 text-[11px] text-stone-400">

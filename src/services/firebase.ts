@@ -1,4 +1,4 @@
-import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord } from '../types';
+import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard } from '../types';
 import {
   INITIAL_PLACES,
   INITIAL_GALLERY,
@@ -8,6 +8,7 @@ import {
   INITIAL_TRAFFIC,
   INITIAL_HAZARDS,
 } from '../data/initialData';
+import { INITIAL_MOBILE_HOME_CARDS } from '../data/initialHomeCards';
 import { POPULAR_FARM_TICKETS } from '../data/farmTicketsData';
 import { INITIAL_MOTORBIKE_PARTNERS } from '../data/initialMotorbikeData';
 import {
@@ -69,6 +70,7 @@ const STORAGE_KEYS = {
   VENDOR_VOUCHERS: 'camgo_vendor_vouchers',
   VENDOR_EVENTS: 'camgo_vendor_events',
   VENDOR_STAFF: 'camgo_vendor_staff',
+  HOME_CARDS: 'camgo_home_cards',
 };
 
 export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
@@ -1409,6 +1411,99 @@ class FirebaseStorageService {
 
     this.notify();
     return hubs;
+  }
+
+  public getHomeCards(): MobileHomeCard[] {
+    const saved = localStorage.getItem(STORAGE_KEYS.HOME_CARDS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const needsMigration = parsed.some(
+            (c) =>
+              c.type === 'sos' ||
+              c.id === 'card-6-sos' ||
+              c.title === 'The Misty Lodge' ||
+              c.title === 'Bike Rentals' ||
+              c.title === 'Highland Weather' ||
+              c.title === 'Live Traffic Camera' ||
+              (c.id === 'card-6-bike' && c.buttonAction === 'open-party')
+          );
+          if (needsMigration) {
+            localStorage.setItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(INITIAL_MOBILE_HOME_CARDS));
+            return INITIAL_MOBILE_HOME_CARDS;
+          }
+          return parsed.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        }
+      } catch {
+        return INITIAL_MOBILE_HOME_CARDS;
+      }
+    }
+    localStorage.setItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(INITIAL_MOBILE_HOME_CARDS));
+    return INITIAL_MOBILE_HOME_CARDS;
+  }
+
+  public async saveHomeCard(card: MobileHomeCard): Promise<MobileHomeCard[]> {
+    const cards = this.getHomeCards();
+    const existingIdx = cards.findIndex((c) => c.id === card.id);
+    let updated: MobileHomeCard[];
+    if (existingIdx >= 0) {
+      updated = [...cards];
+      updated[existingIdx] = card;
+    } else {
+      updated = [...cards, card];
+    }
+    updated.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    localStorage.setItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(updated));
+
+    if (db) {
+      try {
+        const cleanCard = Object.fromEntries(
+          Object.entries(card).filter(([_, v]) => v !== undefined)
+        );
+        await setDoc(doc(db, 'home_glass_cards', card.id), cleanCard);
+      } catch (err) {
+        console.error('[FirebaseService] Failed syncing home card to Firestore:', err);
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('home-cards-updated', { detail: updated }));
+    this.notify();
+    return updated;
+  }
+
+  public async deleteHomeCard(cardId: string): Promise<MobileHomeCard[]> {
+    const cards = this.getHomeCards();
+    const updated = cards.filter((c) => c.id !== cardId);
+    localStorage.setItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(updated));
+
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'home_glass_cards', cardId));
+      } catch (err) {
+        console.error('[FirebaseService] Failed deleting home card from Firestore:', err);
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('home-cards-updated', { detail: updated }));
+    this.notify();
+    return updated;
+  }
+
+  public async resetHomeCards(): Promise<MobileHomeCard[]> {
+    localStorage.setItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(INITIAL_MOBILE_HOME_CARDS));
+    if (db) {
+      try {
+        for (const card of INITIAL_MOBILE_HOME_CARDS) {
+          await setDoc(doc(db, 'home_glass_cards', card.id), card);
+        }
+      } catch (err) {
+        console.error('[FirebaseService] Failed resetting home cards in Firestore:', err);
+      }
+    }
+    window.dispatchEvent(new CustomEvent('home-cards-updated', { detail: INITIAL_MOBILE_HOME_CARDS }));
+    this.notify();
+    return INITIAL_MOBILE_HOME_CARDS;
   }
 
   public getJobs(): JobClassified[] {

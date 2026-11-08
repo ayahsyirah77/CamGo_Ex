@@ -1491,7 +1491,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
             <Route className="w-4 h-4" />
           </div>
           <h2 className="font-heading font-black text-[11px] sm:text-base text-stone-100 truncate">
-            AI Itinerary Planner
+            Plan Your Trip
           </h2>
         </div>
 

@@ -22,6 +22,7 @@ import {
   DiyHarvestStatus,
   ParkingStatus,
   RoomAvailabilityStatus,
+  MobileHomeCard,
 } from '../types';
 import { firebaseService, UserProfile } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
@@ -62,6 +63,8 @@ import {
   Navigation,
   CloudRain,
   Sparkles,
+  Smartphone,
+  EyeOff,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -101,14 +104,6 @@ export const ALL_9_TOWNSHIPS: Township[] = [
 const FALLBACK_IMAGE =
   'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1200&q=80';
 
-const GSAP_DEFAULT_BACKGROUNDS: Record<string, string> = {
-  'card-1': 'https://images.unsplash.com/photo-1511497584788-87676104235f?auto=format&fit=crop&w=1200&q=80',
-  'card-2': 'https://images.unsplash.com/photo-1545143333-6382f1d5b893?auto=format&fit=crop&w=1200&q=80',
-  'card-3': 'https://images.unsplash.com/photo-1532187863486-abf9d3c352fd?auto=format&fit=crop&w=1200&q=80',
-  'card-4': 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=1200&q=80',
-  'card-5': 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1200&q=80',
-  'card-6': 'https://images.unsplash.com/photo-1562184552-997c461ade6e?auto=format&fit=crop&w=1200&q=80',
-};
 
 const compressImageFile = (
   file: File,
@@ -601,18 +596,104 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [townError, setTownError] = useState<string | null>(null);
   const [townSaving, setTownSaving] = useState(false);
 
-  // GSAP Gallery Card Background Manager States
-  const [showGsapModal, setShowGsapModal] = useState(false);
-  const [gsapImages, setGsapImages] = useState<Record<string, string>>(() => firebaseService.getGsapCardImages());
+  // Mobile Glass Cards Manager States
+  const [showHomeCardsModal, setShowHomeCardsModal] = useState(false);
+  const [homeCards, setHomeCards] = useState<MobileHomeCard[]>(() => firebaseService.getHomeCards());
+  const [editingCard, setEditingCard] = useState<MobileHomeCard | null>(null);
+  const [isAddEditCardModalOpen, setIsAddEditCardModalOpen] = useState(false);
+  const [cardFormTitle, setCardFormTitle] = useState('');
+  const [cardFormSubtitle, setCardFormSubtitle] = useState('');
+  const [cardFormType, setCardFormType] = useState<any>('weather');
+  const [cardFormTag, setCardFormTag] = useState('');
+  const [cardFormBadge, setCardFormBadge] = useState('');
+  const [cardFormButtonText, setCardFormButtonText] = useState('');
+  const [cardFormButtonAction, setCardFormButtonAction] = useState('open-weather');
+  const [cardFormImageUrl, setCardFormImageUrl] = useState('');
+  const [cardFormSize, setCardFormSize] = useState<'half' | 'full' | 'wide'>('half');
+  const [cardFormOrder, setCardFormOrder] = useState<number>(1);
+  const [cardFormIsActive, setCardFormIsActive] = useState(true);
+  const [cardFormError, setCardFormError] = useState<string | null>(null);
+  const [confirmDeleteCardId, setConfirmDeleteCardId] = useState<string | null>(null);
+  const [confirmResetCards, setConfirmResetCards] = useState(false);
 
-  const gsapCardsMeta = [
-    { id: 'card-1', title: 'Microclimate & Altitude', category: 'Climate' },
-    { id: 'card-2', title: 'Traffic Hub', category: 'Transit' },
-    { id: 'card-3', title: 'Hazard Alerts & Slope Safety', category: 'Safety' },
-    { id: 'card-4', title: 'Highland Events & Markets', category: 'Culture' },
-    { id: 'card-5', title: 'Verified Directories', category: 'Directory' },
-    { id: 'card-6', title: 'Portals Hub & Townships', category: 'Portal' },
-  ];
+  const handleOpenAddCard = () => {
+    setEditingCard(null);
+    setCardFormTitle('');
+    setCardFormSubtitle('');
+    setCardFormType('custom');
+    setCardFormTag('');
+    setCardFormBadge('');
+    setCardFormButtonText('Explore');
+    setCardFormButtonAction('open-map');
+    setCardFormImageUrl('');
+    setCardFormSize('half');
+    setCardFormOrder(homeCards.length + 1);
+    setCardFormIsActive(true);
+    setCardFormError(null);
+    setIsAddEditCardModalOpen(true);
+  };
+
+  const handleOpenEditCard = (card: MobileHomeCard) => {
+    setEditingCard(card);
+    setCardFormTitle(card.title);
+    setCardFormSubtitle(card.subtitle || '');
+    setCardFormType(card.type);
+    setCardFormTag(card.tag || '');
+    setCardFormBadge(card.badge || '');
+    setCardFormButtonText(card.buttonText || '');
+    setCardFormButtonAction(card.buttonAction || 'open-weather');
+    setCardFormImageUrl(card.imageUrl || '');
+    setCardFormSize(card.size || 'half');
+    setCardFormOrder(card.order);
+    setCardFormIsActive(card.isActive);
+    setCardFormError(null);
+    setIsAddEditCardModalOpen(true);
+  };
+
+  const handleSaveCard = async () => {
+    if (!cardFormTitle.trim()) {
+      setCardFormError('Card title is required');
+      return;
+    }
+    const cardData: MobileHomeCard = {
+      id: editingCard?.id || `card-${Date.now()}`,
+      type: cardFormType,
+      title: cardFormTitle.trim(),
+      subtitle: cardFormSubtitle.trim() || undefined,
+      tag: cardFormTag.trim() || undefined,
+      badge: cardFormBadge.trim() || undefined,
+      buttonText: cardFormButtonText.trim() || undefined,
+      buttonAction: cardFormButtonAction.trim() || undefined,
+      imageUrl: cardFormImageUrl.trim() || undefined,
+      size: cardFormSize,
+      order: Number(cardFormOrder) || 1,
+      isActive: cardFormIsActive,
+    };
+    const updated = await firebaseService.saveHomeCard(cardData);
+    setHomeCards(updated);
+    setIsAddEditCardModalOpen(false);
+    addActivity(`${editingCard ? 'Updated' : 'Added'} mobile glass card "${cardData.title}"`);
+  };
+
+  const handleDeleteCard = async (cardId: string) => {
+    const updated = await firebaseService.deleteHomeCard(cardId);
+    setHomeCards(updated);
+    setConfirmDeleteCardId(null);
+    addActivity(`Deleted mobile glass card ${cardId}`);
+  };
+
+  const handleToggleCardActive = async (card: MobileHomeCard) => {
+    const updatedCard = { ...card, isActive: !card.isActive };
+    const updated = await firebaseService.saveHomeCard(updatedCard);
+    setHomeCards(updated);
+  };
+
+  const handleResetCards = async () => {
+    const reset = await firebaseService.resetHomeCards();
+    setHomeCards(reset);
+    setConfirmResetCards(false);
+    addActivity('Reset mobile glass cards to defaults');
+  };
 
   // Farm Ticket Management States
   const [farmTickets, setFarmTickets] = useState<FarmTicket[]>(() => firebaseService.getFarmTickets());
@@ -713,18 +794,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleUpdateGsapImage = async (cardId: string, url: string) => {
-    try {
-      const updated = await firebaseService.saveGsapCardImage(cardId, url);
-      setGsapImages({ ...updated });
-      addActivity(`Updated GSAP Card Background (${cardId})`);
-      window.dispatchEvent(new CustomEvent('gsap-images-updated', { detail: updated }));
-      window.alert('Card background image updated and synced live to cloud!');
-    } catch (err: any) {
-      console.error('[AdminDashboard] Failed to sync GSAP image to cloud:', err);
-      window.alert('Could not sync image to cloud: ' + (err?.message || 'Unknown error'));
-    }
-  };
 
   const stats = {
     totalUsers: liveUsers.length,
@@ -1455,11 +1524,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => setShowGsapModal(true)}
-                className="p-4 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
+                onClick={() => setShowHomeCardsModal(true)}
+                className="p-4 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer shadow-lg"
               >
-                <ImageIcon className="w-5 h-5" />
-                <span>GSAP Card Backgrounds</span>
+                <Smartphone className="w-5 h-5 text-indigo-400" />
+                <span>Mobile Glass Cards</span>
               </button>
 
               <button
@@ -3622,122 +3691,488 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-      {/* GSAP Card Background Manager Modal */}
-      {showGsapModal &&
+      {/* Mobile Glass Cards Manager Modal */}
+      {showHomeCardsModal &&
         renderModal(
           <div
-            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto"
-            onClick={() => setShowGsapModal(false)}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 overflow-y-auto"
+            onClick={() => {
+              setShowHomeCardsModal(false);
+              setConfirmDeleteCardId(null);
+              setConfirmResetCards(false);
+            }}
           >
             <div
-              className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-stone-900 border border-purple-500/30 shadow-2xl p-6 sm:p-8 space-y-6 relative"
+              className="w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl bg-stone-900 border border-emerald-500/30 shadow-2xl p-5 sm:p-8 space-y-6 relative text-stone-100"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-4 border-b border-white/10">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
                 <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-400">
-                    <ImageIcon className="w-6 h-6" />
+                  <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <Smartphone className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-heading font-extrabold text-stone-100">
-                      GSAP Gallery Card Background Manager
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xl font-heading font-extrabold text-stone-100">
+                        Mobile Glass Cards Manager
+                      </h3>
+                      <span className="px-2 py-0.5 text-[10px] uppercase font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                        Live Mobile Feed
+                      </span>
+                    </div>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      Customize the transparent glassmorphism cards displayed on the mobile home screen. Add, edit, reorder, change images, and toggle visibility.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleOpenAddCard}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Card</span>
+                  </button>
+                  {confirmResetCards ? (
+                    <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-500/40 px-2 py-1 rounded-xl">
+                      <span className="text-[11px] text-rose-300 font-bold">Reset layout?</span>
+                      <button
+                        type="button"
+                        onClick={handleResetCards}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold cursor-pointer"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmResetCards(false)}
+                        className="px-2 py-1 text-stone-400 hover:text-stone-200 text-[11px] cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmResetCards(true)}
+                      className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Reset to default screenshot layout"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-stone-400" />
+                      <span>Reset Defaults</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowHomeCardsModal(false);
+                      setConfirmDeleteCardId(null);
+                      setConfirmResetCards(false);
+                    }}
+                    className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer ml-1"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Cards List Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {homeCards
+                  .sort((a, b) => a.order - b.order)
+                  .map((card) => {
+                    const isConfirmingDelete = confirmDeleteCardId === card.id;
+                    return (
+                      <div
+                        key={card.id}
+                        className={`rounded-2xl p-4 border transition-all flex flex-col justify-between relative overflow-hidden ${
+                          card.isActive
+                            ? 'bg-stone-950/80 border-emerald-500/20 hover:border-emerald-500/40'
+                            : 'bg-stone-950/40 border-stone-800/80 opacity-60'
+                        }`}
+                      >
+                        {/* Top row: badge, order, size */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                              #{card.order} {card.type.toUpperCase()}
+                            </span>
+                            <span className="text-[9px] font-mono text-stone-400 px-1.5 py-0.5 rounded bg-stone-800">
+                              {card.size || 'half'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCardActive(card)}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer transition-colors ${
+                              card.isActive
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-stone-800 text-stone-400 border border-stone-700'
+                            }`}
+                            title={card.isActive ? 'Visible on mobile (click to hide)' : 'Hidden on mobile (click to show)'}
+                          >
+                            {card.isActive ? <Eye className="w-3 h-3 text-emerald-400" /> : <EyeOff className="w-3 h-3 text-stone-400" />}
+                            <span>{card.isActive ? 'Active' : 'Hidden'}</span>
+                          </button>
+                        </div>
+
+                        {/* Card Preview Miniature */}
+                        <div className="relative h-28 rounded-xl overflow-hidden border border-white/10 bg-stone-900 my-2 group">
+                          {card.imageUrl ? (
+                            <img
+                              src={card.imageUrl}
+                              alt={card.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-emerald-950/60 to-stone-900 flex items-center justify-center text-stone-500 text-xs">
+                              No background image
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent p-2.5 flex flex-col justify-end">
+                            {card.badge && (
+                              <span className="self-start text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/80 text-white mb-1 shadow">
+                                {card.badge}
+                              </span>
+                            )}
+                            <h5 className="text-xs font-bold text-white leading-tight drop-shadow">
+                              {card.title}
+                            </h5>
+                            {card.subtitle && (
+                              <p className="text-[10px] text-stone-300 line-clamp-1 drop-shadow">
+                                {card.subtitle}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Meta info & Action target */}
+                        <div className="text-[11px] text-stone-400 space-y-1 mb-3 pt-1 border-t border-white/5">
+                          <div className="flex justify-between items-center text-[10px]">
+                            <span className="text-stone-500">Action:</span>
+                            <span className="font-mono text-emerald-400">{card.buttonAction || 'open-weather'}</span>
+                          </div>
+                          {card.buttonText && (
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="text-stone-500">Button:</span>
+                              <span className="text-stone-200">{card.buttonText}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Card Actions */}
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
+                          {isConfirmingDelete ? (
+                            <div className="flex items-center gap-2 w-full justify-between bg-rose-950/80 p-1.5 rounded-xl border border-rose-500/40">
+                              <span className="text-[10px] text-rose-300 font-bold">Delete?</span>
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCard(card.id)}
+                                  className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer"
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteCardId(null)}
+                                  className="px-2 py-0.5 text-stone-400 text-[10px] cursor-pointer"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditCard(card)}
+                                className="flex-1 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Edit Card</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteCardId(card.id)}
+                                className="p-1.5 rounded-xl bg-stone-800/80 hover:bg-rose-900/40 text-stone-400 hover:text-rose-300 border border-white/5 transition-colors cursor-pointer"
+                                title="Delete card"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Footer */}
+              <div className="pt-4 border-t border-white/10 flex justify-between items-center">
+                <span className="text-xs text-stone-400">
+                  {homeCards.length} cards total ({homeCards.filter((c) => c.isActive).length} active)
+                </span>
+                <button
+                  onClick={() => {
+                    setShowHomeCardsModal(false);
+                    setConfirmDeleteCardId(null);
+                    setConfirmResetCards(false);
+                  }}
+                  className="px-6 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* Submodal for Add / Edit Card */}
+      {isAddEditCardModalOpen &&
+        renderModal(
+          <div
+            className="fixed inset-0 z-[130] flex items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-6 overflow-y-auto"
+            onClick={() => setIsAddEditCardModalOpen(false)}
+          >
+            <div
+              className="w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-3xl bg-stone-900 border border-emerald-500/40 shadow-2xl p-6 sm:p-7 space-y-5 relative text-stone-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                    {editingCard ? <Edit3 className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-heading font-bold text-stone-100">
+                      {editingCard ? 'Edit Mobile Glass Card' : 'Add New Mobile Glass Card'}
+                    </h4>
                     <p className="text-xs text-stone-400">
-                      Upload or paste custom background pictures for each of the 6 cards in the Advanced GSAP Looping Gallery.
+                      Configure card content, visual background, sizing, and tap behavior.
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowGsapModal(false)}
-                  className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer"
+                  type="button"
+                  onClick={() => setIsAddEditCardModalOpen(false)}
+                  className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {gsapCardsMeta.map((card) => {
-                  const currentUrl = gsapImages[card.id] || GSAP_DEFAULT_BACKGROUNDS[card.id] || FALLBACK_IMAGE;
-                  return (
-                    <div
-                      key={card.id}
-                      className="bg-stone-950/80 rounded-2xl p-4 border border-white/10 space-y-3 flex flex-col justify-between"
+              {cardFormError && (
+                <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{cardFormError}</span>
+                </div>
+              )}
+
+              <div className="space-y-4 text-xs">
+                {/* Title & Subtitle */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">
+                      Card Title <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={cardFormTitle}
+                      onChange={(e) => setCardFormTitle(e.target.value)}
+                      placeholder="e.g. Plan Your Highland Escape"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Subtitle / Price / Rating</label>
+                    <input
+                      type="text"
+                      value={cardFormSubtitle}
+                      onChange={(e) => setCardFormSubtitle(e.target.value)}
+                      placeholder="e.g. $80/night  ★ 4.8"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Type, Size, Order */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Card Type</label>
+                    <select
+                      value={cardFormType}
+                      onChange={(e) => setCardFormType(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
                     >
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-mono font-bold text-purple-400 px-2 py-0.5 rounded-full bg-purple-500/10">
-                            {card.category}
-                          </span>
-                          <span className="text-[10px] font-mono text-stone-400">{card.id}</span>
-                        </div>
-                        <h4 className="text-sm font-bold text-stone-100">{card.title}</h4>
-                      </div>
+                      <option value="weather">Weather (Microclimate)</option>
+                      <option value="hazard">Hazard / Live Camera</option>
+                      <option value="map">Mountain Map Banner</option>
+                      <option value="itinerary">Itinerary / Stays</option>
+                      <option value="party">Find My Party</option>
+                      <option value="bike">Bike Rentals (Highland E-Bikes)</option>
+                      <option value="sos">Emergency SOS Button</option>
+                      <option value="custom">Custom Experience</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Card Width</label>
+                    <select
+                      value={cardFormSize}
+                      onChange={(e) => setCardFormSize(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    >
+                      <option value="half">Half Width (2 cols)</option>
+                      <option value="full">Full Width Banner</option>
+                      <option value="wide">Wide Card</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Display Order</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={cardFormOrder}
+                      onChange={(e) => setCardFormOrder(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
 
-                      <div className="relative h-32 rounded-xl overflow-hidden border border-white/10 bg-stone-900">
-                        <img
-                          src={currentUrl}
-                          alt={card.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
+                {/* Tag / Badge */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Tag (e.g. Sunrise, Highland Mist)</label>
+                    <input
+                      type="text"
+                      value={cardFormTag}
+                      onChange={(e) => setCardFormTag(e.target.value)}
+                      placeholder="e.g. Sunrise"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Badge (e.g. • LIVE, ★ 4.9)</label>
+                    <input
+                      type="text"
+                      value={cardFormBadge}
+                      onChange={(e) => setCardFormBadge(e.target.value)}
+                      placeholder="e.g. • LIVE"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
 
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          defaultValue={currentUrl}
-                          id={`gsap-url-${card.id}`}
-                          placeholder="Paste image URL..."
-                          className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-xs text-stone-100 outline-none focus:border-purple-500"
-                        />
-                        <div className="flex gap-2">
-                          <label className="flex-1 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5">
-                            <Upload className="w-3.5 h-3.5 text-purple-400" />
-                            <span>Upload File</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                e.target.value = '';
-                                if (!file) return;
-                                try {
-                                  const compressed = await compressImageFile(file, 900, 0.65);
-                                  handleUpdateGsapImage(card.id, compressed);
-                                  const inputEl = document.getElementById(`gsap-url-${card.id}`) as HTMLInputElement;
-                                  if (inputEl) inputEl.value = compressed;
-                                } catch (err) {
-                                  window.alert('Failed to process image file.');
-                                }
-                              }}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const inputEl = document.getElementById(`gsap-url-${card.id}`) as HTMLInputElement;
-                              if (inputEl) {
-                                handleUpdateGsapImage(card.id, inputEl.value.trim());
-                              }
-                            }}
-                            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1"
-                          >
-                            <Save className="w-3.5 h-3.5" />
-                            <span>Save</span>
-                          </button>
-                        </div>
-                      </div>
+                {/* Button Text & Button Action */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Button Label</label>
+                    <input
+                      type="text"
+                      value={cardFormButtonText}
+                      onChange={(e) => setCardFormButtonText(e.target.value)}
+                      placeholder="e.g. Explore Now, Book Stay"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-stone-300">Tap / Click Action</label>
+                    <select
+                      value={cardFormButtonAction}
+                      onChange={(e) => setCardFormButtonAction(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    >
+                      <option value="open-weather">Open Weather Forecast</option>
+                      <option value="open-traffic">Open Traffic &amp; Hazards</option>
+                      <option value="open-map">Open Interactive Map</option>
+                      <option value="open-itinerary">Open Itinerary / Stays</option>
+                      <option value="open-party">Open Find My Party / Rentals</option>
+                      <option value="open-sos">Open Emergency SOS</option>
+                      <option value="open-chat">Open Community Chat Lounge</option>
+                      <option value="open-trail-engine">Open Offline Trail Engine</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Background Image & Upload */}
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-stone-300">Background Image</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={cardFormImageUrl}
+                      onChange={(e) => setCardFormImageUrl(e.target.value)}
+                      placeholder="Paste image URL (e.g. Unsplash or web URL)..."
+                      className="flex-1 px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-stone-100 outline-none focus:border-emerald-500"
+                    />
+                    <label className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold text-center cursor-pointer transition-colors flex items-center gap-1.5 shrink-0">
+                      <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Upload</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!file) return;
+                          try {
+                            const compressed = await compressImageFile(file, 900, 0.7);
+                            setCardFormImageUrl(compressed);
+                          } catch {
+                            setCardFormError('Failed to process image file');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {cardFormImageUrl && (
+                    <div className="relative h-28 rounded-xl overflow-hidden border border-white/10 mt-2">
+                      <img src={cardFormImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setCardFormImageUrl('')}
+                        className="absolute top-2 right-2 p-1 rounded-full bg-black/70 hover:bg-black text-white text-xs cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+
+                {/* Active Switch */}
+                <div className="flex items-center gap-3 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cardFormIsActive}
+                      onChange={(e) => setCardFormIsActive(e.target.checked)}
+                      className="rounded border-white/20 text-emerald-500 focus:ring-emerald-400 w-4 h-4 bg-stone-950 cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-stone-200">
+                      Active (show this card on mobile home screen)
+                    </span>
+                  </label>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-white/10 flex justify-end">
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-white/10">
                 <button
-                  onClick={() => setShowGsapModal(false)}
-                  className="px-6 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold cursor-pointer"
+                  type="button"
+                  onClick={() => setIsAddEditCardModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold cursor-pointer"
                 >
-                  Done
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCard}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{editingCard ? 'Update Card' : 'Save Card'}</span>
                 </button>
               </div>
             </div>

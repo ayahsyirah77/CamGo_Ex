@@ -105,6 +105,7 @@ class ChatLoungeService {
     this.initWebSocket();
     this.initFirestore();
     this.initPresence();
+    this.initTypingListener();
   }
 
   private loadCurrentUser(): ChatUser {
@@ -252,12 +253,12 @@ class ChatLoungeService {
       onSnapshot(
         msgsCol,
         (snapshot) => {
-          console.log('[ChatLoungeService] Received snapshot update. Changes:', snapshot.docChanges().length);
+          console.log('[ChatLoungeService] Firestore messages snapshot received. Docs:', snapshot.size);
           let updated = false;
           snapshot.docChanges().forEach((change) => {
             const data = change.doc.data() as ChatMessage;
             if (!data || !data.id) return;
-            console.log('[ChatLoungeService] Snapshot change:', change.type, 'Message ID:', data.id);
+            console.log('[ChatLoungeService] Firestore message change:', change.type, 'Message ID:', data.id, 'Sender:', data.senderName);
 
             if (change.type === 'added') {
               const exists = this.messages.some((m) => m.id === data.id);
@@ -318,6 +319,44 @@ class ChatLoungeService {
         this.users = firestoreUsers;
         this.notifySubscribers();
       }, () => {});
+    } catch {
+      // ignore
+    }
+  }
+
+  private initTypingListener(): void {
+    if (typeof window === 'undefined' || !db) return;
+    try {
+      const typingCol = collection(db, 'chat_lounge_typing');
+      onSnapshot(
+        typingCol,
+        (snapshot) => {
+          const newTypingMap = new Map<string, string[]>();
+          const now = Date.now();
+
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (
+              data &&
+              data.threadOrChannelId &&
+              data.userId &&
+              data.userName &&
+              data.isTyping &&
+              data.userId !== this.currentChatUser.id &&
+              now - (data.updatedAt || 0) < 5000
+            ) {
+              const current = newTypingMap.get(data.threadOrChannelId) || [];
+              if (!current.includes(data.userName)) {
+                newTypingMap.set(data.threadOrChannelId, [...current, data.userName]);
+              }
+            }
+          });
+
+          this.typingMap = newTypingMap;
+          this.notifySubscribers();
+        },
+        () => {}
+      );
     } catch {
       // ignore
     }
@@ -477,7 +516,9 @@ class ChatLoungeService {
     // Persist to Cloud Firestore for real-time multi-device sync
     if (db) {
       try {
-        setDoc(doc(db, 'chat_lounge_messages', newMsg.id), this.sanitizeObject(newMsg));
+        const sanitized = this.sanitizeObject(newMsg);
+        console.log('[ChatLoungeService] Persisting message to Firestore:', newMsg.id, sanitized);
+        setDoc(doc(db, 'chat_lounge_messages', newMsg.id), sanitized);
       } catch (err) {
         console.error('[ChatLoungeService] Firestore sendMessage error:', err);
       }
@@ -533,9 +574,11 @@ class ChatLoungeService {
   }
 
   /**
-   * Broadcasts typing event
+   * Broadcasts typing event across BroadcastChannel and Cloud Firestore
    */
   public setTyping(threadOrChannelId: string, isTyping: boolean): void {
+    if (!threadOrChannelId) return;
+
     const payload: TypingIndicatorEvent = {
       threadOrChannelId,
       userId: this.currentChatUser.id,
@@ -549,6 +592,26 @@ class ChatLoungeService {
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ event: 'chat_typing', payload }));
+    }
+
+    if (db) {
+      try {
+        const typingDocId = `${threadOrChannelId}_${this.currentChatUser.id}`;
+        const docRef = doc(db, 'chat_lounge_typing', typingDocId);
+        setDoc(
+          docRef,
+          this.sanitizeObject({
+            threadOrChannelId,
+            userId: this.currentChatUser.id,
+            userName: this.currentChatUser.name,
+            isTyping,
+            updatedAt: Date.now(),
+          }),
+          { merge: true }
+        ).catch(() => {});
+      } catch {
+        // ignore
+      }
     }
   }
 

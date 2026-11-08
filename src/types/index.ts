@@ -635,3 +635,19 @@ export interface MotorbikeBookingRecord {
   status: 'pending' | 'confirmed' | 'completed';
   createdAt: string;
 }
+
+export interface MobileHomeCard {
+  id: string;
+  type: 'weather' | 'hazard' | 'map' | 'itinerary' | 'party' | 'sos' | 'bike' | 'custom';
+  title: string;
+  subtitle?: string;
+  tag?: string;
+  imageUrl?: string;
+  badge?: string;
+  buttonText?: string;
+  buttonAction?: string; // 'open-weather' | 'open-hazard' | 'open-map' | 'open-itinerary' | 'open-party' | 'open-sos' | 'open-chat' | 'open-trails' | 'open-ai'
+  order: number;
+  size?: 'half' | 'full' | 'wide';
+  isActive: boolean;
+  bgGradient?: string;
+}
