@@ -214,10 +214,10 @@ Please confirm availability!`;
             </div>
             <div>
               <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest block">
-                Cameron Highlands Experience Hub
+                Cameron Highlands Motorbike &amp; Scooter Rentals
               </span>
               <h2 className="text-xl sm:text-2xl font-heading font-black text-white">
-                Motorbike &amp; Scooter Rental Marketplace
+                Motorbike &amp; Scooter Rentals
               </h2>
             </div>
           </div>
@@ -237,12 +237,12 @@ Please confirm availability!`;
               Explore Cameron Highlands on Two Wheels
             </h3>
             <p className="text-xs sm:text-sm text-stone-300 max-w-2xl">
-              Beat the weekend traffic jams in Tanah Rata, Brinchang, and Kea Farm. Rent reliable Yamaha NMAX, Honda Vario, or ADV scooters instantly with instant WhatsApp vendor notification.
+              Beat the weekend traffic jams in Tanah Rata, Brinchang, and Kea Farm. Rent reliable Yamaha NMAX, Honda Vario, or ADV scooters instantly with direct WhatsApp rental reservations.
             </p>
           </div>
           <div className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 font-mono text-xs border border-emerald-500/30 flex items-center gap-2 shrink-0">
             <Sparkles className="w-4 h-4 text-emerald-400" />
-            <span>Verified Local Partners</span>
+            <span>Verified Motorbike Operators</span>
           </div>
         </div>
 
@@ -484,7 +484,7 @@ Please confirm availability!`;
                     }}
                     className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all cursor-pointer"
                   >
-                    Done / Return to Marketplace
+                    Done / Return to Motorbike Rentals
                   </button>
                 </div>
               ) : (

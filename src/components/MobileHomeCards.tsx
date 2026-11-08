@@ -96,6 +96,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
       case 'open-party':
         onOpenParty();
         break;
+      case 'open-rentals':
       case 'open-bike':
       case 'open-motorbike':
         if (onOpenMotorbike) onOpenMotorbike();
