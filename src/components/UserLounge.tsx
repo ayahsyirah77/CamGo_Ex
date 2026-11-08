@@ -133,14 +133,8 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
   };
 
   const handleDeletePost = async (id: string) => {
-    const confirmMsg =
-      language === 'bm'
-        ? 'Adakah anda pasti ingin memadam siaran ini?'
-        : 'Are you sure you want to delete this community post?';
-    if (window.confirm(confirmMsg)) {
-      await firebaseService.deleteLoungePost(id);
-      onPostUpdate();
-    }
+    await firebaseService.deleteLoungePost(id);
+    onPostUpdate();
   };
 
   const handleInsertLink = () => {

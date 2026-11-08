@@ -45,9 +45,8 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
-import { db, storage } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { doc, updateDoc, Unsubscribe } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { beaconService, LOCAL_STORAGE_KEY_SESSION } from '../services/beaconService';
 import {
   calculateHaversineDistance,
@@ -60,6 +59,7 @@ import {
   generateBeaconCode,
 } from '../utils/beaconUtils';
 import { LiveBeaconMapModal } from './LiveBeaconMapModal';
+import { WalkieTalkieLive } from './WalkieTalkieLive';
 
 interface FindMyPartyModalProps {
   isOpen: boolean;
@@ -138,7 +138,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members' | 'chat'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members' | 'chat' | 'walkie'>('map');
   const [chatInputText, setChatInputText] = useState<string>('');
   const [sendingChat, setSendingChat] = useState<boolean>(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
@@ -148,10 +148,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [routePoints, setRoutePoints] = useState<[number, number][] | null>(null);
   const [routeEtaInfo, setRouteEtaInfo] = useState<{ distanceText: string; durationText: string } | null>(null);
 
-  // Walkie-Talkie state
-  const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     if (activeTab === 'chat' && chatBottomRef.current) {
@@ -796,13 +792,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const handleLeaveSession = async () => {
     const currentCode = session?.code || localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
     console.log('[FindMyParty] Attempting to leave session:', currentCode, 'MemberID:', memberId);
-    
-    const confirmLeave = window.confirm(
-      language === 'bm'
-        ? 'Adakah anda pasti mahu keluar dari kumpulan penjejakan ini?'
-        : 'Are you sure you want to leave this tracking group?'
-    );
-    if (!confirmLeave) return;
 
     if (sessionUnsubRef.current) {
       console.log('[FindMyParty] Unsubscribing from Firestore session...');
@@ -852,79 +841,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     setEntryMode('join');
   }; // end handleJoinSession
 
-  const handleStartRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await handleUploadAudio(audioBlob);
-        stream.getTracks().forEach((track) => track.stop());
-      };
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error('Error starting audio recording:', err);
-      setErrorMsg(language === 'bm' ? 'Gagal mengakses mikrofon.' : 'Failed to access microphone.');
-    }
-  };
-
-  const handleStopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const handleUploadAudio = async (audioBlob: Blob) => {
-    if (!session) return;
-    setLoading(true);
-    let audioUrl: string | undefined = undefined;
-    let audioDataUrl: string | undefined = undefined;
-
-    try {
-      const storageRef = ref(storage, `beacon_audio/${session.code}/${Date.now()}.webm`);
-      await uploadBytes(storageRef, audioBlob);
-      audioUrl = await getDownloadURL(storageRef);
-    } catch (err) {
-      console.warn('Firebase Storage upload failed (CORS/network), falling back to Base64 data URL:', err);
-    }
-
-    if (!audioUrl) {
-      try {
-        audioDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(audioBlob);
-        });
-      } catch (base64Err) {
-        console.error('Error converting audio to base64:', base64Err);
-      }
-    }
-
-    if (audioUrl || audioDataUrl) {
-      const newMessage = {
-        id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-        senderId: memberId,
-        senderName: memberName || 'Highland Companion',
-        senderColor: avatarColor,
-        text: '🎤 Walkie-Talkie Voice Message',
-        timestamp: new Date().toISOString(),
-        audioUrl,
-        audioDataUrl,
-      };
-
-      await beaconService.sendBeaconChatMessage(session.code, newMessage);
-    } else {
-      setErrorMsg(language === 'bm' ? 'Gagal menghantar mesej suara.' : 'Failed to send voice message.');
-    }
-    setLoading(false);
-  };
 
   // Toggle Sharing ON/OFF
   const handleToggleSharing = async () => {
@@ -1917,7 +1833,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('chat')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                       activeTab === 'chat'
                         ? 'bg-emerald-600 text-white'
                         : 'bg-stone-800 text-stone-400 hover:text-white'
@@ -1930,6 +1846,20 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                         {session.messages.length}
                       </span>
                     )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('walkie')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
+                      activeTab === 'walkie'
+                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 text-stone-950 font-black shadow-lg shadow-amber-500/25 ring-2 ring-amber-400/30'
+                        : 'bg-stone-850/90 border-amber-500/30 text-amber-300 hover:bg-stone-800 hover:text-white'
+                    }`}
+                  >
+                    <Radio className={`w-3.5 h-3.5 ${activeTab === 'walkie' ? 'text-stone-950' : 'text-amber-400'} animate-pulse`} />
+                    <span>{language === 'bm' ? 'Walkie-Talkie PTT' : 'Walkie-Talkie (PTT)'}</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                   </button>
                 </div>
 
@@ -1965,14 +1895,25 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       <span>{designatedMembers.length} real companions active in session</span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setShowLiveMapModal(true)}
-                      className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                      <span>{language === 'bm' ? 'Peta Skrin Penuh' : 'Fullscreen Map'}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('walkie')}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 cursor-pointer transition-colors font-semibold text-xs"
+                      >
+                        <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                        <span>{language === 'bm' ? 'Walkie-Talkie PTT' : 'PTT Radio'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowLiveMapModal(true)}
+                        className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>{language === 'bm' ? 'Peta Skrin Penuh' : 'Fullscreen Map'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2223,20 +2164,14 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                   {/* Message Input Box */}
                   <form onSubmit={handleSendChatMessage} className="flex items-center gap-2">
                     {/* Walkie-Talkie PTT Button */}
+                    {/* Quick Walkie-Talkie Shortcut */}
                     <button
                       type="button"
-                      onMouseDown={handleStartRecording}
-                      onMouseUp={handleStopRecording}
-                      onTouchStart={handleStartRecording}
-                      onTouchEnd={handleStopRecording}
-                      className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                        isRecording
-                          ? 'bg-rose-600 border-rose-400 text-white animate-pulse'
-                          : 'bg-stone-900 border-white/15 text-stone-400 hover:text-emerald-400'
-                      }`}
-                      title="Push to Talk"
+                      onClick={() => setActiveTab('walkie')}
+                      className="p-2.5 rounded-xl border border-amber-500/30 bg-stone-900 hover:bg-amber-500/20 text-amber-400 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                      title={language === 'bm' ? 'Buka Walkie-Talkie Langsung' : 'Switch to Live Walkie-Talkie'}
                     >
-                      <Mic className="w-5 h-5" />
+                      <Radio className="w-5 h-5 animate-pulse" />
                     </button>
                     <input
                       type="text"
@@ -2254,6 +2189,19 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       <span className="hidden sm:inline">{language === 'bm' ? 'Hantar' : 'Send'}</span>
                     </button>
                   </form>
+                </div>
+              )}
+
+              {/* TAB 5: PUSH-TO-TALK (PTT) LIVE WALKIE-TALKIE */}
+              {activeTab === 'walkie' && (
+                <div className="space-y-3">
+                  <WalkieTalkieLive
+                    session={session}
+                    memberId={memberId}
+                    memberName={memberName || (language === 'bm' ? 'Pengembara Cameron' : 'Highland Companion')}
+                    avatarColor={avatarColor}
+                    language={language}
+                  />
                 </div>
               )}
             </div>

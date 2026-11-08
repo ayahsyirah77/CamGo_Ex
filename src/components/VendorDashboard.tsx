@@ -106,8 +106,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   onOpenAdmin,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'directory' | 'promotions' | 'analytics' | 'billing' | 'motorbikes' | 'reservations'
-  >('overview');
+    'directory' | 'promotions' | 'analytics' | 'billing' | 'reservations' | 'overview' | 'motorbikes'
+  >('directory');
 
   // Vendor Listing State
   const [vendorListings, setVendorListings] = useState<VendorListing[]>([]);
@@ -148,6 +148,22 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showAddListingModal, setShowAddListingModal] = useState(false);
 
+  // Sector Evaluation Modal State
+  const [sectorModalType, setSectorModalType] = useState<'fnb' | 'hotel' | 'vehicle' | null>(null);
+
+  const triggerSectorModalForVendor = (sectorId?: string) => {
+    const targetSectorId = sectorId || activeSector.id;
+    if (targetSectorId === 'food_beverage') {
+      setSectorModalType('fnb');
+    } else if (targetSectorId === 'real_estate_accommodation') {
+      setSectorModalType('hotel');
+    } else if (targetSectorId === 'vehicle_equipment_rental') {
+      setSectorModalType('vehicle');
+    } else {
+      setSectorModalType('fnb');
+    }
+  };
+
   // New Listing Form State (for Admin Add)
   const [newBizName, setNewBizName] = useState('');
   const [newBizLogo, setNewBizLogo] = useState('');
@@ -160,6 +176,10 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   // Active Sector & Category derived dynamically from activeVendor
   const activeSector: BusinessSector = findBusinessSector(activeVendor?.subCategory || activeVendor?.category);
   const activeCategoryConfig: BusinessCategoryItem = findBusinessCategory(activeVendor?.subCategory) || activeSector.categories[0];
+  const isFnBVendor =
+    activeSector.id === 'food_beverage' ||
+    activeVendor?.category === 'food' ||
+    (typeof activeVendor?.subCategory === 'string' && activeVendor.subCategory.startsWith('fb_'));
 
   const getSectorIcon = (sectorId: string) => {
     switch (sectorId) {
@@ -443,8 +463,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       const existingPartner = currentBikePartners.find(p => p.id === activeVendor.id);
       const vName = (activeVendor.businessName || '').toLowerCase();
       const isMotorbikeVendor =
-        !isMockMotorbikePartner(activeVendor) && (
-          (activeVendor.motorbikePackages && activeVendor.motorbikePackages.length > 0) ||
+        !isMockMotorbikePartner(activeVendor) &&
+        activeVendor.category !== 'accommodation' &&
+        !vName.includes('apartment') &&
+        !vName.includes('park view') &&
+        !vName.includes('cedar') &&
+        (activeVendor.category === 'transport' || activeVendor.subCategory === 'car_bike_rentals' ||
           vName.includes('motorbike') ||
           vName.includes('motorcycle') ||
           vName.includes('scooter') ||
@@ -452,7 +476,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           vName.includes('sewa skuter')
         );
 
-      if (existingPartner || isMotorbikeVendor) {
+      if (existingPartner && !isMotorbikeVendor) {
+        firebaseService.deleteMotorbikePartner(activeVendor.id);
+        if (typeof setMotorbikePartners === 'function') {
+          setMotorbikePartners(firebaseService.getMotorbikePartners());
+        }
+      } else if (isMotorbikeVendor) {
         const partnerToSync: MotorbikeRentalPartner = {
           id: activeVendor.id,
           businessName: activeVendor.businessName,
@@ -462,7 +491,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           fleetAvailability: (motorbikeFleetStatus === 'not_applicable' ? 'high' : motorbikeFleetStatus) as any,
           contactPhone: activeVendor.contactPhone || '+60123456789',
           whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone || '+60123456789',
-          packages: existingPartner ? existingPartner.packages : (activeVendor.motorbikePackages || []),
+          packages: activeVendor.motorbikePackages || existingPartner?.packages || [],
         };
         await firebaseService.saveMotorbikePartner(partnerToSync);
         if (typeof setMotorbikePartners === 'function') {
@@ -483,14 +512,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
   const handleDeleteListing = async () => {
     if (!activeVendor) return;
-    if (window.confirm(`Are you sure you want to delete vendor listing "${activeVendor.businessName}"? This action cannot be undone.`)) {
-      setIsSaving(true);
-      await firebaseService.deleteVendorListing(activeVendor.id);
-      refreshVendorData();
-      setIsSaving(false);
-      setSaveNotification(`Deleted listing "${activeVendor.businessName}"`);
-      setTimeout(() => setSaveNotification(null), 3000);
-    }
+    setIsSaving(true);
+    await firebaseService.deleteVendorListing(activeVendor.id);
+    refreshVendorData();
+    setIsSaving(false);
+    setSaveNotification(`Deleted listing "${activeVendor.businessName}"`);
+    setTimeout(() => setSaveNotification(null), 3000);
   };
 
   const handleCreateNewVendorListing = async () => {
@@ -893,8 +920,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       };
 
   return (
-    <div className="fixed inset-0 z-[95] bg-stone-950/90 backdrop-blur-lg overflow-y-auto">
-      <div className="min-h-full flex items-center justify-center p-0 sm:p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[95] bg-stone-950/90 backdrop-blur-lg overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="min-h-full flex items-center justify-center p-0 sm:p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -986,13 +1023,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           {/* Bottom Row: Mobile Horizontal Scrollable Tab Bar */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs font-semibold">
             {[
-              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-              { id: 'directory', label: 'Profile', icon: Store },
-              { id: 'motorbikes', label: activeSector.shortName, icon: SectorIcon },
+              { id: 'directory', label: 'Profile & Sector', icon: Store },
               { id: 'promotions', label: 'Deals', icon: Ticket },
               { id: 'analytics', label: 'Analytics', icon: BarChart3 },
               { id: 'billing', label: 'Team', icon: Settings },
               { id: 'reservations', label: 'Orders & Bookings', icon: Calendar },
+              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -1086,13 +1122,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             {/* Navigation Tabs */}
             <nav className="space-y-1">
               {[
-                { id: 'overview', label: 'Overview & Actions', icon: LayoutDashboard },
-                { id: 'directory', label: 'Listing Profile & Flags', icon: Store },
-                { id: 'motorbikes', label: `${activeSector.shortName}`, icon: SectorIcon },
+                { id: 'directory', label: 'Business Profile & Sector', icon: Store },
                 { id: 'promotions', label: 'Deals & Marketing', icon: Ticket },
                 { id: 'analytics', label: 'Customer Analytics', icon: BarChart3 },
                 { id: 'billing', label: 'Team & Billing', icon: Settings },
                 { id: 'reservations', label: 'Orders & Reservations', icon: Calendar },
+                { id: 'overview', label: 'Overview & Performance', icon: LayoutDashboard },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -1294,329 +1329,56 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   />
                 </div>
                 <p className="text-xs text-stone-300">
-                  💡 <strong>Tip:</strong> Keep real-time strawberry harvest &amp; parking alerts updated to maintain prime listing positioning.
+                  💡 <strong>Tip:</strong> Keep business contact info, deals, and offerings updated for maximum traveler conversion.
                 </p>
               </div>
 
-              {/* Real-Time Operational Toggles (Highland Specific) */}
-              <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-emerald-400" />
-                    Real-Time Operational Flags (Updates CamGo Live Map &amp; Search Immediately)
-                  </h3>
-                  <span className="text-[10px] text-stone-400 font-mono hidden sm:inline">
-                    💡 Toggle switch ON to activate flag for your business category
-                  </span>
-                </div>
-
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  {/* 1. Operating Status Card */}
-                  <div
-                    className={`p-3.5 rounded-2xl border transition-all duration-300 space-y-2.5 ${
-                      enabledFlags.operatingStatus
-                        ? 'bg-stone-900 border-emerald-500/40 opacity-100 grayscale-0 shadow-lg'
-                        : 'bg-stone-950/40 border-stone-800/80 opacity-50 grayscale'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Operating Status</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFlagActive('operatingStatus')}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                          enabledFlags.operatingStatus
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-stone-800 text-stone-400 border border-stone-700'
-                        }`}
-                      >
-                        {enabledFlags.operatingStatus ? '✓ Active' : 'Off (Disabled)'}
-                      </button>
-                    </div>
-
-                    <div className={`flex flex-col gap-1.5 transition-all ${enabledFlags.operatingStatus ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-                      {[
-                        { id: 'open', label: 'Open Today', color: 'bg-emerald-600 text-white' },
-                        { id: 'busy', label: 'Busy / High Crowd', color: 'bg-amber-600 text-white' },
-                        { id: 'sold_out', label: 'Sold Out / Fully Booked', color: 'bg-purple-600 text-white' },
-                        { id: 'closed_roadworks', label: 'Closed (Roadworks)', color: 'bg-rose-600 text-white' },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          onClick={() => handleToggleRealTimeStatus(st.id as any)}
-                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold text-left transition-all cursor-pointer ${
-                            realTimeStatus === st.id
-                              ? `${st.color} shadow`
-                              : 'bg-stone-800/60 text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                          }`}
-                        >
-                          {st.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 2. DIY Strawberry Harvest Card */}
-                  <div
-                    className={`p-3.5 rounded-2xl border transition-all duration-300 space-y-2.5 ${
-                      enabledFlags.diyHarvestStatus
-                        ? 'bg-stone-900 border-emerald-500/40 opacity-100 grayscale-0 shadow-lg'
-                        : 'bg-stone-950/40 border-stone-800/80 opacity-50 grayscale'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>🍓</span>
-                        <span>DIY Fruit Harvest</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFlagActive('diyHarvestStatus')}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                          enabledFlags.diyHarvestStatus
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-stone-800 text-stone-400 border border-stone-700'
-                        }`}
-                      >
-                        {enabledFlags.diyHarvestStatus ? '✓ Active' : 'Off (Disabled)'}
-                      </button>
-                    </div>
-
-                    <div className={`flex flex-col gap-1.5 transition-all ${enabledFlags.diyHarvestStatus ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-                      {[
-                        { id: 'picking_open', label: 'DIY Picking Open Today' },
-                        { id: 'farm_open_no_picking', label: 'Farm Open, Fruit Unavailable' },
-                        { id: 'closed_season', label: 'Closed Off-Season' },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          onClick={() => handleToggleHarvestStatus(st.id as any)}
-                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold text-left transition-all cursor-pointer ${
-                            diyHarvestStatus === st.id
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'bg-stone-800/60 text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                          }`}
-                        >
-                          {st.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 3. Customer Parking Alert Card */}
-                  <div
-                    className={`p-3.5 rounded-2xl border transition-all duration-300 space-y-2.5 ${
-                      enabledFlags.parkingStatus
-                        ? 'bg-stone-900 border-emerald-500/40 opacity-100 grayscale-0 shadow-lg'
-                        : 'bg-stone-950/40 border-stone-800/80 opacity-50 grayscale'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>🅿️</span>
-                        <span>Parking Alert</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFlagActive('parkingStatus')}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                          enabledFlags.parkingStatus
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-stone-800 text-stone-400 border border-stone-700'
-                        }`}
-                      >
-                        {enabledFlags.parkingStatus ? '✓ Active' : 'Off (Disabled)'}
-                      </button>
-                    </div>
-
-                    <div className={`flex flex-col gap-1.5 transition-all ${enabledFlags.parkingStatus ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-                      {[
-                        { id: 'private_available', label: 'Private Parking Available' },
-                        { id: 'street_busy', label: 'Street Parking Busy' },
-                        { id: 'valet_only', label: 'Valet / Shuttle Only' },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          onClick={() => handleToggleParkingStatus(st.id as any)}
-                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold text-left transition-all cursor-pointer ${
-                            parkingStatus === st.id
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'bg-stone-800/60 text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                          }`}
-                        >
-                          {st.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 4. Room / Stay Availability Card */}
-                  <div
-                    className={`p-3.5 rounded-2xl border transition-all duration-300 space-y-2.5 ${
-                      enabledFlags.roomAvailabilityStatus
-                        ? 'bg-stone-900 border-emerald-500/40 opacity-100 grayscale-0 shadow-lg'
-                        : 'bg-stone-950/40 border-stone-800/80 opacity-50 grayscale'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>🏨</span>
-                        <span>Room / Stay Availability</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFlagActive('roomAvailabilityStatus')}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                          enabledFlags.roomAvailabilityStatus
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-stone-800 text-stone-400 border border-stone-700'
-                        }`}
-                      >
-                        {enabledFlags.roomAvailabilityStatus ? '✓ Active' : 'Off (Disabled)'}
-                      </button>
-                    </div>
-
-                    <div className={`flex flex-col gap-1.5 transition-all ${enabledFlags.roomAvailabilityStatus ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-                      {[
-                        { id: 'rooms_available', label: 'Rooms Available Today' },
-                        { id: 'limited_units', label: 'Limited Units Left' },
-                        { id: 'fully_booked', label: 'Fully Booked / Sold Out' },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          onClick={() => handleToggleRoomAvailability(st.id as any)}
-                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold text-left transition-all cursor-pointer ${
-                            roomAvailabilityStatus === st.id
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'bg-stone-800/60 text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                          }`}
-                        >
-                          {st.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 5. Motorbike & Scooter Fleet Availability Card */}
-                  <div
-                    className={`p-3.5 rounded-2xl border transition-all duration-300 space-y-2.5 ${
-                      enabledFlags.motorbikeFleetStatus
-                        ? 'bg-stone-900 border-emerald-500/40 opacity-100 grayscale-0 shadow-lg'
-                        : 'bg-stone-950/40 border-stone-800/80 opacity-50 grayscale'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Bike className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Motorbike / Scooter Fleet</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFlagActive('motorbikeFleetStatus')}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                          enabledFlags.motorbikeFleetStatus
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-stone-800 text-stone-400 border border-stone-700'
-                        }`}
-                      >
-                        {enabledFlags.motorbikeFleetStatus ? '✓ Active' : 'Off (Disabled)'}
-                      </button>
-                    </div>
-
-                    <div className={`flex flex-col gap-1.5 transition-all ${enabledFlags.motorbikeFleetStatus ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-                      {[
-                        { id: 'high', label: 'High Fleet Availability' },
-                        { id: 'limited', label: 'Limited Fleet Available' },
-                        { id: 'sold_out', label: 'All Scooters Rented' },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          onClick={async () => {
-                            setMotorbikeFleetStatus(st.id as any);
-                            if (activeVendor) {
-                              const updated = { ...activeVendor, motorbikeFleetStatus: st.id as any, updatedAt: new Date().toISOString() };
-                              setActiveVendor(updated);
-                              await firebaseService.saveVendorListing(updated);
-                              setSaveNotification(`Motorbike fleet status updated to "${st.label}"!`);
-                              setTimeout(() => setSaveNotification(null), 3000);
-                            }
-                          }}
-                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold text-left transition-all cursor-pointer ${
-                            motorbikeFleetStatus === st.id
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'bg-stone-800/60 text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                          }`}
-                        >
-                          {st.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Performance Metrics Grid */}
+              {/* Performance Metrics Grid (Live Vendor Data) */}
               <div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between gap-2 mb-3">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-emerald-400" />
                     Listing Performance Snapshot
                   </h3>
-                  <div className="flex items-center gap-1 p-1 bg-stone-950 rounded-xl border border-stone-800 text-[11px]">
-                    {(['7d', '30d', '90d'] as const).map((tf) => (
-                      <button
-                        key={tf}
-                        onClick={() => setTimeframe(tf)}
-                        className={`px-2.5 py-1 font-semibold rounded-lg transition-colors cursor-pointer ${
-                          timeframe === tf ? 'bg-emerald-600 text-white' : 'text-stone-400 hover:text-white'
-                        }`}
-                      >
-                        Last {tf}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 <div className="grid sm:grid-cols-4 gap-3">
                   <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-1">
                     <span className="text-[11px] text-stone-400 flex items-center justify-between">
-                      <span>Total Listing Views</span>
-                      <Eye className="w-4 h-4 text-cyan-400" />
+                      <span>Published Offerings</span>
+                      <Package className="w-4 h-4 text-cyan-400" />
                     </span>
                     <p className="text-2xl font-black text-white font-mono">
-                      {timeframe === '7d' ? analytics.views7d : timeframe === '30d' ? analytics.views30d : analytics.views90d}
+                      {(activeVendor?.motorbikePackages || []).length || 1}
                     </p>
-                    <p className="text-[10px] text-emerald-400">+18% vs previous period</p>
+                    <p className="text-[10px] text-cyan-400">Live catalog items</p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-1">
                     <span className="text-[11px] text-stone-400 flex items-center justify-between">
-                      <span>Direct WhatsApp Leads</span>
-                      <MessageSquare className="w-4 h-4 text-emerald-400" />
+                      <span>Active Deals &amp; Vouchers</span>
+                      <Ticket className="w-4 h-4 text-emerald-400" />
                     </span>
-                    <p className="text-2xl font-black text-white font-mono">{analytics.whatsappClicks}</p>
-                    <p className="text-[10px] text-emerald-400">High intent bookings</p>
+                    <p className="text-2xl font-black text-white font-mono">{vouchers.length}</p>
+                    <p className="text-[10px] text-emerald-400">Live active promotions</p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-1">
                     <span className="text-[11px] text-stone-400 flex items-center justify-between">
-                      <span>Waze/Maps Navigation</span>
-                      <Navigation className="w-4 h-4 text-amber-400" />
+                      <span>Events &amp; News Published</span>
+                      <Calendar className="w-4 h-4 text-amber-400" />
                     </span>
-                    <p className="text-2xl font-black text-white font-mono">{analytics.mapTriggers}</p>
-                    <p className="text-[10px] text-amber-400">Turn-by-turn route clicks</p>
+                    <p className="text-2xl font-black text-white font-mono">{events.length}</p>
+                    <p className="text-[10px] text-amber-400">Published announcements</p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-1">
                     <span className="text-[11px] text-stone-400 flex items-center justify-between">
-                      <span>Profile Detail Clicks</span>
-                      <MousePointer className="w-4 h-4 text-purple-400" />
+                      <span>Team &amp; Staff Access</span>
+                      <Users className="w-4 h-4 text-purple-400" />
                     </span>
-                    <p className="text-2xl font-black text-white font-mono">{analytics.profileClicks}</p>
-                    <p className="text-[10px] text-purple-400">Menu &amp; price views</p>
+                    <p className="text-2xl font-black text-white font-mono">{staffList.length}</p>
+                    <p className="text-[10px] text-purple-400">Active team members</p>
                   </div>
                 </div>
               </div>
@@ -1751,13 +1513,17 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-2" onClick={(e) => e.stopPropagation()}>
                     <label className="block text-xs font-semibold text-stone-300 mb-1">
                       Business Sector &amp; Category Nature (Comprehensive Taxonomy)
                     </label>
                     <select
                       value={activeVendor.subCategory || 'fb_restaurants_cafes'}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
                       onChange={(e) => {
+                        e.stopPropagation();
                         const selectedSub = e.target.value;
                         const sector = findBusinessSector(selectedSub);
                         let mainCat: MainCategory = 'services_utilities';
@@ -1769,7 +1535,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
                         setActiveVendor({ ...activeVendor, category: mainCat, subCategory: selectedSub as any });
                       }}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
                     >
                       {BUSINESS_TAXONOMY.map((sector) => (
                         <optgroup key={sector.id} label={sector.name}>
@@ -1781,13 +1547,23 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         </optgroup>
                       ))}
                     </select>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${activeSector.badgeColor}`}>
-                        Sector: {activeSector.name}
-                      </span>
-                      <span className="text-[11px] text-stone-400">
-                        {activeCategoryConfig?.description || activeSector.moduleSubtitle}
-                      </span>
+                    <div className="mt-3.5 p-3 rounded-2xl bg-stone-900 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${activeSector.badgeColor}`}>
+                          Sector: {activeSector.name}
+                        </span>
+                        <span className="text-[11px] text-stone-300 font-medium">
+                          {activeCategoryConfig?.label || activeSector.shortName}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => triggerSectorModalForVendor(activeSector.id)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer transition-all active:scale-95"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Trigger {activeSector.shortName} Controls &amp; Live Modal</span>
+                      </button>
                     </div>
                   </div>
 
@@ -1921,88 +1697,92 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Verified Dietary & Halal Certifications (Greyed out by default with option to toggle enable) */}
-                <div className="space-y-3 pt-3 border-t border-stone-800">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-white flex items-center gap-2">
-                        <Award className="w-4 h-4 text-emerald-400" />
-                        <span>Verified Dietary &amp; Halal Certifications</span>
-                      </label>
-                      <p className="text-[11px] text-stone-400">
-                        Highlight official Halal, Muslim-Owned, or Vegetarian certifications for your business.
-                      </p>
+                {/* Verified Dietary & Halal Certifications (Available for Food & Beverage vendors only) */}
+                {isFnBVendor && (
+                  <div className="space-y-3 pt-3 border-t border-stone-800">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-white flex items-center gap-2">
+                          <Award className="w-4 h-4 text-emerald-400" />
+                          <span>Verified Dietary &amp; Halal Certifications</span>
+                        </label>
+                        <p className="text-[11px] text-stone-400">
+                          Highlight official Halal, Muslim-Owned, or Vegetarian certifications for your business.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newEnabled = !enabledFlags.dietaryTagsEnabled;
+                          const updatedFlags = { ...enabledFlags, dietaryTagsEnabled: newEnabled };
+                          setEnabledFlags(updatedFlags);
+                          if (activeVendor) {
+                            setActiveVendor({
+                              ...activeVendor,
+                              dietaryTagsEnabled: newEnabled,
+                              enabledFlags: updatedFlags,
+                              dietaryTags: activeVendor.dietaryTags || [],
+                            });
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+                          enabledFlags.dietaryTagsEnabled
+                            ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-950'
+                            : 'bg-stone-900 text-stone-400 border-stone-700 hover:text-stone-200'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${enabledFlags.dietaryTagsEnabled ? 'bg-white animate-pulse' : 'bg-stone-500'}`} />
+                        <span>{enabledFlags.dietaryTagsEnabled ? 'Feature Active' : 'Enable Certifications'}</span>
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newEnabled = !enabledFlags.dietaryTagsEnabled;
-                        const updatedFlags = { ...enabledFlags, dietaryTagsEnabled: newEnabled };
-                        setEnabledFlags(updatedFlags);
-                        if (activeVendor) {
-                          setActiveVendor({
-                            ...activeVendor,
-                            dietaryTagsEnabled: newEnabled,
-                            enabledFlags: updatedFlags,
-                          });
-                        }
-                      }}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+                    <div
+                      className={`p-3.5 rounded-xl transition-all ${
                         enabledFlags.dietaryTagsEnabled
-                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-950'
-                          : 'bg-stone-900 text-stone-400 border-stone-700 hover:text-stone-200'
+                          ? 'bg-stone-900 border border-stone-700 opacity-100'
+                          : 'opacity-40 grayscale pointer-events-none bg-stone-950/40 border border-stone-800'
                       }`}
                     >
-                      <span className={`w-2 h-2 rounded-full ${enabledFlags.dietaryTagsEnabled ? 'bg-white animate-pulse' : 'bg-stone-500'}`} />
-                      <span>{enabledFlags.dietaryTagsEnabled ? 'Feature Active' : 'Enable Certifications'}</span>
-                    </button>
-                  </div>
-
-                  <div
-                    className={`p-3.5 rounded-xl transition-all ${
-                      enabledFlags.dietaryTagsEnabled
-                        ? 'bg-stone-900 border border-stone-700 opacity-100'
-                        : 'opacity-40 grayscale pointer-events-none bg-stone-950/40 border border-stone-800'
-                    }`}
-                  >
-                    {!enabledFlags.dietaryTagsEnabled && (
-                      <p className="text-[11px] text-amber-300 font-mono mb-2">
-                        ⓘ Dietary certifications section is disabled by default. Click "Enable Certifications" above to activate.
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { id: 'halal_certified', label: '100% Halal Certified' },
-                        { id: 'muslim_owned', label: 'Muslim-Owned' },
-                        { id: 'pork_free', label: 'Pork-Free / Alcohol-Free' },
-                        { id: 'vegetarian_friendly', label: 'Vegetarian-Friendly' },
-                      ].map((tag) => {
-                        const isSelected = activeVendor.dietaryTags.includes(tag.id as DietaryTag);
-                        return (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            disabled={!enabledFlags.dietaryTagsEnabled}
-                            onClick={() => {
-                              const newTags = isSelected
-                                ? activeVendor.dietaryTags.filter((t) => t !== tag.id)
-                                : [...activeVendor.dietaryTags, tag.id as DietaryTag];
-                              setActiveVendor({ ...activeVendor, dietaryTags: newTags });
-                            }}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-emerald-600 text-white border border-emerald-400'
-                                : 'bg-stone-900 text-stone-400 border border-stone-800 hover:text-white'
-                            }`}
-                          >
-                            {isSelected ? '✓ ' : '+ '}{tag.label}
-                          </button>
-                        );
-                      })}
+                      {!enabledFlags.dietaryTagsEnabled && (
+                        <p className="text-[11px] text-amber-300 font-mono mb-2">
+                          ⓘ Dietary certifications section is disabled by default. Click "Enable Certifications" above to activate.
+                        </p>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { id: 'halal_certified', label: '100% Halal Certified' },
+                          { id: 'muslim_owned', label: 'Muslim-Owned' },
+                          { id: 'pork_free', label: 'Pork-Free / Alcohol-Free' },
+                          { id: 'vegetarian_friendly', label: 'Vegetarian-Friendly' },
+                        ].map((tag) => {
+                          const isSelected = (activeVendor.dietaryTags || []).includes(tag.id as DietaryTag);
+                          return (
+                            <button
+                              key={tag.id}
+                              type="button"
+                              disabled={!enabledFlags.dietaryTagsEnabled}
+                              onClick={() => {
+                                const currentTags = activeVendor.dietaryTags || [];
+                                const newTags = isSelected
+                                  ? currentTags.filter((t) => t !== tag.id)
+                                  : [...currentTags, tag.id as DietaryTag];
+                                setActiveVendor({ ...activeVendor, dietaryTags: newTags });
+                              }}
+                              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-600 text-white border border-emerald-400'
+                                  : 'bg-stone-900 text-stone-400 border border-stone-800 hover:text-white'
+                              }`}
+                            >
+                              {isSelected ? '✓ ' : '+ '}{tag.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Save Button Action */}
                 <div className="pt-3 border-t border-stone-800 flex items-center justify-between">
@@ -2657,8 +2437,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             </div>
           )}
 
-          {/* TAB: DEDICATED SECTOR CATALOG TAB */}
-          {activeTab === 'motorbikes' && (
+          {/* TAB: DEDICATED SECTOR CATALOG & OFFERINGS */}
+          {(activeTab === 'directory' || activeTab === 'motorbikes') && (
             <div className="space-y-6">
               {activeVendor ? (
                 <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-5">
@@ -3371,6 +3151,326 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               >
                 <Download className="w-4 h-4" />
                 <span>Print / Save PDF Tax Receipt</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SECTOR EVALUATION MODAL: F&B / Restaurant / Café */}
+      <AnimatePresence>
+        {sectorModalType === 'fnb' && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-lg bg-stone-900 border border-amber-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <Utensils className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white">F&amp;B / Restaurant / Café Controls</h3>
+                    <p className="text-[11px] text-stone-400">Dietary Certifications &amp; Parking Alerts for {activeVendor?.businessName}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSectorModalType(null)} className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 1. Dietary Certifications */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-amber-300 block">Dietary &amp; Kitchen Certifications</label>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    { id: 'halal_certified', label: 'JAKIM / Official Halal Certified' },
+                    { id: 'muslim_owned', label: '100% Muslim-Owned Kitchen' },
+                    { id: 'pork_free', label: 'Pork-Free & Alcohol-Free' },
+                    { id: 'vegetarian_friendly', label: '100% Vegetarian / Vegan Options' },
+                  ].map((tag) => {
+                    const hasTag = activeVendor?.dietaryTags?.includes(tag.id as any);
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={async () => {
+                          if (!activeVendor) return;
+                          const currentTags = activeVendor.dietaryTags || [];
+                          const newTags = hasTag ? currentTags.filter(t => t !== tag.id) : [...currentTags, tag.id as any];
+                          const updated = { ...activeVendor, dietaryTags: newTags, updatedAt: new Date().toISOString() };
+                          setActiveVendor(updated);
+                          await firebaseService.saveVendorListing(updated);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-left font-semibold flex items-center justify-between border transition-all cursor-pointer ${
+                          hasTag
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                            : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                        }`}
+                      >
+                        <span className="text-[11px]">{tag.label}</span>
+                        {hasTag ? <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" /> : <Plus className="w-3.5 h-3.5 text-stone-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Live Kitchen / DIY Status */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-amber-300 block">Live Kitchen &amp; DIY Status</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'picking_open', label: 'Kitchen & DIY Open' },
+                    { id: 'farm_open_no_picking', label: 'Kitchen Open, Limited DIY' },
+                    { id: 'closed_season', label: 'Closed Off-Season' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleHarvestStatus(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        diyHarvestStatus === st.id
+                          ? 'bg-amber-500 text-stone-950 font-black border-amber-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Parking & Traffic Alert */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-amber-300 block">Parking &amp; Choke Point Alert</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'private_available', label: 'Private Parking' },
+                    { id: 'street_busy', label: 'Street Busy' },
+                    { id: 'valet_only', label: 'Valet / Shuttle' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleParkingStatus(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        parkingStatus === st.id
+                          ? 'bg-amber-500 text-stone-950 font-black border-amber-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (activeVendor) await handleSaveActiveVendor();
+                  setSectorModalType(null);
+                }}
+                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs cursor-pointer shadow-lg transition-colors"
+              >
+                Sync &amp; Update CamGo Directories &amp; Live Map
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SECTOR EVALUATION MODAL: Guesthouse / Chalet / Hotel */}
+      <AnimatePresence>
+        {sectorModalType === 'hotel' && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-lg bg-stone-900 border border-teal-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-teal-500/20 text-teal-400 border border-teal-500/30">
+                    <Home className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white">Guesthouse / Chalet / Hotel Controls</h3>
+                    <p className="text-[11px] text-stone-400">Operating Status, Parking &amp; Room Vacancies for {activeVendor?.businessName}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSectorModalType(null)} className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 1. Operating Status */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-teal-300 block">Overall Stay Operating Status</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'open', label: 'Normal Operations' },
+                    { id: 'busy_peak_wait', label: 'High Season Peak' },
+                    { id: 'closed_roadworks', label: 'Maintenance / Closed' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleRealTimeStatus(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        realTimeStatus === st.id
+                          ? 'bg-teal-500 text-stone-950 font-black border-teal-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Guest Parking Availability */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-teal-300 block">Guest Parking Status</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'private_available', label: 'Dedicated Guest Parking' },
+                    { id: 'street_busy', label: 'Street Parking Limited' },
+                    { id: 'valet_only', label: 'Valet / Off-site Shuttle' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleParkingStatus(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        parkingStatus === st.id
+                          ? 'bg-teal-500 text-stone-950 font-black border-teal-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Room Availability & Vacancies */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-teal-300 block">Room Vacancy &amp; Booking Status</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'rooms_available', label: 'Rooms Available Today' },
+                    { id: 'limited_units', label: 'Limited Units Left' },
+                    { id: 'fully_booked', label: 'Fully Booked / Sold Out' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleRoomAvailability(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        roomAvailabilityStatus === st.id
+                          ? 'bg-teal-500 text-stone-950 font-black border-teal-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (activeVendor) await handleSaveActiveVendor();
+                  setSectorModalType(null);
+                }}
+                className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 font-black text-xs cursor-pointer shadow-lg transition-colors"
+              >
+                Sync &amp; Update CamGo Directories &amp; Live Map
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SECTOR EVALUATION MODAL: Motorbike / Vehicle Rental */}
+      <AnimatePresence>
+        {sectorModalType === 'vehicle' && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-lg bg-stone-900 border border-cyan-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                    <Bike className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white">Motorbike / Vehicle Rental Controls</h3>
+                    <p className="text-[11px] text-stone-400">Fleet Availability &amp; Rates for {activeVendor?.businessName}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSectorModalType(null)} className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 1. Operating Status */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-cyan-300 block">Fleet Operating Status</label>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    { id: 'open', label: 'Open for Rental Today' },
+                    { id: 'closed_roadworks', label: 'Maintenance / Closed' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleRealTimeStatus(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        realTimeStatus === st.id
+                          ? 'bg-cyan-500 text-stone-950 font-black border-cyan-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Fleet Availability */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-cyan-300 block">Scooter &amp; Bike Fleet Availability</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'high', label: 'High Availability (10+ Units)' },
+                    { id: 'limited', label: 'Limited Fleet (1-3 Left)' },
+                    { id: 'sold_out', label: 'All Scooters Rented' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={async () => {
+                        setMotorbikeFleetStatus(st.id as any);
+                        if (activeVendor) {
+                          const updated = { ...activeVendor, motorbikeFleetStatus: st.id as any, updatedAt: new Date().toISOString() };
+                          setActiveVendor(updated);
+                          await firebaseService.saveVendorListing(updated);
+                        }
+                      }}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        motorbikeFleetStatus === st.id
+                          ? 'bg-cyan-500 text-stone-950 font-black border-cyan-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (activeVendor) await handleSaveActiveVendor();
+                  setSectorModalType(null);
+                }}
+                className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-xs cursor-pointer shadow-lg transition-colors"
+              >
+                Sync &amp; Update Motorbike Marketplace &amp; Live Map
               </button>
             </div>
           </div>

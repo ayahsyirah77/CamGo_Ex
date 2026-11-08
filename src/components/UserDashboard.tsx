@@ -29,6 +29,8 @@ import {
   Unlock,
   Check,
   Compass,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { EmergencyCardSection } from './EmergencyCardSection';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
@@ -247,6 +249,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [editPhotoUrl, setEditPhotoUrl] = useState(currentUser?.photoURL || '');
   const [profileSuccessMessage, setProfileSuccessMessage] = useState('');
   const [profileErrorMessage, setProfileErrorMessage] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [uploadMeta, setUploadMeta] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -268,11 +271,22 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     setTimeout(() => setItineraryNoticeMessage(''), 4000);
   };
 
+  // Sync profile form states whenever currentUser updates
   useEffect(() => {
-    if (currentUser?.photoURL) {
-      setEditPhotoUrl(currentUser.photoURL);
+    if (currentUser) {
+      if (currentUser.displayName) setEditName(currentUser.displayName);
+      if (currentUser.fullName) setEditFullName(currentUser.fullName);
+      if (currentUser.email) setEditEmail(currentUser.email);
+      if (currentUser.contactNumber) setEditContact(currentUser.contactNumber);
+      if (currentUser.photoURL) setEditPhotoUrl(currentUser.photoURL);
+      if (currentUser.isLocal !== undefined) setEditIsLocal(currentUser.isLocal);
+      if ((currentUser as any).street) setEditStreet((currentUser as any).street);
+      if ((currentUser as any).postcode) setEditPostcode((currentUser as any).postcode);
+      if ((currentUser as any).town) setEditTown((currentUser as any).town);
+      if ((currentUser as any).district) setEditDistrict((currentUser as any).district);
+      if ((currentUser as any).state) setEditState((currentUser as any).state);
     }
-  }, [currentUser?.photoURL]);
+  }, [currentUser]);
 
   const processFile = async (file: File) => {
     setProfileErrorMessage('');
@@ -342,51 +356,45 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     setProfileSuccessMessage('Profile photo reset to default!');
     setTimeout(() => setProfileSuccessMessage(''), 3000);
   };
-  const handleSaveProfile = (e: React.FormEvent) => {
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileErrorMessage('');
+    setIsSavingProfile(true);
 
-    if (editIsLocal) {
-      if (!editStreet.trim()) {
-        setProfileErrorMessage('Please enter your Highland street name.');
-        return;
-      }
-      if (!editPostcode.trim()) {
-        setProfileErrorMessage('Please enter your Highland postcode.');
-        return;
-      }
-    } else {
-      if (!editDistrict.trim()) {
-        setProfileErrorMessage('Please enter your home district/city.');
-        return;
-      }
+    try {
+      const combinedAddress = editIsLocal
+        ? [editStreet.trim(), editPostcode.trim(), editTown, 'Cameron Highlands, Pahang'].filter(Boolean).join(', ')
+        : [editDistrict.trim(), editState].filter(Boolean).join(', ');
+
+      firebaseService.updateUserProfile({
+        displayName: editName.trim() || 'Traveler',
+        fullName: editFullName.trim() || editName.trim() || 'Traveler',
+        email: editEmail.trim() || currentUser?.email || '',
+        contactNumber: editContact.trim(),
+        isLocal: editIsLocal,
+        street: editStreet.trim(),
+        postcode: editPostcode.trim(),
+        town: editTown,
+        district: editDistrict.trim(),
+        state: editState,
+        address: combinedAddress,
+        photoURL: editPhotoUrl,
+      });
+
+      setProfileSuccessMessage(
+        editIsLocal
+          ? 'Profile photo, Highland local resident address, and settings saved successfully!'
+          : 'Profile photo and account settings saved successfully!'
+      );
+      setTimeout(() => setProfileSuccessMessage(''), 4000);
+    } catch (err: any) {
+      console.error('Error saving profile:', err);
+      setProfileErrorMessage('Could not save changes. Please try again.');
+      setTimeout(() => setProfileErrorMessage(''), 4000);
+    } finally {
+      setIsSavingProfile(false);
     }
-
-    const combinedAddress = editIsLocal
-      ? [editStreet.trim(), editPostcode.trim(), editTown, 'Cameron Highlands, Pahang'].filter(Boolean).join(', ')
-      : [editDistrict.trim(), editState].filter(Boolean).join(', ');
-
-    firebaseService.updateUserProfile({
-      displayName: editName.trim(),
-      fullName: editFullName.trim(),
-      email: editEmail.trim(),
-      contactNumber: editContact.trim(),
-      isLocal: editIsLocal,
-      street: editStreet.trim(),
-      postcode: editPostcode.trim(),
-      town: editTown,
-      district: editDistrict.trim(),
-      state: editState,
-      address: combinedAddress,
-      photoURL: editPhotoUrl,
-    });
-
-    setProfileSuccessMessage(
-      editIsLocal
-        ? 'Local resident status and Highland residential address updated successfully!'
-        : 'Visitor / Tourist status and district/state origin updated successfully!'
-    );
-    setTimeout(() => setProfileSuccessMessage(''), 3500);
   };
 
   // Bookmarked places
@@ -523,10 +531,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   const handleDeleteJob = (id: string) => {
-    if (window.confirm('Delete this classified posting?')) {
-      const updated = firebaseService.deleteJob(id);
-      setUserJobs(updated);
-    }
+    const updated = firebaseService.deleteJob(id);
+    setUserJobs(updated);
   };
 
   const itineraryDays = [
@@ -1543,7 +1549,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                       Full Legal Name
                     </label>
                     <input
-                      required
                       type="text"
                       value={editFullName}
                       onChange={(e) => setEditFullName(e.target.value)}
@@ -1655,7 +1660,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                         <input
                           type="text"
                           disabled={!editIsLocal}
-                          required={editIsLocal}
                           value={editStreet}
                           onChange={(e) => setEditStreet(e.target.value)}
                           placeholder={editIsLocal ? "e.g. No. 12, Persiaran Camelia 3" : "Greyed out (toggle Local to enable)"}
@@ -1676,7 +1680,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                           <input
                             type="text"
                             disabled={!editIsLocal}
-                            required={editIsLocal}
                             value={editPostcode}
                             onChange={(e) => setEditPostcode(e.target.value)}
                             placeholder={editIsLocal ? "e.g. 39000" : "Greyed out"}
@@ -1753,7 +1756,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                         <input
                           type="text"
                           disabled={editIsLocal}
-                          required={!editIsLocal}
                           value={editDistrict}
                           onChange={(e) => setEditDistrict(e.target.value)}
                           placeholder={!editIsLocal ? "e.g. Kinta / Ipoh, Petaling, George Town" : "Greyed out (toggle Visitor to enable)"}
@@ -1848,14 +1850,33 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                     </ul>
                   </div>
 
-                  <div className="pt-2">
+                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-3">
                     <button
                       type="submit"
-                      className="w-full sm:w-auto px-7 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/70 transition-all active:scale-95"
+                      disabled={isSavingProfile}
+                      className="w-full sm:w-auto px-7 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/70 transition-all active:scale-95"
                     >
-                      <Save className="w-4 h-4" />
-                      <span>Save Profile Changes</span>
+                      {isSavingProfile ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4" />
+                      )}
+                      <span>{isSavingProfile ? 'Saving Changes...' : 'Save Profile Changes'}</span>
                     </button>
+
+                    {profileSuccessMessage && (
+                      <div className="flex items-center gap-2 text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-3.5 py-2 rounded-xl text-xs font-semibold animate-in fade-in duration-200">
+                        <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>{profileSuccessMessage}</span>
+                      </div>
+                    )}
+
+                    {profileErrorMessage && (
+                      <div className="flex items-center gap-2 text-rose-300 bg-rose-950/70 border border-rose-500/40 px-3.5 py-2 rounded-xl text-xs font-semibold animate-in fade-in duration-200">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>{profileErrorMessage}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

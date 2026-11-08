@@ -224,11 +224,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleDeleteVendor = async (listingId: string, businessName: string) => {
-    if (window.confirm(`Delete vendor listing "${businessName}"?`)) {
-      await firebaseService.deleteVendorListing(listingId);
-      setVendorListingsState(firebaseService.getVendorListings());
-      addActivity(`Deleted vendor listing "${businessName}"`);
-    }
+    await firebaseService.deleteVendorListing(listingId);
+    setVendorListingsState(firebaseService.getVendorListings());
+    addActivity(`Deleted vendor listing "${businessName}"`);
   };
 
   const [showAddPlaceModal, setShowAddPlaceModal] = useState(false);
@@ -787,11 +785,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleDeleteTicket = async (id: string) => {
-    if (window.confirm('Delete this ticket pricing record?')) {
-      const updated = await firebaseService.deleteFarmTicket(id);
-      setFarmTickets(updated);
-      addActivity(`Deleted ticket pricing: ${id}`);
-    }
+    const updated = await firebaseService.deleteFarmTicket(id);
+    setFarmTickets(updated);
+    addActivity(`Deleted ticket pricing: ${id}`);
   };
 
 
@@ -1146,16 +1142,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleRemoveUser = async (u: any) => {
     if (u.email === 'ayahsyirah77@gmail.com') {
-      window.alert('Cannot remove the Master Admin.');
       return;
     }
-    if (window.confirm(`Are you sure you want to remove user "${u.fullName || u.email}"?`)) {
-      await deleteAdminUser(u.id);
-      setLiveUsers((prev) => prev.filter((item) => item.id !== u.id));
-      addActivity(`Removed user ${u.fullName || u.email}`);
-      if (selectedUserForView?.id === u.id) {
-        setSelectedUserForView(null);
-      }
+    await deleteAdminUser(u.id);
+    setLiveUsers((prev) => prev.filter((item) => item.id !== u.id));
+    addActivity(`Removed user ${u.fullName || u.email}`);
+    if (selectedUserForView?.id === u.id) {
+      setSelectedUserForView(null);
     }
   };
 
@@ -1337,25 +1330,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleResetTownship = async (townName: Township) => {
-    if (window.confirm(`Reset "${townName}" info and image back to default initial data?`)) {
-      try {
-        const newHubs = await firebaseService.deleteTownshipHub(townName);
-        if (newHubs && typeof newHubs === 'object' && !Array.isArray(newHubs)) {
-          setTownshipHubs({ ...(newHubs as Record<string, TownshipHubInfo>) });
-        } else {
-          setTownshipHubs(firebaseService.getTownshipHubs());
-        }
-        onRefreshData();
-        window.dispatchEvent(
-          new CustomEvent('township-hub-updated', { detail: { township: townName } })
-        );
-        if (showTownshipModal && editingTownship === townName) {
-          setShowTownshipModal(false);
-        }
-      } catch (err) {
-        console.error('[AdminDashboard] Error resetting township hub:', err);
-        window.alert('Reset failed. Please check your connection and try again.');
+    try {
+      const newHubs = await firebaseService.deleteTownshipHub(townName);
+      if (newHubs && typeof newHubs === 'object' && !Array.isArray(newHubs)) {
+        setTownshipHubs({ ...(newHubs as Record<string, TownshipHubInfo>) });
+      } else {
+        setTownshipHubs(firebaseService.getTownshipHubs());
       }
+      onRefreshData();
+      window.dispatchEvent(
+        new CustomEvent('township-hub-updated', { detail: { township: townName } })
+      );
+      if (showTownshipModal && editingTownship === townName) {
+        setShowTownshipModal(false);
+      }
+    } catch (err) {
+      console.error('[AdminDashboard] Error resetting township hub:', err);
     }
   };
 
@@ -2141,11 +2131,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                               type="button"
                               onClick={async () => {
-                                if (window.confirm(`Delete "${p.name}"?`)) {
-                                  await firebaseService.deletePlace(p.id);
-                                  addActivity(`Deleted place: ${p.name}`);
-                                  onRefreshData();
-                                }
+                                await firebaseService.deletePlace(p.id);
+                                addActivity(`Deleted place: ${p.name}`);
+                                onRefreshData();
                               }}
                               className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer"
                               title="Delete Place"
@@ -2221,11 +2209,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                               type="button"
                               onClick={async () => {
-                                if (window.confirm(`Delete photo "${item.title}"?`)) {
-                                  await firebaseService.deleteGalleryItem(item.id);
-                                  addActivity(`Deleted gallery photo: ${item.title}`);
-                                  onRefreshData();
-                                }
+                                await firebaseService.deleteGalleryItem(item.id);
+                                addActivity(`Deleted gallery photo: ${item.title}`);
+                                onRefreshData();
                               }}
                               className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer"
                               title="Delete Photo"

@@ -167,6 +167,18 @@ export const Navbar: React.FC<NavbarProps> = ({
     currentUser?.email === 'ayahsyirah77@gmail.com' ||
     currentUser?.email?.toLowerCase().includes('admin');
 
+  const isRegisteredVendor =
+    isUserAdmin ||
+    (currentUser as any)?.role === 'vendor' ||
+    Boolean(
+      currentUser &&
+      firebaseService.getVendorListings().some(
+        (l) =>
+          (l.ownerEmail && currentUser.email && l.ownerEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
+          (l.ownerUid && currentUser.uid && l.ownerUid === currentUser.uid)
+      )
+    );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -1588,44 +1600,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-                  {/* Directories Modal Link */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenDirectoriesModal) onOpenDirectoriesModal();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Compass className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors">
-                        {getTranslation(language, 'nav_directories')}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* 3. Hub */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      onOpenPortalsModal();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-teal-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-teal-500/15 border border-teal-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Layers className="w-4 h-4 text-teal-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-teal-300 transition-colors">
-                        Hub
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-teal-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
                   {/* Classifieds & Job Postings */}
                   <button
                     onClick={() => {
@@ -1653,56 +1627,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
-
-
-
-                  {/* 4. Map */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenMap) onOpenMap();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-cyan-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <MapPin className="w-4 h-4 text-cyan-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-cyan-300 transition-colors">
-                        Map
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-cyan-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* Community Chat Lounge & DMs */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenChat) onOpenChat();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform relative">
-                      <MessageSquare className="w-4 h-4 text-emerald-400" />
-                      {hasNewChat && (
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute -top-0.5 -right-0.5" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors">
-                          {language === 'bm' ? 'Lounge Komuniti & Mesej' : 'Community Lounge & DMs'}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
-                          Live
-                        </span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-
 
                   {/* Smart Parking & EV Charging Bay Finder */}
                   <button
@@ -1735,58 +1659,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
-                  {/* Real-Time Traveler Currency Converter (SGD -> MYR) */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenCurrencyConverter) {
-                        onOpenCurrencyConverter();
-                      } else {
-                        window.dispatchEvent(new CustomEvent('open-currency-converter'));
-                      }
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-gradient-to-r from-emerald-950/40 via-stone-900/80 to-teal-950/40 hover:from-emerald-900/60 hover:to-teal-900/60 text-stone-200 hover:text-white border border-emerald-500/30 hover:border-emerald-400/60 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <ArrowRightLeft className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                          TRAVELER UTILITY
-                        </span>
-                        <span className="text-[10px] font-bold text-amber-300">🇸🇬 SGD → MYR</span>
+                  {/* Business Vendor Portal (Only visible to admin and registered vendors) */}
+                  {(isUserAdmin || isRegisteredVendor) && (
+                    <button
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        if (onOpenVendorPortal) onOpenVendorPortal();
+                      }}
+                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 hover:text-white border border-amber-500/30 transition-all cursor-pointer text-left group shadow-md"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <Store className="w-4 h-4 text-amber-400" />
                       </div>
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors leading-tight">
-                        Real-Time Traveler Currency Converter
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-emerald-500 group-hover:text-emerald-300 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* 9. Business Vendor Portal */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenVendorPortal) onOpenVendorPortal();
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 hover:text-white border border-amber-500/30 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Store className="w-4 h-4 text-amber-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-amber-200 block group-hover:text-white transition-colors">
-                          Business Vendor Portal
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold">
-                          Vendor
-                        </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-amber-200 block group-hover:text-white transition-colors">
+                            Business Vendor Portal
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold">
+                            Vendor
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
+                      <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
+                    </button>
+                  )}
 
                   {/* 10. Admin Control Room */}
                   {isUserAdmin && (

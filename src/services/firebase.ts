@@ -23,7 +23,8 @@ import {
   GoogleAuthProvider, 
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  signInAnonymously 
+  signInAnonymously,
+  updateProfile 
 } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -146,10 +147,46 @@ export const MOCK_VENDOR_IDS = [
 export function isMockMotorbikePartner(partner: any): boolean {
   if (!partner) return true;
   const id = (partner.id || '').toLowerCase();
-  const name = (partner.businessName || '').toLowerCase();
+  const name = (partner.businessName || partner.name || '').toLowerCase();
+  const phone = (partner.contactPhone || '').replace(/\D/g, '');
   if (MOCK_VENDOR_IDS.includes(id) || MOCK_VENDOR_IDS.includes(name)) return true;
   if (id.startsWith('moto-partner') || id.startsWith('mock-') || id.startsWith('test-') || id.startsWith('seed-')) return true;
   if (name.includes('mock') || name.includes('sample') || name.includes('highland mobility')) return true;
+
+  // Filter out non-motorbike accommodation / apartment / homestay listings
+  if (
+    name.includes('park view') ||
+    name.includes('cedar') ||
+    name.includes('apartment') ||
+    name.includes('guesthouse') ||
+    name.includes('chalet') ||
+    name.includes('homestay') ||
+    name.includes('hotel') ||
+    name.includes('resort') ||
+    phone === '019548427' ||
+    (partner.category && partner.category === 'accommodation')
+  ) {
+    return true;
+  }
+
+  // Filter out any partner whose rental packages are rooms or apartments
+  if (Array.isArray(partner.packages)) {
+    const hasRoomPackage = partner.packages.some((pkg: any) => {
+      const pName = (pkg.name || '').toLowerCase();
+      const pCc = (pkg.cc || '').toLowerCase();
+      const pDetails = (pkg.packageDetails || '').toLowerCase();
+      return (
+        pName.includes('apartment') ||
+        pName.includes('room') ||
+        pCc.includes('room') ||
+        pCc.includes('guest') ||
+        pDetails.includes('room') ||
+        pDetails.includes('bathroom')
+      );
+    });
+    if (hasRoomPackage) return true;
+  }
+
   return false;
 }
 
@@ -829,7 +866,29 @@ class FirebaseStorageService {
   }
 
   public updateUserProfile(updates: Partial<UserProfile>): UserProfile | null {
-    if (!this.currentUser) return null;
+    if (!this.currentUser) {
+      const stored = localStorage.getItem(STORAGE_KEYS.USER);
+      if (stored) {
+        try {
+          this.currentUser = JSON.parse(stored);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (!this.currentUser) {
+      this.currentUser = {
+        uid: auth?.currentUser?.uid || 'user_' + Date.now(),
+        email: auth?.currentUser?.email || updates.email || 'traveler@camgo.my',
+        displayName: auth?.currentUser?.displayName || updates.displayName || 'Traveler',
+        fullName: updates.fullName || updates.displayName || 'Traveler',
+        role: 'user',
+        bookmarks: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+
     this.currentUser = {
       ...this.currentUser,
       ...updates,
@@ -846,6 +905,19 @@ class FirebaseStorageService {
         });
       } catch (err) {
         console.warn('[Firebase] Firestore profile sync error:', err);
+      }
+    }
+
+    if (auth && auth.currentUser) {
+      try {
+        updateProfile(auth.currentUser, {
+          displayName: updates.displayName || updates.fullName || auth.currentUser.displayName || undefined,
+          photoURL: updates.photoURL || auth.currentUser.photoURL || undefined,
+        }).catch((err) => {
+          console.warn('[Firebase Auth] updateProfile failed:', err);
+        });
+      } catch (err) {
+        console.warn('[Firebase Auth] sync error:', err);
       }
     }
 
@@ -2513,7 +2585,31 @@ class FirebaseStorageService {
     return finalPartners;
   }
 
+  public deleteMotorbikePartner(partnerId: string): void {
+    const data = localStorage.getItem('camgo_motorbike_partners');
+    let remaining: MotorbikeRentalPartner[] = [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          remaining = parsed.filter((p: any) => p && p.id !== partnerId && !isMockMotorbikePartner(p));
+          this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(remaining));
+        }
+      } catch {}
+    }
+    if (db) {
+      deleteDoc(doc(db, 'motorbike_partners', partnerId)).catch(() => {});
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('motorbike-partners-updated', { detail: remaining }));
+    }
+    this.notify();
+  }
+
   public async saveMotorbikePartner(partner: MotorbikeRentalPartner): Promise<MotorbikeRentalPartner[]> {
+    if (isMockMotorbikePartner(partner)) {
+      return this.getMotorbikePartners();
+    }
     const partners = this.getMotorbikePartners();
     const idx = partners.findIndex((p) => p.id === partner.id);
     if (idx >= 0) {

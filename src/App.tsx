@@ -776,10 +776,20 @@ export default function App() {
         />
       )}
 
-      {/* Bottom Sticky Footer for Mobile: Home, Offline Trail Engine, Chat, CamGo AI */}
+      {/* Bottom Sticky Footer for Mobile: Home, Trail, Directories, Chat, CamGo AI, SOS */}
       <MobileStickyFooter
         language={language}
-        activeModal={isTrailEngineOpen ? 'trail' : isChatOpen ? 'chat' : isAiOpen ? 'ai' : null}
+        activeModal={
+          isTrailEngineOpen
+            ? 'trail'
+            : isDirectoriesModalOpen
+            ? 'directories'
+            : isChatOpen
+            ? 'chat'
+            : isAiOpen
+            ? 'ai'
+            : null
+        }
         onGoHome={() => {
           setIsMapModalOpen(false);
           setIsItineraryOpen(false);
@@ -793,16 +803,25 @@ export default function App() {
         onOpenTrailEngine={() => {
           setIsChatOpen(false);
           setIsAiOpen(false);
+          setIsDirectoriesModalOpen(false);
           setIsTrailEngineOpen(true);
+        }}
+        onOpenDirectories={() => {
+          setIsChatOpen(false);
+          setIsAiOpen(false);
+          setIsTrailEngineOpen(false);
+          setIsDirectoriesModalOpen(true);
         }}
         onOpenChat={() => {
           setIsTrailEngineOpen(false);
           setIsAiOpen(false);
+          setIsDirectoriesModalOpen(false);
           setIsChatOpen(true);
         }}
         onOpenAi={() => {
           setIsTrailEngineOpen(false);
           setIsChatOpen(false);
+          setIsDirectoriesModalOpen(false);
           setIsAiOpen(true);
         }}
         onOpenSos={() => {
