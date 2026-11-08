@@ -835,6 +835,24 @@ class FirebaseStorageService {
       ...updates,
     };
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(this.currentUser));
+
+    if (db && this.currentUser.uid) {
+      try {
+        const cleanUpdates = Object.fromEntries(
+          Object.entries(updates).filter(([_, v]) => v !== undefined)
+        );
+        setDoc(doc(db, 'users', this.currentUser.uid), cleanUpdates, { merge: true }).catch((err) => {
+          console.warn('[Firebase] Could not sync user profile updates to Firestore:', err);
+        });
+      } catch (err) {
+        console.warn('[Firebase] Firestore profile sync error:', err);
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('user-profile-updated', { detail: this.currentUser }));
+    }
+
     this.notify();
     return this.currentUser;
   }
@@ -2345,6 +2363,29 @@ class FirebaseStorageService {
     return JSON.stringify(payload, null, 2);
   }
   public async uploadImage(file: File, folder: string): Promise<string> {
+    const convertToBase64 = (): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new Error('Failed to convert file to data URL'));
+          }
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+      });
+
+    // If folder is user_avatars, return base64 data URL directly for instant, zero-CORS preflight storage
+    if (folder === 'user_avatars') {
+      try {
+        return await convertToBase64();
+      } catch (err) {
+        console.warn('[Firebase] Failed to convert avatar to base64:', err);
+      }
+    }
+
     try {
       if (storage) {
         const storageRef = ref(storage, `${folder}/${Date.now()}-${file.name}`);
@@ -2355,19 +2396,7 @@ class FirebaseStorageService {
       console.warn('[Firebase Storage] Cloud upload failed, falling back to local base64 data URL:', storageErr);
     }
 
-    // Fallback: Read file as base64 data URL for instant offline preview & persistence
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result);
-        } else {
-          reject(new Error('Failed to convert file to data URL'));
-        }
-      };
-      reader.onerror = (error) => reject(error);
-      reader.readAsDataURL(file);
-    });
+    return convertToBase64();
   }
 
   public async saveAiChatMessage(

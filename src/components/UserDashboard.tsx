@@ -282,22 +282,14 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       return;
     }
     try {
-      // 1. Process via HTML5 Canvas & FileReader for instant 1:1 auto-fit base64
+      // 1. Process via HTML5 Canvas & FileReader for instant 1:1 auto-fit compressed base64 avatar
       const result = await compressAndAdaptAvatar(file, 300, 0.88);
-      let photoUrl = result.dataUrl;
-
-      // 2. Try uploading to Cloud Storage, otherwise fallback seamlessly
-      try {
-        const cloudUrl = await firebaseService.uploadImage(file, 'user_avatars');
-        if (cloudUrl) photoUrl = cloudUrl;
-      } catch (err) {
-        console.warn('[Storage] Cloud upload fallback, using compressed base64 avatar:', err);
-      }
+      const photoUrl = result.dataUrl;
 
       setEditPhotoUrl(photoUrl);
       setUploadMeta(`Auto-fitted • ${result.aspectRatioLabel}`);
 
-      // 3. Immediately persist updated photoURL so avatar everywhere updates live
+      // 2. Immediately persist updated photoURL so avatar everywhere updates live & syncs to Firestore
       firebaseService.updateUserProfile({
         photoURL: photoUrl,
       });
