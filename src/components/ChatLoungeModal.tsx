@@ -49,6 +49,7 @@ import { UserProfile } from '../services/firebase';
 import { PWAInstallButton } from './PWAInstallButton';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { CamLogo } from './CamLogo';
+import { AudioUnlockSettings } from './AudioUnlockSettings';
 
 interface ChatLoungeModalProps {
   isOpen: boolean;
@@ -95,6 +96,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
   const [pushTestCountdown, setPushTestCountdown] = useState<number | null>(null);
   const [pushTestNotice, setPushTestNotice] = useState<string | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState(false);
 
   // Member Profile Inspect Modal
   const [inspectingUser, setInspectingUser] = useState<ChatUser | null>(null);
@@ -851,13 +853,23 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                 </div>
               </div>
 
-              <button
-                onClick={() => setIsAudioMuted(!isAudioMuted)}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-white bg-stone-900 cursor-pointer"
-                title={isAudioMuted ? 'Unmute sounds' : 'Mute chat sounds'}
-              >
-                {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setIsAudioSettingsOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                  title="Configure Audio Chimes & Push Notifications"
+                >
+                  <BellRing className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Audio &amp; Push</span>
+                </button>
+                <button
+                  onClick={() => setIsAudioMuted(!isAudioMuted)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-white bg-stone-900 cursor-pointer"
+                  title={isAudioMuted ? 'Unmute sounds' : 'Mute chat sounds'}
+                >
+                  {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
           </aside>
 
@@ -1540,6 +1552,21 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                   Got It
                 </button>
               </motion.div>
+            </div>
+          )}
+
+          {/* Audio & Push Settings Modal Popup */}
+          {isAudioSettingsOpen && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setIsAudioSettingsOpen(false)}>
+              <div className="w-full max-w-md relative" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => setIsAudioSettingsOpen(false)}
+                  className="absolute top-3 right-3 z-10 p-2 rounded-full bg-stone-900 text-stone-300 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <AudioUnlockSettings onStatusChange={() => {}} />
+              </div>
             </div>
           )}
         </AnimatePresence>

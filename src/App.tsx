@@ -24,7 +24,7 @@ import { getTranslation } from './services/i18n';
 import { LoadingScreen } from './components/LoadingScreen';
 import { Navbar } from './components/Navbar';
 import { BackToTop } from './components/BackToTop';
-import { InteractiveMap } from './components/MapView';
+import { InteractiveMap } from './components/InteractiveMap';
 import { GalleryCarousel } from './components/GalleryCarousel';
 import { ChatLoungeModal } from './components/ChatLoungeModal';
 import { MobileHomeCards } from './components/MobileHomeCards';
