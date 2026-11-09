@@ -245,6 +245,20 @@ service cloud.firestore {
       }
     }
 
+    match /walkieTalkieMessages/{msgId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /walkie_talkie_messages/{msgId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
     // Default deny for unmatched documents
     match /{document=**} {
       allow read, write: if false;
