@@ -1358,6 +1358,23 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                     <div className="text-center text-[10px] text-stone-400">
                       Supports JPG, PNG, WEBP, GIF. Auto-centers and scales.
                     </div>
+
+                    {/* Direct Image URL input option */}
+                    <div className="pt-1">
+                      <label className="text-[10px] font-bold text-stone-300 block mb-1">
+                        Or Paste Image URL:
+                      </label>
+                      <input
+                        type="url"
+                        value={editPhotoUrl}
+                        onChange={(e) => {
+                          setEditPhotoUrl(e.target.value);
+                          setUploadMeta('Custom URL Loaded • Auto-fitting');
+                        }}
+                        placeholder="https://images.unsplash.com/..."
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800/90 border border-white/10 text-stone-100 placeholder-stone-500 outline-none focus:border-emerald-500 transition-colors font-mono text-[10px]"
+                      />
+                    </div>
                   </div>
                 </div>
 
