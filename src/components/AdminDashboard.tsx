@@ -667,6 +667,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       order: Number(cardFormOrder) || 1,
       isActive: cardFormIsActive,
     };
+    console.log('[AdminDashboard] Saving card data:', cardData);
     const updated = await firebaseService.saveHomeCard(cardData);
     setHomeCards(updated);
     setIsAddEditCardModalOpen(false);
@@ -4106,10 +4107,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           e.target.value = '';
                           if (!file) return;
                           try {
-                            const compressed = await compressImageFile(file, 900, 0.7);
-                            setCardFormImageUrl(compressed);
-                          } catch {
-                            setCardFormError('Failed to process image file');
+                            setCardFormError('Uploading...');
+                            const url = await firebaseService.uploadImage(file, 'mobile_home_cards');
+                            setCardFormImageUrl(url);
+                            setCardFormError(null);
+                          } catch (err) {
+                            console.error('Failed to upload image:', err);
+                            setCardFormError('Failed to upload image');
                           }
                         }}
                       />

@@ -336,7 +336,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           });
         },
         () => {},
-        { enableHighAccuracy: true, timeout: 20000, maximumAge: 3000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     }
   }, [isOpen]);

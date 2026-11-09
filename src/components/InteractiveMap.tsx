@@ -1300,9 +1300,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       );
     }
 
-    // Auto-Pan / Follow Mode: keep camera centered on vehicle
+    // Auto-Pan / Follow Mode: keep camera tightly centered on vehicle at zoom 18 (Waze/Google Maps style)
     if (isAutoFollowEnabled) {
-      map.panTo([lat, lng], { animate: true, duration: 0.8 });
+      map.setView([lat, lng], Math.max(map.getZoom(), 18), {
+        animate: true,
+        duration: 0.6,
+      });
     }
   };
 
@@ -1346,8 +1349,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 10000,
+        maximumAge: 0,
+        timeout: 15000,
       }
     );
 
@@ -1367,13 +1370,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  // Start, Stop, Resume Navigation Handlers
+  // Start, Stop, Resume Navigation Handlers (Driver-oriented high-zoom 18 tracking & flat-pitched perspective)
   const handleStartNavigation = () => {
     unlockAudioEngine();
     setIsNavigationPaused(false);
     startLiveGpsTracking();
-    if (mapInstanceRef.current && userGpsCoords) {
-      mapInstanceRef.current.flyTo([userGpsCoords.lat, userGpsCoords.lng], 16, { duration: 0.8 });
+    if (mapInstanceRef.current) {
+      const targetLat = userGpsCoords?.lat || 4.4715;
+      const targetLng = userGpsCoords?.lng || 101.3805;
+      mapInstanceRef.current.flyTo([targetLat, targetLng], 18, {
+        duration: 1.2,
+        easeLinearity: 0.25,
+      });
     }
   };
 
