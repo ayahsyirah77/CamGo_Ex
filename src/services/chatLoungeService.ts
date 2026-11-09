@@ -528,9 +528,6 @@ class ChatLoungeService {
     this.broadcastMessage(newMsg);
     this.notifySubscribers();
 
-    // Trigger smart simulated replies for lively community feel if sending to general or a DM
-    this.triggerSimulatedCompanionReply(newMsg);
-
     return newMsg;
   }
 
@@ -762,64 +759,6 @@ class ChatLoungeService {
     this.notifySubscribers();
   }
 
-  /**
-   * Simulates realistic community banter & instant DM responses
-   * Keeps the lounge exciting and interactive when testing
-   */
-  private triggerSimulatedCompanionReply(userMsg: ChatMessage): void {
-    if (userMsg.senderId !== this.currentChatUser.id) return;
-
-    // Direct Message simulation
-    if (userMsg.dmThreadId) {
-      const dm = this.dmThreads.find((d) => d.id === userMsg.dmThreadId);
-      if (!dm) return;
-      const targetUser = dm.otherUser;
-
-      // Show typing indicator after 1.5s
-      setTimeout(() => {
-        this.handleIncomingTyping({
-          threadOrChannelId: dm.id,
-          userId: targetUser.id,
-          userName: targetUser.name,
-          isTyping: true,
-        });
-
-        // Deliver simulated response after 3.5s
-        setTimeout(() => {
-          this.handleIncomingTyping({
-            threadOrChannelId: dm.id,
-            userId: targetUser.id,
-            userName: targetUser.name,
-            isTyping: false,
-          });
-
-          const replies = [
-            `Got your message! Let me check the schedule for you right away. 😊`,
-            `Sounds great! I'm around Tanah Rata right now. Let me know if you need any directions or spots!`,
-            `Thanks for reaching out! The view up here at the viewpoint is stunning today.`,
-            `Yes absolutely! I can help you arrange that or guide you along the trail.`,
-          ];
-
-          const responseText = replies[Math.floor(Math.random() * replies.length)];
-          const replyMsg: ChatMessage = {
-            id: `msg-sim-${Date.now()}`,
-            dmThreadId: dm.id,
-            senderId: targetUser.id,
-            senderName: targetUser.name,
-            senderAvatar: targetUser.avatar,
-            senderRole: targetUser.role,
-            text: responseText,
-            status: 'delivered',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            createdAt: Date.now(),
-            reactions: {},
-          };
-
-          this.handleIncomingMessage(replyMsg, true);
-        }, 2200);
-      }, 1200);
-    }
-  }
 
   // --- Subscriptions ---
 
