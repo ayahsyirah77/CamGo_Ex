@@ -46,14 +46,7 @@ export function usePWAInstall() {
 
   const installPWA = async (): Promise<{ success: boolean; reason?: string }> => {
     if (!deferredPrompt) {
-      if (typeof window !== 'undefined') {
-        if (window.self !== window.top) {
-          window.open('/chat', '_blank');
-        } else {
-          window.location.href = '/chat';
-        }
-        return { success: true, reason: 'launched-chat' };
-      }
+      // If we don't have a native prompt, we return failure so UI can show manual guides
       return { success: false, reason: 'no-prompt' };
     }
 

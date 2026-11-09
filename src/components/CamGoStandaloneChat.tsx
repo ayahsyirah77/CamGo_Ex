@@ -50,6 +50,7 @@ import {
 import { chatLoungeService } from '../services/chatLoungeService';
 import { pushNotificationService } from '../services/pushNotificationService';
 import { firebaseService, UserProfile } from '../services/firebase';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 import { CamLogo } from './CamLogo';
 
 interface CamGoStandaloneChatProps {
@@ -99,10 +100,9 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
   const [showPushModal, setShowPushModal] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
 
-  // PWA Add to Home Screen States
-  const [isStandalone, setIsStandalone] = useState(false);
+  // PWA Add to Home Screen States & Hook
+  const { isInstalled, installPWA, isStandalone, isInstallable } = usePWAInstall();
   const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Modals
   const [inspectingUser, setInspectingUser] = useState<ChatUser | null>(null);
@@ -124,24 +124,6 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
       setShowSplash(false);
     }, 1200);
     return () => clearTimeout(timer);
-  }, []);
-
-  // Detect PWA Standalone Mode & Listen for Install Prompt
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isStandaloneMode =
-        (window.navigator as any).standalone === true ||
-        window.matchMedia('(display-mode: standalone)').matches;
-      setIsStandalone(isStandaloneMode);
-
-      const handleBeforeInstall = (e: any) => {
-        e.preventDefault();
-        setDeferredPrompt(e);
-      };
-
-      window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-      return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-    }
   }, []);
 
   // Sync with Firebase user on mount / change
@@ -364,14 +346,13 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
 
   // Trigger PWA Install or show Safari instructions
   const handleInstallPwa = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setIsStandalone(true);
+    try {
+      const res = await installPWA();
+      if (!res.success && res.reason !== 'dismissed') {
+        setShowInstallGuideModal(true);
       }
-      setDeferredPrompt(null);
-    } else {
+    } catch (err) {
+      console.warn('[PWA INSTALL] Error calling prompt:', err);
       setShowInstallGuideModal(true);
     }
   };

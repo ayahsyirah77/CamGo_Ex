@@ -1505,6 +1505,18 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                   </p>
                 </div>
 
+                {/* iOS Safari Guidance */}
+                <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 space-y-1.5 text-[11px] text-stone-300 text-left">
+                  <div className="font-bold text-emerald-400 flex items-center gap-1.5 text-[11px]">
+                    <span>🍎</span>
+                    <span>For iPhone / iPad (Safari):</span>
+                  </div>
+                  <p className="text-stone-400 leading-snug">
+                    1. Tap the <strong>Share</strong> button (box with up arrow) in Safari toolbar.<br />
+                    2. Scroll down and tap <strong>"Add to Home Screen"</strong>.
+                  </p>
+                </div>
+
                 {/* Open Standalone Chat Lounge Direct App Link */}
                 <button
                   onClick={() => {

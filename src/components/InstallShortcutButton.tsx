@@ -1,10 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Smartphone, Download, Check } from 'lucide-react';
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface InstallShortcutButtonProps {
   className?: string;
@@ -17,62 +13,17 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
   variant = 'compact',
   onInstalled,
 }) => {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState<boolean>(false);
-
-  useEffect(() => {
-    // Check if app is already running in standalone mode
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-
-    if (isStandalone) {
-      setIsInstalled(true);
-    }
-
-    const handleBeforeInstallPrompt = (e: Event) => {
-      // 1. Intercept standard browser mini-infobar
-      e.preventDefault();
-      // 2. Save prompt event to React state
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-      if (onInstalled) onInstalled();
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, [onInstalled]);
-
+  const { isInstalled, installPWA, isStandalone } = usePWAInstall();
   const [showGuideNotice, setShowGuideNotice] = useState<boolean>(false);
 
   // Trigger native prompt when captured, or show guidance tooltip when deferredPrompt is null
   const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      try {
-        await deferredPrompt.prompt();
-        const choiceResult = await deferredPrompt.userChoice;
-        if (choiceResult.outcome === 'accepted') {
-          setIsInstalled(true);
-          setDeferredPrompt(null);
-          setShowGuideNotice(false);
-          if (onInstalled) onInstalled();
-          return;
-        }
-      } catch (err) {
-        console.warn('[PWA INSTALL] Prompt error:', err);
-      }
+    const res = await installPWA();
+    if (!res.success && res.reason !== 'dismissed') {
+      setShowGuideNotice(!showGuideNotice);
+    } else if (res.success && onInstalled) {
+      onInstalled();
     }
-    // Show instruction notice whenever button is clicked if prompt not available
-    setShowGuideNotice(!showGuideNotice);
   };
 
   if (isInstalled) {
