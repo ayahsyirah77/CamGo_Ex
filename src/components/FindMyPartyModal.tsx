@@ -362,6 +362,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
         setLoading(false);
         setErrorMsg(null);
         setSession(data);
+        setActiveTab('map');
         localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, formattedCode);
 
         if (data.members && data.members[memberId]) {
@@ -700,6 +701,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
       setSession(createdSession);
       setIsSharing(true);
+      setActiveTab('map');
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, targetCode);
       subscribeToSession(targetCode);
       setShowLiveMapModal(true);
@@ -755,6 +757,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       const joinedSession = await beaconService.joinSession(targetCode, selfMember);
       setSession(joinedSession);
       setIsSharing(true);
+      setActiveTab('map');
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, targetCode);
       subscribeToSession(targetCode);
       setShowLiveMapModal(true);

@@ -713,8 +713,25 @@ class ChatLoungeService {
         };
       }
     } else if (msg.dmThreadId) {
-      const dm = this.dmThreads.find((d) => d.id === msg.dmThreadId);
-      if (dm) {
+      let dm = this.dmThreads.find((d) => d.id === msg.dmThreadId);
+      if (!dm) {
+        const otherUser: ChatUser = {
+          id: msg.senderId === this.currentChatUser.id ? 'other-user' : msg.senderId,
+          name: msg.senderName,
+          handle: `@${msg.senderName.toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+          avatar: msg.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+          role: msg.senderRole || 'member',
+          status: 'online',
+        };
+        dm = {
+          id: msg.dmThreadId,
+          otherUser,
+          unreadCount: 0,
+          updatedAt: new Date().toISOString(),
+        };
+        this.dmThreads.unshift(dm);
+      }
+      if (msg.senderId !== this.currentChatUser.id) {
         dm.unreadCount = (dm.unreadCount || 0) + 1;
         dm.lastMessage = {
           text: msg.text,
@@ -722,8 +739,15 @@ class ChatLoungeService {
           senderId: msg.senderId,
           isRead: false,
         };
-        dm.updatedAt = new Date().toISOString();
+      } else {
+        dm.lastMessage = {
+          text: msg.text,
+          timestamp: msg.timestamp,
+          senderId: msg.senderId,
+          isRead: true,
+        };
       }
+      dm.updatedAt = new Date().toISOString();
     }
 
     this.saveState();
