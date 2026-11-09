@@ -65,6 +65,8 @@ import {
   Sparkles,
   Smartphone,
   EyeOff,
+  Car,
+  Zap,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -234,6 +236,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showAddEventModal, setShowAddEventModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [showFarmTicketModal, setShowFarmTicketModal] = useState(false);
+  const [showParkingManagerModal, setShowParkingManagerModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportDataJson, setExportDataJson] = useState('');
 
@@ -370,6 +373,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [placeRealTimeStatus, setPlaceRealTimeStatus] = useState<VendorRealTimeStatus>('open');
   const [placeDiyHarvestStatus, setPlaceDiyHarvestStatus] = useState<DiyHarvestStatus | 'none'>('none');
   const [placeParkingStatus, setPlaceParkingStatus] = useState<ParkingStatus>('private_available');
+  const [placeTotalBays, setPlaceTotalBays] = useState<number | ''>('');
+  const [placeAvailableBays, setPlaceAvailableBays] = useState<number | ''>('');
   const [placeRoomAvailabilityStatus, setPlaceRoomAvailabilityStatus] = useState<RoomAvailabilityStatus | 'none'>('none');
 
   const DAYS_OF_WEEK: DayOfWeek[] = [
@@ -495,6 +500,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       { key: 'property_real_estate', label: 'Property & Real Estate' },
       { key: 'event_business_support', label: 'Event & Business Support' },
       { key: 'public_toilets_restrooms', label: 'Public Toilets & Restrooms' },
+      { key: 'parking', label: 'Parking' },
     ],
     shopping: [
       { key: 'fresh_markets_produce', label: 'Fresh Markets & Produce' },
@@ -851,8 +857,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setPlaceRealTimeStatus('open');
     setPlaceDiyHarvestStatus('none');
     setPlaceParkingStatus('private_available');
+    setPlaceTotalBays('');
+    setPlaceAvailableBays('');
     setPlaceRoomAvailabilityStatus('none');
     setShowAddPlaceModal(true);
+  };
+
+  const handleOpenAddParkingHub = () => {
+    handleOpenAddPlace();
+    setPlaceCategory('transport');
+    setPlaceSubCategory('fuel_ev_charging');
+    setPlaceTags('Smart Parking, EV Charging');
+    setPlaceName('New Parking Complex');
   };
 
   const handleOpenEditPlace = (place: Place) => {
@@ -874,6 +890,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setPlaceRealTimeStatus(place.realTimeStatus || 'open');
     setPlaceDiyHarvestStatus(place.diyHarvestStatus || 'none');
     setPlaceParkingStatus(place.parkingStatus || 'private_available');
+    setPlaceTotalBays(place.totalBays ?? '');
+    setPlaceAvailableBays(place.availableBays ?? '');
     setPlaceRoomAvailabilityStatus(place.roomAvailabilityStatus || 'none');
 
     if (place.operatingHours?.weeklySchedule && place.operatingHours.weeklySchedule.length > 0) {
@@ -984,6 +1002,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         trafficStatus: existingPlace?.trafficStatus ?? 'smooth',
         realTimeStatus: placeRealTimeStatus,
         parkingStatus: placeParkingStatus,
+        totalBays: placeTotalBays !== '' ? Number(placeTotalBays) : undefined,
+        availableBays: placeAvailableBays !== '' ? Number(placeAvailableBays) : undefined,
       };
 
       if (placeDiyHarvestStatus !== 'none') {
@@ -1528,6 +1548,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <Ticket className="w-5 h-5" />
                 <span>Manage Farm Tickets</span>
+              </button>
+
+              <button
+                onClick={() => setShowParkingManagerModal(true)}
+                className="p-4 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer shadow-lg"
+              >
+                <Car className="w-5 h-5 text-amber-400" />
+                <span>Parking & EV Hubs</span>
               </button>
             </div>
           </div>
@@ -2502,7 +2530,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <option value="travel_tourism">Travel & Highland Tourism</option>
                       <option value="accommodation">Accommodation</option>
                       <option value="transport">Transport & Mobility Services</option>
-                      <option value="local_services">Local Services & Amenities</option>
+                      <option value="local_services">Local Services, Amenities & Parking</option>
                       <option value="shopping">Shopping & Local Produce</option>
                       <option value="masjid_surau">Masjid & Surau</option>
                     </select>
@@ -2659,6 +2687,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <option value="street_busy">🚘 Street Parking Busy (Parkir Tepi Jalan Sesak)</option>
                         <option value="valet_only">🔑 Valet Parking Only (Parkir Valet Sahaja)</option>
                       </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">
+                        Total Parking Bays
+                      </label>
+                      <input
+                        type="number"
+                        value={placeTotalBays}
+                        onChange={(e) => setPlaceTotalBays(e.target.value === '' ? '' : Number(e.target.value))}
+                        placeholder="e.g. 120"
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">
+                        Available Parking Bays
+                      </label>
+                      <input
+                        type="number"
+                        value={placeAvailableBays}
+                        onChange={(e) => setPlaceAvailableBays(e.target.value === '' ? '' : Number(e.target.value))}
+                        placeholder="e.g. 85"
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      />
                     </div>
 
                     <div>
@@ -4265,7 +4319,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <option value="accommodation">Accommodation</option>
                             <option value="shopping">Shopping & Local Produce</option>
                             <option value="transport">Transport & Mobility</option>
-                            <option value="local_services">Local Services & Amenities</option>
+                            <option value="local_services">Local Services, Amenities & Parking</option>
                             <option value="services_utilities">Services & Utilities</option>
                             <option value="business">Business & Produce</option>
                             <option value="masjid_surau">Masjid & Surau</option>
@@ -4431,6 +4485,167 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
         )}
+
+      {/* Parking & EV Hubs Manager Modal */}
+      {showParkingManagerModal &&
+        renderModal(
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-0 sm:p-4 overflow-hidden">
+            <div className="w-full max-w-5xl h-full sm:h-[90vh] bg-stone-900 border border-amber-500/30 shadow-2xl flex flex-col overflow-hidden relative sm:rounded-3xl">
+              <div className="p-4 sm:p-6 border-b border-white/10 bg-stone-900 flex items-center justify-between sticky top-0 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400">
+                    <Car className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-heading font-extrabold text-stone-100">
+                      Parking & EV Hubs Manager
+                    </h3>
+                    <p className="text-xs text-stone-400">Manage real-time bay capacity and charging stations</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowParkingManagerModal(false)}
+                  className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-1 space-y-4">
+                    <div className="p-5 rounded-3xl bg-stone-950/80 border border-amber-500/20 space-y-4">
+                      <div className="flex items-center gap-2 text-amber-400">
+                        <Plus className="w-5 h-5" />
+                        <h4 className="font-bold">Add New Location</h4>
+                      </div>
+                      <p className="text-[11px] text-stone-400 leading-relaxed">
+                        Create a new parking complex or EV charging station. Locations added here will immediately appear in the visitor's Finder tool.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowParkingManagerModal(false);
+                          handleOpenAddParkingHub();
+                        }}
+                        className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Launch Creation Form</span>
+                      </button>
+                    </div>
+
+                    {/* Quick Stats for Admin */}
+                    <div className="p-5 rounded-3xl bg-stone-950/50 border border-white/5 space-y-3">
+                      <h4 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Network Summary</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="p-3 rounded-2xl bg-stone-900 border border-white/5">
+                          <span className="text-[9px] text-stone-500 block uppercase">Total Hubs</span>
+                          <span className="text-lg font-black text-stone-200">
+                            {places.filter(p => p.subCategory === 'fuel_ev_charging' || p.subCategory === 'parking' || p.tags.some(t => t.toLowerCase().includes('parking'))).length}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-stone-900 border border-white/5">
+                          <span className="text-[9px] text-stone-500 block uppercase">Free Bays</span>
+                          <span className="text-lg font-black text-emerald-400">
+                            {places.reduce((acc, p) => acc + (p.availableBays || 0), 0)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 space-y-4">
+                    <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-amber-400" />
+                      <span>Registered Parking & EV Locations</span>
+                    </h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
+                      {places.filter(p => {
+                        const isEvSubcat = p.subCategory === 'fuel_ev_charging' || p.subCategory === 'parking';
+                        const hasParkingTag = p.tags.some(t => t.toLowerCase().includes('parking') || t.toLowerCase().includes('ev'));
+                        return isEvSubcat || hasParkingTag;
+                      }).length === 0 ? (
+                        <div className="py-12 text-center bg-stone-950/50 rounded-3xl border border-dashed border-white/10">
+                          <Car className="w-10 h-10 text-stone-700 mx-auto mb-3 opacity-20" />
+                          <p className="text-sm text-stone-500 italic">No parking hubs found in directory.</p>
+                        </div>
+                      ) : (
+                        places
+                          .filter(p => {
+                            const isEvSubcat = p.subCategory === 'fuel_ev_charging' || p.subCategory === 'parking';
+                            const hasParkingTag = p.tags.some(t => t.toLowerCase().includes('parking') || t.toLowerCase().includes('ev'));
+                            return isEvSubcat || hasParkingTag;
+                          })
+                          .map((hub) => (
+                            <div 
+                              key={hub.id} 
+                              className="p-4 rounded-2xl bg-stone-950/70 border border-white/10 hover:border-amber-500/30 transition-all group"
+                            >
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`p-2 rounded-xl ${hub.subCategory === 'fuel_ev_charging' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                    {hub.subCategory === 'fuel_ev_charging' ? <Zap className="w-5 h-5" /> : <Car className="w-5 h-5" />}
+                                  </div>
+                                  <div>
+                                    <h5 className="text-sm font-bold text-stone-100 group-hover:text-amber-300 transition-colors">{hub.name}</h5>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] text-stone-400 flex items-center gap-1">
+                                        <MapPin className="w-3 h-3" />
+                                        {hub.township}
+                                      </span>
+                                      <span className="text-[10px] font-mono font-bold text-amber-500 bg-amber-500/10 px-1.5 rounded">
+                                        {hub.availableBays || 0} / {hub.totalBays || 0} BAYS
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-2 w-full sm:w-auto">
+                                  <button
+                                    onClick={() => {
+                                      setShowParkingManagerModal(false);
+                                      handleOpenEditPlace(hub);
+                                    }}
+                                    className="flex-1 sm:flex-none px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (window.confirm(`Delete parking hub "${hub.name}"?`)) {
+                                        await firebaseService.deletePlace(hub.id);
+                                        onRefreshData();
+                                        addActivity(`Deleted parking hub: ${hub.name}`);
+                                      }
+                                    }}
+                                    className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-rose-900/40 text-stone-400 hover:text-rose-400 transition-colors"
+                                    title="Remove Hub"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-white/10 bg-stone-950/60 flex justify-end sticky bottom-0">
+                <button
+                  onClick={() => setShowParkingManagerModal(false)}
+                  className="px-6 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all cursor-pointer border border-white/5"
+                >
+                  Close Manager
+                </button>
+              </div>
+            </div>
+          </div>
+        ) as any}
 
       {/* View User Details Modal */}
       {selectedUserForView &&

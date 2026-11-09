@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Language } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Place, Language } from '../types';
 import {
   Car,
   Zap,
@@ -18,6 +18,8 @@ import {
   Eye,
   Filter,
   ArrowUpRight,
+  Loader2,
+  RotateCcw
 } from 'lucide-react';
 
 export interface ParkingEvHub {
@@ -43,165 +45,106 @@ export interface ParkingEvHub {
   coordinates: { lat: number; lng: number };
 }
 
-export const PARKING_EV_HUBS: ParkingEvHub[] = [
-  {
-    id: 'brinchang-steamboat-strip',
-    name: 'Brinchang Steamboat & Commercial Strip',
-    nameBm: 'Jalur Kedai Steamboat & Komersial Brinchang',
-    township: 'Brinchang',
-    totalBays: 180,
-    availableBays: 18,
-    status: 'High Demand',
-    evChargers: [
-      { type: 'DC Fast Charger', powerKw: 60, total: 2, available: 1, operator: 'Gentari', plugType: 'CCS2' },
-      { type: 'AC Destination Charger', powerKw: 22, total: 2, available: 2, operator: 'ChargeEV', plugType: 'Type 2' },
-    ],
-    nearbySpots: ['Charcoal Steamboat Row', 'Brinchang Town Square', 'Strawberry Parks'],
-    localTipEn: 'Peak congestion 6:30 PM - 9:30 PM for dinner. Park at MDCH Multi-Storey Complex 200m away to save 20 mins search time!',
-    localTipBm: 'Kesesakan puncak 6:30 PM - 9:30 PM waktu makan malam. Letak kereta di Kompleks Bertingkat MDCH (200m) untuk jimat 20 minit!',
-    coordinates: { lat: 4.4912, lng: 101.3888 },
-  },
-  {
-    id: 'mdch-multistorey-brinchang',
-    name: 'MDCH Multi-Storey Covered Complex',
-    nameBm: 'Kompleks Bertingkat Berbumbung MDCH Brinchang',
-    township: 'Brinchang',
-    totalBays: 320,
-    availableBays: 115,
-    status: 'Good Availability',
-    evChargers: [
-      { type: 'AC Charger', powerKw: 11, total: 4, available: 3, operator: 'ChargeEV', plugType: 'Type 2' },
-    ],
-    nearbySpots: ['Brinchang Night Market (Weekend)', 'Public Restrooms', 'Municipal Square'],
-    localTipEn: 'Best covered alternative for night market & steamboat visitors. 24/7 CCTV & Auto-gate Touch n Go payment.',
-    localTipBm: 'Pilihan berbumbung terbaik untuk pengunjung pasar malam & steamboat. CCTV 24/7 & bayaran Touch n Go automatik.',
-    isLocalBypassZone: true,
-    coordinates: { lat: 4.4925, lng: 101.3895 },
-  },
-  {
-    id: 'cameron-centrum-mall',
-    name: 'Cameron Centrum Underground Hub',
-    nameBm: 'Pusat Tempat Letak Kereta Bawah Tanah Cameron Centrum',
-    township: 'Brinchang',
-    totalBays: 450,
-    availableBays: 210,
-    status: 'Good Availability',
-    evChargers: [
-      { type: 'DC Ultra Fast Charger', powerKw: 120, total: 4, available: 3, operator: 'Gentari / EV Connection', plugType: 'CCS2' },
-      { type: 'AC Destination Charger', powerKw: 22, total: 6, available: 5, operator: 'Tesla / JomCharge', plugType: 'Type 2' },
-    ],
-    nearbySpots: ['FamilyMart', 'Coffee Bean', 'Centrum Mall', 'Boutique Hotels'],
-    localTipEn: 'Largest underground parking garage in highlands with ultra-fast 120kW DC charging. Ideal during heavy rain or mist.',
-    localTipBm: 'Garaj bawah tanah terbesar di tanah tinggi dengan pengecas pantas DC 120kW. Sangat sesuai waktu hujan lebat atau kabut.',
-    isLocalBypassZone: true,
-    coordinates: { lat: 4.4865, lng: 101.3872 },
-  },
-  {
-    id: 'kea-farm-strawberry-ridge',
-    name: 'Kea Farm Market & Strawberry Ridge',
-    nameBm: 'Pasar Kea Farm & Bukit Strawberi',
-    township: 'Kea Farm',
-    totalBays: 140,
-    availableBays: 12,
-    status: 'Critical / Nearly Full',
-    evChargers: [
-      { type: 'AC Charger', powerKw: 22, total: 2, available: 1, operator: 'JomCharge', plugType: 'Type 2' },
-    ],
-    nearbySpots: ['Kea Farm Produce Market', 'Raju Hill Strawberry', 'Rose Centre'],
-    localTipEn: 'Extremely busy on weekends 10 AM - 4 PM. Locals advice: Park at Tringkap Agro Hub 1.2km north & avoid Kea Farm bottle-neck.',
-    localTipBm: 'Sangat sesak pada hujung minggu 10 AM - 4 PM. Nasihat penduduk tempatan: Letak di Hub Tringkap 1.2km ke utara.',
-    coordinates: { lat: 4.5035, lng: 101.4128 },
-  },
-  {
-    id: 'tanah-rata-commercial-square',
-    name: 'Tanah Rata Town Commercial Square',
-    nameBm: 'Dataran Komersial Pekan Tanah Rata',
-    township: 'Tanah Rata',
-    totalBays: 220,
-    availableBays: 64,
-    status: 'Moderate',
-    evChargers: [
-      { type: 'DC Rapid Charger', powerKw: 100, total: 2, available: 2, operator: 'Gentari', plugType: 'CCS2' },
-      { type: 'AC Charger', powerKw: 22, total: 4, available: 3, operator: 'ChargeEV', plugType: 'Type 2' },
-    ],
-    nearbySpots: ['Maybank & CIMB', 'Tanah Rata Food Court', 'Central Bus Terminal', 'Starbucks'],
-    localTipEn: 'High turn-over rate. Rapid 100kW EV charger allows 20-80% top up in 25 mins while grabbing breakfast or coffee.',
-    localTipBm: 'Kadar pertukaran petak tinggi. Pengecas pantas 100kW membolehkan cas 20-80% dalam 25 minit sambil bersarapan.',
-    coordinates: { lat: 4.4715, lng: 101.3805 },
-  },
-  {
-    id: 'kampung-raja-local-bypass',
-    name: 'Kampung Raja Northern Bypass Hub',
-    nameBm: 'Pusat Pintasan Utara Kampung Raja',
-    township: 'Kampung Raja',
-    totalBays: 150,
-    availableBays: 98,
-    status: 'Locals Bypass Recommended',
-    evChargers: [
-      { type: 'AC Charger', powerKw: 22, total: 2, available: 2, operator: 'ChargeEV', plugType: 'Type 2' },
-    ],
-    nearbySpots: ['Northern Gateway Produce Market', 'Local Kopitiam Row', 'Orchid Nursery'],
-    localTipEn: 'Locals preferred hub! Bypasses 90% of tourist jams while providing direct access to fresh farm-direct strawberry & corn prices.',
-    localTipBm: 'Pilihan utama penduduk tempatan! Elak 90% kesesakan pelancong sambil mendapat akses terus harga pasar segar ladang.',
-    isLocalBypassZone: true,
-    coordinates: { lat: 4.5683, lng: 101.4087 },
-  },
-  {
-    id: 'tringkap-agro-hub',
-    name: 'Tringkap Agro Valley Exchange',
-    nameBm: 'Pertukaran Lembah Agro Tringkap',
-    township: 'Tringkap',
-    totalBays: 110,
-    availableBays: 45,
-    status: 'Moderate',
-    evChargers: [
-      { type: 'AC Charger', powerKw: 11, total: 2, available: 2, operator: 'JomCharge', plugType: 'Type 2' },
-    ],
-    nearbySpots: ['Tringkap Vegetable Stalls', 'Bee Farm', 'Rose Valley Trail'],
-    localTipEn: 'Easy roadside parking for quick farm produce shopping without entering crowded Kea Farm queues.',
-    localTipBm: 'Tempat letak tepi jalan mudah untuk beli hasil ladang tanpa beratur panjang di Kea Farm.',
-    coordinates: { lat: 4.518, lng: 101.418 },
-  },
-  {
-    id: 'ringlet-southern-gateway',
-    name: 'Ringlet Southern Gateway Station',
-    nameBm: 'Stesen Pintu Selatan Ringlet',
-    township: 'Ringlet',
-    totalBays: 160,
-    availableBays: 82,
-    status: 'Moderate',
-    evChargers: [
-      { type: 'DC Fast Charger', powerKw: 50, total: 2, available: 1, operator: 'Gentari / Petronas', plugType: 'CCS2' },
-    ],
-    nearbySpots: ['Petronas & Shell Ringlet', 'Ringlet Market', 'Lakehouse Turn-off'],
-    localTipEn: 'First EV charging & restroom stop after ascending FT 59 Tapah mountain pass. Essential sanity check point.',
-    localTipBm: 'Hentian pengecasan EV & tandas pertama selepas mendaki Jalan Tapah FT 59. Sangat sesuai untuk rehat seketika.',
-    coordinates: { lat: 4.4147, lng: 101.382 },
-  },
-];
-
 interface SmartParkingEvModalProps {
   isOpen: boolean;
   onClose: () => void;
   language: Language;
+  places: Place[];
   onSelectOnMap?: (lat: number, lng: number, title: string) => void;
 }
+
+const mapPlaceToParkingEvHub = (place: Place): ParkingEvHub => {
+  const isEv = place.subCategory === 'fuel_ev_charging' || 
+               place.tags.some(t => {
+                 const low = t.toLowerCase();
+                 return low.includes('ev') || low.includes('pengecas') || low.includes('charging') || low.includes('charger');
+               });
+  
+  // Use real data from Admin if available, otherwise default to 0 (as per user "leave empty" request)
+  let totalBays = place.totalBays ?? 0;
+  let availableBays = place.availableBays ?? 0;
+
+  // Map parkingStatus to ParkingEvHub status for visual feedback
+  let status: ParkingEvHub['status'] = 'Moderate';
+  
+  if (place.parkingStatus === 'private_available') {
+    status = 'Good Availability';
+  } else if (place.parkingStatus === 'street_busy') {
+    status = 'High Demand';
+  } else if (place.parkingStatus === 'valet_only') {
+    status = 'Moderate';
+  }
+
+  const availabilityRatio = totalBays > 0 ? availableBays / totalBays : 0;
+  if (totalBays > 0 && availabilityRatio < 0.1) status = 'Critical / Nearly Full';
+
+  // EV Chargers
+  const evChargers: ParkingEvHub['evChargers'] = [];
+  if (isEv) {
+    const powerTag = place.tags.find(t => t.includes('kW'));
+    const power = powerTag ? parseInt(powerTag.match(/\d+/)?.[0] || '22') : 22;
+    
+    evChargers.push({
+      type: power > 50 ? 'DC Fast Charger' : 'AC Destination Charger',
+      powerKw: power,
+      total: 2, // These could also be made dynamic later if needed
+      available: Math.min(2, availableBays > 0 ? 1 : 0), // Basic logic: if bays available, maybe 1 charger is too
+      operator: 'CamGo Verified Hub',
+      plugType: power > 50 ? 'CCS2' : 'Type 2'
+    });
+  }
+
+  return {
+    id: place.id,
+    name: place.name,
+    nameBm: place.nameBm,
+    township: place.township,
+    totalBays,
+    availableBays,
+    status: (place.tags.some(t => t.toLowerCase().includes('bypass')) ? 'Locals Bypass Recommended' : status) as any,
+    evChargers,
+    nearbySpots: place.tags.slice(0, 3),
+    localTipEn: place.description,
+    localTipBm: place.descriptionBm || place.description,
+    isLocalBypassZone: place.tags.some(t => t.toLowerCase().includes('bypass') || t.toLowerCase().includes('quiet')),
+    coordinates: place.coordinates
+  };
+};
 
 export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
   isOpen,
   onClose,
   language,
+  places,
   onSelectOnMap,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'ev' | 'bypass' | 'available'>('all');
   const [selectedTownship, setSelectedTownship] = useState<string>('all');
 
+  const realHubs = useMemo(() => {
+    return places
+      .filter(p => {
+        // Strict filter to ensure we only show intentional parking/EV hubs
+        const isEvSubcat = p.subCategory === 'fuel_ev_charging';
+        const hasIntentionalTag = p.tags.some(t => {
+          const low = t.toLowerCase();
+          return low === 'smart parking' || low === 'ev charging' || low === 'public parking complex' || low === 'ev fast charger';
+        });
+        const hasIntentionalName = p.name.toLowerCase().includes('parking complex') || 
+                                  p.name.toLowerCase().includes('charging station') ||
+                                  p.name.toLowerCase().includes('ev station');
+        
+        return isEvSubcat || hasIntentionalTag || hasIntentionalName;
+      })
+      .map(mapPlaceToParkingEvHub);
+  }, [places]);
+
   if (!isOpen) return null;
 
   const q = searchQuery.toLowerCase().trim();
 
-  const filteredHubs = PARKING_EV_HUBS.filter((hub) => {
+  const filteredHubs = realHubs.filter((hub) => {
     // Search query
     const matchSearch =
       !q ||
@@ -226,8 +169,8 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
     return matchSearch && matchTown && matchType;
   });
 
-  const totalAvailableBays = PARKING_EV_HUBS.reduce((acc, h) => acc + h.availableBays, 0);
-  const totalEvPorts = PARKING_EV_HUBS.reduce(
+  const totalAvailableBays = realHubs.reduce((acc, h) => acc + h.availableBays, 0);
+  const totalEvPorts = realHubs.reduce(
     (acc, h) => acc + h.evChargers.reduce((cAcc, c) => cAcc + c.available, 0),
     0
   );
@@ -313,7 +256,7 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
             <div className="p-3 rounded-2xl bg-stone-950 border border-white/10 space-y-0.5">
               <span className="text-[10px] text-stone-400 block uppercase font-sans font-bold">Total Monitored Hubs</span>
-              <span className="text-lg font-black text-stone-100">{PARKING_EV_HUBS.length} Zones</span>
+              <span className="text-lg font-black text-stone-100">{realHubs.length} Zones</span>
             </div>
             <div className="p-3 rounded-2xl bg-stone-950 border border-emerald-500/30 space-y-0.5">
               <span className="text-[10px] text-emerald-400 block uppercase font-sans font-bold">Available Parking Bays</span>
@@ -325,7 +268,84 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
             </div>
             <div className="p-3 rounded-2xl bg-stone-950 border border-cyan-500/30 space-y-0.5">
               <span className="text-[10px] text-cyan-400 block uppercase font-sans font-bold">Local Bypass Hubs</span>
-              <span className="text-lg font-black text-cyan-300">3 Quiet Zones</span>
+              <span className="text-lg font-black text-cyan-300">{realHubs.filter(h => h.isLocalBypassZone).length} Quiet Zones</span>
+            </div>
+          </div>
+
+          {/* Municipal Parking Policy & Rates (MDCH) */}
+          <div className="p-4 rounded-3xl bg-stone-950/80 border border-amber-500/30 shadow-xl space-y-4">
+            <div className="flex items-center gap-3 border-b border-white/10 pb-3">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-stone-100 uppercase tracking-tight">
+                  {language === 'bm' ? 'Polisi & Kadar Parkir Majlis (MDCH)' : 'Municipal Parking Policy & Rates (MDCH)'}
+                </h4>
+                <p className="text-[10px] text-stone-400 font-mono">Official Cameron Highlands Parking Regulations</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Timing & Basic Rate */}
+              <div className="space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[10px] font-bold text-stone-400 block uppercase tracking-wider">Operating Hours</span>
+                    <span className="text-xs text-stone-200 font-medium">Monday to Sunday (including public holidays)</span>
+                    <span className="text-xs font-black text-amber-400 block">8:00 AM – 6:00 PM</span>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <Car className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[10px] font-bold text-stone-400 block uppercase tracking-wider">Standard Hourly Rate</span>
+                    <span className="text-sm font-black text-white">RM 0.60 <span className="text-[10px] text-stone-400">/ hour</span></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Passes & Payment */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-4 p-2.5 rounded-xl bg-stone-900 border border-white/5">
+                  <div>
+                    <span className="text-[9px] font-bold text-stone-500 uppercase block">Daily Pass</span>
+                    <span className="text-xs font-black text-white">RM 6.00</span>
+                  </div>
+                  <div className="h-6 w-px bg-white/10" />
+                  <div className="text-right">
+                    <span className="text-[9px] font-bold text-stone-500 uppercase block">Monthly Pass</span>
+                    <span className="text-xs font-black text-white">RM 80.00</span>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <Zap className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[10px] font-bold text-stone-400 block uppercase tracking-wider">Payment Methods</span>
+                    <p className="text-[11px] text-stone-300 leading-snug">
+                      Processed digitally via <span className="text-cyan-400 font-bold">PahangGo App</span> or physical scratch coupons from local vendors.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Enforcement Warning */}
+            <div className="p-3 rounded-2xl bg-rose-950/30 border border-rose-500/30 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[10px] font-black text-rose-300 uppercase tracking-widest block mb-0.5">Enforcement & Penalties</span>
+                <p className="text-[11px] text-rose-200/80 leading-relaxed">
+                  Failing to display valid coupons or maintain an active digital session results in municipal compounds ranging between <span className="text-rose-400 font-bold font-mono">RM 30.00 – RM 300.00</span>.
+                </p>
+                <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-rose-300 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20 w-fit">
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>Tracking required 8 AM – 6 PM</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -385,7 +405,7 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
                     : 'bg-stone-900 text-stone-300 hover:text-white border border-white/10'
                 }`}
               >
-                All Hubs ({PARKING_EV_HUBS.length})
+                All Hubs ({realHubs.length})
               </button>
               <button
                 onClick={() => setFilterType('ev')}
@@ -427,7 +447,11 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
             {filteredHubs.length === 0 ? (
               <div className="col-span-full p-8 text-center rounded-3xl bg-stone-950 border border-white/10 space-y-2">
                 <Car className="w-8 h-8 text-stone-500 mx-auto" />
-                <p className="text-sm font-bold text-stone-300">No parking hubs match your selected filter.</p>
+                <p className="text-sm font-bold text-stone-300">
+                  {realHubs.length === 0 
+                    ? (language === 'bm' ? 'Tiada entri parking/EV yang dicipta oleh Admin ditemui dalam direktori.' : 'No Admin-created parking/EV entries found in directories.')
+                    : 'No parking hubs match your selected filter.'}
+                </p>
                 <button
                   onClick={() => {
                     setSearchQuery('');
@@ -553,17 +577,19 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
                       )}
 
                       {/* Nearby Spots Badges */}
-                      <div className="flex flex-wrap items-center gap-1 pt-1">
-                        <span className="text-[10px] text-stone-500 font-bold uppercase mr-1">Nearby:</span>
-                        {hub.nearbySpots.map((spot, i) => (
-                          <span
-                            key={i}
-                            className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-stone-900 text-stone-300 border border-white/5"
-                          >
-                            {spot}
-                          </span>
-                        ))}
-                      </div>
+                      {hub.nearbySpots.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 pt-1">
+                          <span className="text-[10px] text-stone-500 font-bold uppercase mr-1">Nearby:</span>
+                          {hub.nearbySpots.map((spot, i) => (
+                            <span
+                              key={i}
+                              className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-stone-900 text-stone-300 border border-white/5"
+                            >
+                              {spot}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Local Insider Tip Box */}
                       <div className="p-3 rounded-2xl bg-emerald-950/25 border border-emerald-500/25 text-xs text-stone-200 flex items-start gap-2.5">

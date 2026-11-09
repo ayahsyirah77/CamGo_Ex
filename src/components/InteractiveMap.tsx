@@ -995,7 +995,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     let text = '';
 
     if (type === 'depart') {
-      icon = 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½';
+      icon = 'í ½íº—';
       text = lang === 'bm' ? `Bertolak dari lokasi asal di ${roadName}` : `Depart from origin onto ${roadName}`;
     } else if (type === 'turn') {
       if (modifier?.includes('left')) {

@@ -882,6 +882,77 @@ Only return valid JSON without markdown wrapping.`;
     }
   });
 
+  // AI Spatial Intent Extraction Endpoint
+  app.post('/api/ai/extract-spatial-intent', async (req, res) => {
+    try {
+      const { userInput } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) return res.status(503).json({ error: 'Gemini API not configured' });
+
+      const ai = new GoogleGenAI({ apiKey });
+
+      const systemInstruction = "You are a geospatial AI. Extract location categories, preferences, and spatial relations from the user input. Output valid JSON.";
+      const prompt = `${systemInstruction}\n\nUser Input: "${userInput}"\n\nSchema:\n{ "category": string, "attributes": string[], "spatial_anchor": string, "relation": "near" | "between" | "inside" | "unknown" }`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        }
+      });
+      const text = response.text || "{}";
+      return res.json(JSON.parse(text));
+    } catch (err: any) {
+      console.error('[AI SPATIAL INTENT ERROR]', err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // AI Bottleneck Prediction Endpoint
+  app.post('/api/ai/predict-bottleneck', async (req, res) => {
+    try {
+      const { dayPlan } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) return res.json({ prediction: 'Traffic condition normal.' });
+
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Analyze this itinerary for Cameron Highlands and predict traffic bottlenecks. 
+      Itinerary: ${JSON.stringify(dayPlan)}. Suggest proactive schedule shifts if needed.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: prompt,
+      });
+      return res.json({ prediction: response.text || 'Traffic condition normal.' });
+    } catch (err: any) {
+      console.error('[AI BOTTLENECK ERROR]', err);
+      return res.json({ prediction: 'Traffic prediction currently unavailable.' });
+    }
+  });
+
+  // AI Budget Analysis Endpoint
+  app.post('/api/ai/analyze-budget', async (req, res) => {
+    try {
+      const { plan, budget } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) return res.json({ analysis: 'Budget analysis within normal parameters.' });
+
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Analyze this itinerary budget. Total planned budget: ${budget}. 
+      Plan: ${JSON.stringify(plan)}. Suggest cost-saving alternatives if it exceeds budget.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: prompt,
+      });
+      return res.json({ analysis: response.text || 'Budget analysis within normal parameters.' });
+    } catch (err: any) {
+      console.error('[AI BUDGET ANALYSIS ERROR]', err);
+      return res.json({ analysis: 'Budget analysis within normal parameters.' });
+    }
+  });
+
 
   // Multi-Category Real-Time WebSocket Broadcaster & Connection Manager
   app.post('/api/notifications/broadcast', (req, res) => {

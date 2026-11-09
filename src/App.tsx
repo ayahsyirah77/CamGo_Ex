@@ -709,6 +709,7 @@ export default function App() {
           isOpen={isParkingEvOpen}
           onClose={() => setIsParkingEvOpen(false)}
           language={language}
+          places={places}
         />
       )}
       

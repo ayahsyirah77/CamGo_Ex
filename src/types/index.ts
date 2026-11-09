@@ -49,6 +49,7 @@ export type SubCategory =
   | 'property_real_estate'
   | 'event_business_support'
   | 'public_toilets_restrooms'
+  | 'parking'
   // Shopping & Local Produce
   | 'fresh_markets_produce'
   | 'souvenirs_handicrafts'
@@ -180,6 +181,8 @@ export interface Place {
   googleMapsUrl?: string;
   isSponsored?: boolean;
   includeInPlanner?: boolean;
+  totalBays?: number;
+  availableBays?: number;
   createdAt?: string;
 }
 
