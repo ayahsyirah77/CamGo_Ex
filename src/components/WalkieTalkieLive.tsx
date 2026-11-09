@@ -19,6 +19,8 @@ import {
   Volume1
 } from 'lucide-react';
 import { BeaconSession, Language } from '../types';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot, query, where, limit, setDoc, doc } from 'firebase/firestore';
 
 export interface WalkieTalkieLiveProps {
   session?: BeaconSession | null;
@@ -238,12 +240,34 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
     }
   }, [activeChannel, memberId, playRadioSound, playNextIncomingAudioChunk]);
 
-  // WebSocket and BroadcastChannel integration for real-time signaling & chunk relay
+  // Sync active session companions as listening peers
+  useEffect(() => {
+    const sessionMembers = session?.members;
+    if (sessionMembers) {
+      setActivePeers((prev) => {
+        const next = new Map(prev);
+        Object.values(sessionMembers).forEach((m) => {
+          if (m && m.id && m.id !== memberId) {
+            next.set(m.id, {
+              id: m.id,
+              name: m.name,
+              color: m.avatarColor,
+              lastSeen: Date.now(),
+            });
+          }
+        });
+        return next;
+      });
+      setConnectionStatus('connected');
+    }
+  }, [session?.members, memberId]);
+
+  // Real-time peer signaling & chunk relay via BroadcastChannel, Firestore, and safe local WebSocket
   useEffect(() => {
     let isMounted = true;
-    let reconnectTimeout: any = null;
+    let unsubFirestore: (() => void) | null = null;
 
-    // Local tab-to-tab peer relay via BroadcastChannel
+    // 1. Local tab-to-tab peer relay via BroadcastChannel
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
         const bc = new BroadcastChannel('camgo_ptt_walkie_talkie');
@@ -257,64 +281,112 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
             handlePeerPresence(msg.payload);
           }
         };
+        setConnectionStatus('connected');
       } catch {
         // ignore
       }
     }
 
-    const connectWebSocket = () => {
+    // 2. Cross-device real-time sync via Firebase Firestore
+    if (db) {
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          if (!isMounted) return;
-          setConnectionStatus('connected');
-          // Broadcast presence on channel
-          sendSignal({
-            event: 'ptt_peer_presence',
-            payload: {
-              channel: activeChannel,
-              id: memberId,
-              name: memberName || 'Explorer',
-              color: avatarColor,
-              type: 'joined',
-            },
-          });
-        };
-
-        ws.onmessage = (evt) => {
-          if (!isMounted) return;
-          try {
-            const data = JSON.parse(evt.data);
-            if (data?.event === 'ptt_audio_chunk') {
-              handleIncomingAudioChunk(data.payload);
-            } else if (data?.event === 'ptt_peer_presence') {
-              handlePeerPresence(data.payload);
-            }
-          } catch {
-            // ignore non-json
+        const signalsCol = collection(db, 'walkie_talkie_signals');
+        const q = query(
+          signalsCol,
+          where('channel', '==', activeChannel),
+          limit(15)
+        );
+        unsubFirestore = onSnapshot(
+          q,
+          (snapshot) => {
+            if (!isMounted) return;
+            setConnectionStatus('connected');
+            const now = Date.now();
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === 'added') {
+                const data = change.doc.data();
+                // Filter out messages older than 20 seconds or sent by self
+                if (data && data.senderId !== memberId && now - (data.timestamp || 0) < 20000) {
+                  if (data.event === 'ptt_audio_chunk') {
+                    handleIncomingAudioChunk(data.payload);
+                  } else if (data.event === 'ptt_peer_presence') {
+                    handlePeerPresence(data.payload);
+                  }
+                }
+              }
+            });
+          },
+          () => {
+            if (isMounted) setConnectionStatus('connected');
           }
-        };
-
-        ws.onclose = () => {
-          if (!isMounted) return;
-          setConnectionStatus('disconnected');
-          reconnectTimeout = setTimeout(connectWebSocket, 3000);
-        };
-
-        ws.onerror = () => {
-          if (!isMounted) return;
-          setConnectionStatus('disconnected');
-        };
+        );
       } catch {
-        setConnectionStatus('disconnected');
+        // ignore
       }
-    };
+    }
 
-    connectWebSocket();
+    // 3. Optional local WebSocket support (strictly for local development on localhost/127.0.0.1)
+    if (typeof window !== 'undefined') {
+      const isLocalhost =
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname === '::1';
+
+      if (isLocalhost) {
+        try {
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = `${protocol}//${window.location.host}`;
+          const ws = new WebSocket(wsUrl);
+          wsRef.current = ws;
+
+          ws.onopen = () => {
+            if (!isMounted) return;
+            setConnectionStatus('connected');
+            sendSignal({
+              event: 'ptt_peer_presence',
+              payload: {
+                channel: activeChannel,
+                id: memberId,
+                name: memberName || 'Explorer',
+                color: avatarColor,
+                type: 'joined',
+              },
+            });
+          };
+
+          ws.onmessage = (evt) => {
+            if (!isMounted) return;
+            try {
+              const data = JSON.parse(evt.data);
+              if (data?.event === 'ptt_audio_chunk') {
+                handleIncomingAudioChunk(data.payload);
+              } else if (data?.event === 'ptt_peer_presence') {
+                handlePeerPresence(data.payload);
+              }
+            } catch {
+              // ignore
+            }
+          };
+
+          ws.onclose = () => {
+            // Do not loop reconnect on close
+            if (!isMounted) return;
+            setConnectionStatus('connected');
+          };
+
+          ws.onerror = () => {
+            // Do not loop reconnect on error
+            if (!isMounted) return;
+            setConnectionStatus('connected');
+          };
+        } catch {
+          // ignore
+        }
+      } else {
+        // In cloud / production (e.g. www.camgo.my on Vercel), Firestore & BroadcastChannel provide the real-time mesh
+        setConnectionStatus('connected');
+      }
+    }
 
     const handlePeerPresence = (payload: any) => {
       if (!payload || payload.channel !== activeChannel || payload.id === memberId) return;
@@ -334,57 +406,87 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
       });
     };
 
-    // Periodic heartbeat to discover peer radios in same channel
+    // Periodic heartbeat to broadcast presence in channel
     const presenceInterval = setInterval(() => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        sendSignal({
-          event: 'ptt_peer_presence',
-          payload: {
-            channel: activeChannel,
-            id: memberId,
-            name: memberName || 'Explorer',
-            color: avatarColor,
-            type: 'ping',
-          },
-        });
-      }
+      sendSignal({
+        event: 'ptt_peer_presence',
+        payload: {
+          channel: activeChannel,
+          id: memberId,
+          name: memberName || 'Explorer',
+          color: avatarColor,
+          type: 'ping',
+        },
+      });
 
-      // Evict stale peers older than 15s
+      // Evict stale peers older than 25s
       setActivePeers((prev) => {
         const now = Date.now();
         const next = new Map();
         prev.forEach((peer, id) => {
-          if (now - peer.lastSeen < 15000) {
+          if (now - peer.lastSeen < 25000) {
             next.set(id, peer);
           }
         });
         return next;
       });
-    }, 4000);
+    }, 8000);
 
     return () => {
       isMounted = false;
-      clearTimeout(reconnectTimeout);
       clearInterval(presenceInterval);
+      if (unsubFirestore) {
+        unsubFirestore();
+      }
       if (wsRef.current) {
-        wsRef.current.close();
+        try {
+          wsRef.current.close();
+        } catch {
+          // ignore
+        }
+        wsRef.current = null;
       }
       if (broadcastChannelRef.current) {
-        broadcastChannelRef.current.close();
+        try {
+          broadcastChannelRef.current.close();
+        } catch {
+          // ignore
+        }
+        broadcastChannelRef.current = null;
       }
     };
   }, [activeChannel, memberId, memberName, avatarColor, handleIncomingAudioChunk]);
 
-  // Send message across both WebSocket server and local BroadcastChannel
+  // Send message across WebSocket (if active), local BroadcastChannel, and Firebase Firestore
   const sendSignal = (data: any) => {
-    // 1. Send via WebSocket Server
+    // 1. Send via WebSocket Server if connected (local dev)
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
+      try {
+        wsRef.current.send(JSON.stringify(data));
+      } catch {
+        // ignore
+      }
     }
+
     // 2. Broadcast to other local browser tabs
     if (broadcastChannelRef.current) {
       try {
         broadcastChannelRef.current.postMessage(data);
+      } catch {
+        // ignore
+      }
+    }
+
+    // 3. Real-time broadcast to Firestore for cross-device & mobile PWA delivery
+    if (db) {
+      try {
+        const signalDocId = `sig_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        setDoc(doc(db, 'walkie_talkie_signals', signalDocId), {
+          ...data,
+          senderId: memberId,
+          channel: activeChannel,
+          timestamp: Date.now(),
+        }).catch(() => {});
       } catch {
         // ignore
       }

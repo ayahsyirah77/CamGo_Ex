@@ -252,7 +252,14 @@ service cloud.firestore {
       }
     }
 
-    match /walkie_talkie_messages/{msgId} {
+    match /walkie_talkie_signals/{signalId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /walkie_talkie_live/{docId} {
       allow read, write: if true;
       match /{allSubpaths=**} {
         allow read, write: if true;
