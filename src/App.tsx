@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,7 +24,7 @@ import { getTranslation } from './services/i18n';
 import { LoadingScreen } from './components/LoadingScreen';
 import { Navbar } from './components/Navbar';
 import { BackToTop } from './components/BackToTop';
-import { InteractiveMap } from './components/InteractiveMap';
+import { MapView as InteractiveMap } from './components/MapView';
 import { GalleryCarousel } from './components/GalleryCarousel';
 import { ChatLoungeModal } from './components/ChatLoungeModal';
 import { MobileHomeCards } from './components/MobileHomeCards';
@@ -1207,3 +1207,4 @@ export default function App() {
     </div>
   );
 }
+
