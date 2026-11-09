@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
 import {
   Place,
@@ -36,6 +36,7 @@ import { AuthModal } from './components/AuthModal';
 import { VisualSplitItinerary } from './components/VisualSplitItinerary';
 import { Footer } from './components/Footer';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { ReloadPrompt } from './components/ReloadPrompt';
 import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { MasjidSurauModal } from './components/MasjidSurauModal';
 import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
@@ -55,6 +56,8 @@ import { TrafficWidget } from './components/TrafficWidget';
 import { HazardWidget } from './components/HazardWidget';
 import { EventsWidget } from './components/EventsWidget';
 import { useMultiChannelNotifications } from './hooks/useMultiChannelNotifications';
+import { usePreventAccidentalExit } from './hooks/usePreventAccidentalExit';
+import { PreventExitToast } from './components/PreventExitToast';
 import { NotificationCenter } from './components/NotificationCenter';
 import {
   Sparkles,
@@ -271,6 +274,125 @@ export default function App() {
     }
   };
 
+  // Close any open modal on back button press before showing exit prompt
+  const handleModalCloseOnBack = useCallback((): boolean => {
+    if (activeCapsuleModal) {
+      setActiveCapsuleModal(null);
+      return true;
+    }
+    if (isChatOpen) {
+      handleCloseChat();
+      return true;
+    }
+    if (isAiOpen) {
+      setIsAiOpen(false);
+      return true;
+    }
+    if (isMapModalOpen) {
+      setIsMapModalOpen(false);
+      return true;
+    }
+    if (isItineraryOpen) {
+      setIsItineraryOpen(false);
+      return true;
+    }
+    if (isDirectoriesModalOpen) {
+      setIsDirectoriesModalOpen(false);
+      return true;
+    }
+    if (isPortalsModalOpen) {
+      setIsPortalsModalOpen(false);
+      return true;
+    }
+    if (isClassifiedsModalOpen) {
+      setIsClassifiedsModalOpen(false);
+      return true;
+    }
+    if (isMasjidModalOpen) {
+      setIsMasjidModalOpen(false);
+      return true;
+    }
+    if (isTrailEngineOpen) {
+      setIsTrailEngineOpen(false);
+      return true;
+    }
+    if (isFindMyPartyOpen) {
+      setIsFindMyPartyOpen(false);
+      return true;
+    }
+    if (isMotorbikeRentalOpen) {
+      setIsMotorbikeRentalOpen(false);
+      return true;
+    }
+    if (isGalleryOpen) {
+      setIsGalleryOpen(false);
+      return true;
+    }
+    if (isCurrencyOpen) {
+      setIsCurrencyOpen(false);
+      return true;
+    }
+    if (isVendorPortalOpen) {
+      setIsVendorPortalOpen(false);
+      return true;
+    }
+    if (isFarmMatrixOpen) {
+      setIsFarmMatrixOpen(false);
+      return true;
+    }
+    if (isParkingEvOpen) {
+      setIsParkingEvOpen(false);
+      return true;
+    }
+    if (isUserDashboardOpen) {
+      setIsUserDashboardOpen(false);
+      return true;
+    }
+    if (isAdminOpen) {
+      setIsAdminOpen(false);
+      return true;
+    }
+    if (isAdminLoginOpen) {
+      setIsAdminLoginOpen(false);
+      return true;
+    }
+    if (isAuthOpen) {
+      setIsAuthOpen(false);
+      return true;
+    }
+    return false;
+  }, [
+    activeCapsuleModal,
+    isChatOpen,
+    isAiOpen,
+    isMapModalOpen,
+    isItineraryOpen,
+    isDirectoriesModalOpen,
+    isPortalsModalOpen,
+    isClassifiedsModalOpen,
+    isMasjidModalOpen,
+    isTrailEngineOpen,
+    isFindMyPartyOpen,
+    isMotorbikeRentalOpen,
+    isGalleryOpen,
+    isCurrencyOpen,
+    isVendorPortalOpen,
+    isFarmMatrixOpen,
+    isParkingEvOpen,
+    isUserDashboardOpen,
+    isAdminOpen,
+    isAdminLoginOpen,
+    isAuthOpen,
+  ]);
+
+  const { showExitToast, exitMessage, dismissToast, remainingSeconds } =
+    usePreventAccidentalExit({
+      enabled: true,
+      timeoutMs: 2000,
+      message: 'Press back again to exit CamGo',
+      handleModalClose: handleModalCloseOnBack,
+    });
+
   // If launched via shortcut (/?chat=true or standalone mode), render ONLY Chat Lounge full-screen
   if (isStandaloneChatView) {
     return (
@@ -281,6 +403,12 @@ export default function App() {
           currentUser={currentUser}
           initialDmUserId={chatInitialDmUserId}
           initialChannelId={chatInitialChannelId}
+        />
+        <PreventExitToast
+          isVisible={showExitToast}
+          message={exitMessage}
+          remainingSeconds={remainingSeconds}
+          onDismiss={dismissToast}
         />
       </div>
     );
@@ -343,6 +471,17 @@ export default function App() {
           setUserDashboardInitialTab('emergency-card');
           setIsUserDashboardOpen(true);
         }}
+      />
+
+      {/* PWA New Version Update Prompt */}
+      <ReloadPrompt />
+
+      {/* PWA Double-Tap Back to Exit Toast */}
+      <PreventExitToast
+        isVisible={showExitToast}
+        message={exitMessage}
+        remainingSeconds={remainingSeconds}
+        onDismiss={dismissToast}
       />
 
       {/* Main Content Area */}
