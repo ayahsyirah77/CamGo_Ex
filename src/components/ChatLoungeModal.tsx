@@ -114,6 +114,10 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
   }, []);
 
   const handleInstallPwa = async () => {
+    if (!hasPrompt) {
+      setShowInstallGuideModal(true);
+      return;
+    }
     const res = await installPWA();
     if (!res.success && res.reason !== 'opened-top-level') {
       setShowInstallGuideModal(true);

@@ -13,7 +13,7 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
   variant = 'compact',
   onInstalled,
 }) => {
-  const { isInstalled, installPWA, isStandalone } = usePWAInstall();
+  const { isInstalled, installPWA, isStandalone, hasPrompt } = usePWAInstall();
   const [showGuideNotice, setShowGuideNotice] = useState<boolean>(false);
 
   // Trigger native prompt when captured, or show guidance tooltip when deferredPrompt is null
@@ -57,7 +57,7 @@ export const InstallShortcutButton: React.FC<InstallShortcutButtonProps> = ({
       )}
 
       {/* Helpful Guidance Banner / Tooltip when deferredPrompt is null */}
-      {showGuideNotice && !deferredPrompt && (
+      {showGuideNotice && !hasPrompt && (
         <div className="absolute top-full right-0 mt-2 w-64 p-2.5 rounded-xl bg-stone-950 border border-emerald-500/40 text-stone-200 text-[10px] sm:text-xs shadow-2xl z-50 animate-in fade-in slide-in-from-top-1">
           <p className="leading-tight">
             To install this app on PC, click the install icon in your browser's address bar. On mobile, add to home screen via your browser menu.

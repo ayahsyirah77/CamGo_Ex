@@ -68,6 +68,7 @@ export function usePWAInstall() {
   return {
     isInstallable: !!deferredPrompt || (isIOS && !isInstalled),
     isInstalled,
+    isStandalone: isInstalled,
     isIOS,
     installPWA,
     hasPrompt: !!deferredPrompt,

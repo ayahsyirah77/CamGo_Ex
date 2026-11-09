@@ -348,7 +348,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
   const handleInstallPwa = async () => {
     try {
       const res = await installPWA();
-      if (!res.success && res.reason !== 'dismissed') {
+      if (!res.success || res.reason === 'no-prompt') {
         setShowInstallGuideModal(true);
       }
     } catch (err) {
