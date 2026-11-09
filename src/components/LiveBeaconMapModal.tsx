@@ -20,6 +20,10 @@ import {
   ExternalLink,
   RefreshCw,
   Route,
+  MessageSquare,
+  Mic,
+  Send,
+  PlusCircle,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
@@ -32,6 +36,8 @@ import {
   isLocationStale,
   formatTimeAgo,
 } from '../utils/beaconUtils';
+import { WalkieTalkieLive } from './WalkieTalkieLive';
+import { beaconService } from '../services/beaconService';
 
 interface LiveBeaconMapModalProps {
   isOpen: boolean;
@@ -74,6 +80,75 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [showQrPreview, setShowQrPreview] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members' | 'chat' | 'walkie'>('map');
+  const [chatInputText, setChatInputText] = useState('');
+  const [sendingChat, setSendingChat] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll chat and invalidate map size on tab switch
+  useEffect(() => {
+    if (activeTab === 'chat' && chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+    if (activeTab === 'map' && mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 200);
+    }
+  }, [activeTab, session?.messages?.length]);
+
+  const handleSendChatMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!session || !chatInputText.trim()) return;
+
+    const messageText = chatInputText.trim();
+    setChatInputText('');
+    setSendingChat(true);
+
+    const newMessage = {
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      senderId: memberId,
+      senderName: memberName || 'Highland Companion',
+      senderColor: avatarColor,
+      text: messageText,
+      timestamp: new Date().toISOString(),
+    };
+
+    await beaconService.sendBeaconChatMessage(session.code, newMessage);
+    setSendingChat(false);
+  };
+
+  // Centralized member sync logic for map pins and member list
+  const sortedMembers = React.useMemo(() => {
+    if (!session) return [];
+    const membersList = session.members ? Object.values(session.members) : [];
+    const effectiveMembers = [...membersList];
+    const selfFound = effectiveMembers.some((m) => m.id === memberId);
+    
+    if (!selfFound && myCoords) {
+      effectiveMembers.push({
+        id: memberId,
+        name: memberName || 'You',
+        avatarColor: avatarColor || '#10b981',
+        latitude: myCoords.latitude,
+        longitude: myCoords.longitude,
+        accuracy: myCoords.accuracy,
+        heading: myCoords.heading,
+        speed: myCoords.speed,
+        altitude: myCoords.altitude,
+        batteryLevel,
+        isSharing: true,
+        updatedAt: new Date().toISOString(),
+        nearestLandmark: getNearestHighlandLandmark(myCoords.latitude, myCoords.longitude),
+      });
+    }
+
+    return effectiveMembers.sort((a, b) => {
+      if (a.id === session.createdBy) return -1;
+      if (b.id === session.createdBy) return 1;
+      return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+    });
+  }, [session?.members, session?.createdBy, memberId, myCoords, memberName, avatarColor, batteryLevel]);
 
   // Dynamic Route & Path overlay state
   const [routeTravelMode, setRouteTravelMode] = useState<'walking' | 'driving'>('walking');
@@ -223,36 +298,6 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     if (!isOpen || !mapInstanceRef.current || !session) return;
 
     const map = mapInstanceRef.current;
-    const membersList = session.members ? Object.values(session.members) : [];
-
-    // Ensure self is in the list even if firestore write is pending
-    const effectiveMembers = [...membersList];
-    const selfFound = effectiveMembers.some((m) => m.id === memberId);
-    if (!selfFound && myCoords) {
-      effectiveMembers.push({
-        id: memberId,
-        name: memberName || 'You',
-        avatarColor: avatarColor || '#10b981',
-        latitude: myCoords.latitude,
-        longitude: myCoords.longitude,
-        accuracy: myCoords.accuracy,
-        heading: myCoords.heading,
-        speed: myCoords.speed,
-        altitude: myCoords.altitude,
-        batteryLevel,
-        isSharing: true,
-        updatedAt: new Date().toISOString(),
-        nearestLandmark: getNearestHighlandLandmark(myCoords.latitude, myCoords.longitude),
-      });
-    }
-
-    // Sort so creator (session.createdBy) is always designated Pin #1
-    const sortedMembers = [...effectiveMembers].sort((a, b) => {
-      if (a.id === session.createdBy) return -1;
-      if (b.id === session.createdBy) return 1;
-      return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
-    });
-
     sortedMembers.forEach((member, index) => {
       const isMe = member.id === memberId;
       const isHost = member.id === session.createdBy;
@@ -353,7 +398,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     }
 
     // Cleanup departed markers
-    const currentMemberIds = new Set(effectiveMembers.map((m) => m.id));
+    const currentMemberIds = new Set(sortedMembers.map((m) => m.id));
     Object.keys(markersRef.current).forEach((existingId) => {
       if (!currentMemberIds.has(existingId)) {
         markersRef.current[existingId].remove();
@@ -364,7 +409,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
         }
       }
     });
-  }, [isOpen, session, myCoords, memberId, memberName, avatarColor, batteryLevel, routePoints, routeTravelMode]);
+  }, [isOpen, session, myCoords, memberId, memberName, avatarColor, batteryLevel, routePoints, routeTravelMode, sortedMembers]);
 
   // Recenter / Locate Me directly on user's exact current GPS location
   const handleRecenter = () => {
@@ -541,13 +586,17 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     ? getNearestHighlandLandmark(myCoords.latitude, myCoords.longitude)
     : 'Cameron Highlands';
 
+  const remainingHours = session
+    ? Math.max(0, Math.round((new Date(session.expiresAt).getTime() - Date.now()) / (3600 * 1000)))
+    : 0;
+
   return (
     <div
       className="fixed inset-0 z-[180] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl max-h-[94vh] sm:max-h-[90vh] rounded-3xl bg-stone-900 border border-emerald-500/40 shadow-2xl flex flex-col overflow-hidden text-stone-100 relative"
+        className="w-full max-w-4xl h-[96vh] sm:h-[90vh] rounded-t-3xl sm:rounded-3xl bg-stone-900 border border-emerald-500/40 shadow-2xl flex flex-col overflow-hidden text-stone-100 relative mt-auto sm:mt-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
@@ -612,6 +661,35 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           </div>
         </div>
 
+        {/* Tab Switcher - Visual View Controls */}
+        <div className="px-3 sm:px-6 py-2 bg-stone-900 border-b border-white/5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+          {[
+            { id: 'map', label: language === 'bm' ? 'Peta' : 'Live Map', icon: Radio },
+            { id: 'compass', label: language === 'bm' ? 'Kompas' : 'Compass', icon: Compass },
+            { id: 'members', label: language === 'bm' ? 'Ahli' : 'Members', icon: Users },
+            { id: 'chat', label: language === 'bm' ? 'Sembang' : 'Chat', icon: MessageSquare },
+            { id: 'walkie', label: 'PTT Radio', icon: Mic },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/40 ring-1 ring-emerald-400/50'
+                  : 'bg-stone-800/50 text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+              }`}
+            >
+              <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? 'animate-pulse' : ''}`} />
+              <span>{tab.label}</span>
+              {tab.id === 'chat' && session?.messages && session.messages.length > 0 && (
+                <span className="ml-0.5 w-4 h-4 rounded-full bg-emerald-500 text-stone-950 text-[10px] flex items-center justify-center font-black">
+                  {session.messages.length > 9 ? '9+' : session.messages.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* Recenter Toast Feedback */}
         {recenterToast && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[450] px-3.5 py-1.5 rounded-full bg-stone-900/95 border border-emerald-400 text-emerald-300 text-xs font-bold shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
@@ -625,522 +703,321 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-6 py-3.5 space-y-4 touch-pan-y"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {/* Quick Toolbar & Highland Landmark pill */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 bg-stone-950/70 border border-white/10 p-2.5 rounded-2xl text-xs">
-            <div className="flex items-center gap-2 text-stone-300 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block shrink-0" />
-              <span className="text-xs text-stone-200 font-medium truncate">
-                <span className="text-stone-400 mr-1">{language === 'bm' ? 'Posisi Anda:' : 'Your Location:'}</span>
-                <span className="text-emerald-300 font-bold">{myLandmark}</span>
-              </span>
-            </div>
-
-            {/* Interactive Control Buttons */}
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Recenter Location Button */}
-              <button
-                type="button"
-                onClick={handleRecenter}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-95"
-                title="Recenter map on your location"
-              >
-                <Crosshair className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>{language === 'bm' ? 'Pusatkan Lokasi Saya' : 'Recenter Location'}</span>
-              </button>
-
-              {/* Fit All Companions Button */}
-              <button
-                type="button"
-                onClick={handleFitAll}
-                className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/15 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                title="Fit all party members in view"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{language === 'bm' ? 'Semua Ahli' : 'Fit All'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Navigation Banner to Beacon Host (when user is not the host) */}
-          {!isMeHost && hostMember && (
-            <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-stone-900 border-2 border-emerald-500/50 flex flex-col space-y-2.5 shadow-xl">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center font-bold shrink-0 shadow-md">
-                    <Navigation className="w-4 h-4 text-amber-400 stroke-[2.5]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-mono uppercase font-black px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40">
-                        👑 BEACON HOST
-                      </span>
-                      <span className="text-xs font-extrabold text-white truncate">{hostName}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-emerald-300 font-mono mt-0.5 truncate">
-                      {myCoords && (
-                        <span className="font-bold text-white bg-emerald-900/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
-                          {formatDistance(calculateHaversineDistance(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude))}
-                        </span>
-                      )}
-                      <span className="text-stone-300 truncate">• {hostMember.nearestLandmark || 'Cameron Highlands'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  {/* Travel Mode Switcher */}
-                  <div className="flex items-center p-1 rounded-xl bg-stone-900 border border-white/10 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setRouteTravelMode('walking')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        routeTravelMode === 'walking'
-                          ? 'bg-emerald-600 text-white shadow-md'
-                          : 'text-stone-400 hover:text-white'
-                      }`}
-                      title="Display walking path"
-                    >
-                      <Footprints className="w-3.5 h-3.5" />
-                      <span>{language === 'bm' ? 'Jalan' : 'Walk'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRouteTravelMode('driving')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        routeTravelMode === 'driving'
-                          ? 'bg-blue-600 text-white shadow-md'
-                          : 'text-stone-400 hover:text-white'
-                      }`}
-                      title="Display driving path"
-                    >
-                      <Car className="w-3.5 h-3.5" />
-                      <span>{language === 'bm' ? 'Pandu' : 'Drive'}</span>
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleNavigateToHost('google')}
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
-                    title="Open Turn-by-Turn Navigation in Google Maps"
-                  >
-                    <Navigation className="w-3.5 h-3.5" />
-                    <span>Google Maps</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleNavigateToHost('waze')}
-                    className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
-                    title="Open Navigation in Waze"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Waze</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Dynamic Route Info Pill */}
-              {routeEtaInfo && (
-                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-stone-300 font-mono">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${routeTravelMode === 'walking' ? 'bg-emerald-400 animate-ping' : 'bg-blue-400 animate-pulse'}`} />
-                    <span>
-                      {routeTravelMode === 'walking' ? '🚶 Footpath Route:' : '🚗 Driving Route:'}{' '}
-                      <span className="font-extrabold text-white">{routeEtaInfo.distanceText}</span> (~{routeEtaInfo.durationText})
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-stone-400 font-sans">
-                    {language === 'bm' ? 'Polyline Leaflet' : 'Dynamic Polyline Path'}
+          {activeTab === 'map' && (
+            <div className="flex flex-col h-[500px] sm:h-[600px] space-y-3 animate-in fade-in duration-200">
+              {/* Quick Toolbar & Highland Landmark pill */}
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-stone-950/70 border border-white/10 p-2 rounded-2xl text-[10px] sm:text-xs">
+                <div className="flex items-center gap-2 text-stone-300 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block shrink-0" />
+                  <span className="truncate">
+                    <span className="text-stone-400 mr-1">{language === 'bm' ? 'Posisi:' : 'Loc:'}</span>
+                    <span className="text-emerald-300 font-bold">{myLandmark}</span>
                   </span>
                 </div>
-              )}
-            </div>
-          )}
 
-          {/* Collapsible QR Code Preview Card */}
-          {showQrPreview && (
-            <div className="p-4 rounded-2xl bg-stone-950 border border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in duration-150">
-              <div className="flex items-center gap-3">
-                {qrCodeDataUrl ? (
-                  <img
-                    src={qrCodeDataUrl}
-                    alt="Beacon QR"
-                    className="w-24 h-24 bg-white p-1 rounded-xl shadow-md shrink-0"
-                  />
-                ) : (
-                  <div className="w-24 h-24 bg-stone-900 rounded-xl flex items-center justify-center">
-                    <RefreshCw className="w-5 h-5 animate-spin text-emerald-500" />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRecenter}
+                    className="px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Crosshair className="w-3 h-3" />
+                    <span>{language === 'bm' ? 'Pusat' : 'Center'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleFitAll}
+                    className="px-2 py-1 rounded-lg bg-stone-800 text-stone-300 border border-white/10 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                    <span>{language === 'bm' ? 'Semua' : 'All'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Interactive Leaflet Map Container - Now taking flex-1 */}
+              <div className="relative flex-1 w-full rounded-2xl overflow-hidden border border-emerald-500/30 shadow-2xl bg-stone-950">
+                <div ref={mapContainerRef} className="w-full h-full z-10" />
+                
+                {/* Floating Map Controls */}
+                <div className="absolute top-3 right-3 z-[400] flex flex-col gap-2">
+                  <button type="button" onClick={handleRecenter} className="p-2.5 rounded-xl bg-emerald-600/95 hover:bg-emerald-500 text-white border border-emerald-400/40 shadow-xl backdrop-blur-md cursor-pointer transition-transform active:scale-95">
+                    <Crosshair className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+                </div>
+
+                {/* Travel Mode & Host Nav Overlay (Bottom Center on Map) */}
+                {!isMeHost && hostMember && (
+                  <div className="absolute bottom-3 left-3 right-3 z-[400] pointer-events-none">
+                    <div className="bg-stone-900/95 backdrop-blur-md border border-emerald-500/40 rounded-2xl p-2.5 flex items-center justify-between gap-3 shadow-2xl pointer-events-auto max-w-sm mx-auto">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center shrink-0">
+                          <Navigation className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 leading-tight">
+                          <div className="text-[10px] font-black text-amber-400 uppercase">Host</div>
+                          <div className="text-xs font-bold text-white truncate">{hostName}</div>
+                          <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1.5">
+                            <span>{myCoords ? formatDistance(calculateHaversineDistance(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude)) : '---'}</span>
+                            <span className="text-stone-600">|</span>
+                            <span>{myCoords ? getCompassCardinal(calculateBearing(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude)) : '-'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center p-0.5 rounded-lg bg-stone-950 border border-white/5">
+                          <button
+                            onClick={() => setRouteTravelMode('walking')}
+                            className={`p-1.5 rounded-md transition-all cursor-pointer ${routeTravelMode === 'walking' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-500'}`}
+                            title="Walking Mode"
+                          >
+                            <Footprints className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setRouteTravelMode('driving')}
+                            className={`p-1.5 rounded-md transition-all cursor-pointer ${routeTravelMode === 'driving' ? 'bg-blue-600 text-white shadow-sm' : 'text-stone-500'}`}
+                            title="Driving Mode"
+                          >
+                            <Car className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => handleNavigateToHost('google')}
+                          className="p-2 rounded-xl bg-emerald-600 text-white shadow-lg active:scale-95 transition-all cursor-pointer"
+                        >
+                          <Navigation className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
-                <div className="space-y-1">
-                  <div className="text-xs font-bold text-emerald-400 uppercase font-mono">
-                    {language === 'bm' ? 'Imbas untuk Sertai' : 'Scan to Join Beacon'}
-                  </div>
-                  <div className="text-xs text-stone-300">
-                    {language === 'bm'
-                      ? 'Imbas kamera untuk menyertai penjejakan live ini secara terus.'
-                      : 'Scan to connect with your live Highland party.'}
-                  </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-sm font-mono font-black text-white px-2 py-0.5 rounded bg-stone-900 border border-emerald-500/30">
-                      {session?.code}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyCode}
-                      className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      {copiedCode ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedCode ? (language === 'bm' ? 'Disalin' : 'Copied') : (language === 'bm' ? 'Salin' : 'Copy')}</span>
-                    </button>
-                  </div>
-                </div>
               </div>
-
-              <button
-                type="button"
-                onClick={handleShareWhatsApp}
-                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>{language === 'bm' ? 'Hantar WhatsApp' : 'Send via WhatsApp'}</span>
-              </button>
             </div>
           )}
 
-          {/* Interactive Leaflet Map Container */}
-          <div className="relative w-full rounded-2xl overflow-hidden border border-emerald-500/30 shadow-2xl bg-stone-950 h-[340px] sm:h-[460px]">
-            {/* Map Canvas */}
-            <div ref={mapContainerRef} className="w-full h-full z-10" />
-
-            {/* Floating In-Map Recenter & Zoom Controls */}
-            <div className="absolute top-3 right-3 z-[400] flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={handleRecenter}
-                className="p-2.5 rounded-xl bg-emerald-600/95 hover:bg-emerald-500 text-white border border-emerald-400/40 shadow-xl backdrop-blur-md cursor-pointer transition-transform active:scale-95"
-                title="Recenter on my exact location"
-              >
-                <Crosshair className="w-4 h-4 stroke-[2.5]" />
-              </button>
-              <button
-                type="button"
-                onClick={handleFitAll}
-                className="p-2.5 rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-100 border border-white/20 shadow-xl backdrop-blur-md cursor-pointer transition-colors"
-                title="Fit all companions"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* In-Map Companion Overlay Badge (bottom-left) */}
-            <div className="absolute bottom-3 left-3 right-3 sm:right-auto z-[400] flex items-center gap-2 overflow-x-auto py-1">
-              {/* You pill */}
-              <div className="px-2.5 py-1.5 rounded-xl bg-stone-900/95 backdrop-blur-md border border-emerald-400 text-left shrink-0 shadow-lg flex items-center gap-2">
-                <div
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
-                  style={{ backgroundColor: avatarColor || '#10b981' }}
-                >
-                  {(memberName || 'Y').charAt(0).toUpperCase()}
-                </div>
-                <div className="leading-tight">
-                  <div className="text-xs font-bold text-white flex items-center gap-1">
-                    <span>{memberName || 'You'}</span>
-                    <span className="text-[10px] text-emerald-400 font-extrabold">(You)</span>
+          {activeTab === 'compass' && (
+            <div className="h-[500px] sm:h-[600px] flex flex-col items-center justify-center space-y-8 animate-in zoom-in-95 duration-300 relative overflow-hidden">
+              {/* Tactical Background Grid */}
+              <div className="absolute inset-0 opacity-10 pointer-events-none" 
+                   style={{ backgroundImage: 'radial-gradient(#10b981 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+              
+              <div className="relative w-64 h-64 sm:w-80 sm:h-80 flex items-center justify-center">
+                {/* Outer Tactical Rings */}
+                <div className="absolute inset-0 rounded-full border-2 border-stone-800" />
+                <div className="absolute inset-2 rounded-full border border-stone-800/40" />
+                <div className="absolute inset-8 rounded-full border-4 border-stone-900/60 shadow-inner" />
+                
+                {/* Degree Ticks */}
+                {[...Array(12)].map((_, i) => (
+                  <div key={i} className="absolute inset-0 flex justify-center" style={{ transform: `rotate(${i * 30}deg)` }}>
+                    <div className={`w-0.5 h-3 rounded-full ${i % 3 === 0 ? 'bg-stone-500 h-5 w-1' : 'bg-stone-700'}`} />
                   </div>
-                  <div className="text-[10px] text-stone-400 font-mono">
-                    {myCoords ? `±${myCoords.accuracy}m GPS` : 'Acquiring...'}
+                ))}
+                
+                {/* Compass Indicators */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none font-mono text-sm font-black">
+                  <span className="absolute top-4 text-emerald-500 shadow-sm">000°</span>
+                  <span className="absolute right-4 text-stone-500">090°</span>
+                  <span className="absolute bottom-4 text-stone-500">180°</span>
+                  <span className="absolute left-4 text-stone-500">270°</span>
+                  
+                  <span className="absolute top-10 text-emerald-400">N</span>
+                  <span className="absolute right-10 text-stone-400">E</span>
+                  <span className="absolute bottom-10 text-stone-400">S</span>
+                  <span className="absolute left-10 text-stone-400">W</span>
+                </div>
+
+                {/* Compass Needle to Host */}
+                {myCoords && hostMember && (
+                  <div 
+                    className="relative w-full h-full transition-transform duration-700 ease-out"
+                    style={{ transform: `rotate(${calculateBearing(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude)}deg)` }}
+                  >
+                    {/* Ghost Needle */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full w-2 h-24 sm:h-32 bg-emerald-500/10 blur-md rounded-full" />
+                    {/* Primary Needle */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[95%] w-1.5 h-24 sm:h-32 bg-gradient-to-t from-emerald-400 to-emerald-600 rounded-full shadow-[0_0_20px_#10b981]" />
+                    {/* Needle Tail */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 h-8 w-1 bg-stone-700 rounded-full" />
+                    {/* Hub */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-stone-900 border-2 border-emerald-500 z-10 shadow-lg flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 z-10">
+                <div className="px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400 font-black uppercase tracking-[0.2em] inline-block">
+                  {language === 'bm' ? 'SISTEM PENJEJAKAN TAKTIKAL' : 'TACTICAL TRACKING HUD'}
+                </div>
+                <div className="text-5xl sm:text-6xl font-black text-white font-heading drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">
+                  {myCoords && hostMember ? (
+                    formatDistance(calculateHaversineDistance(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude))
+                  ) : '---'}
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-emerald-300 font-bold text-lg">
+                    {hostMember ? hostMember.name : 'Waiting for Host...'}
+                  </div>
+                  <div className="text-stone-400 font-mono text-xs flex items-center gap-2">
+                    <span className="bg-stone-800 px-2 py-0.5 rounded border border-white/5">{hostMember ? getCompassCardinal(calculateBearing(myCoords?.latitude || 0, myCoords?.longitude || 0, hostMember.latitude, hostMember.longitude)) : '-'}</span>
+                    <span className="bg-stone-800 px-2 py-0.5 rounded border border-white/5">{hostMember ? `${Math.round(calculateBearing(myCoords?.latitude || 0, myCoords?.longitude || 0, hostMember.latitude, hostMember.longitude))}°` : '-'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Companions pills */}
-              {companions.map((comp) => {
-                const stale = isLocationStale(comp.updatedAt);
-                const dist = myCoords
-                  ? formatDistance(
-                      calculateHaversineDistance(
-                        myCoords.latitude,
-                        myCoords.longitude,
-                        comp.latitude,
-                        comp.longitude
-                      )
-                    )
-                  : null;
-
-                return (
-                  <button
-                    key={comp.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedMemberId(comp.id);
-                      mapInstanceRef.current?.flyTo([comp.latitude, comp.longitude], 17, {
-                        animate: true,
-                        duration: 0.8,
-                      });
-                    }}
-                    className={`px-2.5 py-1.5 rounded-xl bg-stone-900/95 backdrop-blur-md border text-left shrink-0 transition-all flex items-center gap-2 cursor-pointer shadow-lg ${
-                      selectedMemberId === comp.id
-                        ? 'border-emerald-400 ring-1 ring-emerald-400'
-                        : 'border-white/15 hover:border-white/30'
-                    }`}
-                  >
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
-                      style={{ backgroundColor: comp.avatarColor }}
-                    >
-                      {comp.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="leading-tight">
-                      <div className="text-xs font-bold text-white flex items-center gap-1">
-                        <span>{comp.name}</span>
-                        {stale && <span className="text-[10px] text-amber-400 font-bold">⚠️</span>}
-                      </div>
-                      <div className="text-[10px] text-stone-400 font-mono">
-                        {dist ? dist : formatTimeAgo(comp.updatedAt)}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Group Companion Details & Live Telemetry List */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold font-mono text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5" />
-                <span>
-                  {language === 'bm' ? 'Ahli Kumpulan Suar' : 'Group Beacon Members'} (
-                  {(companions.length + 1)}
-                </span>
-                )
-              </span>
-
-              <div className="flex items-center gap-2">
+              <div className="w-full max-w-xs pt-2 flex gap-3">
                 <button
-                  type="button"
-                  onClick={handleRecenter}
-                  className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 cursor-pointer"
+                  onClick={() => handleNavigateToHost('google')}
+                  className="flex-1 p-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex flex-col items-center gap-1.5 transition-all shadow-xl active:scale-95 cursor-pointer"
                 >
-                  <Crosshair className="w-3 h-3" />
-                  <span>{language === 'bm' ? 'Pusatkan Saya' : 'Center on Me'}</span>
+                  <Navigation className="w-5 h-5" />
+                  <span>START NAV</span>
                 </button>
               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* You Card */}
-              <div className="p-3 rounded-2xl bg-stone-950/70 border border-emerald-500/30 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs ring-2 ring-emerald-400 shrink-0"
-                    style={{ backgroundColor: avatarColor || '#10b981' }}
-                  >
-                    {(memberName || 'Y').charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span className="truncate">{memberName || 'You'}</span>
-                      <span className="text-[10px] font-bold text-emerald-400">(You)</span>
-                    </div>
-                    <div className="text-[10px] text-stone-400 font-mono truncate">
-                      {myLandmark}
-                    </div>
-                  </div>
-                </div>
+          {activeTab === 'members' && (
+            <div className="space-y-4 animate-in slide-in-from-right-2 duration-300">
+              <h3 className="text-sm font-black text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                <span>{language === 'bm' ? 'Ahli Kumpulan' : 'Group Members'} ({sortedMembers.length})</span>
+              </h3>
 
-                <div className="text-right shrink-0">
-                  <div className="text-[10px] font-mono text-emerald-300 font-bold">
-                    {myCoords ? `±${myCoords.accuracy}m` : 'Syncing'}
-                  </div>
-                  {batteryLevel !== null && (
-                    <div className="text-[10px] text-stone-400 flex items-center justify-end gap-1 font-mono">
-                      <Battery className="w-3 h-3 text-stone-300" />
-                      <span>{batteryLevel}%</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-4">
+                {/* Sorted Members List matching Map Pins exactly */}
+                {sortedMembers.map((m, index) => {
+                    const isMe = m.id === memberId;
+                    const isHost = m.id === session?.createdBy;
+                    const pinNumber = index + 1;
+                    const stale = isLocationStale(m.updatedAt);
+                    const dist = myCoords ? formatDistance(calculateHaversineDistance(myCoords.latitude, myCoords.longitude, m.latitude, m.longitude)) : '---';
+                    
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setSelectedMemberId(m.id);
+                          setActiveTab('map');
+                        }}
+                        className={`p-4 rounded-3xl bg-stone-900 border transition-all flex items-center justify-between text-left group active:scale-[0.98] cursor-pointer relative ${
+                          isMe ? 'border-emerald-500/40 ring-1 ring-emerald-500/20 shadow-emerald-950/20' : 
+                          isHost ? 'border-amber-400/40 ring-1 ring-amber-400/20 shadow-amber-950/20' : 
+                          'border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="relative">
+                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-base shadow-lg" style={{ backgroundColor: m.avatarColor }}>
+                              {m.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className={`absolute -top-2 -right-2 px-1.5 py-0.5 rounded-lg border text-[9px] font-mono font-bold ${
+                              isHost ? 'bg-amber-500 text-stone-950 border-amber-400' : 'bg-stone-950 text-stone-400 border-white/10'
+                            }`}>
+                              {isHost ? '👑 #1' : `#${pinNumber}`}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-sm font-black text-white flex items-center gap-1.5">
+                              <span className="truncate max-w-[100px]">{m.name}</span>
+                              {isMe && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-md font-black">YOU</span>}
+                            </div>
+                            <div className="text-[11px] text-stone-400 font-mono mt-0.5 truncate max-w-[120px]">{m.nearestLandmark || 'Highlands'}</div>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-xs font-mono font-bold text-emerald-400">{isMe ? '±' + (myCoords?.accuracy || 0) + 'm' : dist}</div>
+                          <div className="text-[10px] text-stone-500 mt-0.5">{stale ? '⚠️ Stale' : formatTimeAgo(m.updatedAt)}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'chat' && (
+            <div className="flex flex-col h-[450px] sm:h-[550px] bg-stone-950/80 rounded-3xl border border-white/10 overflow-hidden animate-in slide-in-from-right-2 duration-300">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+                {session?.messages && session.messages.length > 0 ? (
+                  session.messages.map((msg, idx) => {
+                    const isMe = msg.senderId === memberId;
+                    return (
+                      <div key={msg.id || idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] space-y-1 flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          {!isMe && (
+                            <div className="flex items-center gap-2 px-1">
+                              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: msg.senderColor || '#10b981' }} />
+                              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-tighter">{msg.senderName}</span>
+                            </div>
+                          )}
+                          <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-lg ${isMe ? 'bg-emerald-600 text-white rounded-tr-none' : 'bg-stone-800 text-stone-100 rounded-tl-none'}`}>
+                            {msg.text}
+                          </div>
+                          <div className={`text-[9px] font-mono text-stone-500 px-1 ${isMe ? 'text-right' : 'text-left'}`}>
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center space-y-3 opacity-40">
+                    <div className="w-16 h-16 rounded-full bg-stone-900 flex items-center justify-center border border-white/5">
+                      <MessageSquare className="w-8 h-8 text-stone-500" />
                     </div>
-                  )}
-                </div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-stone-500">Party channel is silent...</p>
+                  </div>
+                )}
+                <div ref={chatBottomRef} />
               </div>
 
-              {/* Companions Cards */}
-              {companions.map((comp) => {
-                const stale = isLocationStale(comp.updatedAt);
-                const isConnectionActive = comp.isSharing && !stale;
-                const dist = myCoords
-                  ? formatDistance(
-                      calculateHaversineDistance(
-                        myCoords.latitude,
-                        myCoords.longitude,
-                        comp.latitude,
-                        comp.longitude
-                      )
-                    )
-                  : null;
-
-                const bearing = myCoords
-                  ? calculateBearing(
-                      myCoords.latitude,
-                      myCoords.longitude,
-                      comp.latitude,
-                      comp.longitude
-                    )
-                  : null;
-
-                const cardinal = bearing !== null ? getCompassCardinal(bearing) : null;
-                const isHost = comp.id === session?.createdBy;
-
-                return (
-                  <div
-                    key={comp.id}
-                    onClick={() => {
-                      setSelectedMemberId(comp.id);
-                      mapInstanceRef.current?.flyTo([comp.latitude, comp.longitude], 17, {
-                        animate: true,
-                        duration: 0.8,
-                      });
-                    }}
-                    className={`p-3 rounded-2xl bg-stone-800/60 hover:bg-stone-800 border flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                      isHost
-                        ? 'border-amber-400/60 ring-1 ring-amber-400/30 bg-stone-850'
-                        : isConnectionActive
-                        ? 'border-emerald-500/30 hover:border-emerald-500/50'
-                        : stale
-                        ? 'border-amber-500/40'
-                        : 'border-rose-500/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="relative shrink-0">
-                        <div
-                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs"
-                          style={{ backgroundColor: comp.avatarColor }}
-                        >
-                          {comp.name.charAt(0).toUpperCase()}
-                        </div>
-                        <span
-                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-stone-800 ${
-                            isConnectionActive
-                              ? 'bg-emerald-400 animate-pulse'
-                              : stale
-                              ? 'bg-amber-400'
-                              : 'bg-rose-500'
-                          }`}
-                          title={
-                            isConnectionActive
-                              ? 'Active Connection'
-                              : stale
-                              ? 'Signal Stale'
-                              : 'Inactive'
-                          }
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
-                          <span className="truncate">{comp.name}</span>
-                          {isHost && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-black bg-amber-400/20 text-amber-300 border border-amber-400/40">
-                              👑 Host
-                            </span>
-                          )}
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[9px] font-bold flex items-center gap-1 border ${
-                              isConnectionActive
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                                : stale
-                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                                : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                            }`}
-                          >
-                            <span
-                              className={`w-1 h-1 rounded-full ${
-                                isConnectionActive
-                                  ? 'bg-emerald-400 animate-ping'
-                                  : stale
-                                  ? 'bg-amber-400'
-                                  : 'bg-rose-500'
-                              }`}
-                            />
-                            <span>
-                              {isConnectionActive
-                                ? (language === 'bm' ? 'Aktif' : 'Active')
-                                : stale
-                                ? (language === 'bm' ? 'Lemah' : 'Stale')
-                                : (language === 'bm' ? 'Mati' : 'Inactive')}
-                            </span>
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-stone-400 font-mono truncate">
-                          {comp.nearestLandmark || formatTimeAgo(comp.updatedAt)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div className="text-right">
-                        {dist && (
-                          <div className="text-xs font-bold font-mono text-emerald-400">
-                            {dist}
-                          </div>
-                        )}
-                        {cardinal && (
-                          <div className="text-[10px] text-stone-400 font-mono">
-                            {cardinal} ({bearing}°)
-                          </div>
-                        )}
-                      </div>
-
-                      {isHost && !isMeHost && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleNavigateToHost('google');
-                          }}
-                          className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
-                          title="Navigate to Host in Google Maps"
-                        >
-                          <Navigation className="w-3.5 h-3.5" />
-                          <span>Nav</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              <form onSubmit={handleSendChatMessage} className="p-3 bg-stone-900 border-t border-white/10 flex items-center gap-2">
+                <input
+                  type="text"
+                  value={chatInputText}
+                  onChange={(e) => setChatInputText(e.target.value)}
+                  placeholder={language === 'bm' ? 'Mesej kumpulan...' : 'Group message...'}
+                  className="flex-1 bg-stone-950 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-stone-600 focus:outline-none focus:border-emerald-500/50"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInputText.trim() || sendingChat}
+                  className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer shadow-lg shadow-emerald-950/40"
+                >
+                  <Send className={`w-4 h-4 ${sendingChat ? 'animate-ping' : ''}`} />
+                </button>
+              </form>
             </div>
-          </div>
+          )}
+
+          {activeTab === 'walkie' && (
+            <div className="animate-in slide-in-from-right-2 duration-300">
+              <WalkieTalkieLive
+                session={session}
+                memberId={memberId}
+                memberName={memberName}
+                avatarColor={avatarColor}
+                language={language}
+                compactMode={true}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Modal Bottom Action Footer */}
-        <div className="px-4 sm:px-6 py-3 bg-stone-950 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-stone-400">
-            <Compass className="w-3.5 h-3.5 text-emerald-400" />
-            <span>
-              {language === 'bm'
-                ? 'Peta beroperasi secara langsung dengan satelit GPS & koordinat live.'
-                : 'Live satellite GPS beacon & real-time party tracking active.'}
-            </span>
+        {/* Modal Footer Section (Stats) */}
+        <div className="px-4 sm:px-6 py-2.5 bg-stone-950 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-stone-500 uppercase tracking-widest shrink-0">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5"><Radio className="w-3 h-3 text-emerald-500" /> {language === 'bm' ? 'PANCARAN LIVE' : 'LIVE UPLINK'}</span>
+            <span className="hidden sm:flex items-center gap-1.5"><ShieldCheck className="w-3 h-3 text-emerald-500" /> {language === 'bm' ? 'AES-256 SELAMAT' : 'AES-256 SECURED'}</span>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRecenter}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
-            >
-              <Crosshair className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>{language === 'bm' ? 'Pusatkan Lokasi Saya' : 'Recenter Map'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white font-bold text-xs transition-colors cursor-pointer"
-            >
-              {language === 'bm' ? 'Tutup Peta' : 'Close Map'}
-            </button>
+          <div className="flex items-center gap-3">
+            <span>{remainingHours}h {language === 'bm' ? 'TINGAL' : 'REMAINING'}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
           </div>
         </div>
       </div>

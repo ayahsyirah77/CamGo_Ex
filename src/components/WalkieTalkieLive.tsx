@@ -64,6 +64,8 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
   onClose,
   compactMode = false,
 }) => {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
   // Active channel
   const partyChannelId = session?.code ? `party_${session.code}` : 'ch_party';
   const partyChannelName = session?.code ? `Party #${session.code} (Live)` : 'Party Group Radio';
@@ -492,6 +494,11 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
     try {
       const audioCtx = getAudioContext();
       if (!audioCtx) throw new Error('AudioContext unavailable');
+      
+      // Ensure context is resumed (browser policy)
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
 
       // Request live microphone stream
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -583,11 +590,26 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
     } catch (err: any) {
       console.error('PTT capture error:', err);
       setIsTransmitting(false);
-      setPermissionError(
-        err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
-          ? (language === 'bm' ? 'Akses mikrofon ditolak. Sila benarkan mikrofon dalam pelayar anda.' : 'Microphone access denied. Please grant microphone permission.')
-          : (language === 'bm' ? 'Ralat mikrofon. Sila pastikan mikrofon tersedia.' : 'Microphone unavailable or in use.')
-      );
+      
+      let errorMsg = language === 'bm' 
+        ? 'Ralat mikrofon. Sila pastikan mikrofon tersedia.' 
+        : 'Microphone unavailable or in use.';
+        
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.message?.includes('denied')) {
+        errorMsg = language === 'bm'
+          ? 'AKSES DITOLAK: Sila klik ikon kunci di bar alamat URL dan benarkan Mikrofon.'
+          : 'ACCESS DENIED: Please click the Lock icon in your URL bar and set Microphone to "Allow".';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        errorMsg = language === 'bm'
+          ? 'TIADA MIKROFON: Peranti audio tidak dijumpai.'
+          : 'NO MICROPHONE: Audio input hardware not found on this device.';
+      } else if (err.name === 'SecurityError') {
+        errorMsg = language === 'bm'
+          ? 'RALAT KESELAMATAN: PTT memerlukan sambungan HTTPS selamat.'
+          : 'SECURITY ERROR: PTT requires a secure HTTPS environment to function.';
+      }
+      
+      setPermissionError(errorMsg);
     }
   };
 
@@ -647,29 +669,33 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
   const activeChannelTitle = activeChannel === partyChannelId ? partyChannelName : (currentChannelObj?.name || activeChannel);
 
   return (
-    <div className={`w-full flex flex-col bg-stone-950 text-stone-100 rounded-3xl border border-emerald-500/30 overflow-hidden shadow-2xl relative ${compactMode ? 'p-3' : 'p-4 sm:p-6 space-y-4'}`}>
+    <div className={`w-full flex flex-col bg-stone-950 text-stone-100 rounded-3xl border border-emerald-500/30 overflow-hidden shadow-2xl relative ${compactMode ? 'p-2 sm:p-3' : 'p-4 sm:p-6 space-y-4'}`}>
       {/* Background Radio Grid Glow */}
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-56 h-56 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-56 h-56 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
 
       {/* Top Radio Header: Channel Name & Connection Health */}
-      <div className="flex items-center justify-between gap-3 border-b border-stone-800 pb-3 relative z-10">
+      <div className={`flex items-center justify-between gap-3 border-b border-stone-800 relative z-10 ${compactMode ? 'pb-1.5' : 'pb-3'}`}>
         <div className="flex items-center gap-2.5">
-          <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-inner">
-            <Radio className="w-5 h-5 animate-pulse" />
+          <div className={`${compactMode ? 'p-2' : 'p-2.5'} rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-inner`}>
+            <Radio className={`${compactMode ? 'w-4 h-4' : 'w-5 h-5'} animate-pulse`} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-extrabold text-sm sm:text-base text-white tracking-wide flex items-center gap-1.5">
-                <span>Push-to-Talk Walkie-Talkie</span>
+              <h3 className={`font-extrabold text-white tracking-wide flex items-center gap-1.5 ${compactMode ? 'text-xs' : 'text-sm sm:text-base'}`}>
+                <span>PTT Radio</span>
               </h3>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase bg-stone-800 text-stone-300 border border-white/5">
-                Ultra-Low Latency
-              </span>
+              {!compactMode && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase bg-stone-800 text-stone-300 border border-white/5">
+                  Ultra-Low Latency
+                </span>
+              )}
             </div>
-            <p className="text-[11px] text-stone-400">
-              Live WebRTC &amp; WebSocket Audio Relay • Zero Server Storage
-            </p>
+            {!compactMode && (
+              <p className="text-[11px] text-stone-400">
+                Live WebRTC &amp; WebSocket Audio Relay • Zero Server Storage
+              </p>
+            )}
           </div>
         </div>
 
@@ -711,8 +737,8 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
       {/* Channel Selector Dropdown & Active Peer Presence Count */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center relative z-10">
         <div className="sm:col-span-8">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-stone-400 block mb-1">
-            Radio Frequency / Channel Room:
+          <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-stone-500 block mb-1">
+            Radio Frequency / Channel:
           </label>
           <div className="relative">
             <select
@@ -721,7 +747,7 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
                 setActiveChannel(e.target.value);
                 setActivePeers(new Map());
               }}
-              className="w-full px-3.5 py-2.5 pr-10 rounded-2xl bg-stone-900 border border-stone-700 text-stone-100 font-bold text-xs outline-none focus:border-emerald-500 cursor-pointer appearance-none shadow-inner"
+              className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 font-bold text-[11px] outline-none focus:border-emerald-500 cursor-pointer appearance-none shadow-inner"
             >
               <option value={partyChannelId}>
                 📡 {partyChannelName}
@@ -798,25 +824,45 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
 
         {/* Permission Error Banner */}
         {permissionError && (
-          <div className="p-3 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex items-center justify-between gap-2 animate-in fade-in">
-            <span>{permissionError}</span>
-            <button
-              onClick={() => startTransmission()}
-              className="px-2.5 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] shrink-0"
-            >
-              Retry
-            </button>
+          <div className="p-4 rounded-2xl bg-rose-900 border-2 border-rose-500 shadow-lg shadow-rose-950/50 text-white animate-in zoom-in-95 duration-200 relative z-50">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-white/10 shrink-0">
+                <MicOff className="w-5 h-5 text-rose-200" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h4 className="font-black text-xs uppercase tracking-wider text-rose-100">
+                  {language === 'bm' ? 'Mikrofon Diperlukan' : 'Microphone Required'}
+                </h4>
+                <p className="text-[11px] leading-relaxed text-rose-50) opacity-90">
+                  {permissionError}
+                </p>
+                <div className="pt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => startTransmission()}
+                    className="px-3 py-1.5 rounded-lg bg-white text-rose-900 font-bold text-[10px] uppercase cursor-pointer hover:bg-rose-100 transition-colors shadow-sm"
+                  >
+                    {language === 'bm' ? 'Cuba Lagi' : 'Try Again'}
+                  </button>
+                  <button
+                    onClick={() => setPermissionError(null)}
+                    className="px-3 py-1.5 rounded-lg bg-transparent border border-white/30 text-white font-bold text-[10px] uppercase cursor-pointer hover:bg-white/10 transition-colors"
+                  >
+                    {language === 'bm' ? 'Tutup' : 'Dismiss'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
       {/* Prominent Tactile "HOLD TO TALK" Button */}
-      <div className="py-2 sm:py-4 flex flex-col items-center justify-center relative select-none">
+      <div className={`flex flex-col items-center justify-center relative select-none ${compactMode ? 'py-1 sm:py-2' : 'py-2 sm:py-4'}`}>
         {/* Pulsing Radiation Rings when Transmitting */}
         {isTransmitting && (
           <>
-            <div className="absolute w-44 h-44 sm:w-56 sm:h-56 rounded-full border-2 border-amber-500/40 animate-ping pointer-events-none" />
-            <div className="absolute w-52 h-52 sm:w-64 sm:h-64 rounded-full border border-emerald-400/30 animate-pulse pointer-events-none" />
+            <div className={`absolute rounded-full border-2 border-amber-500/40 animate-ping pointer-events-none ${compactMode ? 'w-24 h-24 xs:w-32 xs:h-32' : 'w-32 h-32 xs:w-44 xs:h-44 sm:w-56 sm:h-56'}`} />
+            <div className={`absolute rounded-full border border-emerald-400/30 animate-pulse pointer-events-none ${compactMode ? 'w-32 h-32 xs:w-40 xs:h-40' : 'w-40 h-40 xs:w-52 xs:h-52 sm:w-64 sm:h-64'}`} />
           </>
         )}
 
@@ -829,7 +875,11 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
           onTouchEnd={stopTransmission}
           onTouchCancel={stopTransmission}
           style={{ touchAction: 'none' }}
-          className={`relative group w-36 h-36 sm:w-44 sm:h-44 rounded-full transition-all duration-150 flex flex-col items-center justify-center cursor-pointer select-none active:scale-95 shadow-2xl ${
+          className={`relative group rounded-full transition-all duration-150 flex flex-col items-center justify-center cursor-pointer select-none active:scale-95 shadow-2xl ${
+            compactMode 
+              ? 'w-24 h-24 xs:w-28 xs:h-28 sm:w-36 sm:h-36' 
+              : 'w-28 h-28 xs:w-36 xs:h-36 sm:w-44 sm:h-44'
+          } ${
             isTransmitting
               ? 'bg-gradient-to-b from-amber-500 via-amber-600 to-amber-700 ring-8 ring-amber-500/30 scale-105 shadow-[0_0_50px_rgba(245,158,11,0.6)]'
               : incomingSpeaker
@@ -839,22 +889,24 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
           aria-label="Push to Talk Button"
         >
           {/* Inner Metallic Bezel Ring */}
-          <div className="absolute inset-2 rounded-full border border-white/10 pointer-events-none" />
+          <div className="absolute inset-1.5 rounded-full border border-white/10 pointer-events-none" />
 
           {/* Icon */}
-          <div className="mb-1 text-white transition-transform group-hover:scale-110">
+          <div className={`${compactMode ? 'mb-0' : 'mb-0.5 sm:mb-1'} text-white transition-transform group-hover:scale-110`}>
             {isTransmitting ? (
-              <Mic className="w-10 h-10 sm:w-12 sm:h-12 animate-bounce text-stone-950" />
+              <Mic className={`${compactMode ? 'w-6 h-6 xs:w-8 xs:h-8' : 'w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12'} animate-bounce text-stone-950`} />
             ) : incomingSpeaker ? (
-              <Volume2 className="w-10 h-10 sm:w-12 sm:h-12 text-cyan-200 animate-pulse" />
+              <Volume2 className={`${compactMode ? 'w-6 h-6 xs:w-8 xs:h-8' : 'w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12'} text-cyan-200 animate-pulse`} />
             ) : (
-              <Mic className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-400 group-hover:text-emerald-300" />
+              <Mic className={`${compactMode ? 'w-6 h-6 xs:w-8 xs:h-8' : 'w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12'} text-emerald-400 group-hover:text-emerald-300`} />
             )}
           </div>
 
           {/* Primary Button Text */}
           <span
-            className={`font-black text-xs sm:text-sm tracking-wider uppercase text-center px-2 leading-tight ${
+            className={`font-black tracking-wider uppercase text-center px-2 leading-tight ${
+              compactMode ? 'text-[9px] xs:text-[10px]' : 'text-[10px] xs:text-xs sm:text-sm'
+            } ${
               isTransmitting
                 ? 'text-stone-950'
                 : incomingSpeaker
@@ -863,27 +915,17 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
             }`}
           >
             {isTransmitting
-              ? 'TRANSMITTING'
+              ? 'LIVE'
               : incomingSpeaker
-              ? 'RECEIVING'
-              : 'HOLD TO TALK'}
-          </span>
-
-          <span
-            className={`text-[9px] font-mono mt-0.5 ${
-              isTransmitting
-                ? 'text-stone-900 font-bold'
-                : 'text-stone-400'
-            }`}
-          >
-            {isTransmitting ? 'Release to End' : 'Press & Hold'}
+              ? 'RX'
+              : 'PTT'}
           </span>
         </button>
 
-        <p className="mt-3 text-[11px] text-stone-400 font-mono text-center">
+        <p className={`mt-2 font-mono text-center ${compactMode ? 'text-[9px] text-stone-500' : 'text-[11px] text-stone-400'}`}>
           {language === 'bm'
-            ? 'Tekan & tahan untuk bercakap terus ke semua rakan dalam saluran ini'
-            : 'Hold down to broadcast voice instantly to all companions in channel'}
+            ? (compactMode ? 'Tahan untuk cakap' : 'Tekan & tahan untuk bercakap terus ke semua rakan')
+            : (compactMode ? 'Hold to talk' : 'Hold down to broadcast voice instantly to all companions')}
         </p>
       </div>
 

@@ -148,14 +148,29 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
         {weatherCard && weatherCard.isActive && (
           <div
             onClick={() => handleCardClick(weatherCard)}
-            className="rounded-2xl p-3 bg-gradient-to-b from-stone-900/95 via-cyan-950/40 to-stone-900/95 backdrop-blur-xl border-2 border-cyan-400/60 hover:border-cyan-300 active:border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.2)] hover:shadow-[0_0_30px_rgba(34,211,238,0.4)] flex flex-col justify-between min-h-[148px] cursor-pointer active:scale-[0.96] hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
+            className="rounded-2xl p-3 bg-stone-900/95 backdrop-blur-xl border-2 border-cyan-400/60 hover:border-cyan-300 active:border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.2)] hover:shadow-[0_0_30px_rgba(34,211,238,0.4)] flex flex-col justify-between min-h-[148px] cursor-pointer active:scale-[0.96] hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
           >
+            {/* Background Image with robust rendering */}
+            {weatherCard.imageUrl ? (
+              <div className="absolute inset-0 z-0">
+                <img
+                  src={weatherCard.imageUrl}
+                  alt=""
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-stone-950/70 via-cyan-950/20 to-stone-950/80" />
+              </div>
+            ) : (
+              /* Fallback glass gradient if no image */
+              <div className="absolute inset-0 bg-gradient-to-b from-stone-900/95 via-cyan-950/40 to-stone-900/95" />
+            )}
+
             {/* Soft atmospheric background glow */}
             <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-cyan-400/20 blur-xl pointer-events-none group-hover:scale-125 transition-transform duration-500" />
             {/* Glass specular shimmer */}
             <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
-            {/* Top Row: Title & LIVE Beacon */}
+            {/* Top Row: Title & Badge */}
             <div className="relative z-10 flex items-center justify-between gap-1">
               <span className="text-[9.5px] min-[360px]:text-[10.5px] font-black text-stone-100 tracking-tight leading-tight whitespace-normal drop-shadow group-hover:text-cyan-200 transition-colors">
                 {weatherCard.title || 'Cameron Highlands'}
