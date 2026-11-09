@@ -24,6 +24,7 @@ import {
   Mic,
   Send,
   PlusCircle,
+  Sparkles,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
@@ -38,6 +39,11 @@ import {
 } from '../utils/beaconUtils';
 import { WalkieTalkieLive } from './WalkieTalkieLive';
 import { beaconService } from '../services/beaconService';
+import { RouteOptimizer } from '../lib/ai/routeOptimizer';
+import { TelemetryMonitor } from '../lib/ai/telemetryMonitor';
+
+const aiRouteOptimizer = new RouteOptimizer();
+const telemetryMonitor = new TelemetryMonitor();
 
 interface LiveBeaconMapModalProps {
   isOpen: boolean;
@@ -84,6 +90,14 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   const [chatInputText, setChatInputText] = useState('');
   const [sendingChat, setSendingChat] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  // AI & Anomaly States
+  const [telemetryAnomaly, setTelemetryAnomaly] = useState<{ message: string; type: string; userId: string } | null>(null);
+  const [predictiveEta, setPredictiveEta] = useState<number | null>(null);
+
+  // Proximity Alert State
+  const [proximityLevel, setProximityLevel] = useState<'none' | 'near' | 'arrived'>('none');
+  const [showProximityToast, setShowProximityToast] = useState<string | null>(null);
 
   // Auto-scroll chat and invalidate map size on tab switch
   useEffect(() => {
@@ -150,6 +164,58 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     });
   }, [session?.members, session?.createdBy, memberId, myCoords, memberName, avatarColor, batteryLevel]);
 
+  const creatorId = session?.createdBy;
+  const hostMember = React.useMemo(() => {
+    if (!session?.members || !creatorId) return null;
+    return session.members[creatorId] || Object.values(session.members)[0] || null;
+  }, [session?.members, creatorId]);
+  
+  const isMeHost = memberId === creatorId;
+  const hostName = session?.createdByName || hostMember?.name || 'Beacon Host';
+
+  // Proximity Sensor Logic
+  useEffect(() => {
+    if (!isOpen || !myCoords || !hostMember || isMeHost) {
+      if (proximityLevel !== 'none') setProximityLevel('none');
+      return;
+    }
+
+    const dist = calculateHaversineDistance(
+      myCoords.latitude,
+      myCoords.longitude,
+      hostMember.latitude,
+      hostMember.longitude
+    );
+
+    let newLevel: 'none' | 'near' | 'arrived' = 'none';
+    if (dist <= 30) newLevel = 'arrived';
+    else if (dist <= 120) newLevel = 'near';
+
+    if (newLevel !== proximityLevel) {
+      setProximityLevel(newLevel);
+      
+      if (newLevel === 'near') {
+        const msg = language === 'bm' 
+          ? 'SENSOR PROKSIMITI: Menghampiri Host ( < 120m )' 
+          : 'PROXIMITY SENSOR: Approaching Host ( < 120m )';
+        setShowProximityToast(msg);
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([50, 100, 50]);
+        }
+        setTimeout(() => setShowProximityToast(null), 5000);
+      } else if (newLevel === 'arrived') {
+        const msg = language === 'bm' 
+          ? 'DESTINASI: Anda telah sampai ke lokasi Host!' 
+          : 'DESTINATION: You have arrived at the Host location!';
+        setShowProximityToast(msg);
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([200, 100, 200, 100, 200]);
+        }
+        setTimeout(() => setShowProximityToast(null), 8000);
+      }
+    }
+  }, [isOpen, myCoords?.latitude, myCoords?.longitude, hostMember, isMeHost, proximityLevel, language]);
+
   // Dynamic Route & Path overlay state
   const [routeTravelMode, setRouteTravelMode] = useState<'walking' | 'driving'>('walking');
   const [routePoints, setRoutePoints] = useState<[number, number][] | null>(null);
@@ -195,6 +261,14 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
         } else {
           setRoutePoints([[myCoords.latitude, myCoords.longitude], [hostMember.latitude, hostMember.longitude]]);
           setRouteEtaInfo(null);
+        }
+
+        // Apply AI Predictive ETA Adjustment
+        if (myCoords && hostMember) {
+           aiRouteOptimizer.getPredictiveETA(
+             [myCoords.latitude, myCoords.longitude],
+             [hostMember.latitude, hostMember.longitude]
+           ).then(val => setPredictiveEta(val));
         }
       })
       .catch((err) => {
@@ -409,6 +483,21 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
         }
       }
     });
+
+    // AI Telemetry Anomaly Monitoring
+    sortedMembers.forEach(m => {
+      telemetryMonitor.processPacket({
+        userId: m.id,
+        lat: m.latitude,
+        lng: m.longitude,
+        speed: m.speed || 0,
+        timestamp: m.updatedAt
+      }).then(anomaly => {
+        if (anomaly && anomaly.userId !== memberId) {
+          setTelemetryAnomaly({ message: anomaly.message, type: anomaly.type, userId: anomaly.userId });
+        }
+      });
+    });
   }, [isOpen, session, myCoords, memberId, memberName, avatarColor, batteryLevel, routePoints, routeTravelMode, sortedMembers]);
 
   // Recenter / Locate Me directly on user's exact current GPS location
@@ -551,14 +640,6 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     ? Object.values(session.members).filter((m) => m.id !== memberId)
     : [];
 
-  const creatorId = session?.createdBy;
-  const hostMember =
-    (session?.members && creatorId && session.members[creatorId]) ||
-    (session?.members && Object.values(session.members)[0]) ||
-    null;
-  const isMeHost = memberId === creatorId;
-  const hostName = session?.createdByName || hostMember?.name || 'Beacon Host';
-
   const handleNavigateToHost = (app: 'google' | 'waze' | 'apple' = 'google') => {
     if (!hostMember) {
       setRecenterToast(
@@ -698,6 +779,38 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           </div>
         )}
 
+        {/* Proximity Alert Overlay */}
+        {showProximityToast && (
+          <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[460] w-[90%] max-w-sm px-4 py-3 rounded-2xl bg-emerald-600 border-2 border-emerald-400 text-white shadow-[0_0_40px_rgba(16,185,129,0.5)] flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <Navigation className="w-6 h-6 animate-bounce" />
+            </div>
+            <div className="flex-1">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">Proximity Alert</div>
+              <div className="text-xs font-black leading-tight">{showProximityToast}</div>
+            </div>
+            <button onClick={() => setShowProximityToast(null)} className="p-1 hover:bg-white/10 rounded-lg">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* AI Telemetry Anomaly Alert Overlay */}
+        {telemetryAnomaly && (
+          <div className="absolute top-44 left-1/2 -translate-x-1/2 z-[460] w-[90%] max-w-sm px-4 py-3 rounded-2xl bg-rose-600 border-2 border-rose-400 text-white shadow-[0_0_40px_rgba(225,29,72,0.5)] flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-6 h-6 animate-pulse" />
+            </div>
+            <div className="flex-1">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">AI Security Alert</div>
+              <div className="text-xs font-black leading-tight">{telemetryAnomaly.message}</div>
+            </div>
+            <button onClick={() => setTelemetryAnomaly(null)} className="p-1 hover:bg-white/10 rounded-lg">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Scrollable Modal Content Body */}
         <div
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-6 py-3.5 space-y-4 touch-pan-y"
@@ -758,10 +871,19 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                         <div className="min-w-0 leading-tight">
                           <div className="text-[10px] font-black text-amber-400 uppercase">Host</div>
                           <div className="text-xs font-bold text-white truncate">{hostName}</div>
-                          <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1.5">
+                          <div className="text-[10px] text-emerald-400 font-mono flex flex-wrap items-center gap-1.5">
                             <span>{myCoords ? formatDistance(calculateHaversineDistance(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude)) : '---'}</span>
                             <span className="text-stone-600">|</span>
                             <span>{myCoords ? getCompassCardinal(calculateBearing(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude)) : '-'}</span>
+                            {predictiveEta && (
+                              <>
+                                <span className="text-stone-600">|</span>
+                                <span className="text-amber-400 flex items-center gap-1">
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  AI ETA: {Math.max(1, Math.round(predictiveEta / 60))}m
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -853,6 +975,18 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                 <div className="px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400 font-black uppercase tracking-[0.2em] inline-block">
                   {language === 'bm' ? 'SISTEM PENJEJAKAN TAKTIKAL' : 'TACTICAL TRACKING HUD'}
                 </div>
+
+                {/* Proximity Status Badge */}
+                {!isMeHost && proximityLevel !== 'none' && (
+                  <div className={`mt-2 px-3 py-1 rounded-lg border font-black text-[10px] uppercase flex items-center gap-2 animate-pulse mx-auto w-fit ${
+                    proximityLevel === 'arrived' 
+                      ? 'bg-emerald-600 border-emerald-400 text-white' 
+                      : 'bg-amber-600/20 border-amber-500/50 text-amber-400'
+                  }`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${proximityLevel === 'arrived' ? 'bg-white' : 'bg-amber-400'} animate-ping`} />
+                    <span>{proximityLevel === 'arrived' ? (language === 'bm' ? 'TELAH SAMPAI' : 'ARRIVED') : (language === 'bm' ? 'BERDEKATAN' : 'IN RANGE')}</span>
+                  </div>
+                )}
                 <div className="text-5xl sm:text-6xl font-black text-white font-heading drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">
                   {myCoords && hostMember ? (
                     formatDistance(calculateHaversineDistance(myCoords.latitude, myCoords.longitude, hostMember.latitude, hostMember.longitude))

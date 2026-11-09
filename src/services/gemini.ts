@@ -1,6 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
 import { Place, ItineraryPlan } from '../types';
 import { searchCamgoWebsite } from '../data/websiteDirectory';
+import { ConversationalSpatialEngine } from '../lib/ai/conversationalEngine';
+
+const spatialEngine = new ConversationalSpatialEngine();
 
 export interface TrafficAnalysisResult {
   condition: 'smooth' | 'moderate' | 'heavy';
@@ -398,6 +401,18 @@ Question: "${question}"`;
     return wrapResult(
       `I searched our Cameron Highlands directory and web database for your inquiry: "${question}".\n\nQuick highland essentials:\n• **Mosques & Surau**: Masjid Abu Bakar (Tanah Rata), Masjid Tengku Ahmad (Brinchang), Surau Kea Farm, Surau Golden Hills.\n• **Roads & Traffic**: FT185 Simpang Pulai (smooth) vs FT59 Tapah.\n• **Attractions & Passes**: BOH Sungei Palas, Flora Park, Sheep Sanctuary (viewable in our Tickets tab).\n• **Emergency Services**: Hospital Sultanah Hajah Kalsom (+60 5-491 1866) & CamGo 1-Click SOS Dispatch.\n\nPlease feel free to ask about any specific township, attraction, or service in Cameron Highlands!`
     );
+  }
+
+  /**
+   * AI Spatial Intent Extraction
+   */
+  public async parseSpatialIntent(userInput: string) {
+    try {
+      return await spatialEngine.extractSpatialIntent(userInput);
+    } catch (err) {
+      console.warn('[GeminiService] Spatial intent extraction error:', err);
+      return null;
+    }
   }
 }
 

@@ -16,6 +16,7 @@ import {
   CloudSun,
   Newspaper,
   CheckCircle2,
+  MapPin,
 } from 'lucide-react';
 
 interface AiChatModalProps {
@@ -33,6 +34,7 @@ interface Message {
   webQueries?: string[];
   groundingSources?: Array<{ title?: string; url?: string }>;
   toolsUsed?: string[];
+  spatialIntent?: { category: string; attributes: string[]; spatial_anchor?: string };
 }
 
 export const AiChatModal: React.FC<AiChatModalProps> = ({ isOpen, onClose, language }) => {
@@ -148,6 +150,14 @@ What's on your mind for the trip?`,
         toolsUsed: chatResult.toolsUsed,
       };
 
+      // Extract Spatial Intent in background for metadata display
+      geminiService.parseSpatialIntent(text).then(intent => {
+        if (intent && intent.category) {
+          aiMsg.spatialIntent = intent;
+          setMessages(prev => prev.map((m, idx) => idx === prev.length - 1 ? { ...m, spatialIntent: intent } : m));
+        }
+      });
+
       setMessages((prev) => [...prev, aiMsg]);
       // Save AI reply to Firestore camgo-prod
       firebaseService.saveAiChatMessage(sessionId, aiMsg);
@@ -255,6 +265,13 @@ What's on your mind for the trip?`,
                       <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
                         <Database className="w-2.5 h-2.5 text-emerald-400" />
                         CamGo Directory
+                      </span>
+                    )}
+                    
+                    {m.spatialIntent && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/30">
+                        <MapPin className="w-2.5 h-2.5 text-amber-400" />
+                        AI Spatial Intent: {m.spatialIntent.category}
                       </span>
                     )}
 

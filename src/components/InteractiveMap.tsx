@@ -59,6 +59,11 @@ import {
 } from 'lucide-react';
 import { TrafficForecastingModule } from './TrafficForecastingModule';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
+import { RouteOptimizer } from '../lib/ai/routeOptimizer';
+import { TelemetryMonitor } from '../lib/ai/telemetryMonitor';
+
+const aiRouteOptimizer = new RouteOptimizer();
+const telemetryMonitor = new TelemetryMonitor();
 
 export interface TrafficPolylineSegment {
   id: string;
@@ -435,8 +440,10 @@ export interface TurnByTurnRoute {
   destinationCoords: [number, number];
   distanceKm: number;
   durationMins: number;
+  aiAdjustedMins?: number;
   steps: RouteStep[];
   coordinates: [number, number][];
+  waypoints?: Array<{ lat: number; lng: number; name: string }>;
 }
 
 interface InteractiveMapProps {
@@ -499,6 +506,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     'categories' | 'food' | 'tourism' | 'stays' | 'services' | 'townships' | null
   >(null);
   const pillDropdownRef = useRef<HTMLDivElement | null>(null);
+  
+  // AI States
+  const [isAiSearching, setIsAiSearching] = useState(false);
+  const [activeTelemetryAlert, setActiveTelemetryAlert] = useState<{ type: string; message: string; severity: string } | null>(null);
 
   // Close dropdown on click/touch outside
   useEffect(() => {
@@ -913,8 +924,36 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
+      const query = mapTrafficSearchQuery.trim();
+      if (!query) return;
+
+      // Check if it's likely a natural language query (contains spaces, more than 3 words)
+      if (query.split(' ').length > 2) {
+        setIsAiSearching(true);
+        try {
+          const intent = await geminiService.parseSpatialIntent(query);
+          if (intent && intent.category) {
+            // Find a place that matches the category
+            const matches = places.filter(p => 
+              p.category.toLowerCase().includes(intent.category.toLowerCase()) ||
+              (p.subCategory && p.subCategory.toLowerCase().includes(intent.category.toLowerCase())) ||
+              (p.tags && p.tags.some(t => t.toLowerCase().includes(intent.category.toLowerCase())))
+            );
+            
+            if (matches.length > 0) {
+              handleSelectPlaceOnMap(matches[0]);
+              setIsAiSearching(false);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('AI search error:', err);
+        }
+        setIsAiSearching(false);
+      }
+
       if (matchingPlaceResults.length > 0) {
         handleSelectPlaceOnMap(matchingPlaceResults[0]);
       } else if (filteredTrafficNavItems.length > 0) {
@@ -956,7 +995,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     let text = '';
 
     if (type === 'depart') {
-      icon = 'ðŸš—';
+      icon = 'í ½íº—';
       text = lang === 'bm' ? `Bertolak dari lokasi asal di ${roadName}` : `Depart from origin onto ${roadName}`;
     } else if (type === 'turn') {
       if (modifier?.includes('left')) {
@@ -1123,6 +1162,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       lineJoin: 'round',
     });
     routeLayerRef.current.addLayer(routePolyline);
+
+    // Apply AI Predictive ETA
+    aiRouteOptimizer.getPredictiveETA(
+      [routeData.originCoords[0], routeData.originCoords[1]],
+      [routeData.destinationCoords[0], routeData.destinationCoords[1]]
+    ).then(adjustedSeconds => {
+      setActiveRoute(prev => prev ? {
+        ...prev,
+        aiAdjustedMins: Math.round(adjustedSeconds / 60)
+      } : null);
+    });
 
     // Requirement 3: Automatically fit map bounds to the route
     const bounds = routePolyline.getBounds();
@@ -1321,14 +1371,34 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     setIsAutoFollowEnabled(true);
 
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
+      async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const heading = pos.coords.heading || 0;
+        const speed = (pos.coords.speed || 0) * 3.6; // Convert m/s to km/h
 
         setUserGpsCoords({ lat, lng });
         setCurrentHeading(heading);
         updateVehicleMarkerOnMap(lat, lng, heading);
+
+        // AI Telemetry Monitoring
+        const anomaly = await telemetryMonitor.processPacket({
+          userId: 'local-user',
+          lat,
+          lng,
+          speed,
+          timestamp: Date.now()
+        });
+
+        if (anomaly) {
+          setActiveTelemetryAlert({
+            type: anomaly.type,
+            message: anomaly.message,
+            severity: anomaly.severity
+          });
+          // Auto-clear alert after 10 seconds
+          setTimeout(() => setActiveTelemetryAlert(null), 10000);
+        }
 
         // Turn-by-turn Proximity check (within 45 meters) & TTS voice engine
         if (activeRoute && activeRoute.steps && activeRoute.steps.length > 0) {
@@ -2520,6 +2590,31 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           style={{ width: '100%', height: '100%' }}
         />
 
+        {/* AI Telemetry Alert Overlay */}
+        {activeTelemetryAlert && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm animate-bounce">
+            <div className={`p-3 rounded-2xl border backdrop-blur-xl shadow-2xl flex items-center gap-3 ${
+              activeTelemetryAlert.severity === 'high' 
+                ? 'bg-red-950/90 border-red-500/50 text-red-200' 
+                : 'bg-amber-950/90 border-amber-500/50 text-amber-200'
+            }`}>
+              <ShieldAlert className={`w-5 h-5 shrink-0 ${activeTelemetryAlert.severity === 'high' ? 'text-red-400' : 'text-amber-400'}`} />
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-widest opacity-70">
+                  {activeTelemetryAlert.type.replace(/_/g, ' ')}
+                </div>
+                <div className="text-xs font-bold leading-tight">{activeTelemetryAlert.message}</div>
+              </div>
+              <button 
+                onClick={() => setActiveTelemetryAlert(null)}
+                className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 1. TOP FLOATING HEADER (Waze / Google Maps Style): Active when navigation is NOT active */}
         {!activeRoute && !isCalculatingRoute && (
           <div className="absolute top-3 left-3 right-3 sm:left-4 sm:right-4 z-30 pointer-events-none flex flex-col gap-2 max-w-2xl sm:mx-auto">
@@ -2544,15 +2639,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   setMapTrafficSearchQuery(e.target.value);
                   setIsTrafficSearchDropdownOpen(true);
                 }}
+                disabled={isAiSearching}
                 onKeyDown={handleSearchKeyDown}
                 onFocus={() => setIsTrafficSearchDropdownOpen(true)}
                 placeholder={
-                  language === 'bm'
-                    ? 'Cari destinasi, pekan, tarikan Cameron...'
-                    : 'Search destinations, towns, places...'
+                  isAiSearching
+                    ? (language === 'bm' ? 'AI sedang menganalisis...' : 'AI analyzing intent...')
+                    : (language === 'bm'
+                      ? 'Cari destinasi, pekan, tarikan Cameron...'
+                      : 'Search destinations, towns, places...')
                 }
-                className="w-full bg-transparent text-xs sm:text-sm text-stone-100 placeholder-stone-400 outline-none px-1"
+                className={`w-full bg-transparent text-xs sm:text-sm text-stone-100 placeholder-stone-400 outline-none px-1 ${isAiSearching ? 'animate-pulse' : ''}`}
               />
+              {isAiSearching && <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin mr-1" />}
               {mapTrafficSearchQuery && (
                 <button
                   type="button"
@@ -3737,7 +3836,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 <div>
                   <div className="text-base sm:text-xl font-black text-emerald-400 leading-none">
                     {(() => {
-                      const arrivalDate = new Date(Date.now() + activeRoute.durationMins * 60 * 1000);
+                      const mins = activeRoute.aiAdjustedMins || activeRoute.durationMins;
+                      const arrivalDate = new Date(Date.now() + mins * 60 * 1000);
                       return arrivalDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     })()}
                   </div>
@@ -3747,8 +3847,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 </div>
 
                 <div className="text-center font-mono">
-                  <div className="text-sm sm:text-lg font-extrabold text-stone-100">
-                    {activeRoute.durationMins} min
+                  <div className="flex flex-col items-center">
+                    <div className="text-sm sm:text-lg font-extrabold text-stone-100 leading-tight">
+                      {activeRoute.durationMins} min
+                    </div>
+                    {activeRoute.aiAdjustedMins && activeRoute.aiAdjustedMins !== activeRoute.durationMins && (
+                      <div className="flex items-center gap-1 px-1 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 mt-0.5">
+                        <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                        <span className="text-[9px] font-black text-emerald-400 uppercase tracking-tighter">AI: {activeRoute.aiAdjustedMins}m</span>
+                      </div>
+                    )}
                   </div>
                   <div className="text-[10px] text-stone-400 font-bold">{activeRoute.distanceKm} km</div>
                 </div>
@@ -3773,6 +3881,26 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   <span>{isAutoFollowEnabled ? 'Followed' : 'Recenter'}</span>
                 </button>
               </div>
+
+              {/* Tactical AI Route Optimizer Button (VRP) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeRoute.waypoints && activeRoute.waypoints.length > 0) {
+                    const optimized = aiRouteOptimizer.optimizeSequence([
+                      { lat: activeRoute.originCoords[0], lng: activeRoute.originCoords[1], name: activeRoute.originName },
+                      ...activeRoute.waypoints,
+                      { lat: activeRoute.destinationCoords[0], lng: activeRoute.destinationCoords[1], name: activeRoute.destinationName }
+                    ]);
+                    // Implementation note: This would typically re-draw the route with the new sequence
+                    console.log("[AI-VRP] Optimized sequence:", optimized);
+                  }
+                }}
+                className="flex items-center justify-center gap-2 w-full py-1.5 rounded-xl bg-stone-800/50 hover:bg-stone-800 border border-emerald-500/20 text-[10px] font-bold text-stone-300 transition-all cursor-pointer mb-1"
+              >
+                <Route className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{language === 'bm' ? 'Optimasi Turutan Laluan AI (VRP)' : 'Optimize AI Stop Sequence (VRP)'}</span>
+              </button>
 
               {/* Row 2: Navigation controls & Turn Steps Drawer Toggle */}
               <div className="flex items-center justify-between gap-1.5 sm:gap-2">
