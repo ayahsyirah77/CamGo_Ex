@@ -172,40 +172,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [mobileActiveModal, setMobileActiveModal] = useState<
     'bookmarks' | 'itinerary' | 'classifieds' | 'profile' | 'emergency-card' | 'online-payment' | null
   >(() => (initialTab === 'emergency-card' ? 'emergency-card' : null));
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const dashboardContainerRef = useRef<HTMLDivElement>(null);
-  const mobileMenuContainerRef = useRef<HTMLDivElement>(null);
-
-  // Close mobile hamburger menu when user clicks or taps outside, or presses Escape
-  useEffect(() => {
-    if (!showMobileMenu) return;
-
-    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
-      if (
-        mobileMenuContainerRef.current &&
-        !mobileMenuContainerRef.current.contains(event.target as Node)
-      ) {
-        setShowMobileMenu(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowMobileMenu(false);
-      }
-    };
-
-    // Use capture phase so outside clicks are caught even if other elements stop propagation
-    document.addEventListener('mousedown', handleClickOutside, true);
-    document.addEventListener('touchstart', handleClickOutside, { capture: true, passive: true });
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true);
-      document.removeEventListener('touchstart', handleClickOutside, true);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [showMobileMenu]);
 
   // Sync tab if initialTab prop changes
   useEffect(() => {
@@ -558,14 +525,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
-      {/* Full screen backdrop for mobile hamburger menu */}
-      {showMobileMenu && (
-        <div
-          className="fixed inset-0 z-40 bg-stone-950/60 backdrop-blur-xs md:hidden"
-          onClick={() => setShowMobileMenu(false)}
-          aria-hidden="true"
-        />
-      )}
       <div 
         ref={dashboardContainerRef} 
         className="min-h-full flex flex-col items-center justify-start p-2.5 sm:p-6 py-10 sm:py-16"
@@ -654,225 +613,71 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           </div>
         </div>
 
-        {/* Mobile Header (Mobile View Only) */}
-        <div className={`md:hidden flex flex-col gap-2 p-3 rounded-2xl glass-panel bg-stone-900/90 border border-emerald-500/30 relative ${showMobileMenu ? 'z-50' : 'z-20'}`}>
-          <div className="flex items-start justify-between gap-2">
-            {/* Left Column: CamGo Logo on Top, Hamburger Link Directly Below */}
-            <div className="flex flex-col items-start gap-1.5 shrink-0">
-              {/* CamGo Logo */}
-              <div className="flex items-center gap-1.5 shrink-0 select-none">
-                <svg
-                  viewBox="0 0 160 110"
-                  className="h-6 w-auto drop-shadow-sm shrink-0"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path d="M52 10 L84 75 L18 75 Z" fill="#1F5C25" />
-                  <path d="M52 10 L18 75 L38 75 Z" fill="#17451C" />
-                  <path d="M52 10 L84 75 L56 75 Z" fill="#2D8235" />
-                  <path d="M96 22 L132 88 L62 88 Z" fill="#262626" />
-                  <path d="M96 22 L62 88 L85 88 Z" fill="#1C1C1C" />
-                  <path d="M96 22 L132 88 L105 88 Z" fill="#3B3B3B" />
-                  <path d="M26 45 L5 88 L52 88 Z" fill="#246A2B" />
-                  <path d="M26 45 L5 88 L22 88 Z" fill="#15421A" />
-                  <path d="M102 38 L142 88 L82 88 Z" fill="#1F5C25" />
-                  <path d="M102 38 L142 88 L116 88 Z" fill="#2D8235" />
-                  <path
-                    d="M18 70 L34 46 L46 62 L64 26 L80 58 L98 32 L116 68 L130 52 L142 78"
-                    stroke="#FFFFFF"
-                    strokeWidth="5.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="miter"
-                    fill="none"
-                  />
-                  <polygon points="64,28 72,48 58,48" fill="#FFFFFF" opacity="0.95" />
-                  <polygon points="98,34 104,50 92,50" fill="#FFFFFF" opacity="0.95" />
-                </svg>
-                <div className="flex items-baseline font-black tracking-tight leading-none shrink-0 whitespace-nowrap">
-                  <span className="text-lg font-heading font-extrabold text-white">Cam</span>
-                  <span className="text-lg font-heading font-extrabold text-emerald-400">Go</span>
-                </div>
-              </div>
-
-              {/* Hamburger Button placed BELOW CamGo Logo */}
-              <div ref={mobileMenuContainerRef} className="relative z-50">
-                <button
-                  onClick={() => setShowMobileMenu(!showMobileMenu)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#092218] hover:bg-emerald-950 text-emerald-400 border border-emerald-600/60 transition-colors cursor-pointer shrink-0 active:scale-95 shadow-sm text-xs font-semibold"
-                  title="Dashboard Navigation Menu"
-                  aria-label="Toggle Dashboard Menu"
-                  aria-expanded={showMobileMenu}
-                >
-                  <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                  <span className="text-[11px] font-medium tracking-wide">Menu</span>
-                </button>
-
-                {/* Mobile / Hamburger Dropdown containing all 6 links + Sign Out */}
-                {showMobileMenu && (
-                  <div className="absolute left-0 top-full mt-2 w-64 max-w-[85vw] rounded-2xl bg-stone-900 border border-emerald-500/40 shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 space-y-1">
-                      <div className="px-3 py-1.5 border-b border-white/10 mb-1 flex items-center justify-between text-[11px] font-mono text-emerald-400 font-bold uppercase">
-                        <span>Dashboard Links</span>
-                        <Sparkles className="w-3 h-3 text-emerald-400" />
-                      </div>
-
-                      {/* 1. Profile & Photo */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('profile');
-                          setMobileActiveModal('profile');
-                          setShowMobileMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between hover:bg-stone-800 transition-colors cursor-pointer ${
-                          activeTab === 'profile' ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-500/30' : 'text-stone-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <User className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span>Profile &amp; Photo</span>
-                        </div>
-                        {activeTab === 'profile' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                      </button>
-
-                      {/* 2. My Job & Classifieds (with live count badge) */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('classifieds');
-                          setMobileActiveModal('classifieds');
-                          setShowMobileMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between hover:bg-stone-800 transition-colors cursor-pointer ${
-                          activeTab === 'classifieds' ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-500/30' : 'text-stone-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Briefcase className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>My Job &amp; Classifieds</span>
-                        </div>
-                        <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono">
-                          {myAccountClassifieds.length}
-                        </span>
-                      </button>
-
-                      {/* 3. My Saved Places (with live count badge) */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('bookmarks');
-                          setMobileActiveModal('bookmarks');
-                          setShowMobileMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between hover:bg-stone-800 transition-colors cursor-pointer ${
-                          activeTab === 'bookmarks' ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-500/30' : 'text-stone-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Bookmark className="w-4 h-4 text-teal-400 shrink-0" />
-                          <span>My Saved Places</span>
-                        </div>
-                        <span className="px-1.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 text-[10px] font-mono">
-                          {bookmarkedPlaces.length}
-                        </span>
-                      </button>
-
-                      {/* 4. Trip Itinerary Planner */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('itinerary');
-                          setMobileActiveModal('itinerary');
-                          setShowMobileMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between hover:bg-stone-800 transition-colors cursor-pointer ${
-                          activeTab === 'itinerary' ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-500/30' : 'text-stone-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Calendar className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span>Trip Itinerary Planner</span>
-                        </div>
-                        {activeTab === 'itinerary' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                      </button>
-
-                      {/* 5. Online Payment Portals */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('online-payment');
-                          setMobileActiveModal('online-payment');
-                          setShowMobileMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between hover:bg-stone-800 transition-colors cursor-pointer ${
-                          activeTab === 'online-payment' ? 'text-cyan-400 bg-cyan-950/40 border border-cyan-500/30' : 'text-stone-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <ExternalLink className="w-4 h-4 text-cyan-400 shrink-0" />
-                          <span>Online Payment Portals</span>
-                        </div>
-                        {activeTab === 'online-payment' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
-                      </button>
-
-                      {/* 6. Emergency Card (ICE) */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('emergency-card');
-                          setMobileActiveModal('emergency-card');
-                          setShowMobileMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between hover:bg-stone-800 transition-colors cursor-pointer ${
-                          activeTab === 'emergency-card' ? 'text-rose-400 bg-rose-950/40 border border-rose-500/30' : 'text-stone-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
-                          <span>Emergency Card (ICE)</span>
-                        </div>
-                        {activeTab === 'emergency-card' && <Check className="w-3.5 h-3.5 text-rose-400" />}
-                      </button>
-
-                      {/* 7. Sign Out button placed inside the hamburger link */}
-                      <div className="pt-1.5 mt-1 border-t border-white/10">
-                        <button
-                          onClick={() => {
-                            setShowMobileMenu(false);
-                            firebaseService.signOut();
-                            onClose();
-                          }}
-                          className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between text-rose-400 hover:bg-rose-950/40 border border-rose-500/20 transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
-                            <span>{language === 'bm' ? 'Log Keluar' : 'Sign Out'}</span>
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-                )}
-              </div>
+        {/* Mobile Header (Mobile View Only - Hamburger Menu Removed) */}
+        <div className="md:hidden flex items-center justify-between p-3 rounded-2xl glass-panel bg-stone-900/90 border border-emerald-500/30 relative z-20">
+          {/* Left Column: CamGo Logo */}
+          <div className="flex items-center gap-2 shrink-0 select-none">
+            <svg
+              viewBox="0 0 160 110"
+              className="h-6 w-auto drop-shadow-sm shrink-0"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M52 10 L84 75 L18 75 Z" fill="#1F5C25" />
+              <path d="M52 10 L18 75 L38 75 Z" fill="#17451C" />
+              <path d="M52 10 L84 75 L56 75 Z" fill="#2D8235" />
+              <path d="M96 22 L132 88 L62 88 Z" fill="#262626" />
+              <path d="M96 22 L62 88 L85 88 Z" fill="#1C1C1C" />
+              <path d="M96 22 L132 88 L105 88 Z" fill="#3B3B3B" />
+              <path d="M26 45 L5 88 L52 88 Z" fill="#246A2B" />
+              <path d="M26 45 L5 88 L22 88 Z" fill="#15421A" />
+              <path d="M102 38 L142 88 L82 88 Z" fill="#1F5C25" />
+              <path d="M102 38 L142 88 L116 88 Z" fill="#2D8235" />
+              <path
+                d="M18 70 L34 46 L46 62 L64 26 L80 58 L98 32 L116 68 L130 52 L142 78"
+                stroke="#FFFFFF"
+                strokeWidth="5.5"
+                strokeLinecap="round"
+                strokeLinejoin="miter"
+                fill="none"
+              />
+              <polygon points="64,28 72,48 58,48" fill="#FFFFFF" opacity="0.95" />
+              <polygon points="98,34 104,50 92,50" fill="#FFFFFF" opacity="0.95" />
+            </svg>
+            <div className="flex items-baseline font-black tracking-tight leading-none shrink-0 whitespace-nowrap">
+              <span className="text-lg font-heading font-extrabold text-white">Cam</span>
+              <span className="text-lg font-heading font-extrabold text-emerald-400">Go</span>
             </div>
-
-            {/* Right Column: Text "Dashboard" with X Close button in top right corner, plus Traveler Profile subtitle */}
-            <div className="flex-1 flex flex-col items-end text-right min-w-0 pl-2">
-              <div className="flex items-center gap-2 justify-end">
-                <h3 className="font-heading font-bold text-white text-sm sm:text-base leading-tight tracking-tight whitespace-nowrap">
-                  Dashboard
-                </h3>
-                {/* X Close button on top right corner next to text Dashboard */}
-                <button
-                  onClick={onClose}
-                  className="p-1 sm:p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors shrink-0"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Subtitle adjusted to fit cleanly inside mobile view & container */}
-              <p className="text-[10px] sm:text-[11px] text-stone-400 font-medium leading-snug mt-1 text-right break-words max-w-[200px]">
-                {language === 'bm'
-                  ? 'Simpanan destinasi, jadual & profil'
-                  : 'Traveler Profile & Dedicated Dashboard'}
-              </p>
+            <div className="pl-1.5 border-l border-white/10 flex flex-col">
+              <span className="text-xs font-heading font-bold text-stone-200 leading-none">
+                {language === 'bm' ? 'Papan Pemuka' : 'Dashboard'}
+              </span>
+              <span className="text-[9px] text-stone-400 font-medium leading-tight mt-0.5">
+                {language === 'bm' ? 'Profil Pelawat' : 'Traveler Portal'}
+              </span>
             </div>
+          </div>
+
+          {/* Right Column: Sign Out & X Close Button */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => {
+                firebaseService.signOut();
+                onClose();
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-rose-950/40 text-stone-300 hover:text-rose-400 border border-white/5 hover:border-rose-500/30 text-xs transition-colors cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span className="text-[11px] font-semibold">{language === 'bm' ? 'Keluar' : 'Sign Out'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
@@ -894,16 +699,32 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           <div className="text-left flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <h4 className="text-sm sm:text-lg font-bold text-stone-100 truncate">{currentUser?.displayName || 'Traveler'}</h4>
-              {currentUser?.email === 'ayahsyirah77@gmail.com' && (
+              {currentUser?.email === 'ayahsyirah77@gmail.com' || currentUser?.email === 'asuypower7984@gmail.com' || currentUser?.role === 'admin' ? (
                 <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-[9px] sm:text-xs font-bold uppercase tracking-wider">
                   MASTER ADMIN
                 </span>
+              ) : currentUser?.role === 'vendor' || firebaseService.getVendorListings().some((l) => l.ownerEmail?.toLowerCase() === currentUser?.email?.toLowerCase() || l.ownerUid === currentUser?.uid) ? (
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] sm:text-xs font-bold uppercase tracking-wider">
+                  Vendor
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] sm:text-xs font-bold uppercase tracking-wider">
+                  Traveller
+                </span>
               )}
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] sm:text-xs font-semibold">
+              <span className="px-2 py-0.5 rounded-full bg-stone-800 text-stone-300 border border-white/10 text-[9px] sm:text-xs font-semibold">
                 Highland Explorer Level 2
               </span>
             </div>
-            <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 font-mono truncate">{currentUser?.email || 'guest@camgo.my'}</p>
+            <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 font-mono truncate">
+              {currentUser?.email || 'guest@camgo.my'} • {
+                currentUser?.email === 'ayahsyirah77@gmail.com' || currentUser?.email === 'asuypower7984@gmail.com' || currentUser?.role === 'admin'
+                  ? 'Master Admin Profile'
+                  : currentUser?.role === 'vendor' || firebaseService.getVendorListings().some((l) => l.ownerEmail?.toLowerCase() === currentUser?.email?.toLowerCase() || l.ownerUid === currentUser?.uid)
+                  ? 'Registered Business Vendor Portal'
+                  : 'Highland Traveller Profile'
+              }
+            </p>
             <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[10px] sm:text-xs text-stone-300">
               <span className="flex items-center gap-1">
                 <Bookmark className="w-3 h-3 text-emerald-400" />
@@ -1052,6 +873,20 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 <p className="text-[10px] text-stone-400 mt-0.5 leading-snug">Medical &amp; SOS ICE</p>
               </div>
             </button>
+
+            {/* 7. Mobile Sign Out Action */}
+            <div className="col-span-2 pt-1">
+              <button
+                onClick={() => {
+                  firebaseService.signOut();
+                  onClose();
+                }}
+                className="w-full py-2.5 px-3 rounded-2xl bg-stone-900/80 hover:bg-rose-950/40 text-stone-300 hover:text-rose-400 border border-white/5 hover:border-rose-500/30 flex items-center justify-center gap-2 text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+              >
+                <LogOut className="w-4 h-4 text-rose-400" />
+                <span>{language === 'bm' ? 'Log Keluar dari Akaun' : 'Sign Out of Account'}</span>
+              </button>
+            </div>
           </div>
         )}
 

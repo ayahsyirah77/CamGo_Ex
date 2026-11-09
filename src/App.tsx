@@ -298,7 +298,11 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenAdmin={() => {
-          if (currentUser?.role === 'admin' || currentUser?.email === 'ayahsyirah77@gmail.com') {
+          if (
+            currentUser?.role === 'admin' ||
+            currentUser?.email === 'ayahsyirah77@gmail.com' ||
+            currentUser?.email === 'asuypower7984@gmail.com'
+          ) {
             setIsAdminOpen(true);
           } else {
             setIsAdminLoginOpen(true);

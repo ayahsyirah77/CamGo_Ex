@@ -45,7 +45,7 @@ export interface UserProfile {
   contactNumber?: string;
   isLocal?: boolean; // true = Local resident, false = Visitor / Tourist
   photoURL?: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'vendor';
   isBlocked?: boolean;
   bookmarks: string[];
   createdAt: string;
@@ -567,6 +567,7 @@ class FirebaseStorageService {
         if (
           this.currentUser &&
           (this.currentUser.email === 'ayahsyirah77@gmail.com' ||
+            this.currentUser.email === 'asuypower7984@gmail.com' ||
             this.currentUser.email?.toLowerCase().includes('admin') ||
             this.currentUser.email === 'admin@camgo.my')
         ) {
@@ -598,7 +599,8 @@ class FirebaseStorageService {
           const isAdmin =
             fbUser.email?.toLowerCase().includes('admin') ||
             fbUser.email === 'admin@camgo.my' ||
-            fbUser.email === 'ayahsyirah77@gmail.com';
+            fbUser.email === 'ayahsyirah77@gmail.com' ||
+            fbUser.email === 'asuypower7984@gmail.com';
 
           let existingProfile = this.currentUser;
           if (!existingProfile) {
@@ -763,13 +765,13 @@ class FirebaseStorageService {
         const result = await signInWithPopup(auth, provider);
         const fbUser = result.user;
         const targetEmail = (fbUser.email || '').toLowerCase();
-        const isAdminUser = asAdmin || targetEmail === 'ayahsyirah77@gmail.com' || targetEmail.includes('admin') || targetEmail === 'admin@camgo.my';
+        const isAdminUser = asAdmin || targetEmail === 'ayahsyirah77@gmail.com' || targetEmail === 'asuypower7984@gmail.com' || targetEmail.includes('admin') || targetEmail === 'admin@camgo.my';
 
         const profile: UserProfile = {
           uid: fbUser.uid,
           email: fbUser.email || (asAdmin ? 'ayahsyirah77@gmail.com' : 'traveler@gmail.com'),
-          displayName: fbUser.displayName || (isAdminUser ? 'Ayah Syirah (Admin)' : 'Highland Explorer'),
-          fullName: fbUser.displayName || (isAdminUser ? 'Ayah Syirah (Admin)' : 'Highland Explorer'),
+          displayName: fbUser.displayName || (isAdminUser ? 'Admin' : 'Highland Explorer'),
+          fullName: fbUser.displayName || (isAdminUser ? 'Admin' : 'Highland Explorer'),
           photoURL: fbUser.photoURL || undefined,
           role: isAdminUser ? 'admin' : 'user',
           isBlocked: false,
@@ -812,8 +814,8 @@ class FirebaseStorageService {
     const adminProfile: UserProfile = {
       uid: 'admin-ayahsyirah77',
       email: email,
-      displayName: 'Ayah Syirah (Master Admin)',
-      fullName: 'Ayah Syirah (Master Admin)',
+      displayName: 'Master Admin',
+      fullName: 'Master Admin',
       photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
       role: 'admin',
       isBlocked: false,
@@ -832,7 +834,7 @@ class FirebaseStorageService {
     if (!cleanEmail.endsWith('@gmail.com')) {
       throw new Error('Registration and sign-in require a valid @gmail.com email address.');
     }
-    const isAdmin = cleanEmail.includes('admin') || cleanEmail === 'ayahsyirah77@gmail.com';
+    const isAdmin = cleanEmail.includes('admin') || cleanEmail === 'ayahsyirah77@gmail.com' || cleanEmail === 'asuypower7984@gmail.com';
     const rawUser: UserProfile = {
       uid: 'user-' + Date.now().toString(36),
       email: cleanEmail,
@@ -1755,7 +1757,9 @@ class FirebaseStorageService {
     const isAdmin =
       this.currentUser?.role === 'admin' ||
       this.currentUser?.email === 'ayahsyirah77@gmail.com' ||
+      this.currentUser?.email === 'asuypower7984@gmail.com' ||
       auth?.currentUser?.email === 'ayahsyirah77@gmail.com' ||
+      auth?.currentUser?.email === 'asuypower7984@gmail.com' ||
       auth?.currentUser?.email?.toLowerCase().includes('admin');
 
     if (!isAdmin) {
