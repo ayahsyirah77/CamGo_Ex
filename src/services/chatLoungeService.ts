@@ -96,6 +96,7 @@ class ChatLoungeService {
   private broadcastChannel: BroadcastChannel | null = null;
   private subscribers: Set<() => void> = new Set();
   private typingMap: Map<string, string[]> = new Map(); // id -> userNames[]
+  private initialLoadTime = Date.now();
 
   constructor() {
     this.currentChatUser = this.loadCurrentUser();
@@ -266,9 +267,22 @@ class ChatLoungeService {
                 console.log('[ChatLoungeService] Adding new message:', data.id);
                 this.messages.push(data);
                 updated = true;
-                // If sent by someone else, play incoming message chime
-                if (data.senderId !== this.currentChatUser.id) {
+                // If sent by someone else and created after app initialization, trigger push notification and chime
+                if (data.senderId !== this.currentChatUser.id && (data.createdAt || 0) >= this.initialLoadTime - 5000) {
                   pushNotificationService.playChime('incoming');
+                  const ch = this.channels.find((c) => c.id === data.channelId);
+                  const channelLabel = ch ? ch.label : 'Chat Lounge';
+                  pushNotificationService.dispatchNotification({
+                    title: data.dmThreadId ? `${data.senderName} (Direct Message)` : `${data.senderName} in ${channelLabel}`,
+                    body: data.text || 'Shared an attachment',
+                    icon: data.senderAvatar,
+                    tag: data.dmThreadId ? `dm-${data.senderId}` : `channel-${data.channelId}`,
+                    threadId: data.dmThreadId,
+                    channelId: data.channelId,
+                    senderId: data.senderId,
+                    senderName: data.senderName,
+                    url: data.dmThreadId ? `/chat#dms` : `/chat`,
+                  });
                 }
               }
             } else if (change.type === 'modified') {
@@ -715,11 +729,13 @@ class ChatLoungeService {
     this.saveState();
     this.notifySubscribers();
 
-    // Trigger Push Notification if document is hidden or message is a DM
-    if (typeof document !== 'undefined' && (document.visibilityState === 'hidden' || msg.dmThreadId)) {
+    // Trigger Push Notification whenever any message arrives from someone else
+    if (msg.senderId !== this.currentChatUser.id && (msg.createdAt || 0) >= this.initialLoadTime - 5000) {
+      const ch = this.channels.find((c) => c.id === msg.channelId);
+      const channelLabel = ch ? ch.label : 'Chat Lounge';
       pushNotificationService.dispatchNotification({
-        title: msg.dmThreadId ? `${msg.senderName} (Direct Message)` : `${msg.senderName} in Lounge`,
-        body: msg.text || 'Sent an attachment',
+        title: msg.dmThreadId ? `${msg.senderName} (Direct Message)` : `${msg.senderName} in ${channelLabel}`,
+        body: msg.text || 'Shared an attachment',
         icon: msg.senderAvatar,
         tag: msg.dmThreadId ? `dm-${msg.senderId}` : `channel-${msg.channelId}`,
         threadId: msg.dmThreadId,
