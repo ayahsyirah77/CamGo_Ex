@@ -57,6 +57,7 @@ import { HazardWidget } from './components/HazardWidget';
 import { EventsWidget } from './components/EventsWidget';
 import { useMultiChannelNotifications } from './hooks/useMultiChannelNotifications';
 import { usePreventAccidentalExit } from './hooks/usePreventAccidentalExit';
+import { usePwaAutoUpdate } from './hooks/usePwaAutoUpdate';
 import { PreventExitToast } from './components/PreventExitToast';
 import { NotificationCenter } from './components/NotificationCenter';
 import {
