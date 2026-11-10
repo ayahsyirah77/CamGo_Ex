@@ -154,7 +154,7 @@ export function useMultiChannelNotifications() {
 
     // 2. Direct Message (DM) privacy filter: Only display alert if current user is part of the thread!
     const dmThreadId = eventData.payload?.dmThreadId;
-    if (dmThreadId && currentUserId && !dmThreadId.includes(currentUserId)) {
+    if (dmThreadId && currentUserId && !chatLoungeService.isUserInDmThread(dmThreadId, currentUserId)) {
       return;
     }
 

@@ -167,7 +167,6 @@ class ChatLoungeService {
 
     try {
       sessionStorage.setItem(STORAGE_SESSION_USER_KEY, JSON.stringify(tabUser));
-      localStorage.setItem(STORAGE_CURRENT_USER_KEY, JSON.stringify(tabUser));
     } catch {
       // ignore
     }
@@ -361,7 +360,7 @@ class ChatLoungeService {
                 }
 
                 // 3. Trigger alert if this is a live incoming message, sent by another user, and intended for this user
-                const isDmForMe = !data.dmThreadId || data.dmThreadId.includes(this.currentChatUser.id);
+                const isDmForMe = !data.dmThreadId || this.isUserInDmThread(data.dmThreadId, this.currentChatUser.id);
                 const isLiveIncoming = this.isInitialFirestoreSnapshotDone || (data.createdAt || 0) >= (Date.now() - 15000);
 
                 if (data.senderId !== this.currentChatUser.id && isDmForMe && isLiveIncoming) {
@@ -592,21 +591,20 @@ class ChatLoungeService {
   }
 
   public getMessagesForDm(dmThreadId: string): ChatMessage[] {
+    const targetPair = ChatLoungeService.parseDmUserIds(dmThreadId);
     return this.messages.filter((m) => {
       if (!m.dmThreadId) return false;
       if (m.dmThreadId === dmThreadId) return true;
-      // Handle cross-initiated IDs (e.g. dm-userA-userB vs dm-userB-userA)
-      const cleanTarget = dmThreadId.replace(/^dm[-_]/, '');
-      const cleanMsg = m.dmThreadId.replace(/^dm[-_]/, '');
-      const partsTarget = cleanTarget.split(/[-_]+/);
-      const partsMsg = cleanMsg.split(/[-_]+/);
-      if (partsTarget.length >= 2 && partsMsg.length >= 2) {
-        return (
-          (partsTarget.includes(partsMsg[0]) && partsTarget.includes(partsMsg[1])) ||
-          (partsMsg.includes(partsTarget[0]) && partsMsg.includes(partsTarget[1]))
-        );
+      if (targetPair) {
+        const msgPair = ChatLoungeService.parseDmUserIds(m.dmThreadId);
+        if (msgPair) {
+          return (
+            (msgPair[0] === targetPair[0] && msgPair[1] === targetPair[1]) ||
+            (msgPair[0] === targetPair[1] && msgPair[1] === targetPair[0])
+          );
+        }
       }
-      return false;
+      return m.dmThreadId.includes(dmThreadId.replace(/^dm[-_]/, ''));
     });
   }
 
@@ -809,6 +807,25 @@ class ChatLoungeService {
     const cleanB = String(userIdB || '').trim();
     const sorted = [cleanA, cleanB].sort();
     return `dm_${sorted[0]}__${sorted[1]}`;
+  }
+
+  public static parseDmUserIds(dmThreadId: string): [string, string] | null {
+    if (!dmThreadId) return null;
+    const clean = dmThreadId.replace(/^dm[-_]/, '');
+    const parts = clean.split('__');
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      return [parts[0].trim(), parts[1].trim()];
+    }
+    return null;
+  }
+
+  public isUserInDmThread(dmThreadId: string, userId: string): boolean {
+    if (!dmThreadId || !userId) return false;
+    const parsed = ChatLoungeService.parseDmUserIds(dmThreadId);
+    if (parsed) {
+      return parsed[0] === userId || parsed[1] === userId;
+    }
+    return dmThreadId.includes(userId);
   }
 
   /**
