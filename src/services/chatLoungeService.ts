@@ -12,6 +12,7 @@ import {
   TypingIndicatorEvent,
 } from '../types/chatLounge';
 import { pushNotificationService } from './pushNotificationService';
+import { audioService } from './audioService';
 import { UserProfile } from './firebase';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
@@ -267,13 +268,112 @@ class ChatLoungeService {
                 console.log('[ChatLoungeService] Adding new message:', data.id);
                 this.messages.push(data);
                 updated = true;
-                // If sent by someone else and created after app initialization, trigger push notification and chime
-                if (data.senderId !== this.currentChatUser.id && (data.createdAt || 0) >= this.initialLoadTime - 5000) {
-                  pushNotificationService.playChime('incoming');
+
+                // 1. Ensure sender is registered in communityUsers
+                if (data.senderId && data.senderName && !this.users.some((u) => u.id === data.senderId)) {
+                  this.users.push({
+                    id: data.senderId,
+                    name: data.senderName,
+                    handle: `@${data.senderName.toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+                    avatar: data.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+                    role: data.senderRole || 'member',
+                    status: 'online',
+                  });
+                }
+
+                // 2. Synchronize DM Thread for private messages
+                if (data.dmThreadId) {
+                  let dm = this.dmThreads.find(
+                    (d) => d.id === data.dmThreadId || (data.senderId && d.otherUser.id === data.senderId)
+                  );
+                  if (!dm) {
+                    const otherUser: ChatUser = {
+                      id: data.senderId === this.currentChatUser.id ? 'other-user' : data.senderId,
+                      name: data.senderName,
+                      handle: `@${data.senderName.toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+                      avatar: data.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+                      role: data.senderRole || 'member',
+                      status: 'online',
+                    };
+                    dm = {
+                      id: data.dmThreadId,
+                      otherUser,
+                      unreadCount: data.senderId !== this.currentChatUser.id ? 1 : 0,
+                      lastMessage: {
+                        text: data.text || 'Shared an attachment',
+                        timestamp: data.timestamp,
+                        senderId: data.senderId,
+                        isRead: data.senderId === this.currentChatUser.id,
+                      },
+                      updatedAt: new Date().toISOString(),
+                    };
+                    this.dmThreads.unshift(dm);
+                  } else {
+                    dm.lastMessage = {
+                      text: data.text || 'Shared an attachment',
+                      timestamp: data.timestamp,
+                      senderId: data.senderId,
+                      isRead: data.senderId === this.currentChatUser.id,
+                    };
+                    if (data.senderId !== this.currentChatUser.id) {
+                      dm.unreadCount = (dm.unreadCount || 0) + 1;
+                    }
+                    dm.updatedAt = new Date().toISOString();
+                  }
+                } else if (data.channelId) {
+                  // Synchronize channel unread & last message
+                  const ch = this.channels.find((c) => c.id === data.channelId);
+                  if (ch) {
+                    ch.lastMessage = {
+                      text: data.text || 'Shared an attachment',
+                      senderName: data.senderName,
+                      timestamp: data.timestamp,
+                    };
+                    if (data.senderId !== this.currentChatUser.id) {
+                      ch.unreadCount = (ch.unreadCount || 0) + 1;
+                    }
+                  }
+                }
+
+                // 3. If sent by another user and created recently, trigger in-app banner popup and sound alerts
+                if (data.senderId !== this.currentChatUser.id && (data.createdAt || 0) >= this.initialLoadTime - 8000) {
                   const ch = this.channels.find((c) => c.id === data.channelId);
                   const channelLabel = ch ? ch.label : 'Chat Lounge';
+                  const notifTitle = data.dmThreadId
+                    ? `${data.senderName} (Direct Message)`
+                    : `${data.senderName} in ${channelLabel}`;
+
+                  // Audio alert: Web Audio synthesized chime & HTML5 audio
+                  audioService.playTestChime();
+                  pushNotificationService.playChime('incoming');
+
+                  // In-App Notification Center Banner Popup
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('camgo-broadcast-event', {
+                        detail: {
+                          id: `msg-${data.id}`,
+                          event: 'chat_message',
+                          priority: 'normal',
+                          payload: {
+                            title: notifTitle,
+                            message: data.text || 'Shared an attachment',
+                            sender: data.senderName,
+                            senderName: data.senderName,
+                            senderId: data.senderId,
+                            senderAvatar: data.senderAvatar,
+                            channelId: data.channelId,
+                            dmThreadId: data.dmThreadId,
+                          },
+                          timestamp: new Date().toISOString(),
+                        },
+                      })
+                    );
+                  }
+
+                  // Background push notification
                   pushNotificationService.dispatchNotification({
-                    title: data.dmThreadId ? `${data.senderName} (Direct Message)` : `${data.senderName} in ${channelLabel}`,
+                    title: notifTitle,
                     body: data.text || 'Shared an attachment',
                     icon: data.senderAvatar,
                     tag: data.dmThreadId ? `dm-${data.senderId}` : `channel-${data.channelId}`,
@@ -461,7 +561,22 @@ class ChatLoungeService {
   }
 
   public getMessagesForDm(dmThreadId: string): ChatMessage[] {
-    return this.messages.filter((m) => m.dmThreadId === dmThreadId);
+    return this.messages.filter((m) => {
+      if (!m.dmThreadId) return false;
+      if (m.dmThreadId === dmThreadId) return true;
+      // Handle cross-initiated IDs (e.g. dm-userA-userB vs dm-userB-userA)
+      const cleanTarget = dmThreadId.replace(/^dm[-_]/, '');
+      const cleanMsg = m.dmThreadId.replace(/^dm[-_]/, '');
+      const partsTarget = cleanTarget.split(/[-_]+/);
+      const partsMsg = cleanMsg.split(/[-_]+/);
+      if (partsTarget.length >= 2 && partsMsg.length >= 2) {
+        return (
+          (partsTarget.includes(partsMsg[0]) && partsTarget.includes(partsMsg[1])) ||
+          (partsMsg.includes(partsTarget[0]) && partsMsg.includes(partsTarget[1]))
+        );
+      }
+      return false;
+    });
   }
 
   public getTypingUsers(threadOrChannelId: string): string[] {
@@ -512,7 +627,11 @@ class ChatLoungeService {
         };
       }
     } else if (params.dmThreadId) {
-      const dm = this.dmThreads.find((d) => d.id === params.dmThreadId);
+      const dm = this.dmThreads.find(
+        (d) =>
+          d.id === params.dmThreadId ||
+          (d.id.includes(this.currentChatUser.id) && params.dmThreadId && d.id.includes(params.dmThreadId.replace(/^dm[-_]/, '')))
+      );
       if (dm) {
         dm.lastMessage = {
           text: newMsg.text || 'Shared an attachment',
@@ -533,6 +652,31 @@ class ChatLoungeService {
         const sanitized = this.sanitizeObject(newMsg);
         console.log('[ChatLoungeService] Persisting message to Firestore:', newMsg.id, sanitized);
         setDoc(doc(db, 'chat_lounge_messages', newMsg.id), sanitized);
+
+        // Also broadcast notification to Firestore so all clients get banner popup even when lounge is closed
+        const ch = this.channels.find((c) => c.id === params.channelId);
+        const channelLabel = ch ? ch.label : 'Chat Lounge';
+        const notifTitle = params.dmThreadId
+          ? `${this.currentChatUser.name} (Direct Message)`
+          : `${this.currentChatUser.name} in ${channelLabel}`;
+
+        setDoc(doc(db, 'broadcast_notifications', `msg_${newMsg.id}`), {
+          id: `notif_${newMsg.id}`,
+          event: 'chat_message',
+          priority: 'normal',
+          payload: {
+            title: notifTitle,
+            message: newMsg.text || 'Shared a photo/attachment',
+            sender: this.currentChatUser.name,
+            senderName: this.currentChatUser.name,
+            senderId: this.currentChatUser.id,
+            senderAvatar: this.currentChatUser.avatar,
+            channelId: params.channelId || null,
+            dmThreadId: params.dmThreadId || null,
+          },
+          createdAt: Date.now(),
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
       } catch (err) {
         console.error('[ChatLoungeService] Firestore sendMessage error:', err);
       }
@@ -627,19 +771,34 @@ class ChatLoungeService {
   }
 
   /**
+   * Helper to generate a deterministic, bidirectional DM thread ID between two users
+   */
+  public static getCanonicalDmThreadId(userIdA: string, userIdB: string): string {
+    const cleanA = String(userIdA || '').trim();
+    const cleanB = String(userIdB || '').trim();
+    const sorted = [cleanA, cleanB].sort();
+    return `dm_${sorted[0]}__${sorted[1]}`;
+  }
+
+  /**
    * Gets or creates a 1-on-1 DM thread with another user
    */
   public getOrCreateDmThread(user: ChatUser): DirectMessageThread {
+    const canonicalId = ChatLoungeService.getCanonicalDmThreadId(this.currentChatUser.id, user.id);
     const existing = this.dmThreads.find(
-      (dm) => dm.otherUser.id === user.id || dm.id.includes(user.id)
+      (dm) =>
+        dm.id === canonicalId ||
+        dm.otherUser.id === user.id ||
+        (dm.id.includes(user.id) && dm.id.includes(this.currentChatUser.id))
     );
 
     if (existing) {
+      existing.id = canonicalId;
       return existing;
     }
 
     const newThread: DirectMessageThread = {
-      id: `dm-${this.currentChatUser.id}-${user.id}`,
+      id: canonicalId,
       otherUser: user,
       unreadCount: 0,
       updatedAt: new Date().toISOString(),

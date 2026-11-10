@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,7 +24,7 @@ import { getTranslation } from './services/i18n';
 import { LoadingScreen } from './components/LoadingScreen';
 import { Navbar } from './components/Navbar';
 import { BackToTop } from './components/BackToTop';
-import { MapView as InteractiveMap } from './components/MapView';
+import { InteractiveMap } from './components/InteractiveMap';
 import { GalleryCarousel } from './components/GalleryCarousel';
 import { ChatLoungeModal } from './components/ChatLoungeModal';
 import { MobileHomeCards } from './components/MobileHomeCards';
@@ -104,6 +104,39 @@ function checkIsStandaloneChat(): boolean {
   );
 }
 
+function checkIsBeaconInvite(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const search = window.location.search.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+
+  return (
+    search.includes('beacon=') ||
+    search.includes('party=') ||
+    search.includes('code=') ||
+    search.includes('tripcode=') ||
+    search.includes('session=') ||
+    hash.includes('beacon=') ||
+    hash.includes('party=') ||
+    hash.includes('code=')
+  );
+}
+
+function checkIsMapRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const pathname = window.location.pathname.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+
+  return (
+    pathname.startsWith('/map') ||
+    search.includes('map=true') ||
+    hash === '#map' ||
+    hash === '#interactive-map'
+  );
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>('en');
   const notificationCenter = useMultiChannelNotifications();
@@ -133,10 +166,10 @@ export default function App() {
   const [isPortalsModalOpen, setIsPortalsModalOpen] = useState(false);
   const [isClassifiedsModalOpen, setIsClassifiedsModalOpen] = useState(false);
   const [isItineraryOpen, setIsItineraryOpen] = useState(false);
-  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [isMapModalOpen, setIsMapModalOpen] = useState<boolean>(checkIsMapRoute);
   const [isMasjidModalOpen, setIsMasjidModalOpen] = useState(false);
   const [isTrailEngineOpen, setIsTrailEngineOpen] = useState(false);
-  const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState(false);
+  const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState<boolean>(checkIsBeaconInvite);
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
   const [isWidgetMenuOpen, setIsWidgetMenuOpen] = useState(false);
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
@@ -209,6 +242,11 @@ export default function App() {
     const handleOpenParking = () => setIsParkingEvOpen(true);
     window.addEventListener('open-smart-parking-ev-modal', handleOpenParking);
 
+    const handleOpenMap = () => setIsMapModalOpen(true);
+    window.addEventListener('open-map-modal', handleOpenMap);
+    window.addEventListener('open-map', handleOpenMap);
+    window.addEventListener('open-interactive-map', handleOpenMap);
+
     const handleLocationChange = () => {
       const isChatRoute = checkIsStandaloneChat();
       setIsStandaloneChatView(isChatRoute);
@@ -216,6 +254,14 @@ export default function App() {
         setIsChatOpen(true);
       } else {
         setIsChatOpen(false);
+      }
+
+      if (checkIsBeaconInvite()) {
+        setIsFindMyPartyOpen(true);
+      }
+
+      if (checkIsMapRoute()) {
+        setIsMapModalOpen(true);
       }
     };
     window.addEventListener('popstate', handleLocationChange);
@@ -229,6 +275,14 @@ export default function App() {
       setIsChatOpen(false);
     }
 
+    if (checkIsBeaconInvite()) {
+      setIsFindMyPartyOpen(true);
+    }
+
+    if (checkIsMapRoute()) {
+      setIsMapModalOpen(true);
+    }
+
     return () => {
       window.removeEventListener('open-chat-lounge', handleOpenChatLounge);
       window.removeEventListener('open-masjid-modal', handleOpenMasjid);
@@ -236,6 +290,9 @@ export default function App() {
       window.removeEventListener('open-find-my-party', handleOpenParty);
       window.removeEventListener('open-currency-converter', handleOpenCurrency);
       window.removeEventListener('open-smart-parking-ev-modal', handleOpenParking);
+      window.removeEventListener('open-map-modal', handleOpenMap);
+      window.removeEventListener('open-map', handleOpenMap);
+      window.removeEventListener('open-interactive-map', handleOpenMap);
       window.removeEventListener('popstate', handleLocationChange);
       window.removeEventListener('hashchange', handleLocationChange);
       unsubUser();
@@ -243,6 +300,10 @@ export default function App() {
   }, []);
 
   const navigateToSection = (sectionId: string) => {
+    if (sectionId === 'interactive-map' || sectionId === 'map' || sectionId === 'interactive-map-section') {
+      setIsMapModalOpen(true);
+      return;
+    }
     if (sectionId === 'directories-section') {
       setIsDirectoriesModalOpen(true);
       return;
@@ -1207,4 +1268,3 @@ export default function App() {
     </div>
   );
 }
-

@@ -323,18 +323,26 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
 
     // Modal is open, wait for container to be in DOM
     const timer = setTimeout(() => {
-      if (!mapContainerRef.current) return;
+      const container = mapContainerRef.current;
+      if (!container) return;
 
-      // Clean up previous instance if any
+      // Clean up previous instance or stale DOM node tag if any
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
+        try {
+          mapInstanceRef.current.remove();
+        } catch {
+          // ignore
+        }
         mapInstanceRef.current = null;
+      }
+      if ((container as any)._leaflet_id) {
+        delete (container as any)._leaflet_id;
       }
 
       const initialLat = myCoords?.latitude || 4.5050; // Kea Farm default
       const initialLon = myCoords?.longitude || 101.4080;
 
-      const map = L.map(mapContainerRef.current, {
+      const map = L.map(container, {
         center: [initialLat, initialLon],
         zoom: 16,
         zoomControl: false,
@@ -354,14 +362,26 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
 
     return () => {
       clearTimeout(timer);
+      const container = mapContainerRef.current;
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
+        try {
+          mapInstanceRef.current.remove();
+        } catch {
+          // ignore
+        }
         mapInstanceRef.current = null;
         markersRef.current = {};
         circlesRef.current = {};
       }
+      if (container && (container as any)._leaflet_id) {
+        delete (container as any)._leaflet_id;
+      }
       if (navPolylineRef.current) {
-        navPolylineRef.current.remove();
+        try {
+          navPolylineRef.current.remove();
+        } catch {
+          // ignore
+        }
         navPolylineRef.current = null;
       }
     };
@@ -1155,6 +1175,67 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* QR Code Preview Modal Overlay */}
+      {showQrPreview && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4 relative">
+            <button
+              onClick={() => setShowQrPreview(false)}
+              className="absolute top-4 right-4 p-2 text-stone-400 hover:text-white rounded-full bg-stone-800 hover:bg-stone-700 transition-colors cursor-pointer"
+              aria-label="Close QR Preview"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="inline-flex p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+              <QrCode className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-white font-heading">
+                {language === 'bm' ? 'Imbas QR Suar Party' : 'Scan Party Beacon QR'}
+              </h3>
+              <p className="text-xs text-stone-400 mt-1">
+                {language === 'bm'
+                  ? 'Imbas QR ini menggunakan kamera telefon untuk terus membuka peta suar live.'
+                  : 'Scan with mobile camera to open the live party beacon map instantly.'}
+              </p>
+            </div>
+
+            {qrCodeDataUrl ? (
+              <div className="p-3 bg-white rounded-2xl shadow-inner inline-block mx-auto border-2 border-emerald-500/40">
+                <img src={qrCodeDataUrl} alt="Beacon QR Code" className="w-52 h-52 mx-auto" />
+              </div>
+            ) : (
+              <div className="w-52 h-52 bg-stone-800 rounded-2xl flex items-center justify-center mx-auto text-stone-500 animate-pulse">
+                <RefreshCw className="w-8 h-8 animate-spin" />
+              </div>
+            )}
+
+            <div className="p-3 bg-stone-950 border border-white/10 rounded-xl flex items-center justify-between text-xs font-mono">
+              <span className="text-stone-400 font-bold">{language === 'bm' ? 'KOD SUAR:' : 'BEACON CODE:'}</span>
+              <span className="text-emerald-400 font-black text-sm tracking-wider">{session?.code}</span>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const shareUrl = `${window.location.origin}${window.location.pathname}?beacon=${session?.code}`;
+                  navigator.clipboard.writeText(shareUrl);
+                  setCopiedCode(true);
+                  setTimeout(() => setCopiedCode(false), 2500);
+                }}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-950/40"
+              >
+                {copiedCode ? <Check className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedCode ? (language === 'bm' ? 'Pautan Disalin!' : 'Link Copied!') : (language === 'bm' ? 'Salin Pautan' : 'Copy Invite Link')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -174,12 +174,17 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
   // Handle Initial DM or Channel triggers
   useEffect(() => {
     if (initialDmUserId) {
-      const user = communityUsers.find((u) => u.id === initialDmUserId);
-      if (user) {
-        const thread = chatLoungeService.getOrCreateDmThread(user);
-        setActiveDmThreadId(thread.id);
-        setActiveTab('dms');
-      }
+      const user = communityUsers.find((u) => u.id === initialDmUserId) || {
+        id: initialDmUserId,
+        name: 'Highland Member',
+        handle: `@member_${initialDmUserId.substring(0, 6)}`,
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+        role: 'member' as const,
+        status: 'online' as const,
+      };
+      const thread = chatLoungeService.getOrCreateDmThread(user);
+      setActiveDmThreadId(thread.id);
+      setActiveTab('dms');
     } else if (initialChannelId) {
       setActiveChannelId(initialChannelId);
       setActiveDmThreadId(null);

@@ -292,6 +292,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
   // State to track if arrived via invite link
   const [invitationCode, setInvitationCode] = useState<string | null>(null);
+  const hasAutoJoinedRef = useRef<boolean>(false);
 
   // Check URL parameter or saved session on mount / modal open
   useEffect(() => {
@@ -300,9 +301,19 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     let beaconFromUrl: string | null = null;
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const raw = params.get('beacon') || params.get('party');
+      const raw =
+        params.get('beacon') ||
+        params.get('party') ||
+        params.get('code') ||
+        params.get('tripCode') ||
+        params.get('session');
       if (raw) {
         beaconFromUrl = raw.trim().toUpperCase().replace(/\s+/g, '');
+      } else if (window.location.hash) {
+        const hashMatch = window.location.hash.match(/(?:beacon|party|code)=([A-Za-z0-9-]+)/i);
+        if (hashMatch && hashMatch[1]) {
+          beaconFromUrl = hashMatch[1].trim().toUpperCase();
+        }
       }
     }
 
@@ -311,14 +322,15 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       setJoinCodeInput(beaconFromUrl);
       setEntryMode('join');
 
-      // If not already subscribed to this code, subscribe immediately to fetch creator & members
-      if (session?.code !== beaconFromUrl) {
-        subscribeToSession(beaconFromUrl, false);
+      if (!hasAutoJoinedRef.current) {
+        hasAutoJoinedRef.current = true;
+        handleJoinSession(beaconFromUrl);
       }
     } else {
       const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
       if (savedCode && !session) {
         subscribeToSession(savedCode, true);
+        setShowLiveMapModal(true);
       }
     }
 
@@ -716,8 +728,8 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   };
 
   // Join Existing Beacon Session
-  const handleJoinSession = async () => {
-    const targetCode = joinCodeInput.trim().toUpperCase().replace(/\s+/g, '');
+  const handleJoinSession = async (overrideCode?: string) => {
+    const targetCode = (overrideCode || joinCodeInput).trim().toUpperCase().replace(/\s+/g, '');
     if (!targetCode) {
       setErrorMsg(language === 'bm' ? 'Sila masukkan kod sesi.' : 'Please enter session code.');
       return;
@@ -806,6 +818,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     setIsSharing(false);
     localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
     beaconService.clearCachedSession();
+
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
 
     if (currentCode) {
       try {
@@ -1523,7 +1539,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={handleJoinSession}
+                        onClick={() => handleJoinSession()}
                         disabled={loading}
                         className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
                       >
@@ -1569,7 +1585,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
                   <button
                     type="button"
-                    onClick={handleJoinSession}
+                    onClick={() => handleJoinSession()}
                     disabled={loading || !joinCodeInput.trim()}
                     className="w-full py-3 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-sky-950/60 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >

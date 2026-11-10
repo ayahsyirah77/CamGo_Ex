@@ -97,21 +97,23 @@ export function useMultiChannelNotifications() {
         osc.start(now);
         osc.stop(now + 0.4);
       } else {
-        // Normal / Soft Ping for Chats, Jobs, Classifieds
+        // Two-Tone Pleasant Bell Chime for Chat & Messages (D5 -> A5)
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
 
         osc.type = 'sine';
         osc.frequency.setValueAtTime(587.33, now); // D5
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.08); // A5
 
-        gain.gain.setValueAtTime(0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.28, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
 
         osc.start(now);
-        osc.stop(now + 0.2);
+        osc.stop(now + 0.35);
       }
     } catch (e) {
       console.warn('AudioContext playback error:', e);

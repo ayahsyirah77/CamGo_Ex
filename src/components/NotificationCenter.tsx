@@ -163,40 +163,71 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 3. FLOATING CHAT PREVIEW (BOTTOM RIGHT) */}
+      {/* 3. FLOATING CHAT NOTIFICATION BANNER */}
       <AnimatePresence>
         {activeChatPreview && (
           <motion.div
-            initial={{ x: 100, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 100, opacity: 0 }}
+            initial={{ y: -50, opacity: 0, scale: 0.95 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: -50, opacity: 0, scale: 0.95 }}
             onClick={() => {
+              const payload = activeChatPreview.payload || {};
+              const dmUserId = payload.dmThreadId ? payload.senderId : null;
+              const channelId = payload.channelId || null;
               setActiveChatPreview(null);
+
+              if (dmUserId || channelId) {
+                window.dispatchEvent(
+                  new CustomEvent('open-chat-lounge', {
+                    detail: { dmUserId, channelId },
+                  })
+                );
+              }
               onOpenChat?.();
             }}
-            className="fixed bottom-20 right-4 z-[99999] max-w-sm bg-stone-900/95 backdrop-blur-md border border-emerald-500/50 rounded-2xl p-4 shadow-2xl text-stone-100 cursor-pointer hover:border-emerald-400 transition-all hover:scale-[1.02]"
+            className="fixed top-16 sm:top-20 right-3 sm:right-6 z-[99999] max-w-sm w-[calc(100vw-24px)] sm:w-96 bg-stone-900/98 backdrop-blur-2xl border-2 border-emerald-500 rounded-2xl p-3.5 sm:p-4 shadow-2xl shadow-emerald-950/60 text-stone-100 cursor-pointer hover:border-emerald-400 transition-all hover:scale-[1.02] ring-4 ring-emerald-500/20"
           >
             <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+              <div className="flex items-center gap-2 text-emerald-400 text-xs font-black tracking-wide uppercase">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                 <MessageSquare className="w-4 h-4" />
-                <span>{language === 'bm' ? 'Mesej Sembang Baharu (Klik untuk buka)' : 'New Lounge Chat (Click to open)'}</span>
+                <span>
+                  {activeChatPreview.payload.dmThreadId
+                    ? (language === 'bm' ? 'Mesej Peribadi (DM)' : 'Direct Message (DM)')
+                    : (language === 'bm' ? 'Mesej Sembang Baharu' : 'New Lounge Chat')}
+                </span>
               </div>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setActiveChatPreview(null);
                 }}
-                className="text-stone-400 hover:text-white p-1"
+                className="text-stone-400 hover:text-white p-1 rounded-lg hover:bg-stone-800 transition-colors"
+                aria-label="Dismiss chat alert"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="text-xs font-semibold text-stone-200">
-              {activeChatPreview.payload.sender || activeChatPreview.payload.senderName || 'Highland Visitor'}
+            <div className="flex items-start gap-2.5">
+              {activeChatPreview.payload.senderAvatar && (
+                <img
+                  src={activeChatPreview.payload.senderAvatar}
+                  alt={activeChatPreview.payload.sender || 'Sender'}
+                  className="w-8 h-8 rounded-full border border-emerald-500/50 object-cover shrink-0 mt-0.5"
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold text-white truncate">
+                  {activeChatPreview.payload.sender || activeChatPreview.payload.senderName || 'Highland Visitor'}
+                </div>
+                <p className="text-xs text-stone-300 mt-0.5 line-clamp-2">
+                  {activeChatPreview.payload.message || activeChatPreview.payload.text || 'Sent a new message in Chat Lounge.'}
+                </p>
+                <div className="text-[10px] text-emerald-400/90 font-medium mt-1 flex items-center gap-1">
+                  <span>{language === 'bm' ? 'Ketik untuk balas segera →' : 'Tap to open & reply →'}</span>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-stone-400 mt-1 line-clamp-2">
-              {activeChatPreview.payload.message || activeChatPreview.payload.text || 'Sent a new message in Chat Lounge.'}
-            </p>
           </motion.div>
         )}
       </AnimatePresence>
