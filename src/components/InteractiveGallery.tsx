@@ -123,25 +123,7 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Category Filter Pills */}
-          <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-stone-900/90 border border-white/10 text-xs">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setFilter(cat)}
-                className={`px-3 py-1.5 rounded-xl font-semibold capitalize transition-all cursor-pointer ${
-                  filter === cat
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'text-stone-400 hover:text-white'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
 
-        </div>
       </div>
 
       {/* Responsive Thumbnail Grid */}

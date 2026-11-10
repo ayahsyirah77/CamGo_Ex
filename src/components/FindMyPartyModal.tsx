@@ -1302,8 +1302,44 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 sm:px-6 py-4 pb-28 sm:pb-8 space-y-4 touch-pan-y"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {/* Active Session vs Create/Join Modes */}
-          {!session || (session && (!session.members || !session.members[memberId])) ? (
+        {/* Joining / Loading State for Invitation Links */}
+        {(invitationCode || (loading && !session)) ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-6">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Radio className="w-8 h-8 text-emerald-400 animate-pulse" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-white font-heading">
+                {language === 'bm' ? 'Menyertai Kumpulan...' : 'Joining Group Beacon...'}
+              </h3>
+              <p className="text-sm text-stone-400 max-w-xs mx-auto">
+                {language === 'bm' 
+                  ? 'Menyambung ke pangkalan data suar live Cameron Highlands. Sila tunggu sebentar.'
+                  : 'Connecting to live Cameron Highlands beacon database. Please wait a moment.'}
+              </p>
+            </div>
+            {errorMsg && (
+              <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs max-w-sm">
+                <AlertTriangle className="w-5 h-5 mx-auto mb-2 text-rose-400" />
+                <p>{errorMsg}</p>
+                <button 
+                  onClick={() => {
+                    setInvitationCode(null);
+                    setEntryMode('join');
+                    setErrorMsg(null);
+                    setLoading(false);
+                  }}
+                  className="mt-4 px-4 py-2 rounded-xl bg-rose-600 text-white font-bold"
+                >
+                  Try Manual Join
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (!session || (session && (!session.members || !session.members[memberId]))) ? (
             <div className="max-w-xl mx-auto space-y-5 py-1">
               {/* Profile Card: Display Name & Designated Pin Color */}
               <div className="p-4 sm:p-5 rounded-2xl bg-stone-800/80 border border-white/10 space-y-3.5">
@@ -2264,7 +2300,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       {showLiveMapModal && (
         <LiveBeaconMapModal
           isOpen={showLiveMapModal}
-          onClose={() => setShowLiveMapModal(false)}
+          onClose={handleLeaveSession}
           session={session}
           myCoords={myCoords}
           memberId={memberId}

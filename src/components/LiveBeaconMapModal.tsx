@@ -25,6 +25,7 @@ import {
   Send,
   PlusCircle,
   Sparkles,
+  LogOut,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
@@ -98,6 +99,28 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   // Proximity Alert State
   const [proximityLevel, setProximityLevel] = useState<'none' | 'near' | 'arrived'>('none');
   const [showProximityToast, setShowProximityToast] = useState<string | null>(null);
+
+  // Exit Confirmation State
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+
+  const hasAutoCenteredRef = useRef(false);
+
+  // Auto-center map on first valid GPS fix
+  useEffect(() => {
+    if (isOpen && myCoords && !hasAutoCenteredRef.current && mapInstanceRef.current) {
+      hasAutoCenteredRef.current = true;
+      mapInstanceRef.current.setView([myCoords.latitude, myCoords.longitude], 17, { animate: true });
+    }
+  }, [isOpen, myCoords]);
+
+  const handleCloseWithConfirm = () => {
+    setShowExitConfirm(true);
+  };
+
+  const handleConfirmLeave = () => {
+    setShowExitConfirm(false);
+    onClose();
+  };
 
   // Auto-scroll chat and invalidate map size on tab switch
   useEffect(() => {
@@ -753,7 +776,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             {/* Close 'X' Button */}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCloseWithConfirm}
               className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0 ml-1"
               aria-label="Close"
             >
@@ -1231,6 +1254,44 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
               >
                 {copiedCode ? <Check className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4" />}
                 <span>{copiedCode ? (language === 'bm' ? 'Pautan Disalin!' : 'Link Copied!') : (language === 'bm' ? 'Salin Pautan' : 'Copy Invite Link')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Leave Session Confirmation Dialog */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-stone-900 border border-rose-500/30 rounded-3xl p-6 text-center space-y-5 shadow-2xl">
+            <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto">
+              <LogOut className="w-8 h-8 text-rose-400" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-white font-heading">
+                {language === 'bm' ? 'Keluar Kumpulan?' : 'Leave Group?'}
+              </h3>
+              <p className="text-sm text-stone-400 leading-relaxed">
+                {language === 'bm'
+                  ? 'Adakah anda pasti mahu keluar dari sesi suar kumpulan ini? Perkongsian lokasi anda akan dihentikan.'
+                  : 'Are you sure you want to leave this group beacon session? Your live location sharing will stop.'}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleConfirmLeave}
+                className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm shadow-xl shadow-rose-950/40 transition-all active:scale-95 cursor-pointer"
+              >
+                {language === 'bm' ? 'Keluar Kumpulan' : 'Leave Group'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowExitConfirm(false)}
+                className="w-full py-3 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-sm transition-all cursor-pointer"
+              >
+                {language === 'bm' ? 'Kekal Dalam Kumpulan' : 'Stay in Group'}
               </button>
             </div>
           </div>

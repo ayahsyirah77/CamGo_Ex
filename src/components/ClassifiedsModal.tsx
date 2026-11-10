@@ -263,26 +263,6 @@ export const ClassifiedsModal: React.FC<ClassifiedsModalProps> = ({
               </select>
             </div>
           </div>
-
-          {/* 4 Key Category Filter Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
-            {categoryTabs.map((tab) => {
-              const isActive = categoryFilter === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setCategoryFilter(tab.key)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                    isActive
-                      ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-950/50 font-black'
-                      : 'bg-stone-800/80 hover:bg-stone-700/80 text-stone-300 border border-white/5'
-                  }`}
-                >
-                  {language === 'bm' ? tab.labelBm : tab.labelEn}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         {/* Listings Result Count & Dynamic Sync Indicator */}
