@@ -6,7 +6,7 @@ if (typeof window !== 'undefined') {
   (window as any).L = L;
 }
 
-import { Place, Township, MainCategory, Language } from '../types';
+import { Place, Township, MainCategory, Language, PlaceReview } from '../types';
 import { firebaseService } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
 import { getTranslation } from '../services/i18n';
@@ -503,12 +503,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const [activeCategory, setActiveCategory] = useState<MainCategory | 'all'>(filterCategory);
   const [activeTownship, setActiveTownship] = useState<Township | 'all'>(filterTownship);
   const [activeSubCategory, setActiveSubCategory] = useState<string | 'all'>('all');
+  const [proximityRadius, setProximityRadius] = useState<'all' | '5' | '10' | '25'>('all');
+  const [isRadiusMenuOpen, setIsRadiusMenuOpen] = useState<boolean>(false);
+  const [newReviewRating, setNewReviewRating] = useState<number>(5);
+  const [newReviewComment, setNewReviewComment] = useState<string>('');
+  const [newReviewAuthor, setNewReviewAuthor] = useState<string>('');
 
-  // Google Maps Style Mobile Category Dropdown Pill States
-  const [openDropdownPill, setOpenDropdownPill] = useState<
-    'categories' | 'food' | 'tourism' | 'stays' | 'services' | 'townships' | null
-  >(null);
-  const pillDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState<boolean>(false);
+  const filterMenuRef = useRef<HTMLDivElement | null>(null);
   
   // AI States
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -518,14 +520,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (
-        pillDropdownRef.current &&
-        !pillDropdownRef.current.contains(event.target as Node)
+        filterMenuRef.current &&
+        !filterMenuRef.current.contains(event.target as Node)
       ) {
-        setOpenDropdownPill(null);
+        setIsFilterMenuOpen(false);
       }
     };
 
-    if (openDropdownPill) {
+    if (isFilterMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('touchstart', handleClickOutside);
     }
@@ -533,7 +535,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
-  }, [openDropdownPill]);
+  }, [isFilterMenuOpen]);
 
   // AI Traffic Analysis State
   const [analyzingTraffic, setAnalyzingTraffic] = useState(false);
@@ -2032,6 +2034,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       renderTownshipHubMarkers(map);
 
       mapInstanceRef.current = map;
+      
+      // Ensure Leaflet resizes correctly after mounting
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 100);
 
       // Disable auto-follow when user manually drags or pans map
       map.on('dragstart', () => {
@@ -2250,7 +2257,70 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
   }, []);
 
-  const filteredPlaces = livePlaces.filter((p) => {
+  const handleAddReview = (placeId: string) => {
+    if (!newReviewComment.trim()) return;
+    const review: PlaceReview = {
+      id: `rev_${Date.now()}`,
+      placeId,
+      authorName: newReviewAuthor.trim() || 'Highland Visitor',
+      rating: newReviewRating,
+      comment: newReviewComment.trim(),
+      timestamp: new Date().toLocaleDateString()
+    };
+
+    setLivePlaces(prev => prev.map(p => {
+      if (p.id === placeId) {
+        const existingReviews = p.reviews || [];
+        const savedStorage = localStorage.getItem(`camgo_reviews_${placeId}`);
+        const parsedStorage = savedStorage ? JSON.parse(savedStorage) : existingReviews;
+        const updatedReviews = [review, ...parsedStorage];
+        const newRating = Number((updatedReviews.reduce((acc, r) => acc + r.rating, 0) / updatedReviews.length).toFixed(1));
+        const updated = {
+          ...p,
+          reviews: updatedReviews,
+          reviewsCount: updatedReviews.length,
+          rating: newRating
+        };
+        localStorage.setItem(`camgo_reviews_${placeId}`, JSON.stringify(updatedReviews));
+        return updated;
+      }
+      return p;
+    }));
+
+    if (selectedPlace && selectedPlace.id === placeId) {
+      const existingReviews = selectedPlace.reviews || [];
+      const savedStorage = localStorage.getItem(`camgo_reviews_${placeId}`);
+      const parsedStorage = savedStorage ? JSON.parse(savedStorage) : existingReviews;
+      const updatedReviews = [review, ...parsedStorage];
+      const newRating = Number((updatedReviews.reduce((acc, r) => acc + r.rating, 0) / updatedReviews.length).toFixed(1));
+      onSelectPlace({
+        ...selectedPlace,
+        reviews: updatedReviews,
+        reviewsCount: updatedReviews.length,
+        rating: newRating
+      });
+    }
+
+    setNewReviewComment('');
+    setNewReviewAuthor('');
+    setNewReviewRating(5);
+  };
+
+  const filteredPlaces = livePlaces.map(p => {
+    // Load reviews from localStorage if available
+    const saved = localStorage.getItem(`camgo_reviews_${p.id}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return { ...p, reviews: parsed };
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    return p;
+  }).filter((p) => {
     const matchCat =
       activeCategory === 'all' ||
       p.category === activeCategory ||
@@ -2262,7 +2332,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         (p.category === 'services_utilities' || p.category === 'local_services'));
     const matchTown = activeTownship === 'all' || p.township === activeTownship;
     const matchSub = activeSubCategory === 'all' || p.subCategory === activeSubCategory;
-    return matchCat && matchTown && matchSub;
+    const matchRadius = proximityRadius === 'all' || !userGpsCoords ? true : (() => {
+      const lat = parseCoord(p.coordinates?.lat);
+      const lng = parseCoord(p.coordinates?.lng);
+      if (lat === 0 || lng === 0) return false;
+      const dist = calculateDistanceKm(userGpsCoords.lat, userGpsCoords.lng, lat, lng);
+      return dist <= Number(proximityRadius);
+    })();
+    return matchCat && matchTown && matchSub && matchRadius;
   });
 
   // Dynamic counts for category and township dropdown badges
@@ -2279,12 +2356,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const handleSelectCategory = (cat: MainCategory | 'all', subCat: string | 'all' = 'all') => {
     setActiveCategory(cat);
     setActiveSubCategory(subCat);
-    setOpenDropdownPill(null);
   };
 
   const handleSelectTownship = (town: Township | 'all') => {
     setActiveTownship(town);
-    setOpenDropdownPill(null);
     if (town !== 'all' && TOWNSHIP_COORDS[town] && mapInstanceRef.current) {
       mapInstanceRef.current.flyTo([TOWNSHIP_COORDS[town].lat, TOWNSHIP_COORDS[town].lng], 14, {
         duration: 1.0,
@@ -2296,7 +2371,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     setActiveCategory('all');
     setActiveTownship('all');
     setActiveSubCategory('all');
-    setOpenDropdownPill(null);
   };
 
   // Helper to parse coordinate safely (number, string, comma decimal)
@@ -2492,6 +2566,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
 
     renderMarkers();
+    map.invalidateSize();
     map.on('zoomend', renderMarkers);
 
     return () => {
@@ -2712,6 +2787,109 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 </button>
               </div>
 
+              {/* Filter Menu Hamburger Dropdown */}
+              <div className="relative" ref={filterMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
+                  className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    isFilterMenuOpen || proximityRadius !== 'all' || activeTownship !== 'all'
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-stone-800 hover:bg-stone-700 text-stone-200'
+                  }`}
+                  title="Filter Menu"
+                >
+                  <Layers className="w-4 h-4 text-emerald-400" />
+                  <span className="text-[10px] font-bold hidden sm:inline">Filters</span>
+                </button>
+
+                {isFilterMenuOpen && (
+                  <div className="absolute right-0 top-11 z-50 w-64 max-h-[70vh] overflow-y-auto rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 shadow-2xl p-3 space-y-4 text-stone-100 animate-in fade-in duration-200">
+                    {/* Proximity Radius */}
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Proximity Radius</div>
+                      {(['all', '5', '10', '25'] as const).map((rad) => (
+                        <button
+                          key={rad}
+                          type="button"
+                          onClick={() => {
+                            if (rad !== 'all' && !userGpsCoords) handleLocateMe();
+                            setProximityRadius(rad);
+                          }}
+                          className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-between ${
+                            proximityRadius === rad ? 'bg-emerald-600 text-white' : 'hover:bg-stone-800 text-stone-300'
+                          }`}
+                        >
+                          <span>{rad === 'all' ? 'All Range' : `Within ${rad} km`}</span>
+                          {proximityRadius === rad && <span className="text-[10px]">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Category Filter */}
+                    <div className="space-y-1 pt-2 border-t border-white/10">
+                      <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Categories</div>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'travel_tourism' || activeCategory === 'attraction'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🌴</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('accommodation', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'accommodation'
+                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏨</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'services_utilities' || activeCategory === 'local_services'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🔧</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('shopping', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'shopping' || activeCategory === 'business'
+                              ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🛍️</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
+                          </div>
+                        </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Locate Me Button */}
               <button
                 type="button"
@@ -2791,987 +2969,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 )}
               </div>
             )}
-
-            {/* Mobile View: Google Maps Style Horizontally Scrollable Category Pills Bar with Custom Glassmorphism Dropdown */}
-            <div ref={pillDropdownRef} className="pointer-events-auto block sm:hidden relative">
-              {/* Horizontally Scrollable Pills Bar */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none touch-pan-x -mx-1 px-1">
-                {/* 1. Categories Pill Dropdown */}
-                <button
-                  type="button"
-                  onClick={() => setOpenDropdownPill(openDropdownPill === 'categories' ? null : 'categories')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
-                    openDropdownPill === 'categories' || (activeCategory !== 'all' && activeCategory !== 'food' && activeCategory !== 'travel_tourism' && activeCategory !== 'accommodation' && activeCategory !== 'services_utilities')
-                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-900/40 ring-1 ring-emerald-400/50'
-                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
-                  }`}
-                >
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="whitespace-nowrap">
-                    {activeCategory === 'all'
-                      ? (language === 'bm' ? 'Kategori' : 'Categories')
-                      : activeCategory === 'shopping' || activeCategory === 'business'
-                      ? (language === 'bm' ? 'Membeli-belah' : 'Shopping')
-                      : activeCategory === 'masjid_surau'
-                      ? 'Masjid/Surau'
-                      : activeCategory}
-                  </span>
-                  <ChevronDown
-                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
-                      openDropdownPill === 'categories' ? 'rotate-180 text-white' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* 2. Food Pill Dropdown */}
-                <button
-                  type="button"
-                  onClick={() => setOpenDropdownPill(openDropdownPill === 'food' ? null : 'food')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
-                    openDropdownPill === 'food' || activeCategory === 'food'
-                      ? 'bg-amber-600 text-white border-amber-400 shadow-amber-900/40 ring-1 ring-amber-400/50'
-                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
-                  }`}
-                >
-                  <Utensils className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="whitespace-nowrap">{language === 'bm' ? 'Makanan' : 'Food'}</span>
-                  <ChevronDown
-                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
-                      openDropdownPill === 'food' ? 'rotate-180 text-white' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* 3. Tourism Pill Dropdown */}
-                <button
-                  type="button"
-                  onClick={() => setOpenDropdownPill(openDropdownPill === 'tourism' ? null : 'tourism')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
-                    openDropdownPill === 'tourism' || activeCategory === 'travel_tourism' || activeCategory === 'attraction'
-                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-900/40 ring-1 ring-emerald-400/50'
-                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
-                  }`}
-                >
-                  <Palmtree className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="whitespace-nowrap">{language === 'bm' ? 'Pelancongan' : 'Tourism'}</span>
-                  <ChevronDown
-                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
-                      openDropdownPill === 'tourism' ? 'rotate-180 text-white' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* 4. Stays Pill Dropdown */}
-                <button
-                  type="button"
-                  onClick={() => setOpenDropdownPill(openDropdownPill === 'stays' ? null : 'stays')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
-                    openDropdownPill === 'stays' || activeCategory === 'accommodation'
-                      ? 'bg-teal-600 text-white border-teal-400 shadow-teal-900/40 ring-1 ring-teal-400/50'
-                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
-                  }`}
-                >
-                  <Hotel className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                  <span className="whitespace-nowrap">{language === 'bm' ? 'Penginapan' : 'Stays'}</span>
-                  <ChevronDown
-                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
-                      openDropdownPill === 'stays' ? 'rotate-180 text-white' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* 5. Services Pill Dropdown */}
-                <button
-                  type="button"
-                  onClick={() => setOpenDropdownPill(openDropdownPill === 'services' ? null : 'services')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
-                    openDropdownPill === 'services' || activeCategory === 'services_utilities' || activeCategory === 'local_services'
-                      ? 'bg-blue-600 text-white border-blue-400 shadow-blue-900/40 ring-1 ring-blue-400/50'
-                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
-                  }`}
-                >
-                  <Wrench className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                  <span className="whitespace-nowrap">{language === 'bm' ? 'Servis' : 'Services'}</span>
-                  <ChevronDown
-                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
-                      openDropdownPill === 'services' ? 'rotate-180 text-white' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* 6. Townships Pill Dropdown */}
-                <button
-                  type="button"
-                  onClick={() => setOpenDropdownPill(openDropdownPill === 'townships' ? null : 'townships')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 border ${
-                    openDropdownPill === 'townships' || activeTownship !== 'all'
-                      ? 'bg-purple-600 text-white border-purple-400 shadow-purple-900/40 ring-1 ring-purple-400/50'
-                      : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/15'
-                  }`}
-                >
-                  <Navigation2 className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span className="whitespace-nowrap">{activeTownship === 'all' ? (language === 'bm' ? 'Pekan' : 'Townships') : activeTownship}</span>
-                  <ChevronDown
-                    className={`w-3 h-3 text-stone-300 shrink-0 transition-transform duration-200 ${
-                      openDropdownPill === 'townships' ? 'rotate-180 text-white' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* 7. Weather Pill */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById('weather-forecast');
-                    if (el) el.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-sky-950/80 border border-sky-500/30 text-sky-300 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
-                >
-                  <CloudSun className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <span className="whitespace-nowrap">Weather</span>
-                </button>
-
-                {/* 8. Jobs Pill */}
-                <button
-                  type="button"
-                  onClick={() => window.dispatchEvent(new CustomEvent('open-classifieds-modal'))}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-amber-950/80 border border-amber-500/30 text-amber-300 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
-                >
-                  <Briefcase className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="whitespace-nowrap">Jobs</span>
-                </button>
-
-                {/* 9. Classifieds Pill */}
-                <button
-                  type="button"
-                  onClick={() => window.dispatchEvent(new CustomEvent('open-classifieds-modal'))}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
-                >
-                  <Megaphone className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  <span className="whitespace-nowrap">Classifieds</span>
-                </button>
-
-                {/* 10. Reset Pill */}
-                {(activeCategory !== 'all' || activeTownship !== 'all' || activeSubCategory !== 'all') && (
-                  <button
-                    type="button"
-                    onClick={handleResetFilters}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-red-950/80 hover:bg-red-900 border border-red-500/40 text-red-200 text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
-                    title={language === 'bm' ? 'Set Semula Penapis' : 'Reset All Filters'}
-                  >
-                    <RotateCcw className="w-3 h-3 text-red-300 shrink-0" />
-                    <span className="whitespace-nowrap">Reset</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Custom Glassmorphism Dropdown Selector Panel */}
-              {openDropdownPill && (
-                <div className="mt-2 w-full rounded-2xl bg-stone-950/95 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-3 text-stone-100 max-h-[55vh] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200 z-50">
-                  {/* Dropdown Header */}
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">
-                        {openDropdownPill === 'categories' && '📍'}
-                        {openDropdownPill === 'food' && '🍽️'}
-                        {openDropdownPill === 'tourism' && '🌴'}
-                        {openDropdownPill === 'stays' && '🏨'}
-                        {openDropdownPill === 'services' && '🔧'}
-                        {openDropdownPill === 'townships' && '🏘️'}
-                      </span>
-                      <div>
-                        <div className="font-extrabold text-xs text-white">
-                          {openDropdownPill === 'categories' && (language === 'bm' ? 'Pilih Kategori Utama' : 'Main Categories')}
-                          {openDropdownPill === 'food' && (language === 'bm' ? 'Pilihan Makanan & Selera' : 'Food & Dining Highland')}
-                          {openDropdownPill === 'tourism' && (language === 'bm' ? 'Tarikan & Alam Semula Jadi' : 'Attractions & Nature')}
-                          {openDropdownPill === 'stays' && (language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations')}
-                          {openDropdownPill === 'services' && (language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities')}
-                          {openDropdownPill === 'townships' && (language === 'bm' ? 'Pilih Pekan Cameron Highlands' : 'Cameron Highlands Townships')}
-                        </div>
-                        <div className="text-[10px] text-stone-400">
-                          {openDropdownPill === 'townships'
-                            ? (language === 'bm' ? 'Teroka 9 mukim dan pusat pekan' : 'Filter by 9 highland town hubs')
-                            : `${placeCounts['all']} ${language === 'bm' ? 'lokasi berdaftar' : 'total locations'}`}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setOpenDropdownPill(null)}
-                      className="p-1.5 rounded-lg bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Dropdown Content Options */}
-                  <div className="space-y-1.5">
-                    {/* --- CATEGORIES PANEL --- */}
-                    {openDropdownPill === 'categories' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('all', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'all'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">📍</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Kategori' : 'All Categories'}</div>
-                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Papar semua tempat menarik & perkhidmatan' : 'View all places & services'}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {placeCounts['all']}
-                            </span>
-                            {activeCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('food', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'food'
-                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🍽️</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Makanan & Kafe' : 'Food & Dining'}</div>
-                              <div className="text-[10px] text-stone-400">Steamboat, Highland Scones, Halal & Cafes</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {placeCounts['food'] || 0}
-                            </span>
-                            {activeCategory === 'food' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('travel_tourism', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'travel_tourism' || activeCategory === 'attraction'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🌴</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
-                              <div className="text-[10px] text-stone-400">Ladang Teh, Strawberi & Hutan Lumut</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {(placeCounts['travel_tourism'] || 0) + (placeCounts['attraction'] || 0)}
-                            </span>
-                            {(activeCategory === 'travel_tourism' || activeCategory === 'attraction') && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('accommodation', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'accommodation'
-                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏨</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
-                              <div className="text-[10px] text-stone-400">Resort, Homestay, Chalet & Glamping</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {placeCounts['accommodation'] || 0}
-                            </span>
-                            {activeCategory === 'accommodation' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('services_utilities', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'services_utilities' || activeCategory === 'local_services'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🔧</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
-                              <div className="text-[10px] text-stone-400">Bengkel Kereta, Stesen Minyak, Klinik & ATM</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {(placeCounts['services_utilities'] || 0) + (placeCounts['local_services'] || 0)}
-                            </span>
-                            {(activeCategory === 'services_utilities' || activeCategory === 'local_services') && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('shopping', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'shopping' || activeCategory === 'business'
-                              ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🛍️</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
-                              <div className="text-[10px] text-stone-400">Sayur Segar, Cenderamata & Hasil Tanah Tinggi</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {(placeCounts['shopping'] || 0) + (placeCounts['business'] || 0)}
-                            </span>
-                            {(activeCategory === 'shopping' || activeCategory === 'business') && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-                      </>
-                    )}
-
-                    {/* --- FOOD PANEL --- */}
-                    {openDropdownPill === 'food' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('food', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'food' && activeSubCategory === 'all'
-                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🍽️</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Pilihan Makanan' : 'All Food & Dining'}</div>
-                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Lihat semua restoran & gerai' : 'Explore all eateries'}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {placeCounts['food'] || 0}
-                            </span>
-                            {activeCategory === 'food' && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('food', 'steamboats')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'food' && activeSubCategory === 'steamboats'
-                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🍲</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Steamboat & Sup Panas' : 'Steamboat & Hotpot'}</div>
-                              <div className="text-[10px] text-stone-400">Arang Tradisi, Tomyam & Halal Highland</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeCategory === 'food' && activeSubCategory === 'steamboats' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('food', 'cafes')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'food' && activeSubCategory === 'cafes'
-                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">☕</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Kafe & High Tea Scone' : 'Highland Cafes & Bakeries'}</div>
-                              <div className="text-[10px] text-stone-400">Kopi artisan, kek strawberi & teh herba</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeCategory === 'food' && activeSubCategory === 'cafes' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('food', 'night_markets_street')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'food' && activeSubCategory === 'night_markets_street'
-                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🍢</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Pasar Malam & Street Food' : 'Night Market & Street Food'}</div>
-                              <div className="text-[10px] text-stone-400">Jagung mutiara, ubi bakar & sosej</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeCategory === 'food' && activeSubCategory === 'night_markets_street' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('food', 'dining')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'food' && activeSubCategory === 'dining'
-                              ? 'bg-amber-600/30 border-amber-400/80 text-amber-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🍛</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Restoran Tempatan & Halal' : 'Local & Halal Dining'}</div>
-                              <div className="text-[10px] text-stone-400">Masakan Melayu, Mamak & Masakan Cina Halal</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeCategory === 'food' && activeSubCategory === 'dining' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-                      </>
-                    )}
-
-                    {/* --- TOURISM PANEL --- */}
-                    {openDropdownPill === 'tourism' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('travel_tourism', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            (activeCategory === 'travel_tourism' || activeCategory === 'attraction') && activeSubCategory === 'all'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🌴</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Tarikan Pelancongan' : 'All Attractions & Sights'}</div>
-                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Pemandangan, ladang & jejak denai' : 'Explore all tourist destinations'}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {(placeCounts['travel_tourism'] || 0) + (placeCounts['attraction'] || 0)}
-                            </span>
-                            {(activeCategory === 'travel_tourism' || activeCategory === 'attraction') && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('travel_tourism', 'agritourism_plantations')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'agritourism_plantations'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🍵</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Ladang & Kilang Teh Boh' : 'Tea Plantations & Valleys'}</div>
-                              <div className="text-[10px] text-stone-400">Sungai Palas, Habu & Bharat Tea</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'agritourism_plantations' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('travel_tourism', 'agrotourism_farms')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'agrotourism_farms'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🍓</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Ladang Strawberi & Agro' : 'Strawberry & Agro Farms'}</div>
-                              <div className="text-[10px] text-stone-400">Petik sendiri strawberi & taman bunga kaktus</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'agrotourism_farms' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('travel_tourism', 'outdoor_adventure')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'outdoor_adventure'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🌲</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Hutan Lumut & Denai Mendaki' : 'Mossy Forest & Hiking'}</div>
-                              <div className="text-[10px] text-stone-400">Gunung Brinchang, Gunung Irau & Trail 1-10</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'outdoor_adventure' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('travel_tourism', 'attractions_sightseeing')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'attractions_sightseeing'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏛️</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Tempat Menarik & Bersejarah' : 'Sightseeing & Viewpoints'}</div>
-                              <div className="text-[10px] text-stone-400">Air Terjun Robinson, Time Tunnel & Lavender Park</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'attractions_sightseeing' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-                      </>
-                    )}
-
-                    {/* --- STAYS PANEL --- */}
-                    {openDropdownPill === 'stays' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('accommodation', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'accommodation' && activeSubCategory === 'all'
-                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏨</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Penginapan' : 'All Accommodations'}</div>
-                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Hotel, homestay, resort & chalet' : 'Browse all stays'}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {placeCounts['accommodation'] || 0}
-                            </span>
-                            {activeCategory === 'accommodation' && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('accommodation', 'hotels_resorts')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'hotels_resorts'
-                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏰</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Hotel Warisan & Resort' : 'Hotels & Resorts'}</div>
-                              <div className="text-[10px] text-stone-400">Cameron Highlands Resort, Strawberry Park & Zenith</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'hotels_resorts' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('accommodation', 'homestay')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'homestay'
-                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏡</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Chalet & Homestay Kampung' : 'Chalets & Homestays'}</div>
-                              <div className="text-[10px] text-stone-400">Mesra keluarga, dapur memasak & balkoni sejuk</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'homestay' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('accommodation', 'camping_glamping')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'camping_glamping'
-                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">⛺</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Glamping & Perkhemahan' : 'Highland Glamping & Camping'}</div>
-                              <div className="text-[10px] text-stone-400">Pengalaman tidur di bawah bintang & udara sejuk</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'camping_glamping' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-                      </>
-                    )}
-
-                    {/* --- SERVICES PANEL --- */}
-                    {openDropdownPill === 'services' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('services_utilities', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            (activeCategory === 'services_utilities' || activeCategory === 'local_services') && activeSubCategory === 'all'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🔧</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Perkhidmatan' : 'All Services & Utilities'}</div>
-                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Bengkel, minyak, kecemasan & bank' : 'Essential highland amenities'}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {(placeCounts['services_utilities'] || 0) + (placeCounts['local_services'] || 0)}
-                            </span>
-                            {(activeCategory === 'services_utilities' || activeCategory === 'local_services') && activeSubCategory === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('services_utilities', 'auto_repair_roadside')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'auto_repair_roadside'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🚗</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Bengkel & Towing 4WD Bukit' : 'Mechanics & Mountain Towing'}</div>
-                              <div className="text-[10px] text-stone-400">Pembaikan brek panas, tayar bocor & bantuan kecemasan</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'auto_repair_roadside' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('services_utilities', 'fuel_ev_charging')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'fuel_ev_charging'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">⛽</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Stesen Minyak & Pengecas EV' : 'Petrol Stations & EV Chargers'}</div>
-                              <div className="text-[10px] text-stone-400">Petronas Tanah Rata, Shell Ringlet & Brinchang</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'fuel_ev_charging' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('services_utilities', 'health_wellness')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'health_wellness'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏥</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Klinik, Hospital & Farmasi' : 'Clinics, Hospital & Pharmacy'}</div>
-                              <div className="text-[10px] text-stone-400">Hospital Sultanah Hajjah Kalsom Tanah Rata</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'health_wellness' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('services_utilities', 'banking_financial')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeSubCategory === 'banking_financial'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏧</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Mesin ATM & Cawangan Bank' : 'ATMs & Banking Hubs'}</div>
-                              <div className="text-[10px] text-stone-400">Maybank, CIMB, Agrobank & BSN</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {activeSubCategory === 'banking_financial' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-                      </>
-                    )}
-
-                    {/* --- TOWNSHIPS PANEL --- */}
-                    {openDropdownPill === 'townships' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectTownship('all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeTownship === 'all'
-                              ? 'bg-purple-600/30 border-purple-400/80 text-purple-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🗺️</span>
-                            <div>
-                              <div className="text-xs font-bold">{language === 'bm' ? 'Semua Pekan (Cameron Highlands)' : 'All Cameron Highlands'}</div>
-                              <div className="text-[10px] text-stone-400">{language === 'bm' ? 'Papar keseluruhan koridor tanah tinggi' : 'Show full highland corridor'}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                              {placeCounts['all']}
-                            </span>
-                            {activeTownship === 'all' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                          </div>
-                        </button>
-
-                        {(
-                          [
-                            { name: 'Tanah Rata', desc: 'Pusat Pentadbiran, Bas Terminal & Kafe', icon: '🏛️' },
-                            { name: 'Brinchang', desc: 'Pasar Malam, Hotel & Restoran Steamboat', icon: '🌃' },
-                            { name: 'Kea Farm', desc: 'Pasar Sayur Tertinggi & Ladang Bunga', icon: '🥬' },
-                            { name: 'Ringlet', desc: 'Pintu Masuk Selatan & Tasik Habu', icon: '🌊' },
-                            { name: 'Kampung Raja', desc: 'Pintu Masuk Simpang Pulai & Hab Logistik', icon: '🚛' },
-                            { name: 'Tringkap', desc: 'Ladang Lebah, Bunga & Kampung Tradisi', icon: '🐝' },
-                            { name: 'Kuala Terla', desc: 'Lembah Teh Hijau & Kebun Sayur Organik', icon: '🍵' },
-                            { name: 'Bertam Valley', desc: 'Lembah Pertanian & Terowong Tapah', icon: '🌾' },
-                            { name: 'Blue Valley', desc: 'Ladang Teh Biru & Sempadan Kelantan', icon: '🏔️' },
-                          ] as const
-                        ).map((t) => (
-                          <button
-                            key={`town-opt-${t.name}`}
-                            type="button"
-                            onClick={() => handleSelectTownship(t.name as Township)}
-                            className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                              activeTownship === t.name
-                                ? 'bg-purple-600/30 border-purple-400/80 text-purple-200 font-bold'
-                                : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <span className="text-base">{t.icon}</span>
-                              <div>
-                                <div className="text-xs font-bold">{t.name}</div>
-                                <div className="text-[10px] text-stone-400">{t.desc}</div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              {placeCounts[t.name] ? (
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300">
-                                  {placeCounts[t.name]}
-                                </span>
-                              ) : null}
-                              {activeTownship === t.name && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                            </div>
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Desktop View: Quick-Action Category Filter Chips Bar (hidden on mobile, visible on sm and up) */}
-            <div className="pointer-events-auto hidden sm:flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none">
-              <button
-                type="button"
-                onClick={() => {
-                  const el = document.getElementById('weather-forecast');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-sky-950/80 border border-sky-500/30 hover:border-sky-400 text-sky-300 hover:text-white text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
-              >
-                <CloudSun className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span>Weather</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('open-classifieds-modal'));
-                }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-amber-950/80 border border-amber-500/30 hover:border-amber-400 text-amber-300 hover:text-white text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
-              >
-                <Briefcase className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Jobs</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCategory(activeCategory === 'services_utilities' ? 'all' : 'services_utilities');
-                }}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
-                  activeCategory === 'services_utilities'
-                    ? 'bg-emerald-600 text-white border-emerald-400'
-                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
-                }`}
-              >
-                <Wrench className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Services</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('open-classifieds-modal'));
-                }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-stone-900/90 hover:bg-indigo-950/80 border border-indigo-500/30 hover:border-indigo-400 text-indigo-300 hover:text-white text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
-              >
-                <Megaphone className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span>Classifieds</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCategory(activeCategory === 'travel_tourism' ? 'all' : 'travel_tourism');
-                }}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
-                  activeCategory === 'travel_tourism'
-                    ? 'bg-emerald-600 text-white border-emerald-400'
-                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
-                }`}
-              >
-                <Palmtree className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Tourism</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCategory(activeCategory === 'food' ? 'all' : 'food');
-                }}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
-                  activeCategory === 'food'
-                    ? 'bg-emerald-600 text-white border-emerald-400'
-                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
-                }`}
-              >
-                <Utensils className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Food</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCategory(activeCategory === 'accommodation' ? 'all' : 'accommodation');
-                }}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
-                  activeCategory === 'accommodation'
-                    ? 'bg-emerald-600 text-white border-emerald-400'
-                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-200 border-white/10'
-                }`}
-              >
-                <Hotel className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                <span>Stays</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCategory('all');
-                  setActiveTownship('all');
-                }}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer active:scale-95 ${
-                  activeCategory === 'all'
-                    ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
-                    : 'bg-stone-900/90 hover:bg-stone-800 text-stone-300 border-white/10'
-                }`}
-              >
-                <RotateCcw className="w-3 h-3 shrink-0" />
-                <span>All</span>
-              </button>
-            </div>
           </div>
         )}
 
@@ -4172,6 +3369,79 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     )}
                   </div>
                 </details>
+
+                {/* Crowdsourced Check-ins & Star Rating Reviews Section */}
+                <div className="bg-stone-950/90 rounded-2xl p-3 border border-emerald-500/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                      <span>⭐</span>
+                      <span>Visitor Check-in & Reviews</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-stone-400">
+                      {selectedPlace.reviews?.length || 0} reviews
+                    </span>
+                  </div>
+
+                  {/* Submit Review Form */}
+                  <div className="space-y-1.5 pt-1 border-t border-white/10">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-stone-300 font-bold">Your Rating:</span>
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setNewReviewRating(star)}
+                            className={`text-sm cursor-pointer ${star <= newReviewRating ? 'text-amber-400' : 'text-stone-600'}`}
+                          >
+                            ★
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Your Name (optional)"
+                      value={newReviewAuthor}
+                      onChange={(e) => setNewReviewAuthor(e.target.value)}
+                      className="w-full bg-stone-900 border border-white/15 rounded-lg px-2.5 py-1 text-xs text-stone-100 placeholder-stone-500 outline-none focus:border-emerald-500"
+                    />
+                    <textarea
+                      placeholder="Leave a review, safety update, or photo check-in note..."
+                      value={newReviewComment}
+                      onChange={(e) => setNewReviewComment(e.target.value)}
+                      rows={2}
+                      className="w-full bg-stone-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 placeholder-stone-500 outline-none focus:border-emerald-500 resize-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAddReview(selectedPlace.id)}
+                      className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-md transition-all flex items-center justify-center gap-1"
+                    >
+                      <span>Post Check-in & Review</span>
+                    </button>
+                  </div>
+
+                  {/* Existing Reviews List */}
+                  {selectedPlace.reviews && selectedPlace.reviews.length > 0 ? (
+                    <div className="space-y-1.5 pt-2 border-t border-white/10 max-h-36 overflow-y-auto [scrollbar-width:thin]">
+                      {selectedPlace.reviews.map((rev) => (
+                        <div key={rev.id} className="p-2 rounded-xl bg-stone-900/90 border border-white/5 space-y-1">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-stone-200">{rev.authorName}</span>
+                            <span className="text-amber-400 font-mono font-bold">★ {rev.rating}</span>
+                          </div>
+                          <p className="text-[11px] text-stone-300 leading-snug">{rev.comment}</p>
+                          <div className="text-[9.5px] text-stone-500 font-mono">{rev.timestamp}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-stone-400 italic text-center py-1">
+                      No check-ins or reviews yet. Be the first to review!
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

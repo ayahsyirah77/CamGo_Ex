@@ -85,6 +85,7 @@ import {
   MotorbikePackage,
 } from '../types';
 import { firebaseService, UserProfile, isMockMotorbikePartner } from '../services/firebase';
+import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
 
 interface VendorDashboardProps {
   isOpen: boolean;
@@ -168,10 +169,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [newBizName, setNewBizName] = useState('');
   const [newBizLogo, setNewBizLogo] = useState('');
   const [newBizTownship, setNewBizTownship] = useState<Township>('Brinchang');
+  const [selectedNewBizSectorId, setSelectedNewBizSectorId] = useState<string>('food_beverage');
   const [newBizCategory, setNewBizCategory] = useState<MainCategory>('food');
   const [newBizSubCategory, setNewBizSubCategory] = useState<string>('fb_restaurants_cafes');
   const [newBizPhone, setNewBizPhone] = useState('+6012');
   const [newBizAddress, setNewBizAddress] = useState('');
+  const [createListingError, setCreateListingError] = useState<string | null>(null);
 
   // Active Sector & Category derived dynamically from activeVendor
   const activeSector: BusinessSector = findBusinessSector(activeVendor?.subCategory || activeVendor?.category);
@@ -521,81 +524,101 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   };
 
   const handleCreateNewVendorListing = async () => {
-    if (!newBizName.trim()) return;
-    const newId = `vendor-${Date.now().toString(36)}`;
-    const newListing: VendorListing = {
-      id: newId,
-      ownerUid: currentUser?.uid || 'admin-ayahsyirah77',
-      ownerEmail: currentUser?.email || 'ayahsyirah77@gmail.com',
-      businessName: newBizName.trim(),
-      ssmNumber: 'SSM-PENDING',
-      verificationStatus: 'verified',
-      isBookingEnabled: true,
-      category: newBizCategory,
-      subCategory: newBizSubCategory as any,
-      township: newBizTownship,
-      address: newBizAddress.trim() || `${newBizTownship}, Cameron Highlands, Pahang`,
-      contactPhone: newBizPhone || '+60 5-491 0000',
-      whatsappNumber: newBizPhone.replace(/[^0-9]/g, '') || '+60124910000',
-      whatsappTemplateMessage: `Hello ${newBizName}! I found your listing on CamGo Cameron Highlands.`,
-      description: `Verified ${newBizTownship} business offering highland experiences.`,
-      operatingHours: { from: '08:30', to: '18:00', isOpen: true },
-      coverImage: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
-      logoUrl: newBizLogo || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=200&q=80',
-      galleryImages: [
-        'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
-      ],
-      coordinates: { lat: 4.49, lng: 101.39 },
-      realTimeStatus: 'open',
-      parkingStatus: 'private_available',
-      roomAvailabilityStatus: 'not_applicable',
-      dietaryTags: ['halal_certified'],
-      tier: 'annual_pro',
-      billingCadence: 'annual',
-      tierExpiresAt: '2027-12-31',
-      isSponsored: true,
-      profileHealthScore: 90,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    await firebaseService.saveVendorListing(newListing);
-
-    // Sync to Motorbike Rental Marketplace if explicitly a bike/scooter operator
-    const newNameLower = (newListing.businessName || '').toLowerCase();
-    const isExplicitBikeVendor =
-      !isMockMotorbikePartner(newListing) && (
-        newNameLower.includes('bike') ||
-        newNameLower.includes('motorcycle') ||
-        newNameLower.includes('scooter') ||
-        newNameLower.includes('sewa motor') ||
-        newNameLower.includes('sewa skuter')
-      );
-
-    if (isExplicitBikeVendor) {
-      const partnerToSync: MotorbikeRentalPartner = {
-        id: newListing.id,
-        businessName: newListing.businessName,
-        township: newListing.township,
-        imageUrl: newListing.coverImage || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
-        operatingStatus: 'open',
-        fleetAvailability: 'high',
-        contactPhone: newListing.contactPhone,
-        whatsappNumber: newListing.whatsappNumber,
-        packages: [],
-      };
-      await firebaseService.saveMotorbikePartner(partnerToSync);
-      setMotorbikePartners(firebaseService.getMotorbikePartners());
+    if (!newBizName.trim()) {
+      setCreateListingError('Please enter a Business / Attraction Name.');
+      return;
     }
+    setCreateListingError(null);
+    setIsSaving(true);
+    try {
+      const newId = `vendor-${Date.now().toString(36)}`;
+      const sector = findBusinessSector(newBizSubCategory);
+      let mainCat: MainCategory = 'services_utilities';
+      if (sector.id === 'food_beverage') mainCat = 'food';
+      else if (sector.id === 'retail_products') mainCat = 'shopping';
+      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
+      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
+      else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
+      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
 
-    setShowAddListingModal(false);
-    setNewBizName('');
-    setNewBizLogo('');
-    setNewBizAddress('');
-    refreshVendorData();
-    setActiveVendor(newListing);
-    setSaveNotification(`Successfully created new business "${newListing.businessName}"!`);
-    setTimeout(() => setSaveNotification(null), 3500);
+      const newListing: VendorListing = {
+        id: newId,
+        ownerUid: currentUser?.uid || 'admin-ayahsyirah77',
+        ownerEmail: currentUser?.email || 'ayahsyirah77@gmail.com',
+        businessName: newBizName.trim(),
+        ssmNumber: 'SSM-PENDING',
+        verificationStatus: 'verified',
+        isBookingEnabled: true,
+        category: mainCat,
+        subCategory: newBizSubCategory as any,
+        township: newBizTownship,
+        address: newBizAddress.trim() || `${newBizTownship}, Cameron Highlands, Pahang`,
+        contactPhone: newBizPhone || '+60 5-491 0000',
+        whatsappNumber: newBizPhone.replace(/[^0-9]/g, '') || '+60124910000',
+        whatsappTemplateMessage: `Hello ${newBizName.trim()}! I found your listing on CamGo Cameron Highlands.`,
+        description: `Verified ${newBizTownship} business offering highland experiences.`,
+        operatingHours: { from: '08:30', to: '18:00', isOpen: true },
+        coverImage: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+        logoUrl: newBizLogo.trim() || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=200&q=80',
+        galleryImages: [
+          'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
+        ],
+        coordinates: { lat: 4.49, lng: 101.39 },
+        realTimeStatus: 'open',
+        parkingStatus: 'private_available',
+        roomAvailabilityStatus: 'not_applicable',
+        dietaryTags: ['halal_certified'],
+        tier: 'annual_pro',
+        billingCadence: 'annual',
+        tierExpiresAt: '2027-12-31',
+        isSponsored: true,
+        profileHealthScore: 90,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await firebaseService.saveVendorListing(newListing);
+
+      // Sync to Motorbike Rental Marketplace if explicitly a bike/scooter operator
+      const newNameLower = (newListing.businessName || '').toLowerCase();
+      const isExplicitBikeVendor =
+        !isMockMotorbikePartner(newListing) && (
+          newNameLower.includes('bike') ||
+          newNameLower.includes('motorcycle') ||
+          newNameLower.includes('scooter') ||
+          newNameLower.includes('sewa motor') ||
+          newNameLower.includes('sewa skuter')
+        );
+
+      if (isExplicitBikeVendor) {
+        const partnerToSync: MotorbikeRentalPartner = {
+          id: newListing.id,
+          businessName: newListing.businessName,
+          township: newListing.township,
+          imageUrl: newListing.coverImage || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
+          operatingStatus: 'open',
+          fleetAvailability: 'high',
+          contactPhone: newListing.contactPhone,
+          whatsappNumber: newListing.whatsappNumber,
+          packages: [],
+        };
+        await firebaseService.saveMotorbikePartner(partnerToSync);
+        setMotorbikePartners(firebaseService.getMotorbikePartners());
+      }
+
+      setShowAddListingModal(false);
+      setNewBizName('');
+      setNewBizLogo('');
+      setNewBizAddress('');
+      refreshVendorData();
+      setActiveVendor(newListing);
+      setSaveNotification(`Successfully created new business "${newListing.businessName}"!`);
+      setTimeout(() => setSaveNotification(null), 3500);
+    } catch (err: any) {
+      setCreateListingError(`Failed to create listing: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleLocalImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1786,6 +1809,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   </div>
                 )}
 
+                {/* Dynamic Business Nature Context-Aware Toggles & Fields (Requirement 5) */}
+                <DynamicBusinessNatureFields
+                  vendor={activeVendor}
+                  onChange={(updated) => setActiveVendor(updated)}
+                />
+
                 {/* Save Button Action */}
                 <div className="pt-3 border-t border-stone-800 flex items-center justify-between">
                   <span className="text-[11px] text-stone-400">
@@ -2799,25 +2828,64 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 </button>
               </div>
 
-              <div className="space-y-3 text-xs">
+              <div className="space-y-3.5 text-xs">
+                {createListingError && (
+                  <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{createListingError}</span>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-stone-300 mb-1">Business Name *</label>
+                  <label className="block text-stone-300 mb-1 font-semibold">Business / Attraction Name *</label>
                   <input
                     type="text"
                     value={newBizName}
-                    onChange={(e) => setNewBizName(e.target.value)}
-                    placeholder="e.g. Cameron Highlands Honey Bee Farm"
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
+                    onChange={(e) => {
+                      setNewBizName(e.target.value);
+                      if (createListingError) setCreateListingError(null);
+                    }}
+                    placeholder="e.g. Cameron Highlands Strawberry & Bee Farm"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-stone-300 mb-1">Township *</label>
+                    <label className="block text-stone-300 mb-1 font-semibold">1. Business Sector *</label>
+                    <select
+                      value={selectedNewBizSectorId}
+                      onChange={(e) => {
+                        const sectorId = e.target.value;
+                        setSelectedNewBizSectorId(sectorId);
+                        const sector = BUSINESS_TAXONOMY.find((s) => s.id === sectorId) || BUSINESS_TAXONOMY[0];
+                        const firstSubCat = sector.categories[0].id;
+                        setNewBizSubCategory(firstSubCat);
+                        let mainCat: MainCategory = 'services_utilities';
+                        if (sector.id === 'food_beverage') mainCat = 'food';
+                        else if (sector.id === 'retail_products') mainCat = 'shopping';
+                        else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
+                        else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
+                        else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
+                        else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
+                        setNewBizCategory(mainCat);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-emerald-400 font-bold text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      {BUSINESS_TAXONOMY.map((sector) => (
+                        <option key={sector.id} value={sector.id}>
+                          {sector.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 mb-1 font-semibold">Township *</label>
                     <select
                       value={newBizTownship}
                       onChange={(e) => setNewBizTownship(e.target.value as Township)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
                     >
                       <option value="Brinchang">Brinchang</option>
                       <option value="Kea Farm">Kea Farm</option>
@@ -2830,27 +2898,27 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       <option value="Blue Valley">Blue Valley</option>
                     </select>
                   </div>
-
                 </div>
 
                 <div>
-                  <label className="block text-stone-300 mb-1 font-semibold">Business Sector &amp; Category Nature *</label>
+                  <label className="block text-stone-300 mb-1 font-semibold">2. Category &amp; Business Nature (Taxonomy Synchronized) *</label>
                   <select
                     value={newBizSubCategory}
                     onChange={(e) => {
                       const selectedSub = e.target.value;
                       setNewBizSubCategory(selectedSub);
                       const sector = findBusinessSector(selectedSub);
+                      setSelectedNewBizSectorId(sector.id);
                       let mainCat: MainCategory = 'services_utilities';
                       if (sector.id === 'food_beverage') mainCat = 'food';
                       else if (sector.id === 'retail_products') mainCat = 'shopping';
                       else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
                       else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-                      else if (sector.id === 'professional_services') mainCat = 'services_utilities';
+                      else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
                       else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
                       setNewBizCategory(mainCat);
                     }}
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-medium"
+                    className="w-full px-3 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-medium"
                   >
                     {BUSINESS_TAXONOMY.map((sector) => (
                       <optgroup key={sector.id} label={sector.name}>
@@ -2863,7 +2931,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     ))}
                   </select>
                   <p className="text-[10px] text-stone-400 mt-1">
-                    Select your specific business type. Forms, catalog items, and booking options dynamically adapt to this choice.
+                    Synchronized with the main platform directory taxonomy. Catalogs and operational controls dynamically adapt to this selection.
                   </p>
                 </div>
 
@@ -2873,7 +2941,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     type="text"
                     value={newBizPhone}
                     onChange={(e) => setNewBizPhone(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono"
                   />
                 </div>
 
@@ -2884,33 +2952,38 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     value={newBizLogo}
                     onChange={(e) => setNewBizLogo(e.target.value)}
                     placeholder="https://example.com/logo.png"
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono"
                   />
                 </div>
+
                 <div>
                   <label className="block text-stone-300 mb-1">Street Address</label>
                   <input
                     type="text"
                     value={newBizAddress}
                     onChange={(e) => setNewBizAddress(e.target.value)}
-                    placeholder="e.g. Batu 40, Tanah Rata, Cameron Highlands"
+                    placeholder="e.g. Main Street, Tanah Rata, Cameron Highlands"
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-stone-800">
+              <div className="flex gap-2 pt-3 border-t border-stone-800">
                 <button
+                  type="button"
                   onClick={() => setShowAddListingModal(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-stone-800 text-xs font-semibold cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
+                  disabled={isSaving}
                   onClick={handleCreateNewVendorListing}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white shadow cursor-pointer hover:bg-emerald-500"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-lg shadow-emerald-950/80 cursor-pointer flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                 >
-                  Create Listing
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  <span>{isSaving ? 'Creating Listing...' : 'Create Listing'}</span>
                 </button>
               </div>
             </div>

@@ -501,6 +501,34 @@ export const BUSINESS_TAXONOMY: BusinessSector[] = [
         defaultImage: 'https://images.unsplash.com/photo-1537633552985-df8429e8048b?auto=format&fit=crop&w=800&q=80',
         sampleItemName: 'BOH Tea Valley Cinematic Pre-Wedding Photoshoot',
         unitLabel: 'Package'
+      },
+      {
+        id: 'services_surprise_delivery',
+        label: 'Surprise Delivery Services (Gift bundles, balloons, flash mob delivery)',
+        description: 'Birthday, anniversary, graduation surprises, romantic hotel deliveries, and corporate gift packages.',
+        rateLabel: 'Package Rate (RM)',
+        specLabel: 'Delivery Slot & Execution Style',
+        featuresLabel: 'Package Inclusions & Add-ons',
+        defaultSpecPlaceholder: 'e.g. Same-Day Delivery / Flash Mob Delivery',
+        defaultFeaturesPlaceholder: 'e.g. Fresh Flower Bouquet, Custom Card, Fairy Lights & Polaroid Photo',
+        defaultAddonPlaceholder: 'e.g. Polaroid Printing RM15, Chocolate Box RM30',
+        defaultImage: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=800&q=80',
+        sampleItemName: 'Highland Romantic Sunset Surprise Delivery Package',
+        unitLabel: 'Package'
+      },
+      {
+        id: 'services_surprise_planner',
+        label: 'Surprise Planners & Event Coordinators (Room makeovers, trunk surprises, proposals)',
+        description: 'Hotel room romantic makeovers, car trunk flower setups, marriage proposal styling, and anniversaries.',
+        rateLabel: 'Setup Fee (RM)',
+        specLabel: 'Styling Tier & Logistics',
+        featuresLabel: 'Setup Inclusions & Teardown',
+        defaultSpecPlaceholder: 'e.g. Premium Styling / Room Makeover',
+        defaultFeaturesPlaceholder: 'e.g. Venue Coordination, Rose Petals, Fairy Lights & Clean-up Included',
+        defaultAddonPlaceholder: 'e.g. Secret Photographer RM250, Musician Violinist RM400',
+        defaultImage: 'https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=800&q=80',
+        sampleItemName: 'Hilltop Proposal & Luxury Hotel Room Makeover Package',
+        unitLabel: 'Event / Setup'
       }
     ]
   },
@@ -516,6 +544,20 @@ export const BUSINESS_TAXONOMY: BusinessSector[] = [
     itemNoun: 'Ticket / Tour Package',
     addItemLabel: 'Add Ticket / Tour Package',
     categories: [
+      {
+        id: 'agrotourism_farms',
+        label: 'Agritourism, Strawberry Farms & Ranches (Self-picking, harvest, farm tours)',
+        description: 'Strawberry picking beds, hydroponic lettuce tours, sheep petting farms, and organic produce harvesting.',
+        rateLabel: 'Pass / Harvest Rate (RM)',
+        specLabel: 'Picking Session / Basket Weight',
+        featuresLabel: 'Farm Inclusions & Services',
+        defaultSpecPlaceholder: 'e.g. 500g Self-Pick Basket / Guided Farm Tour',
+        defaultFeaturesPlaceholder: 'e.g. Organic pesticide-free bed access, On-farm delivery available',
+        defaultAddonPlaceholder: 'e.g. Fresh Strawberry Ice Cream Scoop RM8',
+        defaultImage: 'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=800&q=80',
+        sampleItemName: 'DIY Organic Strawberry Self-Picking & Ranch Pass',
+        unitLabel: 'Pass / Kg'
+      },
       {
         id: 'tourism_tours_packages',
         label: 'Tour & Activity Packages (Guided excursions, adventure trips, river rafting)',

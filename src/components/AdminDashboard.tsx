@@ -28,6 +28,8 @@ import { firebaseService, UserProfile } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
 import { formatTimeTo12Hour } from '../utils/highlandLogic';
 import { CamLogo } from './CamLogo';
+import { BUSINESS_TAXONOMY, findBusinessSector } from '../data/businessTaxonomy';
+import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
 
 import {
   ShieldCheck,
@@ -67,6 +69,7 @@ import {
   EyeOff,
   Car,
   Zap,
+  Search,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -174,6 +177,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     firebaseService.getVendorListings()
   );
   const [vendorFilter, setVendorFilter] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
+  const [adminSearchVendorQuery, setAdminSearchVendorQuery] = useState('');
+  const [selectedVendorForAdmin, setSelectedVendorForAdmin] = useState<VendorListing | null>(null);
+  const [isSavingAdminVendor, setIsSavingAdminVendor] = useState(false);
+
+  const handleSaveSelectedAdminVendor = async (vendorToSave: VendorListing) => {
+    setIsSavingAdminVendor(true);
+    try {
+      const updated = {
+        ...vendorToSave,
+        updatedAt: new Date().toISOString(),
+      };
+      await firebaseService.saveVendorListing(updated);
+      const newListings = firebaseService.getVendorListings();
+      setVendorListingsState(newListings);
+      setSelectedVendorForAdmin(newListings.find(v => v.id === vendorToSave.id) || updated);
+      addActivity(`Admin updated vendor details & adjustments for "${updated.businessName}"`);
+    } catch (err: any) {
+      console.error('Error saving admin vendor adjustments:', err);
+    } finally {
+      setIsSavingAdminVendor(false);
+    }
+  };
 
   useEffect(() => {
     const handleListingsUpdate = (e: any) => {
@@ -1924,6 +1949,312 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Admin Portal: Centralized Vendor Management Control Panel (Requirement 2) */}
+          <div className="p-5 rounded-3xl bg-stone-900/90 border border-emerald-500/40 space-y-5 shadow-2xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3">
+              <div>
+                <h4 className="text-base font-black text-white flex items-center gap-2 font-heading">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  <span>Admin Portal: Centralized Vendor Management &amp; Administrative Actions</span>
+                </h4>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Search and select any active, pending, or deactivated vendor to edit business details, adjust custom commission rates, override category taxonomy, or suspend access.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                  {vendorListingsState.length} Total Vendors Registered
+                </span>
+              </div>
+            </div>
+
+            {/* Search & Selectable Dropdown Row */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-300 mb-1">
+                  1. Search Vendors (Name, Township, Category, SSM)
+                </label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={adminSearchVendorQuery}
+                    onChange={(e) => setAdminSearchVendorQuery(e.target.value)}
+                    placeholder="Search active, pending, or deactivated vendors..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-300 mb-1">
+                  2. Select Registered Vendor to Manage
+                </label>
+                <select
+                  value={selectedVendorForAdmin?.id || ''}
+                  onChange={(e) => {
+                    const sel = vendorListingsState.find((v) => v.id === e.target.value) || null;
+                    setSelectedVendorForAdmin(sel);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs font-bold text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="">-- Choose Vendor from Dropdown ({vendorListingsState.length} available) --</option>
+                  {vendorListingsState
+                    .filter((v) => {
+                      if (!adminSearchVendorQuery.trim()) return true;
+                      const q = adminSearchVendorQuery.toLowerCase();
+                      return (
+                        v.businessName.toLowerCase().includes(q) ||
+                        v.township.toLowerCase().includes(q) ||
+                        v.category.toLowerCase().includes(q) ||
+                        (v.ssmNumber && v.ssmNumber.toLowerCase().includes(q))
+                      );
+                    })
+                    .map((vendor) => (
+                      <option key={vendor.id} value={vendor.id}>
+                        [{vendor.verificationStatus.toUpperCase()}] {vendor.businessName} ({vendor.township} • {vendor.category})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Selected Vendor Management Panel */}
+            {selectedVendorForAdmin ? (
+              <div className="p-4 sm:p-5 rounded-2xl bg-stone-950/90 border border-stone-800 space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h5 className="text-sm font-bold text-white">{selectedVendorForAdmin.businessName}</h5>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            selectedVendorForAdmin.verificationStatus === 'verified'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : selectedVendorForAdmin.verificationStatus === 'pending'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          }`}
+                        >
+                          {selectedVendorForAdmin.verificationStatus}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-stone-400">
+                        Owner: {selectedVendorForAdmin.ownerEmail} • ID: {selectedVendorForAdmin.id}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isSavingAdminVendor}
+                      onClick={() => handleSaveSelectedAdminVendor(selectedVendorForAdmin)}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer transition-all disabled:opacity-50"
+                    >
+                      {isSavingAdminVendor ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      <span>Save Vendor Changes</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isDeactivated = selectedVendorForAdmin.verificationStatus === 'rejected';
+                        const newStatus = isDeactivated ? 'verified' : 'rejected';
+                        const updated: VendorListing = {
+                          ...selectedVendorForAdmin,
+                          verificationStatus: newStatus as any,
+                          isBookingEnabled: !isDeactivated,
+                        };
+                        handleSaveSelectedAdminVendor(updated);
+                      }}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        selectedVendorForAdmin.verificationStatus === 'rejected'
+                          ? 'bg-emerald-700 text-white'
+                          : 'bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30'
+                      }`}
+                    >
+                      {selectedVendorForAdmin.verificationStatus === 'rejected' ? 'Re-Activate Account' : 'Suspend / Deactivate'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm(`Permanently delete vendor account "${selectedVendorForAdmin.businessName}" and unpublish all associated listings?`)) {
+                          await handleDeleteVendor(selectedVendorForAdmin.id, selectedVendorForAdmin.businessName);
+                          setSelectedVendorForAdmin(null);
+                        }
+                      }}
+                      className="p-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-500/40 text-rose-300 text-xs font-bold transition-colors cursor-pointer"
+                      title="Permanently remove vendor"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Edit Details: Basic Info, Contact, Tier, Status, Commission */}
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Business Name</label>
+                    <input
+                      type="text"
+                      value={selectedVendorForAdmin.businessName}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, businessName: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">SSM Registration No.</label>
+                    <input
+                      type="text"
+                      value={selectedVendorForAdmin.ssmNumber || ''}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, ssmNumber: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Township</label>
+                    <select
+                      value={selectedVendorForAdmin.township}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, township: e.target.value as Township })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white"
+                    >
+                      {ALL_9_TOWNSHIPS.map((town) => (
+                        <option key={town} value={town}>{town}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Contact Phone</label>
+                    <input
+                      type="text"
+                      value={selectedVendorForAdmin.contactPhone}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, contactPhone: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Direct WhatsApp Number</label>
+                    <input
+                      type="text"
+                      value={selectedVendorForAdmin.whatsappNumber}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, whatsappNumber: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Owner Email</label>
+                    <input
+                      type="email"
+                      value={selectedVendorForAdmin.ownerEmail}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, ownerEmail: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Verification Status</label>
+                    <select
+                      value={selectedVendorForAdmin.verificationStatus}
+                      onChange={(e) =>
+                        setSelectedVendorForAdmin({
+                          ...selectedVendorForAdmin,
+                          verificationStatus: e.target.value as any,
+                          isBookingEnabled: e.target.value === 'verified',
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white font-bold"
+                    >
+                      <option value="verified">Verified Partner (Shield Active)</option>
+                      <option value="pending">Pending Verification</option>
+                      <option value="unverified">Unverified</option>
+                      <option value="rejected">Rejected / Suspended</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Subscription Tier Assignment</label>
+                    <select
+                      value={selectedVendorForAdmin.tier}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, tier: e.target.value as any })}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-amber-300 font-bold"
+                    >
+                      <option value="free_trial">Free Trial Package</option>
+                      <option value="monthly_pro">Pro Monthly Package</option>
+                      <option value="annual_pro">Annual Pro Package (2 Months Free)</option>
+                      <option value="pay_per_feature">Pay-Per-Feature Package</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Custom Commission Rate Override (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="50"
+                      value={selectedVendorForAdmin.commissionRatePercent ?? 10}
+                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, commissionRatePercent: Number(e.target.value) })}
+                      placeholder="Default 10%"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-emerald-400 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Make Adjustments: Category Override */}
+                <div className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 space-y-2">
+                  <label className="block text-xs font-semibold text-stone-300">
+                    Category Mapping &amp; Sector Override (Taxonomy Sync)
+                  </label>
+                  <select
+                    value={selectedVendorForAdmin.subCategory || 'fb_restaurants_cafes'}
+                    onChange={(e) => {
+                      const selectedSub = e.target.value;
+                      const sector = findBusinessSector(selectedSub);
+                      let mainCat: MainCategory = 'services_utilities';
+                      if (sector.id === 'food_beverage') mainCat = 'food';
+                      else if (sector.id === 'retail_products') mainCat = 'shopping';
+                      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
+                      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
+                      else if (sector.id === 'professional_home_services') mainCat = 'services_utilities';
+                      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
+                      setSelectedVendorForAdmin({ ...selectedVendorForAdmin, category: mainCat, subCategory: selectedSub as any });
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs text-white cursor-pointer"
+                  >
+                    {BUSINESS_TAXONOMY.map((sector) => (
+                      <optgroup key={sector.id} label={sector.name}>
+                        {sector.categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Dynamic Context-Aware Toggles for Selected Vendor */}
+                <DynamicBusinessNatureFields
+                  vendor={selectedVendorForAdmin}
+                  onChange={(updated) => setSelectedVendorForAdmin(updated)}
+                />
+              </div>
+            ) : (
+              <div className="p-6 text-center text-stone-500 italic rounded-2xl bg-stone-950/60 border border-stone-800 text-xs">
+                Select any vendor from the dropdown above to inspect, edit details, adjust commission, or suspend account.
+              </div>
+            )}
           </div>
 
           {/* Vendor Onboarding & SSM Business Verification Queue */}

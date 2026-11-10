@@ -82,7 +82,43 @@ export type SubCategory =
   | 'masjid_surau'
   | 'jumaat_masjid'
   | 'other_surau'
-  | 'recreation_leisure';
+  | 'recreation_leisure'
+  // Business Taxonomy Subcategories
+  | 'fb_restaurants_cafes'
+  | 'fb_fast_food'
+  | 'fb_bakeries'
+  | 'fb_cloud_kitchens'
+  | 'fb_food_trucks'
+  | 'fb_beverage_boba'
+  | 'fb_catering'
+  | 'retail_fashion'
+  | 'retail_electronics'
+  | 'retail_home_furniture'
+  | 'retail_groceries_produce'
+  | 'retail_beauty_skincare'
+  | 'retail_books_stationery'
+  | 'retail_auto_parts'
+  | 'realestate_residential'
+  | 'realestate_vacation_homestay'
+  | 'realestate_commercial'
+  | 'realestate_agritourism_farm'
+  | 'rental_car_van'
+  | 'rental_motorcycle_scooter'
+  | 'rental_powersports_marine'
+  | 'rental_heavy_machinery'
+  | 'rental_photo_audio'
+  | 'services_home_carpentry'
+  | 'services_cleaning_pest'
+  | 'services_auto_repair'
+  | 'services_it_software'
+  | 'services_consulting'
+  | 'services_photo_events'
+  | 'services_surprise_delivery'
+  | 'services_surprise_planner'
+  | 'tourism_tours_packages'
+  | 'tourism_ticketing_attractions'
+  | 'tourism_event_venues'
+  | 'tourism_agritourism_farm';
 
 export type Township =
   | 'Tanah Rata'
@@ -184,6 +220,17 @@ export interface Place {
   totalBays?: number;
   availableBays?: number;
   createdAt?: string;
+  reviews?: PlaceReview[];
+}
+
+export interface PlaceReview {
+  id: string;
+  placeId: string;
+  authorName: string;
+  rating: number;
+  comment: string;
+  photoUrl?: string;
+  timestamp: string;
 }
 
 export interface WeatherForecastDay {
@@ -427,6 +474,80 @@ export type RoomAvailabilityStatus = 'rooms_available' | 'limited_units' | 'full
 export type DietaryTag = 'halal_certified' | 'muslim_owned' | 'pork_free' | 'vegetarian_friendly';
 export type SubscriptionTier = 'free_trial' | 'monthly_pro' | 'annual_pro' | 'pay_per_feature';
 
+export interface AccommodationSpecifics {
+  parkingType?: 'private_available' | 'public_parking' | 'valet' | 'none';
+  roomTypes?: Array<{ id: string; name: string; quantity: number; pricePerNight: number }>;
+  roomAvailabilityStatus?: 'rooms_available' | 'limited_units' | 'fully_booked' | 'not_applicable';
+  breakfastIncluded?: boolean;
+  apartment?: {
+    totalUnits?: number;
+    roomsPerUnit?: number;
+    cookingPermitted?: boolean;
+    facilities?: string[];
+  };
+}
+
+export interface FoodBeverageSpecifics {
+  dietaryCompliance?: ('halal_certified' | 'muslim_owned' | 'pork_free' | 'non_halal' | 'vegetarian_vegan')[];
+  parkingAvailable?: boolean;
+  parkingDetails?: string;
+}
+
+export interface VehicleRentalSpecifics {
+  vehicleTypes?: string[];
+  totalFleetSize?: number;
+  realTimeAvailability?: 'high' | 'medium' | 'low' | 'sold_out';
+  serviceOptions?: {
+    deliveryIncluded?: boolean;
+    selfPickup?: boolean;
+    packagesOffered?: string[];
+  };
+}
+
+export interface AgritourismFarmSpecifics {
+  pickingSeasonActive?: boolean;
+  selfPickingAllowed?: boolean;
+  produceTypes?: string[];
+  onFarmDelivery?: boolean;
+}
+
+export interface SurpriseDeliverySpecifics {
+  packages?: string[];
+  deliveryLogistics?: {
+    fixedTimeSlotDelivery?: boolean;
+    sameDayCutoffTime?: string;
+    executionStyle?: ('flash_mob' | 'singing_telegram' | 'stealth_dropoff' | 'photo_video_included')[];
+  };
+  coverageFleet?: {
+    deliveryRadius?: string;
+    fleetStatus?: 'plenty' | 'moderate' | 'limited' | 'fully_booked';
+  };
+  addOnOptions?: ('custom_message_card' | 'polaroid_printing' | 'fairy_lights' | 'chocolate_addons')[];
+}
+
+export interface SurprisePlannerSpecifics {
+  eventSpecializations?: ('proposals' | 'anniversaries' | 'milestone_birthdays' | 'romantic_dinners' | 'room_makeovers' | 'trunk_surprises')[];
+  packageTiers?: ('basic_setup' | 'premium_styling' | 'luxury_custom')[];
+  setupLogistics?: {
+    venueCoordinationIncluded?: boolean;
+    cleanUpTeardownIncluded?: boolean;
+  };
+  availabilityCapacity?: {
+    maxDailyBookings?: number;
+    bookingSlotsActive?: boolean;
+  };
+  inclusionsCollaborations?: ('private_chef' | 'secret_photographer' | 'musician_bookings')[];
+}
+
+export interface VendorSectorSpecifics {
+  accommodation?: AccommodationSpecifics;
+  foodBeverage?: FoodBeverageSpecifics;
+  vehicleRental?: VehicleRentalSpecifics;
+  agritourismFarm?: AgritourismFarmSpecifics;
+  surpriseDelivery?: SurpriseDeliverySpecifics;
+  surprisePlanner?: SurprisePlannerSpecifics;
+}
+
 export interface VendorListing {
   id: string;
   ownerUid: string;
@@ -471,7 +592,13 @@ export interface VendorListing {
   };
   dietaryTagsEnabled?: boolean;
   dietaryTags: DietaryTag[];
+
+  // Commission & Admin Overrides
+  commissionRatePercent?: number; // Custom admin override commission rate (%)
   
+  // Dynamic Sector-Specific Fields & Toggles
+  sectorSpecifics?: VendorSectorSpecifics;
+
   // Subscription & Promotion
   tier: SubscriptionTier;
   billingCadence: 'monthly' | 'annual';
