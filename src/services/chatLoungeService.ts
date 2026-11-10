@@ -97,7 +97,7 @@ class ChatLoungeService {
   private broadcastChannel: BroadcastChannel | null = null;
   private subscribers: Set<() => void> = new Set();
   private typingMap: Map<string, string[]> = new Map(); // id -> userNames[]
-  private initialLoadTime = Date.now();
+  private isInitialFirestoreSnapshotDone = false;
 
   constructor() {
     this.currentChatUser = this.loadCurrentUser();
@@ -124,18 +124,41 @@ class ChatLoungeService {
       };
     }
 
+    const STORAGE_SESSION_USER_KEY = 'camgo_chat_tab_session_user';
+
+    // 1. First check tab-specific session storage to allow multi-tab testing without ID collision
     try {
-      const stored = localStorage.getItem(STORAGE_CURRENT_USER_KEY);
-      if (stored) return JSON.parse(stored);
+      const sessionStored = sessionStorage.getItem(STORAGE_SESSION_USER_KEY);
+      if (sessionStored) {
+        return JSON.parse(sessionStored);
+      }
     } catch {
       // ignore
     }
 
-    const fallback: ChatUser = {
-      id: `user-${Date.now().toString(36)}`,
-      name: 'Highland Traveler',
-      handle: `@traveler_${Math.floor(100 + Math.random() * 900)}`,
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+    // 2. Check persistent localStorage for customized profile name/avatar
+    let baseName = 'Highland Traveler';
+    let baseHandle = `@traveler_${Math.floor(100 + Math.random() * 900)}`;
+    let baseAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80';
+
+    try {
+      const stored = localStorage.getItem(STORAGE_CURRENT_USER_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.name) baseName = parsed.name;
+        if (parsed.avatar) baseAvatar = parsed.avatar;
+      }
+    } catch {
+      // ignore
+    }
+
+    // 3. Generate distinct tab-session ID for non-logged-in guest
+    const tabUniqueId = `user-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
+    const tabUser: ChatUser = {
+      id: tabUniqueId,
+      name: baseName,
+      handle: baseHandle,
+      avatar: baseAvatar,
       role: 'member',
       status: 'online',
       customStatus: 'Exploring Cameron Highlands ⛰️',
@@ -143,12 +166,13 @@ class ChatLoungeService {
     };
 
     try {
-      localStorage.setItem(STORAGE_CURRENT_USER_KEY, JSON.stringify(fallback));
+      sessionStorage.setItem(STORAGE_SESSION_USER_KEY, JSON.stringify(tabUser));
+      localStorage.setItem(STORAGE_CURRENT_USER_KEY, JSON.stringify(tabUser));
     } catch {
       // ignore
     }
 
-    return fallback;
+    return tabUser;
   }
 
   /**
@@ -171,6 +195,7 @@ class ChatLoungeService {
 
     try {
       localStorage.setItem(STORAGE_CURRENT_USER_KEY, JSON.stringify(this.currentChatUser));
+      sessionStorage.setItem('camgo_chat_tab_session_user', JSON.stringify(this.currentChatUser));
     } catch {
       // ignore
     }
@@ -335,8 +360,11 @@ class ChatLoungeService {
                   }
                 }
 
-                // 3. If sent by another user and created recently, trigger in-app banner popup and sound alerts
-                if (data.senderId !== this.currentChatUser.id && (data.createdAt || 0) >= this.initialLoadTime - 8000) {
+                // 3. Trigger alert if this is a live incoming message, sent by another user, and intended for this user
+                const isDmForMe = !data.dmThreadId || data.dmThreadId.includes(this.currentChatUser.id);
+                const isLiveIncoming = this.isInitialFirestoreSnapshotDone || (data.createdAt || 0) >= (Date.now() - 15000);
+
+                if (data.senderId !== this.currentChatUser.id && isDmForMe && isLiveIncoming) {
                   const ch = this.channels.find((c) => c.id === data.channelId);
                   const channelLabel = ch ? ch.label : 'Chat Lounge';
                   const notifTitle = data.dmThreadId
@@ -394,6 +422,8 @@ class ChatLoungeService {
               }
             }
           });
+
+          this.isInitialFirestoreSnapshotDone = true;
 
           if (updated) {
             // Sort messages chronologically
@@ -501,6 +531,7 @@ class ChatLoungeService {
     this.currentChatUser = { ...this.currentChatUser, ...updates };
     try {
       localStorage.setItem(STORAGE_CURRENT_USER_KEY, JSON.stringify(this.currentChatUser));
+      sessionStorage.setItem('camgo_chat_tab_session_user', JSON.stringify(this.currentChatUser));
     } catch {
       // ignore
     }
@@ -912,8 +943,9 @@ class ChatLoungeService {
     this.saveState();
     this.notifySubscribers();
 
-    // Trigger Push Notification whenever any message arrives from someone else
-    if (msg.senderId !== this.currentChatUser.id && (msg.createdAt || 0) >= this.initialLoadTime - 5000) {
+    // Trigger Push Notification and incoming chime whenever any message arrives from someone else
+    const isDmForMe = !msg.dmThreadId || msg.dmThreadId.includes(this.currentChatUser.id);
+    if (msg.senderId !== this.currentChatUser.id && isDmForMe) {
       const ch = this.channels.find((c) => c.id === msg.channelId);
       const channelLabel = ch ? ch.label : 'Chat Lounge';
       pushNotificationService.dispatchNotification({
@@ -927,7 +959,6 @@ class ChatLoungeService {
         senderName: msg.senderName,
         url: msg.dmThreadId ? `/chat#dms` : `/chat`,
       });
-    } else {
       pushNotificationService.playChime('incoming');
     }
   }

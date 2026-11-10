@@ -754,8 +754,8 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer ml-1"
-              aria-label="Close Live Map"
+              className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0 ml-1"
+              aria-label="Close"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1182,8 +1182,8 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           <div className="bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4 relative">
             <button
               onClick={() => setShowQrPreview(false)}
-              className="absolute top-4 right-4 p-2 text-stone-400 hover:text-white rounded-full bg-stone-800 hover:bg-stone-700 transition-colors cursor-pointer"
-              aria-label="Close QR Preview"
+              className="absolute top-4 right-4 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
             >
               <X className="w-5 h-5" />
             </button>

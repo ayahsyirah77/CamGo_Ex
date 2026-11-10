@@ -147,11 +147,10 @@ const MobileModalHeader: React.FC<MobileModalHeaderProps> = ({ title, language, 
     <button
       type="button"
       onClick={onClose}
-      className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-white/15 cursor-pointer transition-colors shrink-0 shadow-md active:scale-95 flex items-center justify-center"
-      aria-label="Close modal and return to main user dashboard"
-      title="Close modal and return to dashboard"
+      className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+      aria-label="Close"
     >
-      <X className="w-5 h-5 text-emerald-400" />
+      <X className="w-5 h-5" />
     </button>
   </div>
 );
@@ -673,10 +672,10 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors shrink-0"
+              className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
               aria-label="Close"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>

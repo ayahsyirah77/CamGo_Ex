@@ -59,8 +59,8 @@ export const CurrencyConverterModal: React.FC<CurrencyConverterModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2.5 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
-            aria-label="Close currency converter modal"
+            className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>

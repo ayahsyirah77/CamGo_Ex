@@ -9,7 +9,6 @@ import {
   Phone,
   ShieldCheck,
   CheckCircle,
-  ExternalLink,
   Clock,
   Sparkles,
   User,
@@ -223,7 +222,7 @@ Please confirm availability!`;
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+            className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -266,22 +265,8 @@ Please confirm availability!`;
                 <div className="space-y-1.5 max-w-md mx-auto">
                   <h3 className="text-lg font-bold text-white">No Motorbike Rentals Currently Listed</h3>
                   <p className="text-xs text-stone-400">
-                    Verified highland motorbike and scooter rental operators will appear here once listed. Are you a local operator in Cameron Highlands?
+                    Verified highland motorbike and scooter rental listings from registered vendor partners will appear here once published.
                   </p>
-                </div>
-                <div className="pt-2">
-                  <button
-                    onClick={() => {
-                      onClose();
-                      if (typeof window !== 'undefined') {
-                        window.dispatchEvent(new CustomEvent('open-vendor-portal'));
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg cursor-pointer"
-                  >
-                    <span>Register as Rental Operator</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </div>
             );
@@ -421,7 +406,8 @@ Please confirm availability!`;
                 </span>
                 <button
                   onClick={() => setIsBookingModalOpen(false)}
-                  className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors"
+                  className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                  aria-label="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>

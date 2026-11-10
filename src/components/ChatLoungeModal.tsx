@@ -509,10 +509,11 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
             {/* Close Lounge Modal */}
             <button
               onClick={onClose}
-              className="p-1 sm:p-2 rounded-lg sm:rounded-xl bg-stone-900 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800 cursor-pointer transition-colors"
+              className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
               title="Close Chat Lounge"
             >
-              <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </header>
@@ -1395,9 +1396,10 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
               >
                 <button
                   onClick={() => setInspectingUser(null)}
-                  className="absolute top-4 right-4 p-1.5 rounded-full text-stone-400 hover:text-white bg-stone-800 cursor-pointer"
+                  className="absolute top-4 right-4 p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                  aria-label="Close"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
 
                 <div className="flex flex-col items-center text-center space-y-2">

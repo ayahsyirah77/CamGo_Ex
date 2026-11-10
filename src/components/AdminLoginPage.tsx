@@ -59,9 +59,10 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
       <div className="relative w-full max-w-sm rounded-3xl bg-stone-900 border border-emerald-500/30 p-6 text-center shadow-2xl">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-full bg-stone-800 text-stone-400 hover:text-white cursor-pointer transition-colors"
+          className="absolute top-4 right-4 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+          aria-label="Close"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5" />
         </button>
 
         <div className="mx-auto w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mb-4">

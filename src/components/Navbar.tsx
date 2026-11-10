@@ -1094,7 +1094,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                           onClick={async () => {
                             setUserDropdownOpen(false);
                             await firebaseService.signOut();
-                            window.location.reload();
                           }}
                           className="w-full p-2 rounded-xl text-left hover:bg-rose-950/50 text-rose-300 hover:text-rose-100 flex items-center gap-2 transition-colors cursor-pointer"
                         >
@@ -1744,7 +1743,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       onClick={async () => {
                         setIsMobileMenuOpen(false);
                         await firebaseService.signOut();
-                        window.location.reload();
                       }}
                       className="w-full mt-2 p-2.5 rounded-2xl flex items-center justify-center gap-2 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-white border border-rose-500/30 transition-all cursor-pointer text-xs font-bold shadow-md"
                     >

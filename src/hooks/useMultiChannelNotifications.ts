@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { chatLoungeService } from '../services/chatLoungeService';
 
 export type NotificationPriority = 'critical' | 'high' | 'normal' | 'low';
 
@@ -141,6 +142,19 @@ export function useMultiChannelNotifications() {
   // Central Event Dispatch & Router
   const handleIncomingEvent = useCallback((eventData: NotificationEvent) => {
     if (!eventData || !eventData.event || eventData.event === 'connection_established' || eventData.event === 'pong') {
+      return;
+    }
+
+    // 1. NEVER notify the sender on their own screen for their own sent message!
+    const currentUserId = chatLoungeService.getCurrentUser().id;
+    const senderId = eventData.payload?.senderId;
+    if (eventData.event === 'chat_message' && senderId && senderId === currentUserId) {
+      return;
+    }
+
+    // 2. Direct Message (DM) privacy filter: Only display alert if current user is part of the thread!
+    const dmThreadId = eventData.payload?.dmThreadId;
+    if (dmThreadId && currentUserId && !dmThreadId.includes(currentUserId)) {
       return;
     }
 

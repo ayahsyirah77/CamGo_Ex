@@ -210,11 +210,10 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
 
           <button
             onClick={onClose}
-            aria-label="Close modal"
-            className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 shrink-0 min-h-[40px] justify-center"
+            aria-label="Close"
+            className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
           >
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="font-mono text-[11px] sm:text-xs">{language === 'bm' ? 'Tutup' : 'Close'}</span>
+            <X className="w-5 h-5" />
           </button>
         </div>
 

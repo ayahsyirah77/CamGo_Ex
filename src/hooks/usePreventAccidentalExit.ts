@@ -61,17 +61,27 @@ export function usePreventAccidentalExit({
     lastBackPressTimeRef.current = 0;
   }, [clearTimers]);
 
+  const handleModalCloseRef = useRef(handleModalClose);
+  const onConfirmExitRef = useRef(onConfirmExit);
+
+  useEffect(() => {
+    handleModalCloseRef.current = handleModalClose;
+    onConfirmExitRef.current = onConfirmExit;
+  }, [handleModalClose, onConfirmExit]);
+
   useEffect(() => {
     if (typeof window === 'undefined' || !enabled) {
       return;
     }
 
-    // Push initial guard state onto history stack so back button triggers popstate rather than exiting immediately
+    // Push initial guard state onto history stack once so back button triggers popstate rather than exiting immediately
     const pushGuardState = () => {
       try {
-        const stateObj = { camgoPreventExit: true, timestamp: Date.now() };
-        window.history.pushState(stateObj, document.title, window.location.href);
-        isPushedRef.current = true;
+        if (!isPushedRef.current) {
+          const stateObj = { camgoPreventExit: true, timestamp: Date.now() };
+          window.history.pushState(stateObj, document.title, window.location.href);
+          isPushedRef.current = true;
+        }
       } catch (e) {
         console.warn('[PWA Back Trap] pushState note:', e);
       }
@@ -81,7 +91,8 @@ export function usePreventAccidentalExit({
 
     const handlePopState = (event: PopStateEvent) => {
       // 1. If an active modal/drawer is open, prioritize closing it first
-      if (handleModalClose && handleModalClose()) {
+      if (handleModalCloseRef.current && handleModalCloseRef.current()) {
+        isPushedRef.current = false;
         pushGuardState();
         return;
       }
@@ -92,14 +103,15 @@ export function usePreventAccidentalExit({
       if (timeSinceLastPress <= timeoutMs) {
         // Double-tap confirmed within 2 seconds: Allow exit!
         dismissToast();
-        if (onConfirmExit) {
-          onConfirmExit();
+        if (onConfirmExitRef.current) {
+          onConfirmExitRef.current();
         }
         // Let user navigate back/exit naturally
         window.history.back();
       } else {
         // First back press: intercept, re-push guard state, and display prompt
         lastBackPressTimeRef.current = now;
+        isPushedRef.current = false;
         pushGuardState();
 
         // Optional haptic vibration feedback for mobile physical buttons
@@ -136,7 +148,7 @@ export function usePreventAccidentalExit({
       window.removeEventListener('popstate', handlePopState);
       clearTimers();
     };
-  }, [enabled, timeoutMs, handleModalClose, onConfirmExit, clearTimers, dismissToast]);
+  }, [enabled, timeoutMs, clearTimers, dismissToast]);
 
   return {
     showExitToast,

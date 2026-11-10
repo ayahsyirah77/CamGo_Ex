@@ -844,7 +844,11 @@ export default function App() {
         <div className="fixed inset-0 z-[110] bg-stone-950 flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 bg-stone-900 border-b border-stone-800">
             <h3 className="font-bold text-emerald-400 text-sm">Cameron Highlands Interactive Map</h3>
-            <button onClick={() => setIsMapModalOpen(false)} className="p-1.5 rounded-lg bg-stone-800 text-white cursor-pointer">
+            <button
+              onClick={() => setIsMapModalOpen(false)}
+              className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -1059,7 +1063,8 @@ export default function App() {
               </div>
               <button
                 onClick={() => setIsGalleryOpen(false)}
-                className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+                className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1083,10 +1088,10 @@ export default function App() {
             <div className="w-full max-w-6xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => setIsDirectoriesModalOpen(false)}
-                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-emerald-500/30 shadow-xl cursor-pointer"
-                aria-label="Close Directories"
+                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-emerald-400" />
+                <X className="w-5 h-5" />
               </button>
               <DirectorySection
                 places={places}
@@ -1127,10 +1132,10 @@ export default function App() {
             <div className="w-full max-w-6xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => setIsPortalsModalOpen(false)}
-                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-teal-500/30 shadow-xl cursor-pointer"
-                aria-label="Close Hub Portals"
+                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-teal-400" />
+                <X className="w-5 h-5" />
               </button>
               <PortalsSection
                 language={language}
@@ -1176,10 +1181,10 @@ export default function App() {
             <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-cyan-500/30 shadow-xl cursor-pointer"
-                aria-label="Close Microclimate"
+                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-cyan-400" />
+                <X className="w-5 h-5" />
               </button>
               <WeatherWidget weatherList={weatherList} language={language} />
             </div>
@@ -1194,10 +1199,10 @@ export default function App() {
             <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-amber-500/30 shadow-xl cursor-pointer"
-                aria-label="Close Traffic Hub"
+                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-amber-400" />
+                <X className="w-5 h-5" />
               </button>
               <TrafficWidget
                 alerts={trafficAlerts}
@@ -1219,10 +1224,10 @@ export default function App() {
             <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-rose-500/30 shadow-xl cursor-pointer"
-                aria-label="Close Hazard Alerts"
+                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-rose-400" />
+                <X className="w-5 h-5" />
               </button>
               <HazardWidget hazards={hazards} language={language} />
             </div>
@@ -1237,10 +1242,10 @@ export default function App() {
             <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2.5 rounded-full bg-stone-900/90 text-stone-300 hover:text-white hover:bg-stone-800 border border-purple-500/30 shadow-xl cursor-pointer"
-                aria-label="Close Events"
+                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-purple-400" />
+                <X className="w-5 h-5" />
               </button>
               <EventsWidget events={events} language={language} />
             </div>
