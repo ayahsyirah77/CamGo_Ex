@@ -300,7 +300,7 @@ Please confirm availability!`;
                   </span>
                 </div>
                 <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-black/70 backdrop-blur-md text-emerald-300 border border-emerald-500/30">
-                  Fleet: {partner.fleetAvailability.toUpperCase()}
+                  Inventory: {partner.fleetAvailability.toUpperCase()}
                 </div>
               </div>
 

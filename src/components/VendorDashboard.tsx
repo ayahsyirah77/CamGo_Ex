@@ -378,7 +378,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     setBikeName('');
     setBikePkgDetails('');
     setBikeAddonDetails('');
-    setSaveNotification(`Saved motorbike "${newPkg.name}" to fleet!`);
+    setSaveNotification(`Saved "${newPkg.name}" to inventory!`);
     setTimeout(() => setSaveNotification(null), 3000);
   };
 
@@ -1052,7 +1052,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               { id: 'promotions', label: 'Deals', icon: Ticket },
               { id: 'analytics', label: 'Analytics', icon: BarChart3 },
               { id: 'billing', label: 'Team', icon: Settings },
-              { id: 'reservations', label: 'Orders & Bookings', icon: Calendar },
+              { id: 'reservations', label: 'Orders & Reservations', icon: Calendar },
               { id: 'overview', label: 'Overview', icon: LayoutDashboard },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -1283,7 +1283,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 {activeTab === 'promotions' && 'Promotional Deals & Event Publisher'}
                 {activeTab === 'analytics' && 'Customer Intelligence & Visitor Traffic'}
                 {activeTab === 'billing' && 'Team Access & Subscription Management'}
-                {activeTab === 'reservations' && 'Incoming Customer Orders & Booking Requests'}
+                {activeTab === 'reservations' && 'Incoming Orders & Reservations'}
               </h1>
               <p className="text-xs text-stone-400 mt-0.5">
                 {activeVendor?.businessName} · {activeVendor?.township}
@@ -2104,7 +2104,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-mono font-bold text-teal-400 uppercase tracking-wider flex items-center gap-2">
                       <Clock className="w-3.5 h-3.5 text-teal-400" />
-                      <span>Incoming {activeSector.shortName} Orders &amp; Reservations for {activeVendor.businessName}</span>
+                      <span>Incoming Orders &amp; Reservations for {activeVendor.businessName}</span>
                     </h4>
                     <button
                       onClick={() => setMotorbikeBookings(firebaseService.getMotorbikeBookings())}
@@ -2754,7 +2754,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-emerald-400" />
-                    Incoming {activeSector.shortName} Customer Orders &amp; Reservations
+                    Incoming Orders &amp; Reservations
                   </h3>
                   <button
                     onClick={() => setMotorbikeBookings(firebaseService.getMotorbikeBookings())}
@@ -3462,7 +3462,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* SECTOR EVALUATION MODAL: Motorbike / Vehicle Rental */}
+      {/* SECTOR EVALUATION MODAL: Rental & Equipment */}
       <AnimatePresence>
         {sectorModalType === 'vehicle' && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
@@ -3473,8 +3473,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     <Bike className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-base text-white">Motorbike / Vehicle Rental Controls</h3>
-                    <p className="text-[11px] text-stone-400">Fleet Availability &amp; Rates for {activeVendor?.businessName}</p>
+                    <h3 className="font-extrabold text-base text-white">Rental &amp; Equipment Inventory Controls</h3>
+                    <p className="text-[11px] text-stone-400">Inventory Status &amp; Rates for {activeVendor?.businessName}</p>
                   </div>
                 </div>
                 <button onClick={() => setSectorModalType(null)} className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer">
@@ -3484,10 +3484,10 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
               {/* 1. Operating Status */}
               <div className="space-y-2">
-                <label className="text-xs font-bold text-cyan-300 block">Fleet Operating Status</label>
+                <label className="text-xs font-bold text-cyan-300 block">Rental Operating Status</label>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   {[
-                    { id: 'open', label: 'Open for Rental Today' },
+                    { id: 'open', label: 'Open for Bookings Today' },
                     { id: 'closed_roadworks', label: 'Maintenance / Closed' },
                   ].map((st) => (
                     <button
@@ -3506,14 +3506,14 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 </div>
               </div>
 
-              {/* 2. Fleet Availability */}
+              {/* 2. Inventory Availability */}
               <div className="space-y-2">
-                <label className="text-xs font-bold text-cyan-300 block">Scooter &amp; Bike Fleet Availability</label>
+                <label className="text-xs font-bold text-cyan-300 block">Rental Inventory Availability</label>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   {[
-                    { id: 'high', label: 'High Availability (10+ Units)' },
-                    { id: 'limited', label: 'Limited Fleet (1-3 Left)' },
-                    { id: 'sold_out', label: 'All Scooters Rented' },
+                    { id: 'high', label: 'High Availability' },
+                    { id: 'limited', label: 'Limited Stock (1-3 Left)' },
+                    { id: 'sold_out', label: 'All Items Rented / Out of Stock' },
                   ].map((st) => (
                     <button
                       key={st.id}
@@ -3545,7 +3545,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 }}
                 className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-xs cursor-pointer shadow-lg transition-colors"
               >
-                Sync &amp; Update Motorbike Marketplace &amp; Live Map
+                Sync &amp; Update Rental Marketplace &amp; Live Map
               </button>
             </div>
           </div>

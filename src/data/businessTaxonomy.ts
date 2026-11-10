@@ -325,18 +325,18 @@ export const BUSINESS_TAXONOMY: BusinessSector[] = [
   {
     id: 'vehicle_equipment_rental',
     name: 'Vehicle & Equipment Rentals',
-    shortName: 'Vehicles & Fleet',
+    shortName: 'Rentals & Equipment',
     iconName: 'Bike',
     badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
     moduleType: 'rental_fleet',
-    moduleTitle: 'Fleet & Rental Equipment Inventory Management',
-    moduleSubtitle: 'Maintain rental vehicles, bikes, scooters, power machinery, gear inventory, and bookings.',
-    itemNoun: 'Rental Vehicle / Equipment',
-    addItemLabel: 'Add Vehicle / Equipment to Fleet',
+    moduleTitle: 'Rental & Equipment Inventory Management',
+    moduleSubtitle: 'Maintain rental inventory, equipment, tools, and booking schedules.',
+    itemNoun: 'Rental Item / Equipment',
+    addItemLabel: 'Add Item to Rental Catalog',
     categories: [
       {
         id: 'rental_car_van',
-        label: 'Car & Van Fleet (Sedans, SUVs, MPVs, commercial vans)',
+        label: 'Car & Van Inventory (Sedans, SUVs, MPVs, commercial vans)',
         description: 'Compact hatchbacks for mountain curves, 7-seater MPVs for families, and cargo vans.',
         rateLabel: 'Daily Rental Rate (RM)',
         specLabel: 'Engine CC & Transmission',
@@ -350,7 +350,7 @@ export const BUSINESS_TAXONOMY: BusinessSector[] = [
       },
       {
         id: 'rental_motorcycle_scooter',
-        label: 'Motorcycle, Scooter & Micro-mobility Fleet (Commuters, maxi-scooters, e-bikes)',
+        label: 'Motorcycle, Scooter & Micro-mobility Selection (Commuters, maxi-scooters, e-bikes)',
         description: 'Automatic scooters, lightweight mopeds, dual-sport bikes, and touring maxi-scooters.',
         rateLabel: 'Daily Rental Rate (RM)',
         specLabel: 'Engine CC / Electric Power',

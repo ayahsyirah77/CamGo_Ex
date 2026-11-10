@@ -92,7 +92,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 uppercase">
           {isAccommodation && '5.1 Accommodation Sector'}
           {isFnB && '5.2 Food & Beverage Sector'}
-          {isVehicleRental && '5.3 Vehicle Rentals Sector'}
+          {isVehicleRental && '5.3 Rentals & Equipment Sector'}
           {isAgritourism && '5.4 Agritourism & Farms Sector'}
           {isSurpriseDelivery && '5.5 Surprise Delivery Services'}
           {isSurprisePlanner && '5.6 Surprise Planners & Event Coordinators'}
@@ -439,12 +439,12 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
         <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
             <Bike className="w-4 h-4 text-cyan-400" />
-            <span>5.3 Vehicle Rental Fleet &amp; Availability Toggles</span>
+            <span>5.3 Rental &amp; Equipment Inventory Toggles</span>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="block font-medium text-stone-300 mb-1">Fleet Vehicle Types Available</label>
+              <label className="block font-medium text-stone-300 mb-1">Inventory / Item Types Available</label>
               <input
                 type="text"
                 disabled={isReadOnly}
@@ -460,7 +460,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
               />
             </div>
             <div>
-              <label className="block font-medium text-stone-300 mb-1">Total Fleet Capacity Size</label>
+              <label className="block font-medium text-stone-300 mb-1">Total Inventory / Stock Capacity</label>
               <input
                 type="number"
                 disabled={isReadOnly}
@@ -478,13 +478,13 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
           {/* Real-time Availability Toggles */}
           <div>
             <label className="block text-xs font-medium text-stone-300 mb-1">
-              Real-Time Fleet Availability Status Toggles
+              Real-Time Inventory Availability Status Toggles
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { id: 'high', label: 'Plenty Available' },
                 { id: 'medium', label: 'Moderate Availability' },
-                { id: 'low', label: 'Limited Fleet Left' },
+                { id: 'low', label: 'Limited Stock Left' },
                 { id: 'sold_out', label: 'Zero / Fully Booked' },
               ].map((st) => {
                 const isSelected = (specifics.vehicleRental?.realTimeAvailability || vendor.motorbikeFleetStatus || 'high') === st.id;
