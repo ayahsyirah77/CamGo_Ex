@@ -1,4 +1,4 @@
-import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard } from '../types';
+import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard, AccommodationBooking } from '../types';
 import {
   INITIAL_PLACES,
   INITIAL_GALLERY,
@@ -72,6 +72,7 @@ const STORAGE_KEYS = {
   VENDOR_EVENTS: 'camgo_vendor_events',
   VENDOR_STAFF: 'camgo_vendor_staff',
   HOME_CARDS: 'camgo_home_cards',
+  ACCOMMODATION_BOOKINGS: 'camgo_accommodation_bookings',
 };
 
 export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
@@ -2670,6 +2671,234 @@ class FirebaseStorageService {
         await deleteDoc(doc(db, 'motorbike_rentals', id));
       } catch (e) {
         console.error("Error deleting motorbike booking from Firestore:", e);
+      }
+    }
+    this.notify();
+    return bookings;
+  }
+
+  // ==========================================
+  // CamGo Anti-Bypass Accommodation Booking Engine
+  // ==========================================
+  public getAccommodationBookings(homestayId?: string): AccommodationBooking[] {
+    const data = localStorage.getItem(STORAGE_KEYS.ACCOMMODATION_BOOKINGS);
+    let bookings: AccommodationBooking[] = [];
+    if (!data) {
+      const initialBookings: AccommodationBooking[] = [
+        {
+          id: 'cg_bk_01',
+          bookingCode: 'CG-ABAH-8821',
+          homestayId: 'golden-hills-homestay-apt',
+          homestayName: 'Barrington Alpine Homestay',
+          maskedTitle: 'Cozy 3BR - 350m to Kea Farm (CH-07)',
+          fullAddress: 'Unit B-3-8, Barrington Square, Golden Hills, 39000 Cameron Highlands',
+          ownerPhone: '+60 19-332 8819',
+          ownerName: 'Abah Haji Salleh',
+          customerName: 'Ali bin Ahmad',
+          customerPhone: '+60123456789',
+          customerEmail: 'ali.ahmad@gmail.com',
+          checkInDate: new Date().toISOString().split('T')[0],
+          checkOutDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+          nights: 1,
+          roomTypeName: '3-Bedroom Alpine Family Suite',
+          totalRoomPrice: 200,
+          depositAmount: 30, // Paid via Billplz
+          balanceToCollect: 170, // Cash on check-in
+          bookingType: 'instant',
+          status: 'confirmed',
+          depositPaymentStatus: 'paid',
+          paymentGateway: 'billplz',
+          isUnlocked: true,
+          qrVoucherCode: 'VCHR-CG-8821-PAID',
+          bundledPerks: [
+            '🍓 2x Free Strawberry Picking Farm Passes (Kea Farm)',
+            '🅿️ Guaranteed Kea Farm Dedicated Parking Bay',
+            '🗺️ CamGo Live Traffic Jam Avoidance Map Access',
+          ],
+          createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+          whatsappStatus: 'replied_yes',
+          notes: 'Family of 4 arriving at 3:00 PM. Requested baby cot if available.',
+        },
+        {
+          id: 'cg_bk_02',
+          bookingCode: 'CG-ABAH-8822',
+          homestayId: 'golden-hills-homestay-apt',
+          homestayName: 'Barrington Alpine Homestay',
+          maskedTitle: 'Cozy 3BR - 350m to Kea Farm (CH-07)',
+          fullAddress: 'Unit B-3-8, Barrington Square, Golden Hills, 39000 Cameron Highlands',
+          ownerPhone: '+60 19-332 8819',
+          ownerName: 'Abah Haji Salleh',
+          customerName: 'Sarah Tan Wei Ling',
+          customerPhone: '+60178901234',
+          customerEmail: 'sarah.tan@outlook.com',
+          checkInDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+          checkOutDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+          nights: 2,
+          roomTypeName: '3-Bedroom Alpine Family Suite',
+          totalRoomPrice: 380,
+          depositAmount: 30,
+          balanceToCollect: 350,
+          bookingType: 'request',
+          status: 'pending_owner_approval',
+          depositPaymentStatus: 'paid',
+          paymentGateway: 'toyyibpay',
+          isUnlocked: false,
+          qrVoucherCode: 'VCHR-CG-8822-PENDING',
+          bundledPerks: [
+            '🍓 2x Free Strawberry Picking Farm Passes (Kea Farm)',
+            '🅿️ Guaranteed Kea Farm Dedicated Parking Bay',
+            '🍲 RM10 Steamboat Dinner Cash Voucher',
+          ],
+          createdAt: new Date(Date.now() - 600000).toISOString(),
+          expiresAt: new Date(Date.now() + 1200000).toISOString(),
+          whatsappStatus: 'sent',
+          notes: 'WhatsApp notification dispatched to owner. Reply YES within 20m or auto-refund triggers.',
+        },
+        {
+          id: 'cg_bk_03',
+          bookingCode: 'CG-ABAH-8823',
+          homestayId: 'golden-hills-homestay-apt',
+          homestayName: 'Barrington Alpine Homestay',
+          maskedTitle: 'Cozy 3BR - 350m to Kea Farm (CH-07)',
+          fullAddress: 'Unit B-3-8, Barrington Square, Golden Hills, 39000 Cameron Highlands',
+          ownerPhone: '+60 19-332 8819',
+          ownerName: 'Abah Haji Salleh',
+          customerName: 'Kelvin Wong Ming',
+          customerPhone: '+60134567890',
+          customerEmail: 'kelvin.w@gmail.com',
+          checkInDate: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0],
+          checkOutDate: new Date(Date.now() + 86400000 * 9).toISOString().split('T')[0],
+          nights: 2,
+          roomTypeName: '3-Bedroom Alpine Family Suite',
+          totalRoomPrice: 380,
+          depositAmount: 30,
+          balanceToCollect: 350,
+          bookingType: 'instant',
+          status: 'confirmed',
+          depositPaymentStatus: 'paid',
+          paymentGateway: 'stripe',
+          isUnlocked: true,
+          qrVoucherCode: 'VCHR-CG-8823-PAID',
+          bundledPerks: [
+            '🍓 2x Free Strawberry Picking Farm Passes (Kea Farm)',
+            '🅿️ Guaranteed Kea Farm Dedicated Parking Bay',
+            '🗺️ CamGo Live Traffic Jam Avoidance Map Access',
+          ],
+          createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+          whatsappStatus: 'replied_yes',
+          notes: 'Tourists from Singapore. Paid deposit via Stripe Credit Card.',
+        },
+        {
+          id: 'cg_bk_04',
+          bookingCode: 'CG-ABAH-8820',
+          homestayId: 'golden-hills-homestay-apt',
+          homestayName: 'Barrington Alpine Homestay',
+          maskedTitle: 'Cozy 3BR - 350m to Kea Farm (CH-07)',
+          fullAddress: 'Unit B-3-8, Barrington Square, Golden Hills, 39000 Cameron Highlands',
+          ownerPhone: '+60 19-332 8819',
+          ownerName: 'Abah Haji Salleh',
+          customerName: 'Farid Yusof',
+          customerPhone: '+60198765432',
+          checkInDate: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
+          checkOutDate: new Date(Date.now() - 86400000).toISOString().split('T')[0],
+          nights: 1,
+          roomTypeName: '3-Bedroom Alpine Family Suite',
+          totalRoomPrice: 200,
+          depositAmount: 30,
+          balanceToCollect: 170,
+          bookingType: 'request',
+          status: 'auto_refunded',
+          depositPaymentStatus: 'refunded',
+          paymentGateway: 'billplz',
+          isUnlocked: false,
+          qrVoucherCode: 'VCHR-CG-8820-REFUNDED',
+          bundledPerks: ['Auto-refund protection triggered'],
+          createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+          whatsappStatus: 'timed_out',
+          notes: 'Owner did not reply within 30 minutes. CamGo auto-refund engine refunded RM30 to customer FPX instantly.',
+        },
+      ];
+      this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_BOOKINGS, JSON.stringify(initialBookings));
+      bookings = initialBookings;
+    } else {
+      try {
+        const parsed = JSON.parse(data);
+        bookings = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        bookings = [];
+      }
+    }
+
+    if (homestayId) {
+      return bookings.filter(
+        (b) => b.homestayId === homestayId || (b.homestayName && homestayId && b.homestayName.toLowerCase().includes(homestayId.toLowerCase()))
+      );
+    }
+    return bookings;
+  }
+
+  public async saveAccommodationBooking(booking: AccommodationBooking): Promise<AccommodationBooking[]> {
+    const bookings = this.getAccommodationBookings();
+    const updated = [booking, ...bookings.filter((b) => b.id !== booking.id)];
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_BOOKINGS, JSON.stringify(updated));
+    if (db) {
+      try {
+        await setDoc(doc(db, 'accommodation_bookings', booking.id), booking);
+      } catch (e) {
+        console.error('Error saving accommodation booking to Firestore:', e);
+      }
+    }
+    this.notify();
+    return updated;
+  }
+
+  public async updateAccommodationBookingStatus(
+    id: string,
+    status: AccommodationBooking['status'],
+    notes?: string
+  ): Promise<AccommodationBooking[]> {
+    const bookings = this.getAccommodationBookings();
+    const updated = bookings.map((b) => {
+      if (b.id === id) {
+        const isUnlocked = status === 'confirmed' || status === 'checked_in' || status === 'completed';
+        const depositPaymentStatus = status === 'auto_refunded' || status === 'rejected' ? 'refunded' : b.depositPaymentStatus;
+        const whatsappStatus: AccommodationBooking['whatsappStatus'] =
+          status === 'confirmed' ? 'replied_yes' : status === 'rejected' ? 'replied_no' : status === 'auto_refunded' ? 'timed_out' : b.whatsappStatus;
+        return {
+          ...b,
+          status,
+          isUnlocked,
+          depositPaymentStatus,
+          whatsappStatus,
+          notes: notes ? `${b.notes ? b.notes + ' • ' : ''}${notes}` : b.notes,
+        };
+      }
+      return b;
+    });
+
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_BOOKINGS, JSON.stringify(updated));
+    if (db) {
+      try {
+        const target = updated.find((b) => b.id === id);
+        if (target) {
+          await setDoc(doc(db, 'accommodation_bookings', id), target, { merge: true });
+        }
+      } catch (e) {
+        console.error('Error updating accommodation booking in Firestore:', e);
+      }
+    }
+    this.notify();
+    return updated;
+  }
+
+  public async deleteAccommodationBooking(id: string): Promise<AccommodationBooking[]> {
+    const bookings = this.getAccommodationBookings().filter((b) => b.id !== id);
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_BOOKINGS, JSON.stringify(bookings));
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'accommodation_bookings', id));
+      } catch (e) {
+        console.error('Error deleting accommodation booking from Firestore:', e);
       }
     }
     this.notify();

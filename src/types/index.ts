@@ -766,6 +766,41 @@ export interface MotorbikeBookingRecord {
   createdAt: string;
 }
 
+export interface AccommodationBooking {
+  id: string;
+  bookingCode: string; // e.g. "CG-CH07-8821"
+  homestayId: string;
+  homestayName: string; // Real business name e.g. "Barrington Alpine Homestay"
+  maskedTitle: string; // Anti-Bypass Title e.g. "Cozy 3BR - 350m to Kea Farm (CH-07)"
+  fullAddress: string; // Revealed only post-payment
+  ownerPhone: string; // Revealed only post-payment
+  ownerName: string;
+  hostPhone?: string; // Host phone alias
+  customerName: string;
+  customerPhone: string;
+  guestName?: string; // Guest name alias
+  guestPhone?: string; // Guest phone alias
+  customerEmail?: string;
+  checkInDate: string;
+  checkOutDate: string;
+  nights: number;
+  roomTypeName?: string;
+  totalRoomPrice: number; // e.g. RM200
+  depositAmount: number; // Fixed RM30 (collected by CamGo via gateway)
+  balanceToCollect: number; // e.g. RM170 (collected directly upon check-in)
+  bookingType: 'instant' | 'request'; // Type A: Instant Confirm | Type B: Request to Book (30-min SLA)
+  status: 'pending_owner_approval' | 'confirmed' | 'rejected' | 'auto_refunded' | 'checked_in' | 'completed';
+  depositPaymentStatus: 'paid' | 'refunded' | 'unpaid';
+  paymentGateway: 'billplz' | 'toyyibpay' | 'stripe';
+  isUnlocked: boolean; // Pay to reveal trigger
+  qrVoucherCode: string;
+  bundledPerks: string[];
+  createdAt: string;
+  expiresAt?: string; // 30-min timeout for Type B requests
+  whatsappStatus: 'sent' | 'replied_yes' | 'replied_no' | 'timed_out';
+  notes?: string;
+}
+
 export interface MobileHomeCard {
   id: string;
   type: 'weather' | 'hazard' | 'map' | 'itinerary' | 'party' | 'sos' | 'bike' | 'custom';

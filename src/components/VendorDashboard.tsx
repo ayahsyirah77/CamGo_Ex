@@ -53,7 +53,17 @@ import {
   Compass,
   Package,
   Briefcase,
+  Lock,
+  Unlock,
+  QrCode,
+  Copy,
+  ExternalLink,
+  ShieldAlert,
+  DollarSign,
+  AlertTriangle,
+  BedDouble,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import {
   BUSINESS_TAXONOMY,
   findBusinessSector,
@@ -83,6 +93,7 @@ import {
   MotorbikeRentalPartner,
   MotorbikeFleetStatus,
   MotorbikePackage,
+  AccommodationBooking,
 } from '../types';
 import { firebaseService, UserProfile, isMockMotorbikePartner } from '../services/firebase';
 import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
@@ -204,6 +215,170 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   };
   const SectorIcon = getSectorIcon(activeSector.id);
 
+  // Check if active vendor is in Accommodation sector (Homestay / Hotel / Chalet)
+  const isAccommodationVendor =
+    activeSector.id === 'real_estate_accommodation' ||
+    activeVendor?.category === 'accommodation' ||
+    (typeof activeVendor?.subCategory === 'string' &&
+      (activeVendor.subCategory.includes('homestay') ||
+       activeVendor.subCategory.includes('hotel') ||
+       activeVendor.subCategory.includes('chalet') ||
+       activeVendor.subCategory.startsWith('realestate_')));
+
+  // Accommodation Anti-Bypass & Pay-To-Reveal Booking Engine State
+  const [accommodationBookings, setAccommodationBookings] = useState<AccommodationBooking[]>([]);
+  const [selectedBookingForVoucher, setSelectedBookingForVoucher] = useState<AccommodationBooking | null>(null);
+  const [voucherQrDataUrl, setVoucherQrDataUrl] = useState<string | null>(null);
+  const [bookingFilterStatus, setBookingFilterStatus] = useState<'all' | 'pending_owner_approval' | 'confirmed' | 'auto_refunded'>('all');
+  const [copiedOwnerSlug, setCopiedOwnerSlug] = useState(false);
+  const [bookingTypeSetting, setBookingTypeSetting] = useState<'instant' | 'request'>('instant');
+  const [showManualBookingModal, setShowManualBookingModal] = useState(false);
+  const [showMinimalOwnerView, setShowMinimalOwnerView] = useState(false);
+
+  // Manual Booking Form State
+  const [manualGuestName, setManualGuestName] = useState('');
+  const [manualGuestPhone, setManualGuestPhone] = useState('+601');
+  const [manualCheckInDate, setManualCheckInDate] = useState('');
+  const [manualCheckOutDate, setManualCheckOutDate] = useState('');
+  const [manualTotalRate, setManualTotalRate] = useState('200');
+  const [manualRoomType, setManualRoomType] = useState('Standard Family Homestay');
+  const [manualBookingType, setManualBookingType] = useState<'instant' | 'request'>('instant');
+
+  // Generate QR Code for Pay-To-Reveal Voucher
+  useEffect(() => {
+    if (selectedBookingForVoucher) {
+      QRCode.toDataURL(
+        `https://camgo.my/voucher/${selectedBookingForVoucher.qrVoucherCode}?homestay=${encodeURIComponent(
+          selectedBookingForVoucher.homestayName
+        )}&deposit=RM30_PAID&balance=RM${selectedBookingForVoucher.balanceToCollect}`,
+        {
+          width: 240,
+          margin: 2,
+          color: { dark: '#064e3b', light: '#ffffff' },
+        }
+      )
+        .then((url) => setVoucherQrDataUrl(url))
+        .catch(() => setVoucherQrDataUrl(null));
+    } else {
+      setVoucherQrDataUrl(null);
+    }
+  }, [selectedBookingForVoucher]);
+
+  const handleConfirmAccommodationBooking = async (booking: AccommodationBooking) => {
+    const updated = await firebaseService.updateAccommodationBookingStatus(
+      booking.id,
+      'confirmed',
+      'Confirmed by Owner via WhatsApp YES (Voucher Unlocked)'
+    );
+    setAccommodationBookings(
+      updated.filter(
+        (b) =>
+          b.homestayId === activeVendor?.id ||
+          (activeVendor && b.homestayName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))
+      )
+    );
+    setSaveNotification(`Booking #${booking.bookingCode} confirmed! Pay-to-Reveal voucher unlocked for guest.`);
+    setTimeout(() => setSaveNotification(null), 3500);
+  };
+
+  const handleRejectAccommodationBooking = async (booking: AccommodationBooking) => {
+    const updated = await firebaseService.updateAccommodationBookingStatus(
+      booking.id,
+      'rejected',
+      'Declined by Owner (Fully Booked) - RM30 deposit auto-refunded to guest'
+    );
+    setAccommodationBookings(
+      updated.filter(
+        (b) =>
+          b.homestayId === activeVendor?.id ||
+          (activeVendor && b.homestayName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))
+      )
+    );
+    setSaveNotification(`Booking #${booking.bookingCode} declined. RM30 deposit auto-refunded to guest FPX.`);
+    setTimeout(() => setSaveNotification(null), 3500);
+  };
+
+  const handleSimulateTimeoutAccommodationBooking = async (booking: AccommodationBooking) => {
+    const updated = await firebaseService.updateAccommodationBookingStatus(
+      booking.id,
+      'auto_refunded',
+      '30-minute confirmation timeout exceeded. RM30 deposit auto-refunded to customer'
+    );
+    setAccommodationBookings(
+      updated.filter(
+        (b) =>
+          b.homestayId === activeVendor?.id ||
+          (activeVendor && b.homestayName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))
+      )
+    );
+    setSaveNotification(`30-Min timeout simulated. RM30 deposit refunded to customer.`);
+    setTimeout(() => setSaveNotification(null), 3500);
+  };
+
+  const handleCreateManualAccommodationBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualGuestName || !manualCheckInDate || !manualCheckOutDate || !activeVendor) return;
+
+    const nights = Math.max(
+      1,
+      Math.round(
+        (new Date(manualCheckOutDate).getTime() - new Date(manualCheckInDate).getTime()) / (1000 * 3600 * 24)
+      ) || 1
+    );
+    const totalRate = Number(manualTotalRate) || 200;
+    const balance = Math.max(0, totalRate - 30);
+
+    const newBooking: AccommodationBooking = {
+      id: 'cg_bk_' + Date.now(),
+      bookingCode: 'CG-' + activeVendor.businessName.substring(0, 4).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000),
+      homestayId: activeVendor.id,
+      homestayName: activeVendor.businessName,
+      maskedTitle: `Cozy Stay near ${activeVendor.township} (CH-${Math.floor(10 + Math.random() * 89)})`,
+      fullAddress: activeVendor.address,
+      ownerPhone: activeVendor.contactPhone,
+      ownerName: currentUser?.displayName || activeVendor.businessName + ' Host',
+      customerName: manualGuestName,
+      customerPhone: manualGuestPhone,
+      checkInDate: manualCheckInDate,
+      checkOutDate: manualCheckOutDate,
+      nights,
+      roomTypeName: manualRoomType,
+      totalRoomPrice: totalRate,
+      depositAmount: 30,
+      balanceToCollect: balance,
+      bookingType: manualBookingType,
+      status: 'confirmed',
+      depositPaymentStatus: 'paid',
+      paymentGateway: 'billplz',
+      isUnlocked: true,
+      qrVoucherCode: 'VCHR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+      bundledPerks: [
+        '🍓 Free Strawberry Farm Passes (Kea Farm)',
+        '🅿️ Guaranteed Kea Farm Dedicated Parking Bay',
+        '🗺️ CamGo Live Traffic Jam Avoidance Map Access',
+      ],
+      createdAt: new Date().toISOString(),
+      whatsappStatus: 'replied_yes',
+      notes: 'Direct / manual reservation registered by host.',
+    };
+
+    const updated = await firebaseService.saveAccommodationBooking(newBooking);
+    setAccommodationBookings(
+      updated.filter(
+        (b) =>
+          b.homestayId === activeVendor.id ||
+          b.homestayName.toLowerCase().includes(activeVendor.businessName.toLowerCase())
+      )
+    );
+    setShowManualBookingModal(false);
+    setManualGuestName('');
+    setManualGuestPhone('+601');
+    setManualCheckInDate('');
+    setManualCheckOutDate('');
+    setSaveNotification(`Manual booking #${newBooking.bookingCode} recorded & locked!`);
+    setTimeout(() => setSaveNotification(null), 3500);
+  };
+
   // Motorbike & Scooter Management State
   const [motorbikeBookings, setMotorbikeBookings] = useState<MotorbikeBookingRecord[]>([]);
   const [motorbikePartners, setMotorbikePartners] = useState<MotorbikeRentalPartner[]>([]);
@@ -302,6 +477,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       setVouchers(firebaseService.getVendorVouchers(current.id));
       setEvents(firebaseService.getVendorEvents(current.id));
       setStaffList(firebaseService.getVendorStaff(current.id));
+      setAccommodationBookings(firebaseService.getAccommodationBookings(current.id));
     } else {
       setActiveVendor(null);
     }
@@ -1003,6 +1179,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         setVouchers(firebaseService.getVendorVouchers(sel.id));
                         setEvents(firebaseService.getVendorEvents(sel.id));
                         setStaffList(firebaseService.getVendorStaff(sel.id));
+                        setAccommodationBookings(firebaseService.getAccommodationBookings(sel.id));
                       }
                     }}
                     className="w-full px-2 py-1 rounded-lg bg-stone-900 border border-stone-700 text-xs font-bold text-white truncate focus:outline-none"
@@ -1052,7 +1229,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               { id: 'promotions', label: 'Deals', icon: Ticket },
               { id: 'analytics', label: 'Analytics', icon: BarChart3 },
               { id: 'billing', label: 'Team', icon: Settings },
-              { id: 'reservations', label: 'Orders & Reservations', icon: Calendar },
+              { id: 'reservations', label: isAccommodationVendor ? 'Homestay (Pay-to-Reveal)' : 'Orders & Reservations', icon: isAccommodationVendor ? BedDouble : Calendar },
               { id: 'overview', label: 'Overview', icon: LayoutDashboard },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -1129,6 +1306,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       setVouchers(firebaseService.getVendorVouchers(sel.id));
                       setEvents(firebaseService.getVendorEvents(sel.id));
                       setStaffList(firebaseService.getVendorStaff(sel.id));
+                      setAccommodationBookings(firebaseService.getAccommodationBookings(sel.id));
                     }
                   }}
                   className="w-full mt-2 px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-xs text-stone-200"
@@ -1151,7 +1329,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 { id: 'promotions', label: 'Deals & Marketing', icon: Ticket },
                 { id: 'analytics', label: 'Customer Analytics', icon: BarChart3 },
                 { id: 'billing', label: 'Team & Billing', icon: Settings },
-                { id: 'reservations', label: 'Orders & Reservations', icon: Calendar },
+                { id: 'reservations', label: isAccommodationVendor ? 'Homestay (Pay-to-Reveal)' : 'Orders & Reservations', icon: isAccommodationVendor ? BedDouble : Calendar },
                 { id: 'overview', label: 'Overview & Performance', icon: LayoutDashboard },
               ].map((tab) => {
                 const Icon = tab.icon;
@@ -1283,7 +1461,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 {activeTab === 'promotions' && 'Promotional Deals & Event Publisher'}
                 {activeTab === 'analytics' && 'Customer Intelligence & Visitor Traffic'}
                 {activeTab === 'billing' && 'Team Access & Subscription Management'}
-                {activeTab === 'reservations' && 'Incoming Orders & Reservations'}
+                {activeTab === 'reservations' && (isAccommodationVendor ? 'Homestay Anti-Bypass Bookings & Lock-In Engine' : 'Incoming Orders & Reservations')}
               </h1>
               <p className="text-xs text-stone-400 mt-0.5">
                 {activeVendor?.businessName} · {activeVendor?.township}
@@ -2750,61 +2928,650 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           {/* TAB: INCOMING ORDERS & RESERVATIONS */}
           {activeTab === 'reservations' && (
             <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-emerald-400" />
-                    Incoming Orders &amp; Reservations
-                  </h3>
-                  <button
-                    onClick={() => setMotorbikeBookings(firebaseService.getMotorbikeBookings())}
-                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer"
-                  >
-                    Refresh Bookings
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {motorbikeBookings
-                    .filter((b) => b.partnerId === activeVendor?.id || (activeVendor && b.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase())))
-                    .map((booking) => (
-                      <div key={booking.id} className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-white block">{booking.renterName}</span>
-                            <span className="text-[10px] text-stone-400 font-mono">({booking.renterPhone})</span>
-                          </div>
-                          <span className="text-[11px] text-emerald-300 font-medium">
-                            {booking.packageName} • {booking.startDate} to {booking.endDate} ({booking.pickupTownship})
+              {isAccommodationVendor ? (
+                /* ========================================================================= */
+                /* CAMGO ANTI-BYPASS ACCOMMODATION BOOKING & MONETIZATION ENGINE             */
+                /* ========================================================================= */
+                <div className="space-y-6">
+                  {/* Hero Engine Title & Owner Link */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-stone-900 to-teal-950/70 border border-emerald-500/40 space-y-3.5 shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-emerald-400" />
+                            Anti-Bypass Pay-to-Reveal Protected
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                            <DollarSign className="w-3 h-3 text-amber-400" />
+                            RM30 Escrow Lock-in Fee
                           </span>
                         </div>
-                        <div className="flex items-center gap-3 self-end sm:self-auto">
-                          <div className="text-right">
-                            <span className="text-emerald-400 font-mono font-bold block">RM {booking.totalRm}</span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${booking.status === 'pending' ? 'bg-amber-900/60 text-amber-300 border border-amber-500/30' : 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/30'}`}>
-                              {booking.status}
-                            </span>
+                        <h2 className="text-base sm:text-lg font-heading font-black text-white flex items-center gap-2">
+                          <BedDouble className="w-5 h-5 text-emerald-400" />
+                          <span>{activeVendor?.businessName} — Accommodation Booking Engine</span>
+                        </h2>
+                        <p className="text-xs text-stone-300 max-w-2xl mt-0.5">
+                          Protects homestay owners against direct bypass. Addresses and contacts remain hidden until the customer pays the RM30 lock-in deposit. The remaining balance is paid directly to you at check-in.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowMinimalOwnerView(true)}
+                          className="px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-200 border border-white/10 hover:border-emerald-500/50 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                          title="Open the minimalist 2-metric mobile screen for owners"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-teal-400" />
+                          <span>Owner Mobile View</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowManualBookingModal(true)}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-950/60"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Record Manual / Walk-in</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAccommodationBookings(firebaseService.getAccommodationBookings(activeVendor?.id || activeVendor?.businessName))}
+                          className="p-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white border border-stone-800 cursor-pointer"
+                          title="Refresh bookings"
+                        >
+                          <Clock className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Owner Public URL Bar */}
+                    <div className="p-2.5 rounded-xl bg-stone-950/90 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs relative z-10">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[10px] font-mono font-bold uppercase text-stone-400 shrink-0">Owner Dashboard Link:</span>
+                        <code className="text-[11px] font-mono text-emerald-300 truncate">
+                          https://camgo.my/owner/{activeVendor ? activeVendor.businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'homestay'}
+                        </code>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = `https://camgo.my/owner/${activeVendor ? activeVendor.businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'homestay'}`;
+                            navigator.clipboard.writeText(url);
+                            setCopiedOwnerSlug(true);
+                            setTimeout(() => setCopiedOwnerSlug(false), 2500);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          {copiedOwnerSlug ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedOwnerSlug ? 'Copied!' : 'Copy Link'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowMinimalOwnerView(true)}
+                          className="px-2.5 py-1 rounded-lg bg-teal-600/30 text-teal-300 border border-teal-500/40 hover:bg-teal-600/50 text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Preview Screen</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 1. OWNER TRANSPARENCY DASHBOARD METRICS */}
+                  {(() => {
+                    const relevant = accommodationBookings.filter(
+                      (b) =>
+                        b.homestayId === activeVendor?.id ||
+                        (activeVendor && b.homestayName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))
+                    );
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    const todaysArr = relevant.filter((b) => b.checkInDate === todayStr && (b.status === 'confirmed' || b.status === 'checked_in'));
+                    const cashToCollect = relevant
+                      .filter((b) => b.status === 'confirmed' || b.status === 'pending_owner_approval')
+                      .reduce((acc, b) => acc + (b.balanceToCollect || 0), 0);
+                    const escrowDeposits = relevant
+                      .filter((b) => b.depositPaymentStatus === 'paid')
+                      .reduce((acc, b) => acc + (b.depositAmount || 30), 0);
+
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                        {/* Metric 1: Today's Arrivals */}
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-emerald-500/30 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">Today's Check-ins</span>
+                            <Calendar className="w-4 h-4 text-emerald-400" />
                           </div>
-                          <a
-                            href={`https://wa.me/${booking.renterPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                              `Salam ${booking.renterName}! This is ${booking.partnerName}. Your booking #${booking.id} for ${booking.packageName} is CONFIRMED!`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            <span>WhatsApp</span>
-                          </a>
+                          <div className="text-2xl font-black text-white font-mono">{todaysArr.length} Bookings</div>
+                          <p className="text-[10px] text-stone-400">
+                            {todaysArr.length > 0 ? `${todaysArr.map(b => b.customerName).join(', ')} arriving today` : 'No check-ins scheduled today'}
+                          </p>
+                        </div>
+
+                        {/* Metric 2: Cash to Collect at Door */}
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-amber-500/30 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">Cash to Collect on Arrival</span>
+                            <DollarSign className="w-4 h-4 text-amber-400" />
+                          </div>
+                          <div className="text-2xl font-black text-amber-400 font-mono">RM {cashToCollect}</div>
+                          <p className="text-[10px] text-stone-400">
+                            100% collected directly by you at check-in (Cash / DuitNow QR)
+                          </p>
+                        </div>
+
+                        {/* Metric 3: CamGo Escrow Deposit Locked */}
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-teal-500/30 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">RM30 Escrow Deposits</span>
+                            <ShieldCheck className="w-4 h-4 text-teal-400" />
+                          </div>
+                          <div className="text-2xl font-black text-teal-400 font-mono">RM {escrowDeposits}</div>
+                          <p className="text-[10px] text-stone-400">
+                            Pre-paid by customers to guarantee slots and prevent no-shows
+                          </p>
+                        </div>
+
+                        {/* Metric 4: Transparent Net Commission */}
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-stone-800 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">Weekly Owner Payout</span>
+                            <Award className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div className="text-2xl font-black text-emerald-400 font-mono">RM 0.00 Deductions</div>
+                          <p className="text-[10px] text-stone-400">
+                            You retain 100% of your agreed room rate. CamGo fee is paid by guest.
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  {motorbikeBookings.filter((b) => b.partnerId === activeVendor?.id || (activeVendor && b.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))).length === 0 && (
-                    <div className="p-8 rounded-2xl bg-stone-900/50 border border-dashed border-stone-800 text-center text-xs text-stone-400">
-                      No incoming {activeSector.itemNoun.toLowerCase()} reservations or orders recorded for {activeVendor?.businessName || 'this business'}.
+                    );
+                  })()}
+
+                  {/* 2. HYBRID BOOKING TYPES (INSTANT VS 30-MIN REQUEST SLA) */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-stone-900 border border-stone-800 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-amber-400" />
+                          <span>Hybrid Booking Mode Switcher (Solving Slow Confirmations)</span>
+                        </h3>
+                        <p className="text-[11px] text-stone-400">
+                          Select how incoming guest reservations are processed for this accommodation listing.
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-stone-800 text-stone-300 border border-stone-700 self-start sm:self-auto">
+                        Current Mode: {bookingTypeSetting === 'instant' ? 'Type A: Instant' : 'Type B: 30m Request'}
+                      </span>
                     </div>
-                  )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {/* Option A: Instant Confirm */}
+                      <div
+                        onClick={() => setBookingTypeSetting('instant')}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                          bookingTypeSetting === 'instant'
+                            ? 'bg-emerald-950/40 border-emerald-500/60 ring-1 ring-emerald-500/30'
+                            : 'bg-stone-950/60 border-stone-800 hover:border-stone-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                            <span className="font-bold text-xs text-white">Type A: Instant Confirm (No Waiting)</span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            Recommended
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-300 leading-relaxed">
+                          Pre-contracted room allocation. Customer pays RM30 lock fee and immediately receives digital QR voucher and unlocked property address with zero delay.
+                        </p>
+                      </div>
+
+                      {/* Option B: Request to Book (30-min WhatsApp SLA) */}
+                      <div
+                        onClick={() => setBookingTypeSetting('request')}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                          bookingTypeSetting === 'request'
+                            ? 'bg-amber-950/40 border-amber-500/60 ring-1 ring-amber-500/30'
+                            : 'bg-stone-950/60 border-stone-800 hover:border-stone-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                            <span className="font-bold text-xs text-white">Type B: Request to Book (30-min WhatsApp SLA)</span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            Auto-Refund
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-300 leading-relaxed">
+                          System automatically sends an automated WhatsApp message to your phone. If you don't reply "YES" within 30 minutes, CamGo auto-refunds the RM30 deposit so the guest is never stranded.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. ANTI-BYPASS & PAY-TO-REVEAL MASKING INSPECTOR */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-stone-900 border border-stone-800 space-y-4">
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-emerald-400" />
+                        <span>Anti-Bypass &amp; Pay-to-Reveal Live Preview</span>
+                      </h3>
+                      <p className="text-[11px] text-stone-400">
+                        See exactly how CamGo protects your property from direct cut-outs before vs after deposit payment.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Before Payment: Masked View */}
+                      <div className="p-4 rounded-xl bg-stone-950 border border-amber-500/30 space-y-2.5 relative">
+                        <div className="flex items-center justify-between">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                            1. Public Listing (Before Payment)
+                          </span>
+                          <span className="text-[10px] text-rose-400 font-mono font-bold flex items-center gap-1">
+                            <Lock className="w-3 h-3" /> Details Locked
+                          </span>
+                        </div>
+                        <div className="text-xs space-y-1.5 text-stone-300">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Public Title (Masked):</span>
+                            <span className="font-mono font-bold text-white">
+                              Cozy Stay near {activeVendor?.township || 'Cameron Highlands'} (CH-07)
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Exact Address:</span>
+                            <span className="font-mono text-stone-400 italic bg-stone-900 px-2 py-0.5 rounded block">
+                              🔒 Hidden · Unlocks instantly upon RM30 deposit confirmation
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Host Contact Phone:</span>
+                            <span className="font-mono text-stone-400 italic bg-stone-900 px-2 py-0.5 rounded block">
+                              🔒 Hidden · Direct platform bypass strictly prohibited
+                            </span>
+                          </div>
+                          <div className="pt-2">
+                            <div className="p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-[10px] text-emerald-300 font-semibold flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span>Mandatory Check-In / Check-Out dates selector required before booking.</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* After Payment: Revealed Voucher */}
+                      <div className="p-4 rounded-xl bg-stone-950 border border-emerald-500/40 space-y-2.5 relative">
+                        <div className="flex items-center justify-between">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase">
+                            2. Post-Payment Unlocked Voucher
+                          </span>
+                          <span className="text-[10px] text-emerald-400 font-mono font-bold flex items-center gap-1">
+                            <Unlock className="w-3 h-3" /> Fully Revealed
+                          </span>
+                        </div>
+                        <div className="text-xs space-y-1.5 text-stone-300">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Verified Homestay Name:</span>
+                            <span className="font-bold text-white">{activeVendor?.businessName}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Full Door Address:</span>
+                            <span className="font-mono text-emerald-300 text-[11px] block">{activeVendor?.address}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Host Direct Phone:</span>
+                            <span className="font-mono text-emerald-300 text-[11px] block">{activeVendor?.contactPhone}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">QR Check-In Voucher:</span>
+                            <span className="font-mono text-teal-300 text-[10px] block">✅ Generated &amp; verified via CamGo digital scan</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. VALUE-ADDED PACKAGES (BEATING DIRECT BOOKING) */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-stone-900 border border-stone-800 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                          <Package className="w-4 h-4 text-teal-400" />
+                          <span>Value-Added Bundles (Why Customers Never Bypass CamGo)</span>
+                        </h3>
+                        <p className="text-[11px] text-stone-400">
+                          CamGo bundles exclusive local perks that direct booking cannot match, making CamGo the smarter choice.
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-500/20 text-teal-300 border border-teal-500/40 self-start sm:self-auto">
+                        Highland Advantage
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                      <div className="p-3 rounded-xl bg-stone-950 border border-stone-800 text-xs">
+                        <span className="text-lg block mb-1">🍓</span>
+                        <span className="font-bold text-white block">Free Strawberry Passes</span>
+                        <span className="text-[10px] text-stone-400">2x Farm harvest entry vouchers</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-stone-950 border border-stone-800 text-xs">
+                        <span className="text-lg block mb-1">🅿️</span>
+                        <span className="font-bold text-white block">Guaranteed Parking</span>
+                        <span className="text-[10px] text-stone-400">Kea Farm dedicated slot reservation</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-stone-950 border border-stone-800 text-xs">
+                        <span className="text-lg block mb-1">🗺️</span>
+                        <span className="font-bold text-white block">Traffic Jam Map</span>
+                        <span className="text-[10px] text-stone-400">CamGo Live bypass routes on FT 59</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-stone-950 border border-stone-800 text-xs">
+                        <span className="text-lg block mb-1">🍲</span>
+                        <span className="font-bold text-white block">Steamboat Dining Cash</span>
+                        <span className="text-[10px] text-stone-400">RM10 local partner cash rebate</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 5. LIVE BOOKINGS LIST WITH 30-MIN WHATSAPP STATE MACHINE */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-emerald-400" />
+                          <span>Active Homestay Bookings &amp; WhatsApp Relay</span>
+                        </h3>
+                        <p className="text-xs text-stone-400">
+                          Real-time reservations for {activeVendor?.businessName}.
+                        </p>
+                      </div>
+
+                      {/* Status Filter Tabs */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+                        {[
+                          { id: 'all', label: 'All' },
+                          { id: 'pending_owner_approval', label: 'Pending (30m SLA)' },
+                          { id: 'confirmed', label: 'Confirmed' },
+                          { id: 'auto_refunded', label: 'Auto-Refunded' },
+                        ].map((flt) => (
+                          <button
+                            key={flt.id}
+                            type="button"
+                            onClick={() => setBookingFilterStatus(flt.id as any)}
+                            className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                              bookingFilterStatus === flt.id
+                                ? 'bg-emerald-600 text-white shadow'
+                                : 'bg-stone-900 text-stone-400 hover:text-white'
+                            }`}
+                          >
+                            {flt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Bookings List */}
+                    {(() => {
+                      const relevant = accommodationBookings.filter(
+                        (b) =>
+                          b.homestayId === activeVendor?.id ||
+                          (activeVendor && b.homestayName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))
+                      );
+                      const displayList = relevant.filter((b) => {
+                        if (bookingFilterStatus === 'all') return true;
+                        return b.status === bookingFilterStatus;
+                      });
+
+                      if (displayList.length === 0) {
+                        return (
+                          <div className="p-8 rounded-2xl bg-stone-900/50 border border-dashed border-stone-800 text-center text-xs text-stone-400 space-y-2">
+                            <p>No bookings found under "{bookingFilterStatus.replace(/_/g, ' ')}".</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowManualBookingModal(true)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-bold hover:bg-emerald-600/50 cursor-pointer"
+                            >
+                              Add First Booking
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          {displayList.map((booking) => {
+                            const isPending = booking.status === 'pending_owner_approval';
+                            const isConfirmed = booking.status === 'confirmed';
+                            const isRefunded = booking.status === 'auto_refunded' || booking.status === 'rejected';
+
+                            return (
+                              <div
+                                key={booking.id}
+                                className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                                  isPending
+                                    ? 'bg-amber-950/20 border-amber-500/50 ring-1 ring-amber-500/20'
+                                    : isConfirmed
+                                    ? 'bg-stone-900/90 border-emerald-500/30'
+                                    : 'bg-stone-900/50 border-stone-800 opacity-80'
+                                }`}
+                              >
+                                {/* Top Row: Guest & Dates */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                                  <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-heading font-black text-white text-sm">
+                                        {booking.customerName}
+                                      </span>
+                                      <span className="text-[11px] font-mono text-stone-400">({booking.customerPhone})</span>
+                                      <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-stone-800 text-emerald-300 border border-white/10">
+                                        {booking.bookingCode}
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                          isPending
+                                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                                            : isConfirmed
+                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                        }`}
+                                      >
+                                        {booking.status.replace(/_/g, ' ')}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-stone-300 mt-1 flex items-center gap-2 flex-wrap">
+                                      <span className="font-medium text-emerald-400">
+                                        📅 {booking.checkInDate} to {booking.checkOutDate} ({booking.nights} night{booking.nights > 1 ? 's' : ''})
+                                      </span>
+                                      <span>•</span>
+                                      <span className="text-stone-400">{booking.roomTypeName || 'Family Suite'}</span>
+                                      <span>•</span>
+                                      <span className="text-[10px] font-mono uppercase text-teal-300">
+                                        {booking.bookingType === 'instant' ? 'Type A: Instant' : 'Type B: 30m Request'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Financial Breakdown */}
+                                  <div className="text-left sm:text-right shrink-0">
+                                    <div className="text-xs font-mono font-bold text-white">
+                                      Total: RM {booking.totalRoomPrice}
+                                    </div>
+                                    <div className="text-[11px] font-mono text-emerald-400">
+                                      Deposit: RM {booking.depositAmount} PAID
+                                    </div>
+                                    <div className="text-xs font-mono font-black text-amber-400">
+                                      Collect at Door: RM {booking.balanceToCollect}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Included Bundled Perks */}
+                                {booking.bundledPerks && booking.bundledPerks.length > 0 && (
+                                  <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                                    <span className="text-stone-500 font-bold uppercase tracking-wider text-[9px]">Included Perks:</span>
+                                    {booking.bundledPerks.map((prk, i) => (
+                                      <span key={i} className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-800 text-stone-300">
+                                        {prk}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* WhatsApp 30-min SLA Interactive Simulator (for pending request) */}
+                                {isPending && (
+                                  <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 space-y-2.5">
+                                    <div className="flex items-center justify-between text-xs">
+                                      <div className="flex items-center gap-2 text-amber-300 font-bold">
+                                        <Clock className="w-4 h-4 animate-spin" />
+                                        <span>30-Minute WhatsApp Owner SLA Countdown Active</span>
+                                      </div>
+                                      <span className="px-2 py-0.5 rounded bg-amber-900/60 text-amber-200 font-mono font-black text-[10px]">
+                                        ~20 min remaining
+                                      </span>
+                                    </div>
+
+                                    {/* Simulated incoming WhatsApp template */}
+                                    <div className="p-2.5 rounded-lg bg-stone-950 border border-amber-500/20 text-xs font-mono text-stone-300 space-y-1">
+                                      <div className="text-emerald-400 font-bold flex items-center gap-1">
+                                        <MessageSquare className="w-3.5 h-3.5" />
+                                        <span>Incoming WhatsApp Alert to Owner (+60 19-332 8819):</span>
+                                      </div>
+                                      <p className="text-[11px] text-stone-200">
+                                        🔔 NEW CamGo BOOKING! {booking.homestayName}: {booking.nights} night, {booking.checkInDate}. Name: {booking.customerName} ({booking.customerPhone}). Deposit: RM30 PAID. Balance to collect: RM{booking.balanceToCollect}. Reply YES to confirm, NO if fully booked.
+                                      </p>
+                                    </div>
+
+                                    {/* State Machine Action Controls */}
+                                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleConfirmAccommodationBooking(booking)}
+                                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow"
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>Reply "YES" (Confirm Booking)</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRejectAccommodationBooking(booking)}
+                                        className="px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                        <span>Reply "NO" (Decline &amp; Auto-Refund)</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSimulateTimeoutAccommodationBooking(booking)}
+                                        className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold transition-all cursor-pointer"
+                                        title="Simulate 30-min timeout where CamGo auto-refunds guest"
+                                      >
+                                        <span>Simulate 30m Timeout</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Card Bottom Actions */}
+                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedBookingForVoucher(booking)}
+                                      className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border border-white/5"
+                                    >
+                                      <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>View Pay-to-Reveal Voucher</span>
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <a
+                                      href={`https://wa.me/${booking.customerPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                        `Salam ${booking.customerName}! This is ${activeVendor?.businessName} in Cameron Highlands regarding your CamGo booking #${booking.bookingCode}. Your check-in is on ${booking.checkInDate}. Balance to collect upon arrival: RM${booking.balanceToCollect}. See you soon!`
+                                      )}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all"
+                                    >
+                                      <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>WhatsApp Guest</span>
+                                    </a>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* ========================================================================= */
+                /* DEFAULT NON-ACCOMMODATION ORDERS & RESERVATIONS (e.g. MOTORBIKE / CAFE)   */
+                /* ========================================================================= */
+                <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-400" />
+                      Incoming Orders &amp; Reservations
+                    </h3>
+                    <button
+                      onClick={() => setMotorbikeBookings(firebaseService.getMotorbikeBookings())}
+                      className="text-xs font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                    >
+                      Refresh Bookings
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {motorbikeBookings
+                      .filter((b) => b.partnerId === activeVendor?.id || (activeVendor && b.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase())))
+                      .map((booking) => (
+                        <div key={booking.id} className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white block">{booking.renterName}</span>
+                              <span className="text-[10px] text-stone-400 font-mono">({booking.renterPhone})</span>
+                            </div>
+                            <span className="text-[11px] text-emerald-300 font-medium">
+                              {booking.packageName} • {booking.startDate} to {booking.endDate} ({booking.pickupTownship})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 self-end sm:self-auto">
+                            <div className="text-right">
+                              <span className="text-emerald-400 font-mono font-bold block">RM {booking.totalRm}</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${booking.status === 'pending' ? 'bg-amber-900/60 text-amber-300 border border-amber-500/30' : 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/30'}`}>
+                                {booking.status}
+                              </span>
+                            </div>
+                            <a
+                              href={`https://wa.me/${booking.renterPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                `Salam ${booking.renterName}! This is ${booking.partnerName}. Your booking #${booking.id} for ${booking.packageName} is CONFIRMED!`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span>WhatsApp</span>
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    {motorbikeBookings.filter((b) => b.partnerId === activeVendor?.id || (activeVendor && b.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))).length === 0 && (
+                      <div className="p-8 rounded-2xl bg-stone-900/50 border border-dashed border-stone-800 text-center text-xs text-stone-400">
+                        No incoming {activeSector.itemNoun.toLowerCase()} reservations or orders recorded for {activeVendor?.businessName || 'this business'}.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </main>
@@ -3547,6 +4314,426 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               >
                 Sync &amp; Update Rental Marketplace &amp; Live Map
               </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ACCOMMODATION MODAL 1: PAY-TO-REVEAL VOUCHER & CHECK-IN MODAL */}
+      <AnimatePresence>
+        {selectedBookingForVoucher && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-lg bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <QrCode className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-base text-white">CamGo Verified Homestay Voucher</h3>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-black text-emerald-400 uppercase">
+                        {selectedBookingForVoucher.isUnlocked ? 'Unlocked & Verified' : 'Locked'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-400">Booking Code: <span className="font-mono text-emerald-400 font-bold">{selectedBookingForVoucher.bookingCode}</span></p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedBookingForVoucher(null)}
+                  className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* QR Voucher Visual */}
+              <div className="bg-stone-950 border border-emerald-500/30 rounded-2xl p-5 text-center space-y-3">
+                <p className="text-xs text-stone-400 font-medium">Scan Upon Arrival to Verify Booking &amp; Hand Over Keys</p>
+                {voucherQrDataUrl ? (
+                  <div className="inline-block p-3 bg-white rounded-2xl shadow-xl">
+                    <img src={voucherQrDataUrl} alt="Voucher QR Code" className="w-44 h-44 object-contain" />
+                  </div>
+                ) : (
+                  <div className="w-44 h-44 mx-auto bg-stone-800 rounded-2xl flex items-center justify-center text-xs text-stone-500">
+                    Generating QR...
+                  </div>
+                )}
+                <div className="font-mono text-xs font-bold text-emerald-400 tracking-wider">
+                  VOUCHER ID: {selectedBookingForVoucher.qrVoucherCode || selectedBookingForVoucher.bookingCode}
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-semibold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Anti-Bypass Deposit RM30 Locked via {selectedBookingForVoucher.paymentGateway || 'Billplz FPX'}
+                </div>
+              </div>
+
+              {/* Unlocked Details */}
+              <div className="bg-stone-950/70 border border-stone-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-stone-800">
+                  <span className="text-xs text-stone-400 font-semibold">Listing Details:</span>
+                  <span className="text-xs text-stone-300 font-bold">{selectedBookingForVoucher.maskedTitle}</span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] text-stone-400 block font-semibold">Full Unlocked Physical Address:</span>
+                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs text-stone-200 font-medium flex items-center justify-between">
+                    <span className="truncate pr-2">{selectedBookingForVoucher.fullAddress}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(selectedBookingForVoucher.fullAddress);
+                        setSaveNotification('Copied address to clipboard!');
+                        setTimeout(() => setSaveNotification(null), 3000);
+                      }}
+                      className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer shrink-0"
+                      title="Copy Address"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 space-y-0.5">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold block">Guest Details</span>
+                    <p className="font-bold text-white truncate">{selectedBookingForVoucher.customerName || selectedBookingForVoucher.guestName}</p>
+                    <p className="text-stone-300 text-[11px]">{selectedBookingForVoucher.customerPhone || selectedBookingForVoucher.guestPhone}</p>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 space-y-0.5">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold block">Host Contact</span>
+                    <p className="font-bold text-emerald-400 truncate">{selectedBookingForVoucher.ownerPhone || selectedBookingForVoucher.hostPhone || activeVendor?.contactPhone || '+60123456789'}</p>
+                    <a
+                      href={`https://wa.me/${((selectedBookingForVoucher.customerPhone || selectedBookingForVoucher.guestPhone) || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${selectedBookingForVoucher.customerName || selectedBookingForVoucher.guestName}, welcome to ${activeVendor?.businessName || 'our homestay'} in Cameron Highlands! Regarding booking ${selectedBookingForVoucher.bookingCode}:`)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      WhatsApp Guest <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Dates & Financials */}
+                <div className="grid grid-cols-3 gap-2 text-center pt-2">
+                  <div className="p-2 rounded-xl bg-stone-900 border border-stone-800">
+                    <span className="text-[10px] text-stone-400 uppercase block font-semibold">Check-In</span>
+                    <span className="text-xs font-bold text-white">{selectedBookingForVoucher.checkInDate}</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-stone-900 border border-stone-800">
+                    <span className="text-[10px] text-stone-400 uppercase block font-semibold">Check-Out</span>
+                    <span className="text-xs font-bold text-white">{selectedBookingForVoucher.checkOutDate}</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                    <span className="text-[10px] text-amber-400 uppercase block font-bold">Collect at Door</span>
+                    <span className="text-xs font-black text-amber-300">RM {selectedBookingForVoucher.balanceToCollect}</span>
+                  </div>
+                </div>
+
+                {/* Bundled Perks */}
+                {selectedBookingForVoucher.bundledPerks && selectedBookingForVoucher.bundledPerks.length > 0 && (
+                  <div className="pt-2 border-t border-stone-800">
+                    <span className="text-[11px] text-purple-300 font-bold block mb-1">🎁 CamGo Exclusive Bundled Perks:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedBookingForVoucher.bundledPerks.map((p, idx) => (
+                        <span key={idx} className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-medium">
+                          ✓ {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-1">
+                {selectedBookingForVoucher.status !== 'checked_in' && (
+                  <button
+                    onClick={async () => {
+                      await firebaseService.updateAccommodationBookingStatus(selectedBookingForVoucher.id, 'checked_in');
+                      if (activeVendor) {
+                        setAccommodationBookings(firebaseService.getAccommodationBookings(activeVendor.id));
+                      }
+                      setSelectedBookingForVoucher(null);
+                      setSaveNotification(`Marked ${selectedBookingForVoucher.bookingCode} as Checked In!`);
+                      setTimeout(() => setSaveNotification(null), 3000);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    Confirm Handover &amp; Checked In
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedBookingForVoucher(null)}
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ACCOMMODATION MODAL 2: MINIMALIST OWNER TRANSPARENCY DASHBOARD (camgo.my/owner/[slug]) */}
+      <AnimatePresence>
+        {showMinimalOwnerView && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <div className="w-full max-w-md bg-stone-950 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 space-y-6 shadow-2xl relative max-h-[92vh] overflow-y-auto no-scrollbar">
+              {/* Header simulation */}
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <h3 className="font-black text-sm text-white uppercase tracking-wider">CamGo Owner Express</h3>
+                  </div>
+                  <p className="text-[11px] font-mono text-emerald-400 mt-0.5 truncate">
+                    camgo.my/owner/{(activeVendor?.businessName || 'abah-homestay').toLowerCase().replace(/\s+/g, '-')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowMinimalOwnerView(false)}
+                  className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Host welcome */}
+              <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-4">
+                <p className="text-xs text-stone-400">Welcome Back,</p>
+                <h4 className="text-lg font-black text-white">{activeVendor?.businessName || 'Abah Homestay Kea Farm'}</h4>
+                <p className="text-[11px] text-stone-400 mt-1">
+                  Cameron Highlands · Simplified Host Portal (Zero Clutter)
+                </p>
+              </div>
+
+              {/* 2 Core Metrics */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Metric 1: Today's Bookings */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/60 to-stone-900 border border-emerald-500/30 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Today&apos;s Arrivals</span>
+                    <Calendar className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="text-3xl font-black text-white">
+                    {accommodationBookings.filter((b) => b.status === 'confirmed' || b.status === 'checked_in').length}
+                  </div>
+                  <p className="text-[10px] text-stone-400">Locked via RM30 deposit</p>
+                </div>
+
+                {/* Metric 2: Pending Cash to Collect at Door */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/60 to-stone-900 border border-amber-500/30 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider">Cash to Collect</span>
+                    <DollarSign className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="text-3xl font-black text-amber-300">
+                    RM {accommodationBookings
+                      .filter((b) => b.status === 'confirmed')
+                      .reduce((acc, curr) => acc + curr.balanceToCollect, 0)}
+                  </div>
+                  <p className="text-[10px] text-stone-400">Direct from guests at check-in</p>
+                </div>
+              </div>
+
+              {/* Today's Guests List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h5 className="text-xs font-black uppercase tracking-wider text-stone-300">Guests Arriving Today</h5>
+                  <span className="text-[10px] text-stone-500">Auto-synced</span>
+                </div>
+
+                {accommodationBookings.filter((b) => b.status === 'confirmed' || b.status === 'checked_in').length === 0 ? (
+                  <div className="p-4 rounded-2xl bg-stone-900/50 border border-stone-800 text-center text-xs text-stone-500">
+                    No confirmed guest arrivals for today.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {accommodationBookings
+                      .filter((b) => b.status === 'confirmed' || b.status === 'checked_in')
+                      .map((b) => (
+                        <div key={b.id} className="p-3.5 rounded-2xl bg-stone-900 border border-stone-800 flex items-center justify-between">
+                          <div className="space-y-0.5 min-w-0 pr-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-xs text-white truncate">{b.customerName || b.guestName}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-400">
+                                {b.bookingCode}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-stone-400">
+                              Collect: <strong className="text-amber-300 font-black">RM {b.balanceToCollect}</strong> · {b.checkInDate} to {b.checkOutDate}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <a
+                              href={`https://wa.me/${((b.customerPhone || b.guestPhone) || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${b.customerName || b.guestName}, this is your host from ${activeVendor?.businessName || 'CamGo Homestay'}. Are you on your way to Cameron Highlands?`)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                              title="WhatsApp Guest"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </a>
+                            <button
+                              onClick={() => {
+                                setSelectedBookingForVoucher(b);
+                                setShowMinimalOwnerView(false);
+                              }}
+                              className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                              title="Show QR Voucher"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Commission / Payout Card */}
+              <div className="p-4 rounded-2xl bg-stone-900 border border-stone-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-stone-300">Sunday Payout Settlement</span>
+                  <span className="text-[11px] font-bold text-emerald-400">Bank Transfer Direct</span>
+                </div>
+                <p className="text-[11px] text-stone-400 leading-relaxed">
+                  CamGo holds only the RM30 lock-in fee. Your platform net balance is disbursed every Sunday directly to your registered Maybank/CIMB account.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowMinimalOwnerView(false)}
+                className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
+              >
+                Return to Full Vendor Dashboard
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ACCOMMODATION MODAL 3: MANUAL / WALK-IN BOOKING LOCK MODAL */}
+      <AnimatePresence>
+        {showManualBookingModal && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-md bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 space-y-4 shadow-2xl relative">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                    <BedDouble className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white">Record Manual / Walk-in</h3>
+                    <p className="text-[11px] text-stone-400">Blocks slot in CamGo to avoid double booking</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowManualBookingModal(false)}
+                  className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="text-[11px] font-bold text-stone-300 block mb-1">Guest Full Name</label>
+                  <input
+                    type="text"
+                    value={manualGuestName}
+                    onChange={(e) => setManualGuestName(e.target.value)}
+                    placeholder="e.g. Encik Roslan Ahmad"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-500 text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-stone-300 block mb-1">Guest Phone Number (WhatsApp)</label>
+                  <input
+                    type="text"
+                    value={manualGuestPhone}
+                    onChange={(e) => setManualGuestPhone(e.target.value)}
+                    placeholder="+6012-3456789"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-500 text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Check-In Date</label>
+                    <input
+                      type="date"
+                      value={manualCheckInDate}
+                      onChange={(e) => setManualCheckInDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Check-Out Date</label>
+                    <input
+                      type="date"
+                      value={manualCheckOutDate}
+                      onChange={(e) => setManualCheckOutDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Total Rate (RM)</label>
+                    <input
+                      type="number"
+                      value={manualTotalRate}
+                      onChange={(e) => setManualTotalRate(e.target.value)}
+                      placeholder="200"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Booking Confirmation</label>
+                    <select
+                      value={manualBookingType}
+                      onChange={(e) => setManualBookingType(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="instant">Type A: Instant Confirm</option>
+                      <option value="request">Type B: Request to Book</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-stone-300 block mb-1">Room / Unit Type</label>
+                  <input
+                    type="text"
+                    value={manualRoomType}
+                    onChange={(e) => setManualRoomType(e.target.value)}
+                    placeholder="e.g. 2BR Apartment (Kea Farm View)"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-500 text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={(e) => handleCreateManualAccommodationBooking(e)}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-lg transition-colors"
+                >
+                  Save &amp; Lock Calendar Slot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowManualBookingModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}
