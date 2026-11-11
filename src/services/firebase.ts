@@ -1,4 +1,4 @@
-import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard, AccommodationBooking } from '../types';
+import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard, AccommodationBooking, AccommodationListing, RoomAvailabilityStatus } from '../types';
 import {
   INITIAL_PLACES,
   INITIAL_GALLERY,
@@ -73,6 +73,7 @@ const STORAGE_KEYS = {
   VENDOR_STAFF: 'camgo_vendor_staff',
   HOME_CARDS: 'camgo_home_cards',
   ACCOMMODATION_BOOKINGS: 'camgo_accommodation_bookings',
+  ACCOMMODATION_LISTINGS: 'camgo_accommodation_listings',
 };
 
 export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
@@ -307,6 +308,55 @@ export function isMockLoungePost(post: any): boolean {
 
   return false;
 }
+
+export const PARK_VIEW_VENDOR_LISTING: VendorListing = {
+  id: 'vendor-park-view-apartment',
+  ownerUid: 'admin-created-vendor',
+  ownerEmail: 'parkview.admin@camgo.my',
+  businessName: 'Park View Apartment',
+  verificationStatus: 'verified',
+  category: 'accommodation',
+  subCategory: 'homestay_apartment',
+  township: 'Tanah Rata',
+  address: 'Park View Apartments, Persiaran Camellia 4, 39000 Tanah Rata, Cameron Highlands',
+  contactPhone: '+60195484277',
+  whatsappNumber: '+60195484277',
+  description: 'Spacious 3-bedroom family holiday homestay apartment near Tanah Rata town center with scenic garden and mountain views. Fully furnished with cooking facilities, high-speed Wi-Fi, and private parking.',
+  operatingHours: { from: '00:00', to: '23:59', isOpen: true },
+  coverImage: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+  logoUrl: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+  galleryImages: [
+    'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=800&q=80'
+  ],
+  coordinates: { lat: 4.471, lng: 101.378 },
+  isBookingEnabled: true,
+  realTimeStatus: 'open',
+  parkingStatus: 'private_available',
+  roomAvailabilityStatus: 'rooms_available',
+  dietaryTags: [],
+  tier: 'monthly_pro',
+  billingCadence: 'monthly',
+  tierExpiresAt: '2027-12-31T23:59:59.000Z',
+  isSponsored: true,
+  profileHealthScore: 100,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  sectorSpecifics: {
+    accommodation: {
+      apartment: {
+        totalUnits: 4,
+        roomsPerUnit: 3,
+        cookingPermitted: true,
+        facilities: ['High-speed Wi-Fi', 'Balcony Park View', 'Private Bay Parking', 'Fully Equipped Kitchen', 'Hot Shower']
+      },
+      roomTypes: [
+        { id: 'room-pv-3br', name: '3-Bedroom Family Suite', quantity: 4, pricePerNight: 220 }
+      ],
+      roomAvailabilityStatus: 'rooms_available'
+    }
+  }
+};
 
 class FirebaseStorageService {
   private currentUser: UserProfile | null = null;
@@ -2036,41 +2086,40 @@ class FirebaseStorageService {
   // Vendor Management CRUD Methods
   public getVendorListings(): VendorListing[] {
     const data = localStorage.getItem(STORAGE_KEYS.VENDOR_LISTINGS);
-    if (!data) {
-      this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify([]));
-      return [];
-    }
-    try {
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) {
-        // Filter out residual mock vendors if any exist in cache
-        const cleaned = parsed.filter((v: any) => v && v.id && !isMockVendorListing(v));
-        
-        // Deduplicate by ID and normalized business name
-        const uniqueMap = new Map<string, VendorListing>();
-        for (const item of cleaned) {
-          if (!item || !item.businessName) continue;
-          const normName = item.businessName.toLowerCase().trim();
-          const existingKey = Array.from(uniqueMap.keys()).find(k => k === item.id || k === normName);
-          if (!existingKey) {
-            uniqueMap.set(item.id, item);
-            uniqueMap.set(normName, item);
-          } else {
-            uniqueMap.set(existingKey, item);
-            uniqueMap.set(item.id, item);
-          }
+    let list: VendorListing[] = [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          list = parsed.filter((v: any) => v && v.id && !isMockVendorListing(v));
         }
-        const finalUnique = Array.from(new Set(uniqueMap.values()));
-
-        if (finalUnique.length !== parsed.length) {
-          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
-        }
-        return finalUnique;
+      } catch {
+        list = [];
       }
-      return [];
-    } catch {
-      return [];
     }
+
+    // Ensure Park View Apartment (admin-created vendor listing) is always present
+    if (!list.some((v) => (v.businessName || '').toLowerCase().includes('park view') || v.id === PARK_VIEW_VENDOR_LISTING.id)) {
+      list.unshift(PARK_VIEW_VENDOR_LISTING);
+    }
+
+    // Deduplicate by ID and normalized business name
+    const uniqueMap = new Map<string, VendorListing>();
+    for (const item of list) {
+      if (!item || !item.businessName) continue;
+      const normName = item.businessName.toLowerCase().trim();
+      const existingKey = Array.from(uniqueMap.keys()).find(k => k === item.id || k === normName);
+      if (!existingKey) {
+        uniqueMap.set(item.id, item);
+        uniqueMap.set(normName, item);
+      } else {
+        uniqueMap.set(existingKey, item);
+        uniqueMap.set(item.id, item);
+      }
+    }
+    const finalUnique = Array.from(new Set(uniqueMap.values()));
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
+    return finalUnique;
   }
 
   public getVendorListingById(id: string): VendorListing | undefined {
@@ -2903,6 +2952,176 @@ class FirebaseStorageService {
     }
     this.notify();
     return bookings;
+  }
+
+  // ==========================================
+  // CamGo Verified Homestays Directory
+  // ==========================================
+  public getAccommodationListings(): AccommodationListing[] {
+    const data = localStorage.getItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS);
+    let cachedListings: AccommodationListing[] = [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          // Strict anti-mock purge: filter out any legacy hardcoded mock listings
+          cachedListings = parsed.filter(
+            (item: any) =>
+              item &&
+              item.id &&
+              !item.id.startsWith('hs_') &&
+              !item.id.startsWith('mock-') &&
+              !item.id.startsWith('seed-') &&
+              !item.id.startsWith('test-')
+          );
+        }
+      } catch {
+        cachedListings = [];
+      }
+    }
+
+    const accommodationMap = new Map<string, AccommodationListing>();
+
+    // 1. Load any genuine custom listings saved in cache
+    for (const item of cachedListings) {
+      if (item && item.id) {
+        accommodationMap.set(item.id, item);
+      }
+    }
+
+    // 2. Load genuine Vendor Listings from Vendor Portal
+    const vendorListings = this.getVendorListings();
+    for (const v of vendorListings) {
+      if (!v || isMockVendorListing(v)) continue;
+
+      const vName = (v.businessName || '').toLowerCase();
+      const isAccomVendor =
+        v.category === 'accommodation' ||
+        v.subCategory === 'homestay' ||
+        v.subCategory === 'homestay_apartment' ||
+        v.subCategory === 'homestay_landed' ||
+        v.subCategory === 'chalets' ||
+        v.subCategory === 'hotels_resorts' ||
+        vName.includes('homestay') ||
+        vName.includes('chalet') ||
+        vName.includes('resort') ||
+        vName.includes('apartment') ||
+        vName.includes('guesthouse');
+
+      if (isAccomVendor) {
+        const existing = accommodationMap.get(v.id);
+        const codeNumber = v.id.slice(-4).replace(/\D/g, '') || Math.floor(10 + Math.random() * 89).toString();
+        const price = v.sectorSpecifics?.accommodation?.roomTypes?.[0]?.pricePerNight || 200;
+
+        const mapped: AccommodationListing = {
+          id: v.id,
+          vendorId: v.id,
+          code: existing?.code || `CH-${codeNumber}`,
+          maskedTitle: existing?.maskedTitle || `${v.businessName} (CH-${codeNumber})`,
+          realBusinessName: v.businessName,
+          township: v.township || 'Kea Farm',
+          proximityDesc: v.address ? `Located at ${v.address}` : `Central ${v.township || 'Cameron Highlands'}`,
+          fullAddress: v.address || `${v.township}, 39000 Cameron Highlands`,
+          ownerName: v.businessName + ' Host',
+          ownerPhone: v.contactPhone || v.whatsappNumber || '+60123456789',
+          whatsappNumber: v.whatsappNumber || v.contactPhone || '+60123456789',
+          pricePerNight: existing?.pricePerNight || price,
+          depositAmount: 30,
+          balanceToCollect: Math.max(0, (existing?.pricePerNight || price) - 30),
+          bookingType: existing?.bookingType || 'instant',
+          roomAvailabilityStatus: v.roomAvailabilityStatus || existing?.roomAvailabilityStatus || 'rooms_available',
+          bedrooms: v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || existing?.bedrooms || 3,
+          bathrooms: existing?.bathrooms || 2,
+          maxGuests: (v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3) * 2,
+          rating: existing?.rating || (v.profileHealthScore ? 4.5 + (v.profileHealthScore / 200) : 4.9),
+          reviewCount: existing?.reviewCount || 18,
+          coverImage: v.coverImage || v.galleryImages?.[0] || v.logoUrl || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+          galleryImages: v.galleryImages && v.galleryImages.length > 0 ? v.galleryImages : [v.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80'],
+          features: existing?.features || ['Highland Mountain Air', 'Fast Wi-Fi', 'Balcony View', 'Free Parking'],
+          bundledPerks: [
+            '🍓 Free Strawberry Farm Passes (Kea Farm)',
+            '🅿️ Guaranteed Kea Farm Dedicated Parking Bay',
+            '🗺️ CamGo Live Traffic Jam Avoidance Map',
+          ],
+          verifiedHost: v.verificationStatus === 'verified',
+          ownerPortalSlug: (v.businessName || 'host').toLowerCase().replace(/[^a-z0-9]/g, '-'),
+        };
+
+        accommodationMap.set(v.id, mapped);
+      }
+    }
+
+    const finalList = Array.from(accommodationMap.values());
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(finalList));
+    return finalList;
+  }
+
+  public async saveAccommodationListing(listing: AccommodationListing): Promise<AccommodationListing[]> {
+    const listings = this.getAccommodationListings();
+    const idx = listings.findIndex((l) => l.id === listing.id);
+    let updated: AccommodationListing[];
+    if (idx >= 0) {
+      listings[idx] = { ...listings[idx], ...listing };
+      updated = [...listings];
+    } else {
+      updated = [listing, ...listings];
+    }
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(updated));
+    if (db) {
+      try {
+        await setDoc(doc(db, 'accommodation_listings', listing.id), listing, { merge: true });
+      } catch (e) {
+        console.error('Error saving accommodation listing to Firestore:', e);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: updated }));
+    }
+    this.notify();
+    return updated;
+  }
+
+  public async deleteAccommodationListing(id: string): Promise<AccommodationListing[]> {
+    const listings = this.getAccommodationListings().filter((l) => l.id !== id && l.vendorId !== id);
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(listings));
+    const vendorListings = this.getVendorListings().filter((v) => v.id !== id);
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(vendorListings));
+
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'accommodation_listings', id));
+        await deleteDoc(doc(db, 'vendor_listings', id));
+      } catch (e) {
+        console.error('Error deleting accommodation listing from Firestore:', e);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: listings }));
+      window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: vendorListings }));
+    }
+    this.notify();
+    return listings;
+  }
+
+  public async updateAccommodationListingStatus(id: string, status: RoomAvailabilityStatus): Promise<AccommodationListing[]> {
+    const listings = this.getAccommodationListings();
+    const target = listings.find((l) => l.id === id);
+    if (target) {
+      target.roomAvailabilityStatus = status;
+      this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(listings));
+      if (db) {
+        try {
+          await setDoc(doc(db, 'accommodation_listings', id), { roomAvailabilityStatus: status }, { merge: true });
+        } catch (e) {
+          console.error('Error updating accommodation listing status in Firestore:', e);
+        }
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: listings }));
+      }
+      this.notify();
+    }
+    return listings;
   }
 }
 

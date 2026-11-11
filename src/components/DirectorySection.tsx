@@ -35,6 +35,8 @@ import {
   Ticket,
   Layers,
   RotateCcw,
+  BedDouble,
+  ArrowRight,
 } from 'lucide-react';
 import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
@@ -619,6 +621,36 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Accommodation Pay-to-Reveal Engine Banner */}
+        {currentCategory === 'accommodation' && (
+          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950/80 via-teal-950/40 to-stone-900 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-xl">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                  CamGo Anti-Bypass System
+                </span>
+                <h4 className="text-xs sm:text-sm font-extrabold text-white">
+                  {language === 'bm' ? 'Inap Desa & Chalet Disahkan (Kunci RM30)' : 'Verified Homestays & Stays (RM30 Lock)'}
+                </h4>
+              </div>
+              <p className="text-[11px] sm:text-xs text-stone-300">
+                {language === 'bm'
+                  ? 'Tempah terus dengan hos tempatan. Bayar deposit RM30 untuk mengunci tarikh & dapatkan pas percuma ladang strawberi Kea Farm.'
+                  : 'Book direct from local Cameron hosts with RM30 deposit lock-in, instant address reveal & free Kea Farm strawberry passes.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-accommodation'))}
+              className="px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-colors"
+            >
+              <BedDouble className="w-4 h-4" />
+              <span>{language === 'bm' ? 'Buka Senarai Homestay' : 'Browse Verified Homestays'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Places Cards Grid */}
         {filteredPlaces.length === 0 ? (

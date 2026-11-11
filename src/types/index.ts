@@ -801,6 +801,36 @@ export interface AccommodationBooking {
   notes?: string;
 }
 
+export interface AccommodationListing {
+  id: string;
+  vendorId?: string;
+  code: string; // e.g. "CH-07"
+  maskedTitle: string; // e.g. "Cozy 3BR Alpine Apartment - 350m to Kea Farm (CH-07)"
+  realBusinessName: string; // e.g. "Barrington Alpine Homestay"
+  township: Township;
+  proximityDesc: string; // "350m to Kea Farm Market & Strawberry Walk"
+  fullAddress: string;
+  ownerName: string;
+  ownerPhone: string;
+  pricePerNight: number;
+  depositAmount: number; // 30
+  balanceToCollect: number; // pricePerNight - 30
+  bookingType: 'instant' | 'request';
+  roomAvailabilityStatus: RoomAvailabilityStatus;
+  bedrooms: number;
+  bathrooms: number;
+  maxGuests: number;
+  rating: number;
+  reviewCount: number;
+  coverImage: string;
+  galleryImages: string[];
+  features: string[];
+  bundledPerks: string[];
+  verifiedHost: boolean;
+  ownerPortalSlug?: string;
+  whatsappNumber?: string;
+}
+
 export interface MobileHomeCard {
   id: string;
   type: 'weather' | 'hazard' | 'map' | 'itinerary' | 'party' | 'sos' | 'bike' | 'custom';

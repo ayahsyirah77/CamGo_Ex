@@ -13,6 +13,7 @@ import {
   Bike,
   Sparkles,
   Droplets,
+  BedDouble,
 } from 'lucide-react';
 import { MobileHomeCard, Language, WeatherData, TrafficAlert, HazardAlert } from '../types';
 import { firebaseService } from '../services/firebase';
@@ -26,6 +27,7 @@ interface MobileHomeCardsProps {
   onOpenItinerary: () => void;
   onOpenParty: () => void;
   onOpenMotorbike?: () => void;
+  onOpenAccommodation?: () => void;
   onOpenSos: () => void;
   weatherList?: WeatherData[];
   trafficAlerts?: TrafficAlert[];
@@ -40,6 +42,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
   onOpenItinerary,
   onOpenParty,
   onOpenMotorbike,
+  onOpenAccommodation,
   onOpenSos,
   weatherList = [],
   trafficAlerts = [],
@@ -109,6 +112,11 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
         if (onOpenMotorbike) onOpenMotorbike();
         else onOpenParty();
         break;
+      case 'open-accommodation':
+      case 'open-homestays':
+      case 'open-stays':
+        if (onOpenAccommodation) onOpenAccommodation();
+        break;
       case 'open-sos':
         onOpenSos();
         break;
@@ -123,6 +131,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           else onOpenParty();
         }
         else if (card.type === 'sos') onOpenSos();
+        else if (card.buttonAction === 'open-accommodation' || card.id?.includes('accommodation')) {
+          if (onOpenAccommodation) onOpenAccommodation();
+        }
         break;
     }
   };
@@ -424,6 +435,40 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Row 5: Verified Homestays & Stays (Pay-to-Reveal Anti-Bypass) */}
+      <div
+        onClick={() => onOpenAccommodation && onOpenAccommodation()}
+        className="rounded-2xl p-3.5 bg-stone-900/95 backdrop-blur-xl border-2 border-emerald-500/50 hover:border-emerald-400 active:border-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.35)] flex items-center justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden select-none"
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/60 via-stone-900/80 to-transparent pointer-events-none" />
+        <div className="flex items-center gap-3 relative z-10 min-w-0">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+            <BedDouble className="w-6 h-6" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-black text-white group-hover:text-emerald-300 transition-colors truncate">
+                Verified Homestays &amp; Stays
+              </span>
+              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-wider">
+                RM30 Lock
+              </span>
+            </div>
+            <p className="text-[10px] text-stone-400 truncate">
+              Direct Host Portals · Kea Farm &amp; Brinchang · Pay Balance at Door
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-[10.5px] shadow-sm shrink-0 flex items-center gap-1 group-hover:scale-105 transition-transform cursor-pointer relative z-10"
+        >
+          <span>Browse</span>
+          <ArrowRight className="w-3 h-3" />
+        </button>
       </div>
 
       {/* Any Additional Custom Cards created by Admin */}
