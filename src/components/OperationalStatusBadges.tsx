@@ -124,7 +124,7 @@ export const OperationalStatusBadges: React.FC<OperationalStatusBadgesProps> = (
         };
       case 'street_busy':
         return {
-          label: isBm ? '🚘 Parkir Tepi Jalan Sesak' : '🚘 Street Parking Busy',
+          label: isBm ? '🚘 Parkir Awam' : '🚘 Public Parking',
           color: 'bg-amber-950/80 text-amber-300 border-amber-500/30',
         };
       case 'valet_only':

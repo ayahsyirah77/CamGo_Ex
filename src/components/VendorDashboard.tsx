@@ -3320,7 +3320,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   {[
                     { id: 'private_available', label: 'Private Parking' },
-                    { id: 'street_busy', label: 'Street Busy' },
+                    { id: 'street_busy', label: 'Public Parking' },
                     { id: 'valet_only', label: 'Valet / Shuttle' },
                   ].map((st) => (
                     <button
@@ -3404,7 +3404,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   {[
                     { id: 'private_available', label: 'Dedicated Guest Parking' },
-                    { id: 'street_busy', label: 'Street Parking Limited' },
+                    { id: 'street_busy', label: 'Public Parking' },
                     { id: 'valet_only', label: 'Valet / Off-site Shuttle' },
                   ].map((st) => (
                     <button

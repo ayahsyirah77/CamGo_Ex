@@ -90,6 +90,7 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
   const [incomingSpeaker, setIncomingSpeaker] = useState<{ id: string; name: string; color: string } | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [transmissionLogs, setTransmissionLogs] = useState<TransmissionLogItem[]>([]);
+  const [transmissionToast, setTransmissionToast] = useState<{ message: string; type: 'start' | 'end' } | null>(null);
 
   // Refs for audio processing
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -103,6 +104,17 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const transmitStartTimeRef = useRef<number>(0);
+  const toastTimerRef = useRef<any>(null);
+
+  const showTransmissionToast = useCallback((message: string, type: 'start' | 'end') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setTransmissionToast({ message, type });
+    toastTimerRef.current = setTimeout(() => {
+      setTransmissionToast(null);
+    }, 2800);
+  }, []);
 
   // Get or initialize AudioContext
   const getAudioContext = useCallback(() => {
@@ -626,6 +638,11 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
       playRadioSound('start');
       setIsTransmitting(true);
 
+      const startMsg = language === 'bm' 
+        ? '🔴 Pancaran Radio Bermula...' 
+        : '🔴 Transmission Live...';
+      showTransmissionToast(startMsg, 'start');
+
       // Notify peers that transmission started
       sendSignal({
         event: 'ptt_audio_chunk',
@@ -743,6 +760,11 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
     playRadioSound('end');
     setIsTransmitting(false);
 
+    const endMsg = language === 'bm' 
+      ? '🟢 Pancaran Dihantar (Roger)' 
+      : '🟢 Transmission Sent (Roger)';
+    showTransmissionToast(endMsg, 'end');
+
     // Notify peers that transmission ended
     sendSignal({
       event: 'ptt_audio_chunk',
@@ -776,6 +798,20 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
       {/* Background Radio Grid Glow */}
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-56 h-56 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-56 h-56 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+
+      {/* Subtle Transmission Toast Notification */}
+      {transmissionToast && (
+        <div
+          className={`absolute top-2.5 left-1/2 -translate-x-1/2 z-[100] px-3.5 py-1.5 rounded-full border shadow-2xl backdrop-blur-md text-[11px] font-bold font-mono flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200 pointer-events-none ${
+            transmissionToast.type === 'start'
+              ? 'bg-amber-950/95 border-amber-400/80 text-amber-200 shadow-amber-950/60'
+              : 'bg-emerald-950/95 border-emerald-400/80 text-emerald-200 shadow-emerald-950/60'
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full ${transmissionToast.type === 'start' ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
+          <span>{transmissionToast.message}</span>
+        </div>
+      )}
 
       {/* Top Radio Header: Channel Name & Connection Health */}
       <div className={`flex items-center justify-between gap-3 border-b border-stone-800 relative z-10 ${compactMode ? 'pb-1.5' : 'pb-3'}`}>

@@ -3016,7 +3016,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
                       >
                         <option value="private_available">🅿️ Private Park Available (Parkir Khas Ada)</option>
-                        <option value="street_busy">🚘 Street Parking Busy (Parkir Tepi Jalan Sesak)</option>
+                        <option value="street_busy">🚘 Public Parking (Parkir Awam)</option>
                         <option value="valet_only">🔑 Valet Parking Only (Parkir Valet Sahaja)</option>
                       </select>
                     </div>
