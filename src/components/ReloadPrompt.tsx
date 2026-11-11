@@ -38,12 +38,17 @@ export const ReloadPrompt: React.FC<ReloadPromptProps> = ({
   });
 
   const handleReload = async () => {
+    setIsReloading(true);
+    // Set a fast 300ms fallback timeout to force reload if service worker update stalls
+    const fallbackTimer = setTimeout(() => {
+      window.location.reload();
+    }, 300);
+
     try {
-      setIsReloading(true);
       await updateServiceWorker(true);
     } catch (err) {
       console.error('[PWA] updateServiceWorker error:', err);
-      // Hard refresh fallback if service worker reload throws
+      clearTimeout(fallbackTimer);
       window.location.reload();
     }
   };

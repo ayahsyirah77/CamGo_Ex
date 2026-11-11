@@ -196,48 +196,75 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   const isMeHost = memberId === creatorId;
   const hostName = session?.createdByName || hostMember?.name || 'Beacon Host';
 
-  // Proximity Sensor Logic
+  // Proximity Sensor Logic for 500m Radius Alert (checking all party members)
+  const notifiedNearbyMembersRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
-    if (!isOpen || !myCoords || !hostMember || isMeHost) {
+    if (!isOpen || !myCoords || sortedMembers.length === 0) {
       if (proximityLevel !== 'none') setProximityLevel('none');
       return;
     }
 
-    const dist = calculateHaversineDistance(
-      myCoords.latitude,
-      myCoords.longitude,
-      hostMember.latitude,
-      hostMember.longitude
-    );
+    // Filter members within 500m radius (excluding self)
+    const nearbyCompanions = sortedMembers.filter((m) => {
+      if (m.id === memberId) return false;
+      const dist = calculateHaversineDistance(
+        myCoords.latitude,
+        myCoords.longitude,
+        m.latitude,
+        m.longitude
+      );
+      return dist <= 500;
+    });
 
-    let newLevel: 'none' | 'near' | 'arrived' = 'none';
-    if (dist <= 30) newLevel = 'arrived';
-    else if (dist <= 120) newLevel = 'near';
+    if (nearbyCompanions.length > 0) {
+      let closest = nearbyCompanions[0];
+      let minDist = calculateHaversineDistance(
+        myCoords.latitude,
+        myCoords.longitude,
+        closest.latitude,
+        closest.longitude
+      );
 
-    if (newLevel !== proximityLevel) {
-      setProximityLevel(newLevel);
-      
-      if (newLevel === 'near') {
-        const msg = language === 'bm' 
-          ? 'SENSOR PROKSIMITI: Menghampiri Host ( < 120m )' 
-          : 'PROXIMITY SENSOR: Approaching Host ( < 120m )';
+      for (let i = 1; i < nearbyCompanions.length; i++) {
+        const d = calculateHaversineDistance(
+          myCoords.latitude,
+          myCoords.longitude,
+          nearbyCompanions[i].latitude,
+          nearbyCompanions[i].longitude
+        );
+        if (d < minDist) {
+          minDist = d;
+          closest = nearbyCompanions[i];
+        }
+      }
+
+      let newLevel: 'none' | 'near' | 'arrived' = 'none';
+      if (minDist <= 30) newLevel = 'arrived';
+      else if (minDist <= 500) newLevel = 'near';
+
+      if (!notifiedNearbyMembersRef.current.has(closest.id)) {
+        notifiedNearbyMembersRef.current.add(closest.id);
+        setProximityLevel(newLevel);
+
+        const formattedDist = formatDistance(minDist);
+        const msg = language === 'bm'
+          ? `📍 AMARAN PROKSIMITI: ${closest.name} berada berdekatan (${formattedDist})!`
+          : `📍 PROXIMITY ALERT: ${closest.name} is within 500m radius (${formattedDist})!`;
+
         setShowProximityToast(msg);
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
           navigator.vibrate([50, 100, 50]);
         }
-        setTimeout(() => setShowProximityToast(null), 5000);
-      } else if (newLevel === 'arrived') {
-        const msg = language === 'bm' 
-          ? 'DESTINASI: Anda telah sampai ke lokasi Host!' 
-          : 'DESTINATION: You have arrived at the Host location!';
-        setShowProximityToast(msg);
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([200, 100, 200, 100, 200]);
-        }
-        setTimeout(() => setShowProximityToast(null), 8000);
+        setTimeout(() => setShowProximityToast(null), 6000);
       }
+    } else {
+      if (proximityLevel !== 'none') {
+        setProximityLevel('none');
+      }
+      notifiedNearbyMembersRef.current.clear();
     }
-  }, [isOpen, myCoords?.latitude, myCoords?.longitude, hostMember, isMeHost, proximityLevel, language]);
+  }, [isOpen, myCoords?.latitude, myCoords?.longitude, sortedMembers, memberId, proximityLevel, language]);
 
   // Dynamic Route & Path overlay state
   const [routeTravelMode, setRouteTravelMode] = useState<'walking' | 'driving'>('walking');
@@ -1106,9 +1133,19 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                             <div className="text-[11px] text-stone-400 font-mono mt-0.5 truncate max-w-[120px]">{m.nearestLandmark || 'Highlands'}</div>
                           </div>
                         </div>
-                        <div className="text-right shrink-0">
+                        <div className="text-right shrink-0 flex flex-col items-end gap-1">
                           <div className="text-xs font-mono font-bold text-emerald-400">{isMe ? '±' + (myCoords?.accuracy || 0) + 'm' : dist}</div>
-                          <div className="text-[10px] text-stone-500 mt-0.5">{stale ? '⚠️ Stale' : formatTimeAgo(m.updatedAt)}</div>
+                          {m.batteryLevel !== undefined && m.batteryLevel !== null && (
+                            <div className={`px-1.5 py-0.5 rounded-md font-mono text-[9px] font-bold flex items-center gap-1 border ${
+                              m.batteryLevel < 20 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse' :
+                              m.batteryLevel < 50 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                              'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            }`}>
+                              <Battery className="w-2.5 h-2.5" />
+                              <span>{m.batteryLevel}%</span>
+                            </div>
+                          )}
+                          <div className="text-[10px] text-stone-500">{stale ? '⚠️ Stale' : formatTimeAgo(m.updatedAt)}</div>
                         </div>
                       </button>
                     );
