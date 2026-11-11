@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { NotificationEvent } from '../hooks/useMultiChannelNotifications';
+import { chatLoungeService } from '../services/chatLoungeService';
 
 interface NotificationCenterProps {
   activeSos: NotificationEvent | null;
@@ -172,17 +173,30 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             exit={{ y: -50, opacity: 0, scale: 0.95 }}
             onClick={() => {
               const payload = activeChatPreview.payload || {};
-              const dmUserId = payload.dmThreadId ? payload.senderId : null;
-              const channelId = payload.channelId || null;
+              let dmUserId = payload.senderId || null;
+              const dmThreadId = payload.dmThreadId || null;
+
+              if (dmThreadId && (!dmUserId || dmUserId === chatLoungeService.getCurrentUser().id)) {
+                try {
+                  const currentUserId = chatLoungeService.getCurrentUser().id;
+                  const parts = dmThreadId.replace(/^dm_/, '').split('_');
+                  dmUserId = parts.find((id: string) => id !== currentUserId) || parts[0] || null;
+                } catch {
+                  // ignore
+                }
+              }
+
+              const channelId = payload.channelId || (dmThreadId ? null : 'general');
               setActiveChatPreview(null);
 
-              if (dmUserId || channelId) {
-                window.dispatchEvent(
-                  new CustomEvent('open-chat-lounge', {
-                    detail: { dmUserId, channelId },
-                  })
-                );
-              }
+              window.dispatchEvent(
+                new CustomEvent('open-chat-lounge', {
+                  detail: {
+                    dmUserId: dmThreadId ? dmUserId : null,
+                    channelId: dmThreadId ? null : channelId,
+                  },
+                })
+              );
               onOpenChat?.();
             }}
             className="fixed top-16 sm:top-20 right-3 sm:right-6 z-[99999] max-w-sm w-[calc(100vw-24px)] sm:w-96 bg-stone-900/98 backdrop-blur-2xl border-2 border-emerald-500 rounded-2xl p-3.5 sm:p-4 shadow-2xl shadow-emerald-950/60 text-stone-100 cursor-pointer hover:border-emerald-400 transition-all hover:scale-[1.02] ring-4 ring-emerald-500/20"

@@ -222,11 +222,12 @@ export default function App() {
     });
 
     const handleOpenChatLounge = (e: any) => {
-      if (e?.detail?.channelId) setChatInitialChannelId(e.detail.channelId);
-      if (e?.detail?.dmUserId) setChatInitialDmUserId(e.detail.dmUserId);
+      setChatInitialChannelId(e?.detail?.channelId || null);
+      setChatInitialDmUserId(e?.detail?.dmUserId || null);
       setIsChatOpen(true);
     };
     window.addEventListener('open-chat-lounge', handleOpenChatLounge);
+    window.addEventListener('open-chat', handleOpenChatLounge);
     
     const handleOpenMasjid = () => setIsMasjidModalOpen(true);
     window.addEventListener('open-masjid-modal', handleOpenMasjid);
@@ -286,6 +287,7 @@ export default function App() {
 
     return () => {
       window.removeEventListener('open-chat-lounge', handleOpenChatLounge);
+      window.removeEventListener('open-chat', handleOpenChatLounge);
       window.removeEventListener('open-masjid-modal', handleOpenMasjid);
       window.removeEventListener('open-offline-trails-modal', handleOpenTrails);
       window.removeEventListener('open-find-my-party', handleOpenParty);

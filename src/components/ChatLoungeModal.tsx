@@ -400,7 +400,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-3 md:p-6 bg-stone-950/85 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-0 sm:p-3 md:p-6 bg-stone-950/85 backdrop-blur-xl">
       <motion.div
         initial={{ opacity: 0, scale: 0.98, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
