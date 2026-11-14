@@ -115,7 +115,7 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
 
   const handleCompleteOnboarding = async () => {
     const newVendorListing: VendorListing = {
-      id: selectedClaimPlace ? selectedClaimPlace.id : `vendor-${Date.now()}`,
+      id: `vendor-${Date.now()}`,
       ownerUid: currentUser?.uid || `vendor-user-${Date.now()}`,
       ownerEmail: currentUser?.email || emailInput || 'vendor@camgo.my',
       businessName: businessName || 'Highland Local Business',
@@ -143,10 +143,7 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
           ? '/src/assets/images/vendor_cover_strawberry_1792917725766.jpg'
           : '/src/assets/images/vendor_cover_steamboat_1792917728048.jpg'
         : '/src/assets/images/vendor_cover_strawberry_1792917725766.jpg',
-      galleryImages: [
-        '/src/assets/images/vendor_cover_strawberry_1792917725766.jpg',
-        '/src/assets/images/vendor_cover_steamboat_1792917728048.jpg',
-      ],
+      galleryImages: [],
       coordinates: selectedClaimPlace ? selectedClaimPlace.coordinates : { lat: 4.49, lng: 101.39 },
       realTimeStatus: 'open',
       diyHarvestStatus: category === 'attraction' ? 'picking_open' : undefined,

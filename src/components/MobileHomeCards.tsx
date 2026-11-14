@@ -13,8 +13,10 @@ import {
   Bike,
   Sparkles,
   Droplets,
+  BedDouble,
+  ShieldCheck,
 } from 'lucide-react';
-import { MobileHomeCard, Language, WeatherData, TrafficAlert, HazardAlert } from '../types';
+import { MobileHomeCard, Language, WeatherData, TrafficAlert, HazardAlert, AccommodationListing } from '../types';
 import { firebaseService } from '../services/firebase';
 import { INITIAL_MOBILE_HOME_CARDS } from '../data/initialHomeCards';
 
@@ -26,6 +28,7 @@ interface MobileHomeCardsProps {
   onOpenItinerary: () => void;
   onOpenParty: () => void;
   onOpenMotorbike?: () => void;
+  onOpenAccommodation?: () => void;
   onOpenSos: () => void;
   weatherList?: WeatherData[];
   trafficAlerts?: TrafficAlert[];
@@ -40,24 +43,34 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
   onOpenItinerary,
   onOpenParty,
   onOpenMotorbike,
+  onOpenAccommodation,
   onOpenSos,
   weatherList = [],
   trafficAlerts = [],
   hazards = [],
 }) => {
   const [cards, setCards] = useState<MobileHomeCard[]>(() => firebaseService.getHomeCards());
+  const [accommodations, setAccommodations] = useState<AccommodationListing[]>(() =>
+    firebaseService.getAccommodationListings()
+  );
 
   useEffect(() => {
     const handleCardsUpdated = (e: any) => {
       const updated = e?.detail || firebaseService.getHomeCards();
       setCards(updated);
     };
+    const handleAccomUpdated = (e: any) => {
+      const updated = Array.isArray(e?.detail) ? e.detail : firebaseService.getAccommodationListings();
+      setAccommodations(updated);
+    };
     window.addEventListener('home-cards-updated', handleCardsUpdated);
+    window.addEventListener('accommodation-listings-updated', handleAccomUpdated);
     const interval = setInterval(() => {
       setCards(firebaseService.getHomeCards());
     }, 2000);
     return () => {
       window.removeEventListener('home-cards-updated', handleCardsUpdated);
+      window.removeEventListener('accommodation-listings-updated', handleAccomUpdated);
       clearInterval(interval);
     };
   }, []);
@@ -109,6 +122,11 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
         if (onOpenMotorbike) onOpenMotorbike();
         else onOpenParty();
         break;
+      case 'open-accommodation':
+      case 'open-homestays':
+      case 'open-stays':
+        if (onOpenAccommodation) onOpenAccommodation();
+        break;
       case 'open-sos':
         onOpenSos();
         break;
@@ -123,6 +141,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           else onOpenParty();
         }
         else if (card.type === 'sos') onOpenSos();
+        else if (card.buttonAction === 'open-accommodation' || card.id?.includes('accommodation')) {
+          if (onOpenAccommodation) onOpenAccommodation();
+        }
         break;
     }
   };
@@ -142,7 +163,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
   return (
     <div className="block sm:hidden px-3 mb-8 space-y-3">
-      {/* Row 1: Weather (Top Left) & Live Traffic/Hazard (Top Right) */}
+      {/* Row 1: Weather (Top Left) & Live Notice/Hazard (Top Right) */}
       <div className="grid grid-cols-2 gap-2.5">
         {/* Card 1: Cameron Highlands Weather */}
         {weatherCard && weatherCard.isActive && (
@@ -208,7 +229,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           </div>
         )}
 
-        {/* Card 2: Live Traffic/Hazard */}
+        {/* Card 2: Live Notice/Hazard */}
         {hazardCard && hazardCard.isActive && (
           <div
             onClick={() => handleCardClick(hazardCard)}
@@ -220,7 +241,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             {/* Header: Title & Red LIVE Pulse */}
             <div className="relative z-10 flex items-center justify-between gap-1 mb-1">
               <span className="text-[9.5px] min-[360px]:text-[10.5px] font-black text-stone-100 tracking-tight leading-tight whitespace-normal drop-shadow group-hover:text-emerald-200 transition-colors">
-                {hazardCard.title || 'Live Traffic/Hazard'}
+                {hazardCard.title === 'Live Traffic/Hazard' ? 'Live Notice/Hazard' : (hazardCard.title || 'Live Notice/Hazard')}
               </span>
               <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white font-mono font-black text-[8px] shadow-md flex items-center gap-0.5 shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
@@ -232,16 +253,25 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             <div className="relative rounded-xl overflow-hidden my-auto aspect-[16/10] bg-stone-950 border-2 border-white/15 group-hover:border-emerald-400/60 transition-colors shadow-inner">
               <img
                 src={hazardCard.imageUrl || 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=600&q=80'}
-                alt={hazardCard.title || 'Live Traffic & Hazard'}
+                alt={hazardCard.title || 'Live Notice/Hazard'}
                 className="w-full h-full object-cover group-hover:scale-110 group-active:scale-105 transition-transform duration-500 ease-out"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/85 via-transparent to-transparent" />
+              {hazards.some((h) => h.agency === 'PDRM') && (
+                <span className="absolute bottom-1 left-1.5 px-1.5 py-0.5 rounded bg-sky-600/90 text-white text-[8px] font-mono font-black tracking-wide border border-sky-300/40">
+                  PDRM LIVE
+                </span>
+              )}
             </div>
 
             {/* Footer: Location & Status */}
-            <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] font-bold text-stone-200 z-10">
-              <span className="leading-tight truncate">{hazardCard.subtitle || 'Kea Farm'}</span>
-              <span className="text-[9px] text-emerald-400 font-mono font-bold shrink-0">{hazardCard.buttonText || 'Monitored'}</span>
+            <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] font-bold text-stone-200 z-10 gap-1">
+              <span className="leading-tight truncate">
+                {hazardCard.subtitle && hazardCard.subtitle !== 'Kea Farm' ? hazardCard.subtitle : 'PDRM • JKR • MDCH'}
+              </span>
+              <span className="text-[9px] text-emerald-400 font-mono font-bold shrink-0">
+                {hazards.length > 0 ? `${hazards.length} Active` : (hazardCard.buttonText || 'Monitored')}
+              </span>
             </div>
           </div>
         )}
@@ -424,6 +454,73 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Row 5: Verified Homestays & Stays (Pay-to-Reveal Anti-Bypass) */}
+      <div
+        onClick={() => onOpenAccommodation && onOpenAccommodation()}
+        className="rounded-2xl p-3.5 bg-stone-900/95 backdrop-blur-xl border-2 border-emerald-500/50 hover:border-emerald-400 active:border-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.35)] flex flex-col gap-3 cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden select-none"
+      >
+        {/* Subtle scenic background overlay */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src={
+              accommodations[0]?.coverImage ||
+              'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=600&q=80'
+            }
+            alt="Verified Homestays & Stays"
+            className="w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-500"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-stone-950/95 via-stone-900/90 to-emerald-950/80" />
+        </div>
+
+        {/* Top Row: Photo Thumbnail + Icon Badge + Full Unclipped Title */}
+        <div className="flex items-center gap-3 relative z-10">
+          <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-stone-950 shrink-0 border-2 border-emerald-400/40 group-hover:border-emerald-300 transition-colors shadow-md">
+            <img
+              src={
+                accommodations[0]?.coverImage ||
+                'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=600&q=80'
+              }
+              alt="Cameron Highlands Verified Homestays"
+              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-stone-950/70 via-transparent to-transparent" />
+            <div className="absolute bottom-1 right-1 w-6 h-6 rounded-lg bg-emerald-500 text-stone-950 flex items-center justify-center shadow-md">
+              <BedDouble className="w-3.5 h-3.5" />
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <h5 className="text-sm font-black text-white group-hover:text-emerald-300 transition-colors leading-snug whitespace-normal">
+              Verified Homestays &amp; Stays
+            </h5>
+            <p className="text-[11px] text-stone-300 leading-snug mt-0.5 whitespace-normal">
+              Direct Host Portals · Pay Balance at Door
+            </p>
+          </div>
+        </div>
+
+        {/* Bottom Row: Badges + Browse Action */}
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10 relative z-10">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/35 text-emerald-300 text-[9.5px] font-black uppercase tracking-wider">
+              <ShieldCheck className="w-3 h-3" />
+              <span>RM30 Lock</span>
+            </span>
+            <span className="text-[10px] font-mono text-stone-400">
+              {accommodations.length > 0 ? `${accommodations.length} Verified` : 'Vendor Direct'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-md shrink-0 flex items-center gap-1 group-hover:scale-105 transition-transform cursor-pointer"
+          >
+            <span>Browse</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Any Additional Custom Cards created by Admin */}

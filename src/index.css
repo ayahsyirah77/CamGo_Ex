@@ -288,3 +288,21 @@
 .highland-map-tooltip::before {
   border-top-color: #1c1917 !important;
 }
+
+/* 3D Driver's Perspective Navigation GPU & Horizon Compositing */
+.map-3d-stage {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.map-3d-stage .leaflet-tile-pane,
+.map-3d-stage .leaflet-overlay-pane,
+.map-3d-stage .leaflet-marker-pane {
+  will-change: transform;
+}
+
+.map-3d-stage .leaflet-marker-icon {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+

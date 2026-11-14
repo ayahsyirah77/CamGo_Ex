@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HazardAlert, Language } from '../types';
 import { getTranslation } from '../services/i18n';
 import { hazardFeedService, OFFICIAL_AGENCIES } from '../services/hazardFeedService';
@@ -17,7 +17,6 @@ import {
   Clock,
   Radio,
   FileCheck2,
-  TreePine,
   ShieldCheck,
 } from 'lucide-react';
 
@@ -27,22 +26,39 @@ interface HazardWidgetProps {
 }
 
 export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language }) => {
-  const [filterAgency, setFilterAgency] = useState<'ALL' | 'JKR' | 'MDCH' | 'CRITICAL'>('ALL');
+  const [filterAgency, setFilterAgency] = useState<'ALL' | 'PDRM' | 'JKR' | 'MDCH' | 'CRITICAL'>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   const isBm = language === 'bm';
 
+  // Fetch live PDRM Cameron Highlands + JKR + MDCH notices on widget mount
+  useEffect(() => {
+    let active = true;
+    hazardFeedService.fetchLiveFeed(false).catch(() => {
+      if (active) {
+        // Fallback already handled inside service
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleManualSync = async () => {
     setIsRefreshing(true);
-    setSyncFeedback(isBm ? 'Menyambung ke Portal JKR eBencana & MDCH...' : 'Connecting to JKR eBencana & MDCH portals...');
+    setSyncFeedback(
+      isBm
+        ? 'Menghubungi PDRM Cameron Highlands, JKR eBencana & MDCH...'
+        : 'Fetching live notices from PDRM Cameron Highlands, JKR eBencana & MDCH...'
+    );
     try {
       const res = await hazardFeedService.syncFeeds();
       if (res.success) {
         setSyncFeedback(
           isBm
-            ? `Berjaya diselaraskan: ${res.alerts.length} makluman terkini dari JKR & MDCH`
-            : `Synced successfully: ${res.alerts.length} verified bulletins from JKR & MDCH`
+            ? `Berjaya diselaraskan: ${res.alerts.length} notis & amaran terkini dari PDRM, JKR & MDCH`
+            : `Synced successfully: ${res.alerts.length} live notices & alerts from PDRM, JKR & MDCH`
         );
       } else {
         setSyncFeedback(isBm ? 'Kemas kini selesai dari pangkalan data.' : 'Updated from official cache.');
@@ -55,7 +71,10 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
     }
   };
 
-  const getHazardIcon = (type: HazardAlert['type']) => {
+  const getHazardIcon = (type: HazardAlert['type'], isPdrm?: boolean) => {
+    if (isPdrm) {
+      return <ShieldAlert className="w-5 h-5 text-sky-400" />;
+    }
     switch (type) {
       case 'fog':
         return <CloudFog className="w-5 h-5 text-teal-400" />;
@@ -75,14 +94,14 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         return (
           <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-            {isBm ? 'Bahaya Kritikal' : 'Critical Hazard'}
+            {isBm ? 'Bahaya Kritikal' : 'Critical Alert'}
           </span>
         );
       case 'moderate':
         return (
           <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            {isBm ? 'Amaran Berjaga-jaga' : 'Advisory Warning'}
+            {isBm ? 'Notis & Amaran' : 'Advisory Notice'}
           </span>
         );
       case 'low':
@@ -90,19 +109,27 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         return (
           <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            {isBm ? 'Notis Langkah Selamat' : 'Precaution Notice'}
+            {isBm ? 'Notis Semasa' : 'Live Notice'}
           </span>
         );
     }
   };
 
+  const isPdrmAlert = (h: HazardAlert) =>
+    h.agency === 'PDRM' ||
+    h.source?.toLowerCase().includes('pdrm') ||
+    h.agencyName?.toLowerCase().includes('pdrm') ||
+    h.source?.toLowerCase().includes('polis');
+
   const filteredHazards = hazards.filter((h) => {
     if (filterAgency === 'CRITICAL') return h.severity === 'critical';
+    if (filterAgency === 'PDRM') return isPdrmAlert(h);
     if (filterAgency === 'JKR') return h.agency === 'JKR' || h.source?.toLowerCase().includes('jkr');
     if (filterAgency === 'MDCH') return h.agency === 'MDCH' || h.source?.toLowerCase().includes('mdch');
     return true;
   });
 
+  const pdrmCount = hazards.filter(isPdrmAlert).length;
   const jkrCount = hazards.filter((h) => h.agency === 'JKR' || h.source?.toLowerCase().includes('jkr')).length;
   const mdchCount = hazards.filter((h) => h.agency === 'MDCH' || h.source?.toLowerCase().includes('mdch')).length;
   const criticalCount = hazards.filter((h) => h.severity === 'critical').length;
@@ -115,11 +142,11 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
           <div className="flex items-center gap-2 mb-1">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400">
               <Radio className="w-3 h-3 animate-pulse text-rose-400" />
-              {isBm ? 'Suapan Rasmi JKR eBencana & MDCH' : 'Official JKR eBencana & MDCH Feeds'}
+              {isBm ? 'Suapan Rasmi PDRM, JKR eBencana & MDCH' : 'Live PDRM, JKR eBencana & MDCH Feeds'}
             </span>
             <span className="text-[10px] text-stone-400 hidden sm:inline-flex items-center gap-1">
               <ShieldCheck className="w-3 h-3 text-emerald-400" />
-              {isBm ? 'Disahkan Agensi Kerajaan' : 'Government Agency Verified'}
+              {isBm ? 'Disahkan Agensi Kerajaan' : 'Official Agency Updates'}
             </span>
           </div>
 
@@ -128,8 +155,8 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
           </h3>
           <p className="text-xs text-stone-300 mt-1 max-w-2xl leading-relaxed">
             {isBm
-              ? 'Integrasi makluman tanah runtuh, keselamatan cerun FT059/FT185/FT102 dari JKR Cameron Highlands dan notis perbandaran Majlis Daerah Cameron Highlands (MDCH).'
-              : 'Direct integration of real-time landslides, slope warnings for FT059/FT185/FT102 from JKR Cameron Highlands and municipal notices from MDCH.'}
+              ? 'Notis langsung PDRM Cameron Highlands (SJR, trafik & keselamatan), makluman cerun JKR eBencana (FT059/FT185/FT102) serta notis perbandaran MDCH.'
+              : 'Live PDRM Cameron Highlands notices (roadblocks, traffic & public advisories), JKR eBencana slope alerts (FT059/FT185/FT102), and MDCH municipal bulletins.'}
           </p>
         </div>
 
@@ -139,10 +166,10 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             onClick={handleManualSync}
             disabled={isRefreshing}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
-            title="Refresh official bulletins from JKR eBencana and MDCH"
+            title="Fetch live updates from PDRM Cameron Highlands, JKR eBencana and MDCH"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>{isRefreshing ? (isBm ? 'Menyelaras...' : 'Syncing...') : (isBm ? 'Kemaskini Suapan' : 'Sync Official Feeds')}</span>
+            <span>{isRefreshing ? (isBm ? 'Menyelaras...' : 'Syncing...') : (isBm ? 'Kemaskini Suapan' : 'Sync Live Notices')}</span>
           </button>
 
           <a
@@ -167,21 +194,39 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
       )}
 
       {/* Official Agencies Reference Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
         {OFFICIAL_AGENCIES.map((agency) => (
           <div
             key={agency.id}
-            className="p-3.5 rounded-2xl bg-stone-900/70 border border-white/10 hover:border-amber-500/30 transition-all flex flex-col justify-between"
+            className={`p-3.5 rounded-2xl bg-stone-900/70 border transition-all flex flex-col justify-between ${
+              agency.id === 'PDRM'
+                ? 'border-sky-500/25 hover:border-sky-400/50'
+                : 'border-white/10 hover:border-amber-500/30'
+            }`}
           >
             <div>
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-2">
-                  <div className={`p-1.5 rounded-lg ${agency.id === 'JKR' ? 'bg-amber-500/20 text-amber-400' : 'bg-teal-500/20 text-teal-400'}`}>
-                    {agency.id === 'JKR' ? <Car className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                  <div
+                    className={`p-1.5 rounded-lg ${
+                      agency.id === 'PDRM'
+                        ? 'bg-sky-500/20 text-sky-400'
+                        : agency.id === 'JKR'
+                        ? 'bg-amber-500/20 text-amber-400'
+                        : 'bg-teal-500/20 text-teal-400'
+                    }`}
+                  >
+                    {agency.id === 'PDRM' ? (
+                      <ShieldAlert className="w-4 h-4" />
+                    ) : agency.id === 'JKR' ? (
+                      <Car className="w-4 h-4" />
+                    ) : (
+                      <Building2 className="w-4 h-4" />
+                    )}
                   </div>
-                  <h4 className="text-xs font-bold text-stone-100">{agency.name}</h4>
+                  <h4 className="text-xs font-bold text-stone-100">{agency.shortName}</h4>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-stone-800 text-stone-300 border border-white/5 font-mono">
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-stone-800 text-stone-300 border border-white/5 font-mono shrink-0">
                   {agency.status}
                 </span>
               </div>
@@ -197,7 +242,13 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline font-semibold"
               >
-                <span>{agency.id === 'JKR' ? 'eBencana Portal' : 'Portal Rasmi MDCH'}</span>
+                <span>
+                  {agency.id === 'PDRM'
+                    ? 'Portal PDRM'
+                    : agency.id === 'JKR'
+                    ? 'eBencana Portal'
+                    : 'Portal MDCH'}
+                </span>
                 <ExternalLink className="w-3 h-3" />
               </a>
               <span className="text-stone-600">•</span>
@@ -207,7 +258,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-sky-400 hover:text-sky-300 hover:underline font-semibold"
               >
-                <span>Facebook Page</span>
+                <span>Facebook</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
               <span className="text-stone-600">•</span>
@@ -233,7 +284,20 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
               : 'bg-stone-800/80 hover:bg-stone-800 text-stone-300 border border-white/5'
           }`}
         >
-          {isBm ? 'Semua Makluman' : 'All Bulletins'} ({hazards.length})
+          {isBm ? 'Semua Notis' : 'All Notices'} ({hazards.length})
+        </button>
+
+        <button
+          onClick={() => setFilterAgency('PDRM')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            filterAgency === 'PDRM'
+              ? 'bg-sky-500 text-stone-950 shadow-md font-extrabold'
+              : 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30'
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>PDRM Cameron Highlands</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-stone-900/50 text-[10px]">{pdrmCount}</span>
         </button>
 
         <button
@@ -244,7 +308,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
               : 'bg-stone-800/80 hover:bg-stone-800 text-stone-300 border border-white/5'
           }`}
         >
-          <span>JKR Cerun & Jalan</span>
+          <span>JKR Cerun &amp; Jalan</span>
           <span className="px-1.5 py-0.2 rounded-full bg-stone-900/50 text-[10px]">{jkrCount}</span>
         </button>
 
@@ -276,13 +340,13 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         )}
       </div>
 
-      {/* Hazard Bulletins List */}
+      {/* Notice & Hazard Bulletins List */}
       <div className="space-y-4">
         {filteredHazards.length === 0 ? (
           <div className="p-8 text-center rounded-2xl bg-stone-900/40 border border-white/5 space-y-2">
             <CheckCircle className="w-8 h-8 text-emerald-400 mx-auto" />
             <div className="text-sm font-bold text-stone-200">
-              {isBm ? 'Tiada Amaran Aktif Dalam Kategori Ini' : 'No Active Bulletins In This Category'}
+              {isBm ? 'Tiada Notis Aktif Dalam Kategori Ini' : 'No Active Notices In This Category'}
             </div>
             <p className="text-xs text-stone-400 max-w-sm mx-auto">
               {isBm
@@ -292,28 +356,45 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
           </div>
         ) : (
           filteredHazards.map((hazard) => {
+            const isPdrm = isPdrmAlert(hazard);
             const isJkr = hazard.agency === 'JKR' || hazard.source?.toLowerCase().includes('jkr');
             const officialUrl =
               hazard.sourceUrl ||
-              (isJkr ? 'https://bencanaalam.jkr.gov.my' : 'https://mdcameron.gov.my');
+              (isPdrm
+                ? 'https://www.facebook.com/PolisDaerahCameronHighlands'
+                : isJkr
+                ? 'https://bencanaalam.jkr.gov.my'
+                : 'https://mdcameron.gov.my');
 
             return (
               <div
                 key={hazard.id}
-                className="glass-card-hover rounded-2xl p-4 sm:p-5 bg-stone-900/85 border border-white/10 hover:border-amber-500/30 transition-all space-y-3"
+                className={`glass-card-hover rounded-2xl p-4 sm:p-5 bg-stone-900/85 border transition-all space-y-3 ${
+                  isPdrm
+                    ? 'border-sky-500/30 hover:border-sky-400/60'
+                    : 'border-white/10 hover:border-amber-500/30'
+                }`}
               >
                 {/* Card Top: Agency Badge, Ref No, Severity */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold tracking-wide uppercase ${
-                        isJkr
+                        isPdrm
+                          ? 'bg-sky-500/20 text-sky-300 border border-sky-500/35'
+                          : isJkr
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                           : 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
                       }`}
                     >
                       <FileCheck2 className="w-3 h-3" />
-                      {hazard.agencyName || hazard.source || (isJkr ? 'JKR Cameron Highlands' : 'MDCH Cameron Highlands')}
+                      {hazard.agencyName ||
+                        hazard.source ||
+                        (isPdrm
+                          ? 'PDRM • IPD Cameron Highlands'
+                          : isJkr
+                          ? 'JKR Cameron Highlands'
+                          : 'MDCH Cameron Highlands')}
                     </span>
 
                     {hazard.referenceNo && (
@@ -329,7 +410,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                 {/* Title & Location */}
                 <div className="flex items-start gap-3">
                   <div className="p-2.5 rounded-xl bg-stone-800 border border-white/10 shrink-0 mt-0.5">
-                    {getHazardIcon(hazard.type)}
+                    {getHazardIcon(hazard.type, isPdrm)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="text-sm sm:text-base font-bold text-stone-100 leading-snug">
@@ -353,7 +434,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                     <Hammer className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-bold text-amber-300">
-                        {isBm ? 'Tindakan Di Lokasi: ' : 'On-Site Action: '}
+                        {isBm ? 'Tindakan & Nasihat: ' : 'Advisory / Action: '}
                       </span>
                       <span>{isBm ? hazard.actionTakenBm || hazard.actionTaken : hazard.actionTaken}</span>
                     </div>
@@ -392,7 +473,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 hover:underline font-semibold"
                     >
-                      <span>{isBm ? 'Lihat Notis Agensi' : 'View Agency Notice'}</span>
+                      <span>{isBm ? 'Lihat Notis Agensi' : 'View Official Notice'}</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>

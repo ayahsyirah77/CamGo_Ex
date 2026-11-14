@@ -17,7 +17,6 @@ import {
   Zap,
   CheckCircle2,
   HelpCircle,
-  Key,
   Layers,
   ArrowUpRight,
   TrendingUp,
@@ -168,12 +167,10 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
   onCorridorChange,
 }) => {
   const [isMinimized, setIsMinimized] = useState(true);
-  // TomTom API Key State
+  // Silent TomTom API Key State (configured exclusively via Admin Dashboard)
   const [tomTomApiKey, setTomTomApiKey] = useState<string>(() => {
     return localStorage.getItem('tomtom_api_key') || '';
   });
-  const [showKeyInput, setShowKeyInput] = useState(false);
-  const [isLiveTomTomActive, setIsLiveTomTomActive] = useState(false);
 
   // Selected Corridor for Gateway Comparison Switcher (Internal or External)
   const [internalCorridorId, setInternalCorridorId] = useState<
@@ -340,20 +337,7 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
     },
   ]);
 
-  // Save custom TomTom API Key
-  const handleSaveTomTomKey = (key: string) => {
-    setTomTomApiKey(key);
-    localStorage.setItem('tomtom_api_key', key);
-    window.dispatchEvent(new CustomEvent('tomtom-key-updated', { detail: key }));
-    if (key.trim().length > 10) {
-      setIsLiveTomTomActive(true);
-      fetchTomTomTrafficData(key);
-    } else {
-      setIsLiveTomTomActive(false);
-    }
-  };
-
-  // Real-time TomTom Traffic API fetch with graceful fallback
+  // Real-time TomTom Traffic API fetch silently in background if admin configured a key
   const fetchTomTomTrafficData = async (key: string) => {
     try {
       const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${key}&point=4.582,101.312`;
@@ -361,10 +345,9 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
       if (res.ok) {
         const data = await res.json();
         if (data?.flowSegmentData) {
-          setIsLiveTomTomActive(true);
           const currentSpeed = data.flowSegmentData.currentSpeed || 45;
           const delaySec = Math.max(0, data.flowSegmentData.currentTravelTime - data.flowSegmentData.freeFlowTravelTime);
-          
+
           setCorridors((prev) =>
             prev.map((c) => {
               if (c.id === 'simpang-pulai') {
@@ -381,9 +364,17 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
         }
       }
     } catch {
-      setIsLiveTomTomActive(false);
+      // Silent fallback to built-in highland model
     }
   };
+
+  useEffect(() => {
+    const syncKeyFromStorage = () => {
+      setTomTomApiKey(localStorage.getItem('tomtom_api_key') || '');
+    };
+    window.addEventListener('tomtom-key-updated', syncKeyFromStorage);
+    return () => window.removeEventListener('tomtom-key-updated', syncKeyFromStorage);
+  }, []);
 
   useEffect(() => {
     if (tomTomApiKey && tomTomApiKey.trim().length > 10) {
@@ -521,7 +512,7 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
                 className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-6 space-y-6 touch-pan-y"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
-              {/* Header & TomTom API Integration Status Banner */}
+              {/* Header Banner */}
               <div className="glass-panel p-4 sm:p-7 rounded-2xl sm:rounded-3xl border border-emerald-500/30 shadow-2xl bg-gradient-to-br from-stone-900 via-stone-950 to-stone-900 relative overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
@@ -541,52 +532,6 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
                         ? 'Analisis pintar laluan lebuh raya seluruh Malaysia ke Cameron Highlands. Bandingkan 3 koridor masuk utama, cari bandar pelepasan anda, dan semak ramalan cuaca & kesesakan.'
                         : 'Intelligent corridor analyzer for drivers traveling from across Malaysia to Cameron Highlands. Search and type your departure city, compare 3 gateway corridors, and check mountain climb delays.'}
                     </p>
-                  </div>
-
-                  {/* TomTom API Key Freemium Status Badge */}
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="flex items-center gap-2 p-2 rounded-2xl bg-stone-950 border border-white/10 text-xs shadow-inner">
-                      <span className="flex items-center gap-1.5 font-bold">
-                        <span className={`w-2.5 h-2.5 rounded-full ${isLiveTomTomActive ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
-                        <span className="text-stone-200">
-                          {isLiveTomTomActive ? 'TomTom Live Connected' : 'TomTom Smart Engine Active'}
-                        </span>
-                      </span>
-                      <button
-                        onClick={() => setShowKeyInput(!showKeyInput)}
-                        className="px-2.5 py-1 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[10px] border border-white/10 transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <Key className="w-3 h-3 text-emerald-400" />
-                        <span>{showKeyInput ? 'Close Key' : 'TomTom API Key'}</span>
-                      </button>
-                    </div>
-
-                    {/* Input field for custom TomTom Key */}
-                    {showKeyInput && (
-                      <div className="p-3 rounded-2xl bg-stone-950 border border-emerald-500/30 w-full max-w-sm space-y-2 shadow-2xl animate-fade-in z-30">
-                        <div className="text-[11px] font-bold text-stone-300 flex items-center justify-between">
-                          <span>Enter Freemium TomTom API Key:</span>
-                          <a
-                            href="https://developer.tomtom.com/"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-emerald-400 hover:underline text-[10px]"
-                          >
-                            Get Free Key
-                          </a>
-                        </div>
-                        <input
-                          type="text"
-                          value={tomTomApiKey}
-                          onChange={(e) => handleSaveTomTomKey(e.target.value)}
-                          placeholder="Paste TomTom API key here..."
-                          className="w-full px-3 py-1.5 rounded-xl bg-stone-900 border border-white/20 text-xs text-stone-100 font-mono outline-none focus:border-emerald-400"
-                        />
-                        <p className="text-[10px] text-stone-400 leading-tight">
-                          Free tier includes 2,500 daily requests. Built-in telemetry fallback works automatically if no key is provided.
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>

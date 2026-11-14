@@ -1051,27 +1051,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <p className="text-[10px] text-stone-400 truncate">{currentUser.email}</p>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          setUserDropdownOpen(false);
-                          onOpenUserDashboard();
-                        }}
-                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-stone-200 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
-                      >
-                        <User className="w-4 h-4 text-emerald-400" />
-                        <span>{language === 'bm' ? 'Papan Pemuka Pelawat & Tempatan' : 'Traveler & Local Dashboard'}</span>
-                      </button>
+                      {(!isRegisteredVendor || isUserAdmin) && (
+                        <button
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            onOpenUserDashboard();
+                          }}
+                          className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-stone-200 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <User className="w-4 h-4 text-emerald-400" />
+                          <span>{language === 'bm' ? 'Papan Pemuka Pelawat & Tempatan' : 'Traveler & Local Dashboard'}</span>
+                        </button>
+                      )}
 
-                      <button
-                        onClick={() => {
-                          setUserDropdownOpen(false);
-                          if (onOpenVendorPortal) onOpenVendorPortal();
-                        }}
-                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-stone-200 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
-                      >
-                        <Briefcase className="w-4 h-4 text-emerald-400" />
-                        <span>Business Vendor Portal</span>
-                      </button>
+                      {(isRegisteredVendor || isUserAdmin) && (
+                        <button
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            if (onOpenVendorPortal) onOpenVendorPortal();
+                          }}
+                          className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-stone-200 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <Briefcase className="w-4 h-4 text-emerald-400" />
+                          <span>Business Vendor Portal</span>
+                        </button>
+                      )}
 
                       {isUserAdmin && (
                         <button
@@ -1573,31 +1577,33 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 {/* Vertical Graphic Card Links */}
                 <nav className="space-y-2">
-                  {/* First Link: Traveler Profile & Dedicated Dashboard (as requested) */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (currentUser) {
-                        onOpenUserDashboard();
-                      } else {
-                        onOpenAuth();
-                      }
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-gradient-to-r from-emerald-600/30 via-emerald-500/20 to-teal-500/20 hover:from-emerald-600/40 hover:to-teal-500/30 text-white border border-emerald-400/50 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer text-left group"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <User className="w-4 h-4 text-emerald-300" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-black text-white block group-hover:text-emerald-300 transition-colors">
-                        {language === 'bm' ? 'Profil Pelawat & Papan Pemuka' : 'Traveler Profile & Dedicated Dashboard'}
-                      </span>
-                      <span className="text-[10px] text-emerald-300/80 block truncate">
-                        {currentUser ? currentUser.displayName : (language === 'bm' ? 'Akses akaun & tempahan' : 'Access bookings, saves & settings')}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
+                  {/* Traveler Profile Link (Only for non-vendors and non-admins) */}
+                  {!isRegisteredVendor && !isUserAdmin && (
+                    <button
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        if (currentUser) {
+                          onOpenUserDashboard();
+                        } else {
+                          onOpenAuth();
+                        }
+                      }}
+                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-gradient-to-r from-emerald-600/30 via-emerald-500/20 to-teal-500/20 hover:from-emerald-600/40 hover:to-teal-500/30 text-white border border-emerald-400/50 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer text-left group"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <User className="w-4 h-4 text-emerald-300" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-black text-white block group-hover:text-emerald-300 transition-colors">
+                          {language === 'bm' ? 'Profil Pelawat & Papan Pemuka' : 'Traveler Profile & Dedicated Dashboard'}
+                        </span>
+                        <span className="text-[10px] text-emerald-300/80 block truncate">
+                          {currentUser ? currentUser.displayName : (language === 'bm' ? 'Akses akaun & tempahan' : 'Access bookings, saves & settings')}
+                        </span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
+                    </button>
+                  )}
 
                   {/* Classifieds & Job Postings */}
                   <button

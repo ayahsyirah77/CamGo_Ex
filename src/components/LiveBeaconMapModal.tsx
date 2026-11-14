@@ -103,6 +103,14 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   // Exit Confirmation State
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
+  // New Member Joined Banner State
+  const [memberJoinBanner, setMemberJoinBanner] = useState<{
+    joinedNames: string[];
+    totalCount: number;
+  } | null>(null);
+  const prevMemberIdsRef = useRef<Set<string>>(new Set());
+  const prevSessionCodeRef = useRef<string | null>(null);
+
   const hasAutoCenteredRef = useRef(false);
 
   // Auto-center map on first valid GPS fix
@@ -128,9 +136,19 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
       chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
     if (activeTab === 'map' && mapInstanceRef.current) {
-      setTimeout(() => {
-        mapInstanceRef.current?.invalidateSize();
-      }, 200);
+      const invalidate = () => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ animate: false });
+        }
+      };
+      const raf = requestAnimationFrame(invalidate);
+      const t1 = setTimeout(invalidate, 100);
+      const t2 = setTimeout(invalidate, 280);
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
     }
   }, [activeTab, session?.messages?.length]);
 
@@ -195,6 +213,42 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   
   const isMeHost = memberId === creatorId;
   const hostName = session?.createdByName || hostMember?.name || 'Beacon Host';
+
+  // Detect new members joining the group and display live banner
+  useEffect(() => {
+    if (!isOpen || !session?.code) {
+      prevMemberIdsRef.current = new Set();
+      prevSessionCodeRef.current = null;
+      return;
+    }
+
+    if (prevSessionCodeRef.current !== session.code) {
+      prevSessionCodeRef.current = session.code;
+      prevMemberIdsRef.current = new Set(sortedMembers.map((m) => m.id));
+      return;
+    }
+
+    const currentIds = new Set(sortedMembers.map((m) => m.id));
+    const newlyJoined = sortedMembers.filter((m) => !prevMemberIdsRef.current.has(m.id));
+
+    if (newlyJoined.length > 0 && prevMemberIdsRef.current.size > 0) {
+      setMemberJoinBanner({
+        joinedNames: newlyJoined.map((m) => m.name || 'Companion'),
+        totalCount: sortedMembers.length,
+      });
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([40, 60, 40]);
+      }
+    }
+
+    prevMemberIdsRef.current = currentIds;
+  }, [isOpen, session?.code, sortedMembers]);
+
+  useEffect(() => {
+    if (!memberJoinBanner) return;
+    const timer = setTimeout(() => setMemberJoinBanner(null), 8000);
+    return () => clearTimeout(timer);
+  }, [memberJoinBanner]);
 
   // Proximity Sensor Logic for 500m Radius Alert (checking all party members)
   const notifiedNearbyMembersRef = useRef<Set<string>>(new Set());
@@ -744,7 +798,10 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-[180] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={onClose}
+      onClick={(e) => {
+        e.stopPropagation();
+        handleCloseWithConfirm();
+      }}
     >
       <div
         className="w-full max-w-4xl h-[96vh] sm:h-[90vh] rounded-t-3xl sm:rounded-3xl bg-stone-900 border border-emerald-500/40 shadow-2xl flex flex-col overflow-hidden text-stone-100 relative mt-auto sm:mt-0"
@@ -803,7 +860,10 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             {/* Close 'X' Button */}
             <button
               type="button"
-              onClick={handleCloseWithConfirm}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCloseWithConfirm();
+              }}
               className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0 ml-1"
               aria-label="Close"
             >
@@ -832,6 +892,11 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             >
               <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? 'animate-pulse' : ''}`} />
               <span>{tab.label}</span>
+              {tab.id === 'members' && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono font-black">
+                  {sortedMembers.length}
+                </span>
+              )}
               {tab.id === 'chat' && session?.messages && session.messages.length > 0 && (
                 <span className="ml-0.5 w-4 h-4 rounded-full bg-emerald-500 text-stone-950 text-[10px] flex items-center justify-center font-black">
                   {session.messages.length > 9 ? '9+' : session.messages.length}
@@ -840,6 +905,55 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             </button>
           ))}
         </div>
+
+        {/* Persistent Live Group Member Count Banner */}
+        <div className="px-3 sm:px-6 py-2 bg-emerald-950/40 border-b border-emerald-500/20 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="text-xs font-bold text-emerald-200 truncate">
+              {language === 'bm'
+                ? `${sortedMembers.length} pengguna sedang aktif dalam kumpulan ini`
+                : `${sortedMembers.length} ${sortedMembers.length === 1 ? 'user' : 'users'} currently in group`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('members')}
+            className="text-[11px] font-mono font-bold text-emerald-300 hover:text-white px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 transition-colors cursor-pointer shrink-0"
+          >
+            {language === 'bm' ? 'Lihat Ahli' : 'View Party'}
+          </button>
+        </div>
+
+        {/* New Member Joined Live Notification Banner */}
+        {memberJoinBanner && (
+          <div className="mx-3 sm:mx-6 mt-2.5 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600/95 to-teal-600/95 border border-emerald-300/60 text-white shadow-lg flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                <Users className="w-4 h-4 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-100">
+                  {language === 'bm' ? 'Ahli Baharu Menyertai!' : 'New Member Joined!'}
+                </div>
+                <div className="text-xs font-bold leading-snug truncate">
+                  {language === 'bm'
+                    ? `${memberJoinBanner.joinedNames.join(', ')} telah menyertai • ${memberJoinBanner.totalCount} ahli dalam kumpulan sekarang`
+                    : `${memberJoinBanner.joinedNames.join(', ')} joined the group! • ${memberJoinBanner.totalCount} ${memberJoinBanner.totalCount === 1 ? 'user' : 'users'} currently in group`}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMemberJoinBanner(null)}
+              className="p-1 rounded-lg hover:bg-white/15 text-white/80 hover:text-white cursor-pointer shrink-0"
+              aria-label="Dismiss banner"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Recenter Toast Feedback */}
         {recenterToast && (
@@ -886,8 +1000,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-6 py-3.5 space-y-4 touch-pan-y"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {activeTab === 'map' && (
-            <div className="flex flex-col h-[500px] sm:h-[600px] space-y-3 animate-in fade-in duration-200">
+          <div className={activeTab === 'map' ? 'flex flex-col h-[500px] sm:h-[600px] space-y-3 animate-in fade-in duration-200' : 'hidden'}>
               {/* Quick Toolbar & Highland Landmark pill */}
               <div className="flex flex-wrap items-center justify-between gap-2 bg-stone-950/70 border border-white/10 p-2 rounded-2xl text-[10px] sm:text-xs">
                 <div className="flex items-center gap-2 text-stone-300 min-w-0">
@@ -987,7 +1100,6 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
                 )}
               </div>
             </div>
-          )}
 
           {activeTab === 'compass' && (
             <div className="h-[500px] sm:h-[600px] flex flex-col items-center justify-center space-y-8 animate-in zoom-in-95 duration-300 relative overflow-hidden">
@@ -1238,8 +1350,17 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
 
       {/* QR Code Preview Modal Overlay */}
       {showQrPreview && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4 relative">
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowQrPreview(false);
+          }}
+        >
+          <div
+            className="bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={() => setShowQrPreview(false)}
               className="absolute top-4 right-4 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
@@ -1298,8 +1419,17 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
       )}
       {/* Leave Session Confirmation Dialog */}
       {showExitConfirm && (
-        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-sm bg-stone-900 border border-rose-500/30 rounded-3xl p-6 text-center space-y-5 shadow-2xl">
+        <div
+          className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowExitConfirm(false);
+          }}
+        >
+          <div
+            className="w-full max-w-sm bg-stone-900 border border-rose-500/30 rounded-3xl p-6 text-center space-y-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto">
               <LogOut className="w-8 h-8 text-rose-400" />
             </div>
@@ -1318,14 +1448,20 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             <div className="flex flex-col gap-2 pt-2">
               <button
                 type="button"
-                onClick={handleConfirmLeave}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleConfirmLeave();
+                }}
                 className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm shadow-xl shadow-rose-950/40 transition-all active:scale-95 cursor-pointer"
               >
                 {language === 'bm' ? 'Keluar Kumpulan' : 'Leave Group'}
               </button>
               <button
                 type="button"
-                onClick={() => setShowExitConfirm(false)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowExitConfirm(false);
+                }}
                 className="w-full py-3 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-sm transition-all cursor-pointer"
               >
                 {language === 'bm' ? 'Kekal Dalam Kumpulan' : 'Stay in Group'}

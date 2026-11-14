@@ -19,6 +19,7 @@ import {
 } from './types';
 import { weatherService } from './services/weather';
 import { firebaseService, UserProfile } from './services/firebase';
+import { hazardFeedService } from './services/hazardFeedService';
 import { getTranslation } from './services/i18n';
 
 import { LoadingScreen } from './components/LoadingScreen';
@@ -48,6 +49,7 @@ import { DirectorySection } from './components/DirectorySection';
 import { PortalsSection } from './components/PortalsSection';
 import { FindMyPartyModal } from './components/FindMyPartyModal';
 import { VendorDashboard } from './components/VendorDashboard';
+import { AccommodationListModal } from './components/AccommodationListModal';
 import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
@@ -76,6 +78,7 @@ import {
   Menu,
   ShieldAlert,
   Users,
+  BedDouble,
 } from 'lucide-react';
 
 function checkIsStandaloneChat(): boolean {
@@ -172,6 +175,7 @@ export default function App() {
   const [isTrailEngineOpen, setIsTrailEngineOpen] = useState(false);
   const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState<boolean>(checkIsBeaconInvite);
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
+  const [isAccommodationModalOpen, setIsAccommodationModalOpen] = useState(false);
   const [isWidgetMenuOpen, setIsWidgetMenuOpen] = useState(false);
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
     null | 'microclimate' | 'traffic' | 'hazard' | 'events'
@@ -186,7 +190,7 @@ export default function App() {
 
   // Lock body scroll when capsule modal is open
   useEffect(() => {
-    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen;
+    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isAccommodationModalOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen;
     if (isAnyModalOpen) {
       const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
       document.body.style.overflow = 'hidden';
@@ -199,7 +203,7 @@ export default function App() {
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
     };
-  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen]);
+  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen]);
 
   const refreshStorageData = () => {
     setPlaces(firebaseService.getPlaces());
@@ -212,9 +216,24 @@ export default function App() {
 
   useEffect(() => {
     refreshStorageData();
+    firebaseService.recordSiteVisit().catch(() => {});
+    hazardFeedService.fetchLiveFeed(false).then((liveAlerts) => {
+      if (Array.isArray(liveAlerts) && liveAlerts.length > 0) {
+        setHazards(liveAlerts);
+      }
+    }).catch(() => {});
     weatherService.fetchLiveWeather().then((res) => {
       if (res.length > 0) setWeatherList(res);
     });
+
+    const handleHazardsUpdated = (e: any) => {
+      if (Array.isArray(e?.detail)) {
+        setHazards(e.detail);
+      } else {
+        setHazards(firebaseService.getHazardAlerts());
+      }
+    };
+    window.addEventListener('hazard-alerts-updated', handleHazardsUpdated);
 
     const unsubUser = firebaseService.subscribeUser(() => {
       setCurrentUser(firebaseService.getCurrentUser());
@@ -237,6 +256,10 @@ export default function App() {
 
     const handleOpenParty = () => setIsFindMyPartyOpen(true);
     window.addEventListener('open-find-my-party', handleOpenParty);
+
+    const handleOpenAccommodation = () => setIsAccommodationModalOpen(true);
+    window.addEventListener('open-accommodation', handleOpenAccommodation);
+    window.addEventListener('open-homestays', handleOpenAccommodation);
 
     const handleOpenCurrency = () => setIsCurrencyOpen(true);
     window.addEventListener('open-currency-converter', handleOpenCurrency);
@@ -291,6 +314,8 @@ export default function App() {
       window.removeEventListener('open-masjid-modal', handleOpenMasjid);
       window.removeEventListener('open-offline-trails-modal', handleOpenTrails);
       window.removeEventListener('open-find-my-party', handleOpenParty);
+      window.removeEventListener('open-accommodation', handleOpenAccommodation);
+      window.removeEventListener('open-homestays', handleOpenAccommodation);
       window.removeEventListener('open-currency-converter', handleOpenCurrency);
       window.removeEventListener('open-smart-parking-ev-modal', handleOpenParking);
       window.removeEventListener('open-map-modal', handleOpenMap);
@@ -298,6 +323,7 @@ export default function App() {
       window.removeEventListener('open-interactive-map', handleOpenMap);
       window.removeEventListener('popstate', handleLocationChange);
       window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('hazard-alerts-updated', handleHazardsUpdated);
       unsubUser();
     };
   }, []);
@@ -320,6 +346,10 @@ export default function App() {
   };
 
   const handleSelectCategory = (cat: MainCategory, sub?: SubCategory) => {
+    if (cat === 'accommodation') {
+      setIsAccommodationModalOpen(true);
+      return;
+    }
     setSelectedCategory(cat);
     setSelectedSubCategory(sub);
     setIsDirectoriesModalOpen(true);
@@ -386,6 +416,10 @@ export default function App() {
     }
     if (isMotorbikeRentalOpen) {
       setIsMotorbikeRentalOpen(false);
+      return true;
+    }
+    if (isAccommodationModalOpen) {
+      setIsAccommodationModalOpen(false);
       return true;
     }
     if (isGalleryOpen) {
@@ -573,6 +607,7 @@ export default function App() {
           onOpenItinerary={() => setIsItineraryOpen(true)}
           onOpenParty={() => setIsFindMyPartyOpen(true)}
           onOpenMotorbike={() => setIsMotorbikeRentalOpen(true)}
+          onOpenAccommodation={() => setIsAccommodationModalOpen(true)}
           onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
           weatherList={weatherList}
           trafficAlerts={trafficAlerts}
@@ -581,8 +616,32 @@ export default function App() {
 
         {/* Experience Cards (Desktop only) */}
         <section className="hidden sm:block max-w-6xl mx-auto px-3 sm:px-6 mb-12">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 max-w-6xl mx-auto">
-            {/* Card 1: Motorbike Rental */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4 max-w-6xl mx-auto">
+            {/* Card 1: Verified Homestays (Anti-Bypass Lock Engine) */}
+            <div
+              onClick={() => setIsAccommodationModalOpen(true)}
+              className="group rounded-2xl bg-stone-900/90 border border-emerald-500/30 hover:border-emerald-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
+            >
+              <div>
+                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
+                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 sm:mb-3">
+                    <BedDouble className="w-4 h-4 sm:w-6 sm:h-6" />
+                  </div>
+                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-emerald-300 leading-tight">
+                    Verified Stays
+                  </h3>
+                </div>
+                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
+                  Direct host homestays &amp; chalets. Lock dates with RM30 deposit; pay balance at check-in.
+                </p>
+              </div>
+              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-emerald-400 mt-2 sm:mt-4">
+                <span>Lock Room</span>
+                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+
+            {/* Card 2: Motorbike Rental */}
             <div
               onClick={() => setIsMotorbikeRentalOpen(true)}
               className="group rounded-2xl bg-stone-900/90 border border-emerald-500/30 hover:border-emerald-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
@@ -888,7 +947,19 @@ export default function App() {
       )}
 
       {/* Auth Modal */}
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onSuccess={() => setCurrentUser(firebaseService.getCurrentUser())} />
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onSuccess={(accountType) => {
+          const user = firebaseService.getCurrentUser();
+          setCurrentUser(user);
+          if (accountType === 'business') {
+            setIsVendorPortalOpen(true);
+          } else {
+            setIsVendorPortalOpen(false);
+          }
+        }}
+      />
       
       {/* Vendor Portal Modal */}
       {isVendorPortalOpen && (
@@ -1174,6 +1245,17 @@ export default function App() {
           isOpen={isFindMyPartyOpen}
           onClose={() => setIsFindMyPartyOpen(false)}
           language={language}
+        />
+      )}
+      {isAccommodationModalOpen && (
+        <AccommodationListModal
+          isOpen={isAccommodationModalOpen}
+          onClose={() => setIsAccommodationModalOpen(false)}
+          language={language}
+          onOpenVendorPortal={() => {
+            setIsAccommodationModalOpen(false);
+            setIsVendorPortalOpen(true);
+          }}
         />
       )}
 

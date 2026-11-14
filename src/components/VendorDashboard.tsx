@@ -736,9 +736,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         operatingHours: { from: '08:30', to: '18:00', isOpen: true },
         coverImage: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
         logoUrl: newBizLogo.trim() || 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=200&q=80',
-        galleryImages: [
-          'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=800&q=80',
-        ],
+        galleryImages: [],
         coordinates: { lat: 4.49, lng: 101.39 },
         realTimeStatus: 'open',
         parkingStatus: 'private_available',
@@ -801,13 +799,21 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     const files = e.target.files;
     if (!files || files.length === 0 || !activeVendor) return;
 
+    const currentCleanGallery = (activeVendor.galleryImages || []).filter(img => !img.includes('unsplash.com'));
+    if (currentCleanGallery.length >= 15) {
+      setSaveNotification('Maximum limit of 15 photos reached for gallery storage.');
+      setTimeout(() => setSaveNotification(null), 3500);
+      return;
+    }
+
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
         const resultUrl = uploadEvent.target?.result as string;
         if (resultUrl) {
           const updatedGallery = [...(activeVendor.galleryImages || []), resultUrl];
-          const updatedCover = activeVendor.coverImage || resultUrl;
+          if (updatedGallery.length > 15) return;
+          const updatedCover = activeVendor.coverImage && !activeVendor.coverImage.includes('unsplash.com') ? activeVendor.coverImage : resultUrl;
           const updated = {
             ...activeVendor,
             coverImage: updatedCover,
@@ -1435,7 +1441,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add Listing</span>
                 </button>
-                {onOpenAdmin && (
+                {isUserAdmin && onOpenAdmin && (
                   <button
                     onClick={() => {
                       onClose();
@@ -1889,14 +1895,33 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     </label>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {activeVendor.galleryImages.map((img, idx) => (
-                      <div key={idx} className="relative group rounded-xl overflow-hidden border border-stone-800 aspect-video bg-stone-900">
-                        <img src={img} alt="Gallery" className="w-full h-full object-cover" />
-                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-mono text-white">
-                          {idx === 0 ? 'Cover Photo' : `Photo ${idx + 1}`}
-                        </span>
+                    {activeVendor.galleryImages.filter(img => !img.includes('unsplash.com')).length === 0 ? (
+                      <div className="col-span-full p-4 rounded-xl bg-stone-950 border border-stone-800 text-center text-xs text-stone-400">
+                        No photos uploaded yet. Click &quot;Upload Photos from Folder / Computer&quot; above to upload your photos (up to 15 photos supported).
                       </div>
-                    ))}
+                    ) : (
+                      activeVendor.galleryImages.filter(img => !img.includes('unsplash.com')).map((img, idx) => (
+                        <div key={idx} className="relative group rounded-xl overflow-hidden border border-stone-800 aspect-video bg-stone-900">
+                          <img src={img} alt="Gallery" className="w-full h-full object-cover" />
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-mono text-white">
+                            {idx === 0 ? 'Cover Photo' : `Photo ${idx + 1}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updatedGallery = activeVendor.galleryImages.filter(i => i !== img);
+                              const updated = { ...activeVendor, galleryImages: updatedGallery };
+                              setActiveVendor(updated);
+                              firebaseService.saveVendorListing(updated);
+                            }}
+                            className="absolute top-1 right-1 p-1 rounded-full bg-red-600/80 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Remove Photo"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -3244,7 +3269,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       <div>
                         <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                           <Package className="w-4 h-4 text-teal-400" />
-                          <span>Value-Added Bundles (Why Customers Never Bypass CamGo)</span>
+                          <span>Value-Added Bundles</span>
                         </h3>
                         <p className="text-[11px] text-stone-400">
                           CamGo bundles exclusive local perks that direct booking cannot match, making CamGo the smarter choice.

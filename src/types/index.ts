@@ -297,7 +297,7 @@ export interface HazardAlert {
   agency?: 'JKR' | 'MDCH' | 'APM' | 'PDRM';
   agencyName?: string;
   sourceUrl?: string;
-  sourceType?: 'facebook_page' | 'ebencana_portal' | 'mdch_portal' | 'web_scraper';
+  sourceType?: 'facebook_page' | 'ebencana_portal' | 'mdch_portal' | 'pdrm_portal' | 'web_scraper' | 'google_search_grounding';
   referenceNo?: string;
   roadRoute?: string;
   actionTaken?: string;
@@ -305,6 +305,29 @@ export interface HazardAlert {
   agencyHotline?: string;
   isVerifiedAgency?: boolean;
   lastVerified?: string;
+}
+
+export interface VisitorLogEntry {
+  id: string;
+  visitorId: string;
+  timestamp: string;
+  device: 'Mobile' | 'Desktop';
+  path: string;
+  userRole?: 'admin' | 'vendor' | 'user' | 'guest';
+  userName?: string;
+  isUniqueNew?: boolean;
+}
+
+export interface SiteVisitorStats {
+  totalVisits: number;
+  uniqueVisitors: number;
+  todayVisits: number;
+  todayDate: string;
+  mobileVisits: number;
+  desktopVisits: number;
+  dailyCounts: Record<string, number>;
+  recentVisits: VisitorLogEntry[];
+  lastUpdated: string;
 }
 
 export interface EventNotification {
@@ -799,6 +822,36 @@ export interface AccommodationBooking {
   expiresAt?: string; // 30-min timeout for Type B requests
   whatsappStatus: 'sent' | 'replied_yes' | 'replied_no' | 'timed_out';
   notes?: string;
+}
+
+export interface AccommodationListing {
+  id: string;
+  vendorId?: string;
+  code: string; // e.g. "CH-07"
+  maskedTitle: string; // e.g. "Cozy 3BR Alpine Apartment - 350m to Kea Farm (CH-07)"
+  realBusinessName: string; // e.g. "Barrington Alpine Homestay"
+  township: Township;
+  proximityDesc: string; // "350m to Kea Farm Market & Strawberry Walk"
+  fullAddress: string;
+  ownerName: string;
+  ownerPhone: string;
+  pricePerNight: number;
+  depositAmount: number; // 30
+  balanceToCollect: number; // pricePerNight - 30
+  bookingType: 'instant' | 'request';
+  roomAvailabilityStatus: RoomAvailabilityStatus;
+  bedrooms: number;
+  bathrooms: number;
+  maxGuests: number;
+  rating: number;
+  reviewCount: number;
+  coverImage: string;
+  galleryImages: string[];
+  features: string[];
+  bundledPerks: string[];
+  verifiedHost: boolean;
+  ownerPortalSlug?: string;
+  whatsappNumber?: string;
 }
 
 export interface MobileHomeCard {

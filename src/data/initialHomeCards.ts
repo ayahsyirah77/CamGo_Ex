@@ -15,8 +15,8 @@ export const INITIAL_MOBILE_HOME_CARDS: MobileHomeCard[] = [
   {
     id: 'card-2-hazard',
     type: 'hazard',
-    title: 'Live Traffic/Hazard',
-    subtitle: 'Kea Farm',
+    title: 'Live Notice/Hazard',
+    subtitle: 'PDRM • JKR • MDCH',
     tag: 'LIVE',
     imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=600&q=80',
     size: 'half',

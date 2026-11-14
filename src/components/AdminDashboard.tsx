@@ -23,6 +23,8 @@ import {
   ParkingStatus,
   RoomAvailabilityStatus,
   MobileHomeCard,
+  AccommodationListing,
+  SiteVisitorStats,
 } from '../types';
 import { firebaseService, UserProfile } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
@@ -70,6 +72,13 @@ import {
   Car,
   Zap,
   Search,
+  BedDouble,
+  Globe,
+  BarChart3,
+  RefreshCw,
+  Monitor,
+  TrendingUp,
+  Key,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -180,6 +189,245 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [adminSearchVendorQuery, setAdminSearchVendorQuery] = useState('');
   const [selectedVendorForAdmin, setSelectedVendorForAdmin] = useState<VendorListing | null>(null);
   const [isSavingAdminVendor, setIsSavingAdminVendor] = useState(false);
+
+  // Admin-Only TomTom Smart Engine & Live API Key Configuration
+  const [tomTomApiKey, setTomTomApiKey] = useState<string>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('tomtom_api_key') || '' : '';
+  });
+  const [showTomTomKeyText, setShowTomTomKeyText] = useState(false);
+  const [isLiveTomTomActive, setIsLiveTomTomActive] = useState(false);
+  const [isTestingTomTom, setIsTestingTomTom] = useState(false);
+  const [tomTomStatusMessage, setTomTomStatusMessage] = useState<string | null>(null);
+
+  const testAndSyncTomTomKey = async (keyToTest: string, announceSuccess = false) => {
+    const trimmed = keyToTest.trim();
+    if (!trimmed || trimmed.length <= 10) {
+      setIsLiveTomTomActive(false);
+      if (announceSuccess) {
+        setTomTomStatusMessage('Cleared custom key. TomTom Smart Engine built-in model is active.');
+      }
+      return;
+    }
+    setIsTestingTomTom(true);
+    try {
+      const res = await fetch(
+        `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${encodeURIComponent(trimmed)}&point=4.582,101.312`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.flowSegmentData) {
+          setIsLiveTomTomActive(true);
+          if (announceSuccess) {
+            setTomTomStatusMessage(
+              `Connected! Live FT 185 flow: ${Math.round(data.flowSegmentData.currentSpeed || 45)} km/h.`
+            );
+          }
+          return;
+        }
+      }
+      setIsLiveTomTomActive(false);
+      if (announceSuccess) {
+        setTomTomStatusMessage('Key saved, but TomTom API returned an error or rate limit. Built-in fallback stays active.');
+      }
+    } catch {
+      setIsLiveTomTomActive(false);
+      if (announceSuccess) {
+        setTomTomStatusMessage('Network check failed. Key saved locally; built-in fallback stays active.');
+      }
+    } finally {
+      setIsTestingTomTom(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tomTomApiKey.trim().length > 10) {
+      testAndSyncTomTomKey(tomTomApiKey, false);
+    }
+    if (!db) return;
+    getDocs(collection(db, 'settings'))
+      .then((snap) => {
+        const cfgDoc = snap.docs.find((d) => d.id === 'tomtom_config');
+        const remoteKey = cfgDoc?.data()?.apiKey;
+        if (typeof remoteKey === 'string' && remoteKey.trim() && !localStorage.getItem('tomtom_api_key')) {
+          setTomTomApiKey(remoteKey);
+          localStorage.setItem('tomtom_api_key', remoteKey);
+          window.dispatchEvent(new CustomEvent('tomtom-key-updated', { detail: remoteKey }));
+          testAndSyncTomTomKey(remoteKey, false);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveAdminTomTomKey = async (nextKey: string, runTest = true) => {
+    const clean = nextKey.trim();
+    setTomTomApiKey(nextKey);
+    if (clean) {
+      localStorage.setItem('tomtom_api_key', clean);
+    } else {
+      localStorage.removeItem('tomtom_api_key');
+    }
+    window.dispatchEvent(new CustomEvent('tomtom-key-updated', { detail: clean }));
+    if (db) {
+      try {
+        await setDoc(doc(db, 'settings', 'tomtom_config'), {
+          apiKey: clean,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.email || 'admin',
+        });
+      } catch (e) {
+        console.warn('[AdminDashboard] Could not persist TomTom key to Firestore settings:', e);
+      }
+    }
+    if (runTest) {
+      await testAndSyncTomTomKey(clean, true);
+    }
+  };
+
+  // Verified Homestays & Stays Management State
+  const [accommodationListings, setAccommodationListings] = useState<AccommodationListing[]>(() =>
+    firebaseService.getAccommodationListings()
+  );
+  const [adminAccomSearchQuery, setAdminAccomSearchQuery] = useState('');
+  const [selectedAccomForEdit, setSelectedAccomForEdit] = useState<AccommodationListing | null>(null);
+  const [showAddAccomModal, setShowAddAccomModal] = useState(false);
+
+  // Form State for Homestay Modal
+  const [accomFormName, setAccomFormName] = useState('');
+  const [accomFormCode, setAccomFormCode] = useState('');
+  const [accomFormTownship, setAccomFormTownship] = useState<Township>('Tanah Rata');
+  const [accomFormAddress, setAccomFormAddress] = useState('');
+  const [accomFormPrice, setAccomFormPrice] = useState<number>(220);
+  const [accomFormStatus, setAccomFormStatus] = useState<RoomAvailabilityStatus>('rooms_available');
+  const [accomFormHostName, setAccomFormHostName] = useState('');
+  const [accomFormPhone, setAccomFormPhone] = useState('');
+  const [accomFormBedrooms, setAccomFormBedrooms] = useState<number>(3);
+  const [accomFormMaxGuests, setAccomFormMaxGuests] = useState<number>(6);
+  const [accomFormCoverImage, setAccomFormCoverImage] = useState('');
+  const [isSavingAccom, setIsSavingAccom] = useState(false);
+
+  useEffect(() => {
+    const handleAccomUpdated = () => {
+      setAccommodationListings(firebaseService.getAccommodationListings());
+    };
+    window.addEventListener('accommodation-listings-updated', handleAccomUpdated);
+    return () => window.removeEventListener('accommodation-listings-updated', handleAccomUpdated);
+  }, []);
+
+  const handleOpenAddAccomModal = () => {
+    setSelectedAccomForEdit(null);
+    const randomCode = `CH-${Math.floor(1000 + Math.random() * 9000)}`;
+    setAccomFormName('');
+    setAccomFormCode(randomCode);
+    setAccomFormTownship('Tanah Rata');
+    setAccomFormAddress('');
+    setAccomFormPrice(220);
+    setAccomFormStatus('rooms_available');
+    setAccomFormHostName('');
+    setAccomFormPhone('');
+    setAccomFormBedrooms(3);
+    setAccomFormMaxGuests(6);
+    setAccomFormCoverImage('https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80');
+    setShowAddAccomModal(true);
+  };
+
+  const handleOpenEditAccom = (stay: AccommodationListing) => {
+    setSelectedAccomForEdit(stay);
+    setAccomFormName(stay.realBusinessName);
+    setAccomFormCode(stay.code);
+    setAccomFormTownship(stay.township || 'Tanah Rata');
+    setAccomFormAddress(stay.fullAddress || '');
+    setAccomFormPrice(stay.pricePerNight || 220);
+    setAccomFormStatus(stay.roomAvailabilityStatus || 'rooms_available');
+    setAccomFormHostName(stay.ownerName || '');
+    setAccomFormPhone(stay.whatsappNumber || stay.ownerPhone || '');
+    setAccomFormBedrooms(stay.bedrooms || 3);
+    setAccomFormMaxGuests(stay.maxGuests || 6);
+    setAccomFormCoverImage(stay.coverImage || '');
+    setShowAddAccomModal(true);
+  };
+
+  const handleSaveAccomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accomFormName.trim()) return;
+    setIsSavingAccom(true);
+
+    try {
+      const targetId = selectedAccomForEdit ? selectedAccomForEdit.id : `accom-${Date.now()}`;
+      const codeToUse = accomFormCode || `CH-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const listingToSave: AccommodationListing = {
+        id: targetId,
+        vendorId: targetId,
+        code: codeToUse,
+        maskedTitle: `${accomFormName.trim()} (${codeToUse})`,
+        realBusinessName: accomFormName.trim(),
+        township: accomFormTownship,
+        proximityDesc: accomFormAddress ? `Located at ${accomFormAddress}` : `Central ${accomFormTownship}`,
+        fullAddress: accomFormAddress || `${accomFormTownship}, Cameron Highlands`,
+        ownerName: accomFormHostName || `${accomFormName.trim()} Host`,
+        ownerPhone: accomFormPhone || '+60195484277',
+        whatsappNumber: accomFormPhone || '+60195484277',
+        pricePerNight: Number(accomFormPrice) || 220,
+        depositAmount: 30,
+        balanceToCollect: Math.max(0, (Number(accomFormPrice) || 220) - 30),
+        bookingType: 'instant',
+        roomAvailabilityStatus: accomFormStatus,
+        bedrooms: Number(accomFormBedrooms) || 3,
+        bathrooms: 2,
+        maxGuests: Number(accomFormMaxGuests) || 6,
+        rating: selectedAccomForEdit?.rating || 4.9,
+        reviewCount: selectedAccomForEdit?.reviewCount || 24,
+        coverImage: accomFormCoverImage || 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+        galleryImages: [accomFormCoverImage || 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80'],
+        features: selectedAccomForEdit?.features || ['Highland Mountain Air', 'Fast Wi-Fi', 'Balcony View', 'Free Parking'],
+        bundledPerks: [
+          '🍓 Free Strawberry Farm Passes (Kea Farm)',
+          '🅿️ Dedicated Parking Bay',
+          '🗺️ CamGo Live Traffic Jam Avoidance Map',
+        ],
+        verifiedHost: true,
+        ownerPortalSlug: accomFormName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+      };
+
+      const updatedListings = await firebaseService.saveAccommodationListing(listingToSave);
+      setAccommodationListings(updatedListings);
+      if (typeof addActivity === 'function') {
+        addActivity(`${selectedAccomForEdit ? 'Updated' : 'Added'} homestay listing "${accomFormName.trim()}" in Verified Stays`);
+      }
+      setShowAddAccomModal(false);
+      setSelectedAccomForEdit(null);
+    } catch (err) {
+      console.error('Error saving accommodation listing:', err);
+    } finally {
+      setIsSavingAccom(false);
+    }
+  };
+
+  const handleDeleteAccom = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to remove "${name}" from Cameron Highlands Verified Homestays & Stays?`)) {
+      return;
+    }
+    try {
+      const updatedListings = await firebaseService.deleteAccommodationListing(id);
+      setAccommodationListings(updatedListings);
+      if (typeof addActivity === 'function') {
+        addActivity(`Deleted homestay listing "${name}" from Verified Stays`);
+      }
+    } catch (err) {
+      console.error('Error deleting accommodation listing:', err);
+    }
+  };
+
+  const filteredAccommodations = accommodationListings.filter((item) => {
+    if (!adminAccomSearchQuery.trim()) return true;
+    const q = adminAccomSearchQuery.toLowerCase();
+    return (
+      (item.realBusinessName || '').toLowerCase().includes(q) ||
+      (item.code || '').toLowerCase().includes(q) ||
+      (item.township || '').toLowerCase().includes(q) ||
+      (item.ownerName || '').toLowerCase().includes(q)
+    );
+  });
 
   const handleSaveSelectedAdminVendor = async (vendorToSave: VendorListing) => {
     setIsSavingAdminVendor(true);
@@ -823,9 +1071,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
 
+  const [visitorStats, setVisitorStats] = useState<SiteVisitorStats>(() =>
+    firebaseService.getSiteVisitorStats()
+  );
+  const [isRefreshingVisitors, setIsRefreshingVisitors] = useState(false);
+
+  useEffect(() => {
+    const unsubVisitors = firebaseService.subscribeSiteVisitorStats((nextStats) => {
+      setVisitorStats(nextStats);
+    });
+    firebaseService.fetchSiteVisitorStats().catch(() => {});
+    return () => unsubVisitors();
+  }, []);
+
+  const handleRefreshVisitorStats = async () => {
+    setIsRefreshingVisitors(true);
+    try {
+      const fresh = await firebaseService.fetchSiteVisitorStats();
+      setVisitorStats(fresh);
+    } finally {
+      setIsRefreshingVisitors(false);
+    }
+  };
+
   const stats = {
     totalUsers: liveUsers.length,
-    pageViews: 0,
+    pageViews: visitorStats.totalVisits,
     newSignups: liveUsers.filter(u => {
       if (!u.createdAt) return false;
       const created = new Date(u.createdAt).getTime();
@@ -1029,6 +1300,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         parkingStatus: placeParkingStatus,
         totalBays: placeTotalBays !== '' ? Number(placeTotalBays) : undefined,
         availableBays: placeAvailableBays !== '' ? Number(placeAvailableBays) : undefined,
+        updatedByAdmin: true,
+        updatedAt: new Date().toISOString(),
       };
 
       if (placeDiyHarvestStatus !== 'none') {
@@ -1509,6 +1782,209 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
+          {/* Website Visitor Counter & Live Entry Analytics */}
+          <div className="p-6 rounded-3xl bg-stone-900/95 border border-cyan-500/30 shadow-2xl space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-stone-100 flex items-center gap-2">
+                    <span>Website Visitor Counter &amp; Entry Analytics</span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono font-bold text-emerald-300">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      LIVE
+                    </span>
+                  </h4>
+                  <p className="text-xs text-stone-400">
+                    Real-time tracker of how many visitors entered and checked the CamGo website
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRefreshVisitorStats}
+                disabled={isRefreshingVisitors}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-cyan-300 border border-cyan-500/30 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingVisitors ? 'animate-spin' : ''}`} />
+                <span>{isRefreshingVisitors ? 'Refreshing...' : 'Refresh Counter'}</span>
+              </button>
+            </div>
+
+            {/* 4 Visitor Summary Metrics */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="p-4 rounded-2xl bg-stone-950/80 border border-cyan-500/20">
+                <div className="flex items-center justify-between text-[11px] text-stone-400 mb-1">
+                  <span>Total Website Visits</span>
+                  <Eye className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div className="text-2xl font-heading font-black text-white">
+                  {visitorStats.totalVisits.toLocaleString()}
+                </div>
+                <div className="text-[10px] text-cyan-400/80 font-mono mt-1">All recorded entries</div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-stone-950/80 border border-emerald-500/20">
+                <div className="flex items-center justify-between text-[11px] text-stone-400 mb-1">
+                  <span>Unique Visitors</span>
+                  <Users className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl font-heading font-black text-white">
+                  {visitorStats.uniqueVisitors.toLocaleString()}
+                </div>
+                <div className="text-[10px] text-emerald-400/80 font-mono mt-1">Distinct browser IDs</div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-stone-950/80 border border-amber-500/20">
+                <div className="flex items-center justify-between text-[11px] text-stone-400 mb-1">
+                  <span>Today&apos;s Visitors</span>
+                  <TrendingUp className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="text-2xl font-heading font-black text-white">
+                  {visitorStats.todayVisits.toLocaleString()}
+                </div>
+                <div className="text-[10px] text-amber-400/80 font-mono mt-1">{visitorStats.todayDate} (MYT)</div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-stone-950/80 border border-indigo-500/20">
+                <div className="flex items-center justify-between text-[11px] text-stone-400 mb-1">
+                  <span>Mobile vs Desktop</span>
+                  <Smartphone className="w-4 h-4 text-indigo-400" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-lg font-heading font-black text-white">
+                    {visitorStats.mobileVisits}
+                  </span>
+                  <span className="text-xs text-stone-500">/</span>
+                  <span className="text-lg font-heading font-black text-indigo-300">
+                    {visitorStats.desktopVisits}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-stone-800 overflow-hidden mt-2 flex">
+                  <div
+                    className="h-full bg-emerald-400 transition-all"
+                    style={{
+                      width: `${
+                        visitorStats.mobileVisits + visitorStats.desktopVisits > 0
+                          ? Math.round(
+                              (visitorStats.mobileVisits /
+                                (visitorStats.mobileVisits + visitorStats.desktopVisits)) *
+                                100
+                            )
+                          : 50
+                      }%`,
+                    }}
+                  />
+                  <div className="h-full bg-indigo-400 flex-1" />
+                </div>
+              </div>
+            </div>
+
+            {/* 7-Day Daily Chart & Recent Visitor Check-ins */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Daily Visits Trend */}
+              <div className="p-4 rounded-2xl bg-stone-950/70 border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-stone-200 flex items-center gap-1.5">
+                    <BarChart3 className="w-4 h-4 text-cyan-400" />
+                    <span>Daily Visitor Trend (Recent 7 Days)</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-stone-500">MYT Daily</span>
+                </div>
+                {(() => {
+                  const entries = Object.entries(visitorStats.dailyCounts || {})
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .slice(-7);
+                  const maxCount = Math.max(1, ...entries.map(([, v]) => Number(v) || 0));
+                  if (entries.length === 0) {
+                    return (
+                      <div className="py-6 text-center text-xs text-stone-500 italic">
+                        Visitor trend data will appear as visitors enter the site.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="grid grid-cols-7 gap-2 items-end h-28 pt-3">
+                      {entries.map(([dateKey, count]) => {
+                        const pct = Math.max(10, Math.round(((Number(count) || 0) / maxCount) * 100));
+                        return (
+                          <div key={dateKey} className="flex flex-col items-center gap-1 h-full justify-end">
+                            <span className="text-[10px] font-mono font-bold text-cyan-300">{count}</span>
+                            <div className="w-full max-w-[28px] bg-stone-800/80 rounded-t-lg flex items-end h-16 overflow-hidden">
+                              <div
+                                className="w-full bg-gradient-to-t from-cyan-600 to-emerald-400 rounded-t-lg transition-all duration-500"
+                                style={{ height: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-[9px] font-mono text-stone-400">
+                              {dateKey.slice(5)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Recent Visitor Check-ins */}
+              <div className="p-4 rounded-2xl bg-stone-950/70 border border-white/5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-stone-200 flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span>Recent Visitor Entries</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-stone-500">
+                    Latest {Math.min(visitorStats.recentVisits.length, 30)}
+                  </span>
+                </div>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {visitorStats.recentVisits.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-stone-500 italic">
+                      No recent entries logged yet.
+                    </div>
+                  ) : (
+                    visitorStats.recentVisits.slice(0, 12).map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-stone-900/90 border border-white/5 text-[11px]"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {entry.device === 'Mobile' ? (
+                            <Smartphone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          ) : (
+                            <Monitor className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          )}
+                          <span className="font-mono text-stone-300 truncate">
+                            {entry.visitorId}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-stone-800 text-[9px] font-mono text-stone-400 shrink-0">
+                            {entry.userRole || 'guest'}
+                          </span>
+                          {entry.isUniqueNew && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-bold shrink-0">
+                              NEW
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono text-stone-400 shrink-0">
+                          {new Date(entry.timestamp).toLocaleTimeString('en-MY', {
+                            timeZone: 'Asia/Kuala_Lumpur',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Actions Grid */}
           <div className="p-6 rounded-3xl bg-stone-900/90 border border-emerald-500/20">
             <h4 className="text-base font-bold text-stone-100 mb-4 flex items-center gap-2">
@@ -1584,6 +2060,88 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span>Parking & EV Hubs</span>
               </button>
             </div>
+          </div>
+
+          {/* Admin-Only TomTom Smart Engine & Live Traffic API Configuration */}
+          <div className="p-6 rounded-3xl bg-stone-900/95 border border-emerald-500/30 shadow-2xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm sm:text-base font-bold text-stone-100 flex items-center gap-2 flex-wrap">
+                    <span>TomTom Traffic Engine &amp; API Key</span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-stone-950 border border-white/10 text-[11px] font-bold">
+                      <span className={`w-2 h-2 rounded-full ${isLiveTomTomActive ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+                      <span className="text-stone-200">
+                        {isLiveTomTomActive ? 'TomTom Live Connected' : 'TomTom Smart Engine Active'}
+                      </span>
+                    </span>
+                  </h4>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Admin-only control for live TomTom flow tiles, routing telemetry, and highway traffic forecasting. Hidden from public map views.
+                  </p>
+                </div>
+              </div>
+
+              <a
+                href="https://developer.tomtom.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-emerald-400 text-xs font-bold border border-white/10 transition-colors"
+              >
+                Get Free Key ↗
+              </a>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
+              <div className="relative flex-1">
+                <input
+                  type={showTomTomKeyText ? 'text' : 'password'}
+                  value={tomTomApiKey}
+                  onChange={(e) => setTomTomApiKey(e.target.value)}
+                  placeholder="Paste Freemium TomTom API Key here..."
+                  className="w-full pl-3.5 pr-16 py-2.5 rounded-xl bg-stone-950 border border-white/15 text-xs text-stone-100 font-mono outline-none focus:border-emerald-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowTomTomKeyText(!showTomTomKeyText)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] font-bold cursor-pointer"
+                >
+                  {showTomTomKeyText ? 'Hide' : 'Show'}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                disabled={isTestingTomTom}
+                onClick={() => handleSaveAdminTomTomKey(tomTomApiKey, true)}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all shrink-0"
+              >
+                {isTestingTomTom ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                <span>{isTestingTomTom ? 'Testing...' : 'Save & Test TomTom API Key'}</span>
+              </button>
+
+              {tomTomApiKey && (
+                <button
+                  type="button"
+                  onClick={() => handleSaveAdminTomTomKey('', true)}
+                  className="px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-rose-950/60 text-stone-300 hover:text-rose-300 border border-white/10 text-xs font-bold cursor-pointer transition-colors shrink-0"
+                >
+                  Clear Key
+                </button>
+              )}
+            </div>
+
+            {tomTomStatusMessage && (
+              <div className="px-3.5 py-2 rounded-xl bg-stone-950/90 border border-emerald-500/30 text-[11px] text-emerald-300 font-medium">
+                {tomTomStatusMessage}
+              </div>
+            )}
+            <p className="text-[11px] text-stone-500">
+              Free tier includes 2,500 daily requests. Built-in highland telemetry fallback operates automatically when no key is saved.
+            </p>
           </div>
 
           {/* Real-Time WebSocket Notification & Broadcast Center */}
@@ -2415,6 +2973,145 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </td>
                         </tr>
                       ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Section: Cameron Highlands Verified Homestays & Stays Management */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-stone-900/80 border border-emerald-500/20 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <BedDouble className="w-5 h-5 text-emerald-400" />
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Cameron Highlands Verified Homestays &amp; Stays
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase">
+                    {accommodationListings.length} Listed
+                  </span>
+                </div>
+                <p className="text-xs text-stone-400 mt-1">
+                  Admin Control Panel: Edit prices, availability, titles, or remove homestays from the Verified Stays directory.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenAddAccomModal}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg transition-all cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add New Homestay Listing</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={adminAccomSearchQuery}
+                onChange={(e) => setAdminAccomSearchQuery(e.target.value)}
+                placeholder="Search by listing name (e.g. Park View Apartment), code (CH-0427), host name, or township..."
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-stone-950/80 border border-stone-800 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Homestays Table */}
+            <div className="overflow-x-auto rounded-2xl border border-stone-800 bg-stone-950/60">
+              <table className="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                  <tr className="border-b border-stone-800 text-[11px] font-extrabold uppercase text-stone-400 bg-stone-900/50">
+                    <th className="p-3">Property &amp; Code</th>
+                    <th className="p-3">Township &amp; Location</th>
+                    <th className="p-3">Price / Night</th>
+                    <th className="p-3">Availability</th>
+                    <th className="p-3">Host Contact</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-800 text-xs text-stone-200">
+                  {filteredAccommodations.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-stone-500 italic">
+                        No homestay listings found matching &quot;{adminAccomSearchQuery}&quot;. Click &quot;Add New Homestay Listing&quot; to create one.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAccommodations.map((stay) => (
+                      <tr key={stay.id} className="hover:bg-stone-900/40 transition-colors">
+                        <td className="p-3">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={stay.coverImage}
+                              alt={stay.realBusinessName}
+                              className="w-11 h-11 rounded-xl object-cover border border-stone-800 shrink-0"
+                            />
+                            <div>
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                <span>{stay.realBusinessName}</span>
+                                <span className="px-1.5 py-0.5 rounded bg-stone-800 text-emerald-400 font-mono text-[10px] font-bold">
+                                  {stay.code}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-stone-400 font-mono">{stay.maskedTitle}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-medium text-stone-300">{stay.township}</div>
+                          <div className="text-[11px] text-stone-500 truncate max-w-[200px]">{stay.fullAddress}</div>
+                        </td>
+                        <td className="p-3 font-bold text-emerald-400">
+                          RM {stay.pricePerNight} <span className="text-[10px] text-stone-500 font-normal">/ night</span>
+                        </td>
+                        <td className="p-3">
+                          {stay.roomAvailabilityStatus === 'rooms_available' && (
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold uppercase">
+                              Rooms Available
+                            </span>
+                          )}
+                          {stay.roomAvailabilityStatus === 'limited_units' && (
+                            <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-bold uppercase">
+                              Limited Units
+                            </span>
+                          )}
+                          {stay.roomAvailabilityStatus === 'fully_booked' && (
+                            <span className="px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[10px] font-bold uppercase">
+                              Fully Booked
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <div className="font-medium text-white">{stay.ownerName}</div>
+                          <div className="text-[11px] text-stone-400">{stay.whatsappNumber || stay.ownerPhone}</div>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditAccom(stay)}
+                              className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 transition-colors cursor-pointer"
+                              title="Edit Listing"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAccom(stay.id, stay.realBusinessName)}
+                              className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-500/30 transition-colors cursor-pointer"
+                              title="Delete Listing"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -5065,7 +5762,234 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
           </div>
-        )}
+        ) as any}
+
+        {/* Add / Edit Homestay Listing Modal */}
+        {showAddAccomModal &&
+          renderModal(
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div className="w-full max-w-2xl bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <BedDouble className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white">
+                      {selectedAccomForEdit ? 'Edit Homestay Listing' : 'Add New Homestay Listing'}
+                    </h3>
+                    <p className="text-xs text-stone-400">
+                      {selectedAccomForEdit
+                        ? `Editing "${selectedAccomForEdit.realBusinessName}"`
+                        : 'Create a verified homestay listing for Cameron Highlands Verified Stays'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddAccomModal(false);
+                    setSelectedAccomForEdit(null);
+                  }}
+                  className="p-2 rounded-xl bg-stone-800 text-stone-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveAccomSubmit} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Property / Homestay Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={accomFormName}
+                      onChange={(e) => setAccomFormName(e.target.value)}
+                      placeholder="e.g. Park View Apartment"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Listing Code
+                    </label>
+                    <input
+                      type="text"
+                      value={accomFormCode}
+                      onChange={(e) => setAccomFormCode(e.target.value)}
+                      placeholder="e.g. CH-0427"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-emerald-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Township
+                    </label>
+                    <select
+                      value={accomFormTownship}
+                      onChange={(e) => setAccomFormTownship(e.target.value as Township)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      {ALL_9_TOWNSHIPS.map((town) => (
+                        <option key={town} value={town}>
+                          {town}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Room Availability Status
+                    </label>
+                    <select
+                      value={accomFormStatus}
+                      onChange={(e) => setAccomFormStatus(e.target.value as RoomAvailabilityStatus)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="rooms_available">Rooms Available</option>
+                      <option value="limited_units">Limited Units Left</option>
+                      <option value="fully_booked">Fully Booked / Sold Out</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-stone-300 font-bold mb-1">
+                    Full Address &amp; Location Description
+                  </label>
+                  <input
+                    type="text"
+                    value={accomFormAddress}
+                    onChange={(e) => setAccomFormAddress(e.target.value)}
+                    placeholder="e.g. Park View Apartments, Persiaran Camellia 4, 39000 Tanah Rata"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Price Per Night (RM)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={accomFormPrice}
+                      onChange={(e) => setAccomFormPrice(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Bedrooms
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={accomFormBedrooms}
+                      onChange={(e) => setAccomFormBedrooms(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Max Guests
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={accomFormMaxGuests}
+                      onChange={(e) => setAccomFormMaxGuests(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Host Contact Name
+                    </label>
+                    <input
+                      type="text"
+                      value={accomFormHostName}
+                      onChange={(e) => setAccomFormHostName(e.target.value)}
+                      placeholder="e.g. Park View Host"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">
+                      Host Phone / WhatsApp
+                    </label>
+                    <input
+                      type="text"
+                      value={accomFormPhone}
+                      onChange={(e) => setAccomFormPhone(e.target.value)}
+                      placeholder="e.g. +60195484277"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-stone-300 font-bold mb-1">
+                    Cover Image URL
+                  </label>
+                  <input
+                    type="text"
+                    value={accomFormCoverImage}
+                    onChange={(e) => setAccomFormCoverImage(e.target.value)}
+                    placeholder="https://images.unsplash.com/..."
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="pt-3 border-t border-stone-800 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddAccomModal(false);
+                      setSelectedAccomForEdit(null);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingAccom}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center gap-2 shadow-lg cursor-pointer"
+                  >
+                    {isSavingAccom ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>{selectedAccomForEdit ? 'Save Changes' : 'Create Homestay Listing'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) as any}
     </>
   );
 };

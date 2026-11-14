@@ -1,4 +1,4 @@
-import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard, AccommodationBooking } from '../types';
+import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard, AccommodationBooking, AccommodationListing, RoomAvailabilityStatus, SiteVisitorStats, VisitorLogEntry } from '../types';
 import {
   INITIAL_PLACES,
   INITIAL_GALLERY,
@@ -27,7 +27,7 @@ import {
   updateProfile 
 } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot, updateDoc, increment } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 
@@ -73,6 +73,7 @@ const STORAGE_KEYS = {
   VENDOR_STAFF: 'camgo_vendor_staff',
   HOME_CARDS: 'camgo_home_cards',
   ACCOMMODATION_BOOKINGS: 'camgo_accommodation_bookings',
+  ACCOMMODATION_LISTINGS: 'camgo_accommodation_listings',
 };
 
 export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
@@ -191,6 +192,21 @@ export function isMockMotorbikePartner(partner: any): boolean {
   return false;
 }
 
+export const DIRECTORY_PLACE_IDS = new Set(INITIAL_PLACES.map((p) => p.id.toLowerCase()));
+
+export function isDirectoryAccommodationId(id: string): boolean {
+  const lower = (id || '').toLowerCase().trim();
+  if (!lower) return false;
+  return (
+    lower.startsWith('place-') ||
+    lower.startsWith('hs_') ||
+    lower.startsWith('mock-') ||
+    lower.startsWith('seed-') ||
+    lower.startsWith('test-') ||
+    DIRECTORY_PLACE_IDS.has(lower)
+  );
+}
+
 export function isMockVendorListing(vendor: any): boolean {
   if (!vendor) return true;
   const id = (vendor.id || '').toLowerCase();
@@ -307,6 +323,55 @@ export function isMockLoungePost(post: any): boolean {
 
   return false;
 }
+
+export const PARK_VIEW_VENDOR_LISTING: VendorListing = {
+  id: 'vendor-park-view-apartment',
+  ownerUid: 'admin-created-vendor',
+  ownerEmail: 'parkview.admin@camgo.my',
+  businessName: 'Park View Apartment',
+  verificationStatus: 'verified',
+  category: 'accommodation',
+  subCategory: 'homestay_apartment',
+  township: 'Tanah Rata',
+  address: 'Park View Apartments, Persiaran Camellia 4, 39000 Tanah Rata, Cameron Highlands',
+  contactPhone: '+60195484277',
+  whatsappNumber: '+60195484277',
+  description: 'Spacious 3-bedroom family holiday homestay apartment near Tanah Rata town center with scenic garden and mountain views. Fully furnished with cooking facilities, high-speed Wi-Fi, and private parking.',
+  operatingHours: { from: '00:00', to: '23:59', isOpen: true },
+  coverImage: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+  logoUrl: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+  galleryImages: [
+    'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
+    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=800&q=80'
+  ],
+  coordinates: { lat: 4.471, lng: 101.378 },
+  isBookingEnabled: true,
+  realTimeStatus: 'open',
+  parkingStatus: 'private_available',
+  roomAvailabilityStatus: 'rooms_available',
+  dietaryTags: [],
+  tier: 'monthly_pro',
+  billingCadence: 'monthly',
+  tierExpiresAt: '2027-12-31T23:59:59.000Z',
+  isSponsored: true,
+  profileHealthScore: 100,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  sectorSpecifics: {
+    accommodation: {
+      apartment: {
+        totalUnits: 4,
+        roomsPerUnit: 3,
+        cookingPermitted: true,
+        facilities: ['High-speed Wi-Fi', 'Balcony Park View', 'Private Bay Parking', 'Fully Equipped Kitchen', 'Hot Shower']
+      },
+      roomTypes: [
+        { id: 'room-pv-3br', name: '3-Bedroom Family Suite', quantity: 4, pricePerNight: 220 }
+      ],
+      roomAvailabilityStatus: 'rooms_available'
+    }
+  }
+};
 
 class FirebaseStorageService {
   private currentUser: UserProfile | null = null;
@@ -487,7 +552,7 @@ class FirebaseStorageService {
       getDocs(collection(db, 'vendor_listings')).then(snap => {
         const cloudListings = snap.docs
           .map((d) => d.data() as VendorListing)
-          .filter((v) => !isMockVendorListing(v));
+          .filter((v) => !isMockVendorListing(v) && !isDirectoryAccommodationId(v.id));
         this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
         this.notify();
       });
@@ -495,20 +560,22 @@ class FirebaseStorageService {
 
         const cloudListings = snap.docs
           .map((d) => d.data() as VendorListing)
-          .filter((v) => !isMockVendorListing(v));
+          .filter((v) => !isMockVendorListing(v) && !isDirectoryAccommodationId(v.id));
 
-        // Purge mock listings from Firestore if detected
+        // Purge mock or directory-place listings from Firestore vendor_listings if detected
         snap.docs.forEach((docSnap) => {
           const v = docSnap.data() as VendorListing;
-          if (isMockVendorListing(v)) {
+          if (isMockVendorListing(v) || isDirectoryAccommodationId(docSnap.id)) {
             deleteDoc(doc(db, 'vendor_listings', docSnap.id)).catch(() => {});
           }
         });
 
         this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
         const enrichedPlaces = this.getPlaces();
+        const syncedAccoms = this.getAccommodationListings();
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: cloudListings }));
+          window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: syncedAccoms }));
           window.dispatchEvent(new CustomEvent('places-updated', { detail: enrichedPlaces }));
         }
         this.notify();
@@ -545,7 +612,13 @@ class FirebaseStorageService {
       // 12. Real-time Home Glass Cards Listener
       onSnapshot(collection(db, 'home_glass_cards'), (snap) => {
         if (!snap.empty) {
-          const cloudCards = snap.docs.map((d) => d.data() as MobileHomeCard);
+          const cloudCards = snap.docs.map((d) => {
+            const c = d.data() as MobileHomeCard;
+            if (c.id === 'card-2-hazard' && c.title === 'Live Traffic/Hazard') {
+              return { ...c, title: 'Live Notice/Hazard', subtitle: c.subtitle === 'Kea Farm' ? 'PDRM • JKR • MDCH' : c.subtitle };
+            }
+            return c;
+          });
           cloudCards.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
           this.setLocalStorageItem(STORAGE_KEYS.HOME_CARDS, JSON.stringify(cloudCards));
           if (typeof window !== 'undefined') {
@@ -554,6 +627,27 @@ class FirebaseStorageService {
           this.notify();
         }
       }, (err) => console.warn('Realtime home glass cards listener warning:', err));
+
+      // 13. Real-time Verified Homestays & Stays Listener (strictly admin/vendor only)
+      onSnapshot(collection(db, 'accommodation_listings'), (snap) => {
+        const cloudAccoms = snap.docs
+          .map((d) => d.data() as AccommodationListing)
+          .filter((a) => a && a.id && !isDirectoryAccommodationId(a.id));
+
+        // Purge any legacy mock or directory entries from Firestore accommodation_listings
+        snap.docs.forEach((docSnap) => {
+          if (isDirectoryAccommodationId(docSnap.id)) {
+            deleteDoc(doc(db, 'accommodation_listings', docSnap.id)).catch(() => {});
+          }
+        });
+
+        this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(cloudAccoms));
+        const synced = this.getAccommodationListings();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: synced }));
+        }
+        this.notify();
+      }, (err) => console.warn('Realtime accommodation listings listener warning:', err));
 
     } catch (e) {
       console.warn("Cloud sync offline mode active, using local cache:", e);
@@ -1527,7 +1621,17 @@ class FirebaseStorageService {
         if (Array.isArray(parsed) && parsed.length > 0) {
           const cardMap = new Map<string, MobileHomeCard>();
           INITIAL_MOBILE_HOME_CARDS.forEach((c) => cardMap.set(c.id, c));
-          parsed.forEach((c) => cardMap.set(c.id, c));
+          parsed.forEach((c) => {
+            if (c && c.id === 'card-2-hazard' && c.title === 'Live Traffic/Hazard') {
+              cardMap.set(c.id, {
+                ...c,
+                title: 'Live Notice/Hazard',
+                subtitle: c.subtitle === 'Kea Farm' ? 'PDRM • JKR • MDCH' : c.subtitle,
+              });
+            } else {
+              cardMap.set(c.id, c);
+            }
+          });
           const merged = Array.from(cardMap.values());
           return merged.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         }
@@ -2036,41 +2140,52 @@ class FirebaseStorageService {
   // Vendor Management CRUD Methods
   public getVendorListings(): VendorListing[] {
     const data = localStorage.getItem(STORAGE_KEYS.VENDOR_LISTINGS);
-    if (!data) {
-      this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify([]));
-      return [];
-    }
-    try {
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) {
-        // Filter out residual mock vendors if any exist in cache
-        const cleaned = parsed.filter((v: any) => v && v.id && !isMockVendorListing(v));
-        
-        // Deduplicate by ID and normalized business name
-        const uniqueMap = new Map<string, VendorListing>();
-        for (const item of cleaned) {
-          if (!item || !item.businessName) continue;
-          const normName = item.businessName.toLowerCase().trim();
-          const existingKey = Array.from(uniqueMap.keys()).find(k => k === item.id || k === normName);
-          if (!existingKey) {
-            uniqueMap.set(item.id, item);
-            uniqueMap.set(normName, item);
-          } else {
-            uniqueMap.set(existingKey, item);
-            uniqueMap.set(item.id, item);
-          }
+    let list: VendorListing[] = [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          list = parsed.filter((v: any) => v && v.id && !isMockVendorListing(v) && !isDirectoryAccommodationId(v.id));
         }
-        const finalUnique = Array.from(new Set(uniqueMap.values()));
-
-        if (finalUnique.length !== parsed.length) {
-          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
-        }
-        return finalUnique;
+      } catch {
+        list = [];
       }
-      return [];
-    } catch {
-      return [];
     }
+
+    // Ensure Park View Apartment (admin-created vendor listing) is present unless explicitly deleted
+    const deletedDefaultVendorsRaw = localStorage.getItem('camgo_deleted_default_vendors');
+    let deletedDefaultVendors: string[] = [];
+    if (deletedDefaultVendorsRaw) {
+      try {
+        const parsedDel = JSON.parse(deletedDefaultVendorsRaw);
+        if (Array.isArray(parsedDel)) deletedDefaultVendors = parsedDel;
+      } catch {}
+    }
+
+    if (
+      !deletedDefaultVendors.includes(PARK_VIEW_VENDOR_LISTING.id) &&
+      !list.some((v) => (v.businessName || '').toLowerCase().includes('park view') || v.id === PARK_VIEW_VENDOR_LISTING.id)
+    ) {
+      list.unshift(PARK_VIEW_VENDOR_LISTING);
+    }
+
+    // Deduplicate by ID and normalized business name
+    const uniqueMap = new Map<string, VendorListing>();
+    for (const item of list) {
+      if (!item || !item.businessName) continue;
+      const normName = item.businessName.toLowerCase().trim();
+      const existingKey = Array.from(uniqueMap.keys()).find(k => k === item.id || k === normName);
+      if (!existingKey) {
+        uniqueMap.set(item.id, item);
+        uniqueMap.set(normName, item);
+      } else {
+        uniqueMap.set(existingKey, item);
+        uniqueMap.set(item.id, item);
+      }
+    }
+    const finalUnique = Array.from(new Set(uniqueMap.values()));
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
+    return finalUnique;
   }
 
   public getVendorListingById(id: string): VendorListing | undefined {
@@ -2224,8 +2339,16 @@ class FirebaseStorageService {
   }
 
   public async deleteVendorListing(id: string): Promise<VendorListing[]> {
+    if (id === PARK_VIEW_VENDOR_LISTING.id) {
+      try {
+        localStorage.setItem('camgo_deleted_default_vendors', JSON.stringify([PARK_VIEW_VENDOR_LISTING.id]));
+      } catch {}
+    }
     const listings = this.getVendorListings().filter((l) => l.id !== id);
     this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(listings));
+
+    const updatedAccoms = this.getAccommodationListings().filter((a) => a.id !== id && a.vendorId !== id);
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(updatedAccoms));
 
     const updatedPlaces = this.getPlaces().filter((p) => p.id !== id);
     this.places = updatedPlaces;
@@ -2236,6 +2359,7 @@ class FirebaseStorageService {
         await Promise.all([
           deleteDoc(doc(db, 'vendor_listings', id)),
           deleteDoc(doc(db, 'places', id)),
+          deleteDoc(doc(db, 'accommodation_listings', id)),
         ]);
       } catch (e) {
         console.error("Error deleting vendor listing/place from Firestore:", e);
@@ -2244,6 +2368,7 @@ class FirebaseStorageService {
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: listings }));
+      window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: updatedAccoms }));
       window.dispatchEvent(new CustomEvent('places-updated', { detail: updatedPlaces }));
     }
 
@@ -2903,6 +3028,400 @@ class FirebaseStorageService {
     }
     this.notify();
     return bookings;
+  }
+
+  // ==========================================
+  // CamGo Verified Homestays Directory
+  // (Strictly Vendor Portal & Admin Verified Stays only — never auto-imported from normal directories)
+  // ==========================================
+  public getAccommodationListings(): AccommodationListing[] {
+    // 1. Load genuine accommodation Vendor Listings from Vendor Portal (excluding directory/mock IDs)
+    const vendorListings = this.getVendorListings().filter(
+      (v) => v && v.id && !isMockVendorListing(v) && !isDirectoryAccommodationId(v.id)
+    );
+    const validVendorIds = new Set(vendorListings.map((v) => v.id));
+
+    const data = localStorage.getItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS);
+    let cachedListings: AccommodationListing[] = [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          // Strict purge: only retain entries created by Admin (accom-*) or linked to a genuine Vendor listing
+          cachedListings = parsed.filter((item: any) => {
+            if (!item || !item.id) return false;
+            if (isDirectoryAccommodationId(item.id)) return false;
+            const idLower = String(item.id).toLowerCase();
+            const isAdminCreated = idLower.startsWith('accom-');
+            const isValidVendor = validVendorIds.has(item.id) || Boolean(item.vendorId && validVendorIds.has(item.vendorId));
+            return isAdminCreated || isValidVendor;
+          });
+        }
+      } catch {
+        cachedListings = [];
+      }
+    }
+
+    const accommodationMap = new Map<string, AccommodationListing>();
+
+    // 2. Load genuine Admin-created or previously customized Vendor stays
+    for (const item of cachedListings) {
+      if (item && item.id) {
+        accommodationMap.set(item.id, item);
+      }
+    }
+
+    // 3. Map genuine accommodation Vendor Listings from Vendor Portal
+    for (const v of vendorListings) {
+      const isAccomVendor =
+        v.category === 'accommodation' ||
+        v.subCategory === 'homestay' ||
+        v.subCategory === 'homestay_apartment' ||
+        v.subCategory === 'homestay_landed' ||
+        v.subCategory === 'chalets' ||
+        v.subCategory === 'hotels_resorts' ||
+        (v.subCategory as string) === 'realestate_vacation_homestay' ||
+        (v.subCategory as string) === 'realestate_agritourism_farm';
+
+      if (isAccomVendor) {
+        const existing = accommodationMap.get(v.id);
+        const codeNumber = v.id.slice(-4).replace(/\D/g, '') || Math.floor(10 + Math.random() * 89).toString();
+        const price = v.sectorSpecifics?.accommodation?.roomTypes?.[0]?.pricePerNight || 200;
+
+        const mapped: AccommodationListing = {
+          id: v.id,
+          vendorId: v.id,
+          code: existing?.code || `CH-${codeNumber}`,
+          maskedTitle: existing?.maskedTitle || `${v.businessName} (CH-${codeNumber})`,
+          realBusinessName: v.businessName,
+          township: v.township || 'Kea Farm',
+          proximityDesc: v.address ? `Located at ${v.address}` : `Central ${v.township || 'Cameron Highlands'}`,
+          fullAddress: v.address || `${v.township}, 39000 Cameron Highlands`,
+          ownerName: existing?.ownerName || v.businessName + ' Host',
+          ownerPhone: existing?.ownerPhone || v.contactPhone || v.whatsappNumber || '+60123456789',
+          whatsappNumber: existing?.whatsappNumber || v.whatsappNumber || v.contactPhone || '+60123456789',
+          pricePerNight: existing?.pricePerNight || price,
+          depositAmount: 30,
+          balanceToCollect: Math.max(0, (existing?.pricePerNight || price) - 30),
+          bookingType: existing?.bookingType || 'instant',
+          roomAvailabilityStatus: v.roomAvailabilityStatus || existing?.roomAvailabilityStatus || 'rooms_available',
+          bedrooms: existing?.bedrooms || v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3,
+          bathrooms: existing?.bathrooms || 2,
+          maxGuests: existing?.maxGuests || (v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3) * 2,
+          rating: existing?.rating || (v.profileHealthScore ? 4.5 + (v.profileHealthScore / 200) : 4.9),
+          reviewCount: existing?.reviewCount || 18,
+          coverImage: existing?.coverImage || v.coverImage || v.galleryImages?.[0] || v.logoUrl || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+          galleryImages: existing?.galleryImages && existing.galleryImages.length > 0 ? existing.galleryImages : v.galleryImages && v.galleryImages.length > 0 ? v.galleryImages : [v.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80'],
+          features: existing?.features || ['Highland Mountain Air', 'Fast Wi-Fi', 'Balcony View', 'Free Parking'],
+          bundledPerks: existing?.bundledPerks || [
+            '🍓 Free Strawberry Farm Passes (Kea Farm)',
+            '🅿️ Guaranteed Kea Farm Dedicated Parking Bay',
+            '🗺️ CamGo Live Traffic Jam Avoidance Map',
+          ],
+          verifiedHost: v.verificationStatus === 'verified',
+          ownerPortalSlug: (v.businessName || 'host').toLowerCase().replace(/[^a-z0-9]/g, '-'),
+        };
+
+        accommodationMap.set(v.id, mapped);
+      }
+    }
+
+    const finalList = Array.from(accommodationMap.values());
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(finalList));
+    return finalList;
+  }
+
+  public async saveAccommodationListing(listing: AccommodationListing): Promise<AccommodationListing[]> {
+    const listings = this.getAccommodationListings();
+    const idx = listings.findIndex((l) => l.id === listing.id);
+    let updated: AccommodationListing[];
+    if (idx >= 0) {
+      listings[idx] = { ...listings[idx], ...listing };
+      updated = [...listings];
+    } else {
+      updated = [listing, ...listings];
+    }
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(updated));
+    if (db) {
+      try {
+        await setDoc(doc(db, 'accommodation_listings', listing.id), listing, { merge: true });
+      } catch (e) {
+        console.error('Error saving accommodation listing to Firestore:', e);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: updated }));
+    }
+    this.notify();
+    return updated;
+  }
+
+  public async deleteAccommodationListing(id: string): Promise<AccommodationListing[]> {
+    if (id === PARK_VIEW_VENDOR_LISTING.id) {
+      try {
+        localStorage.setItem('camgo_deleted_default_vendors', JSON.stringify([PARK_VIEW_VENDOR_LISTING.id]));
+      } catch {}
+    }
+    const listings = this.getAccommodationListings().filter((l) => l.id !== id && l.vendorId !== id);
+    this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(listings));
+    const vendorListings = this.getVendorListings().filter((v) => v.id !== id);
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(vendorListings));
+
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'accommodation_listings', id));
+        await deleteDoc(doc(db, 'vendor_listings', id));
+      } catch (e) {
+        console.error('Error deleting accommodation listing from Firestore:', e);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: listings }));
+      window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: vendorListings }));
+    }
+    this.notify();
+    return listings;
+  }
+
+  public async updateAccommodationListingStatus(id: string, status: RoomAvailabilityStatus): Promise<AccommodationListing[]> {
+    const listings = this.getAccommodationListings();
+    const target = listings.find((l) => l.id === id);
+    if (target) {
+      target.roomAvailabilityStatus = status;
+      this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(listings));
+      if (db) {
+        try {
+          await setDoc(doc(db, 'accommodation_listings', id), { roomAvailabilityStatus: status }, { merge: true });
+        } catch (e) {
+          console.error('Error updating accommodation listing status in Firestore:', e);
+        }
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: listings }));
+      }
+      this.notify();
+    }
+    return listings;
+  }
+
+  // ==================== WEBSITE VISITOR ANALYTICS ====================
+  private getTodayMyDate(): string {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    } catch {
+      return new Date().toISOString().split('T')[0];
+    }
+  }
+
+  public getSiteVisitorStats(): SiteVisitorStats {
+    const todayDate = this.getTodayMyDate();
+    const emptyStats: SiteVisitorStats = {
+      totalVisits: 0,
+      uniqueVisitors: 0,
+      todayVisits: 0,
+      todayDate,
+      mobileVisits: 0,
+      desktopVisits: 0,
+      dailyCounts: { [todayDate]: 0 },
+      recentVisits: [],
+      lastUpdated: new Date().toISOString(),
+    };
+
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STATS);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<SiteVisitorStats>;
+        const dailyCounts = parsed.dailyCounts || {};
+        return {
+          totalVisits: Number(parsed.totalVisits) || 0,
+          uniqueVisitors: Number(parsed.uniqueVisitors) || 0,
+          todayVisits: Number(dailyCounts[todayDate] ?? (parsed.todayDate === todayDate ? parsed.todayVisits : 0)) || 0,
+          todayDate,
+          mobileVisits: Number(parsed.mobileVisits) || 0,
+          desktopVisits: Number(parsed.desktopVisits) || 0,
+          dailyCounts,
+          recentVisits: Array.isArray(parsed.recentVisits) ? parsed.recentVisits : [],
+          lastUpdated: parsed.lastUpdated || new Date().toISOString(),
+        };
+      }
+    } catch {}
+    return emptyStats;
+  }
+
+  private normalizeVisitorStatsFromCloud(data: any): SiteVisitorStats {
+    const todayDate = this.getTodayMyDate();
+    const dailyCounts: Record<string, number> = {};
+    if (data && typeof data.dailyCounts === 'object' && data.dailyCounts) {
+      Object.entries(data.dailyCounts).forEach(([k, v]) => {
+        dailyCounts[k] = Number(v) || 0;
+      });
+    }
+    const todayVisits =
+      dailyCounts[todayDate] !== undefined
+        ? dailyCounts[todayDate]
+        : data?.todayDate === todayDate
+        ? Number(data?.todayVisits) || 0
+        : 0;
+
+    return {
+      totalVisits: Number(data?.totalVisits) || 0,
+      uniqueVisitors: Number(data?.uniqueVisitors) || 0,
+      todayVisits,
+      todayDate,
+      mobileVisits: Number(data?.mobileVisits) || 0,
+      desktopVisits: Number(data?.desktopVisits) || 0,
+      dailyCounts,
+      recentVisits: Array.isArray(data?.recentVisits) ? data.recentVisits : [],
+      lastUpdated: data?.lastUpdated || new Date().toISOString(),
+    };
+  }
+
+  public async fetchSiteVisitorStats(): Promise<SiteVisitorStats> {
+    const local = this.getSiteVisitorStats();
+    if (!db) return local;
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'site_visitor_analytics'));
+      if (snap.exists()) {
+        const normalized = this.normalizeVisitorStatsFromCloud(snap.data());
+        this.setLocalStorageItem(STORAGE_KEYS.STATS, JSON.stringify(normalized));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('site-visitor-stats-updated', { detail: normalized }));
+        }
+        return normalized;
+      }
+    } catch (err) {
+      console.warn('[FirebaseService] Could not fetch site visitor stats:', err);
+    }
+    return local;
+  }
+
+  public subscribeSiteVisitorStats(callback: (stats: SiteVisitorStats) => void): () => void {
+    callback(this.getSiteVisitorStats());
+    const handleEvent = (e: any) => {
+      if (e?.detail) callback(e.detail as SiteVisitorStats);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('site-visitor-stats-updated', handleEvent);
+    }
+
+    let unsubFirestore: (() => void) | null = null;
+    if (db) {
+      try {
+        unsubFirestore = onSnapshot(
+          doc(db, 'settings', 'site_visitor_analytics'),
+          (snap) => {
+            if (snap.exists()) {
+              const normalized = this.normalizeVisitorStatsFromCloud(snap.data());
+              this.setLocalStorageItem(STORAGE_KEYS.STATS, JSON.stringify(normalized));
+              callback(normalized);
+            }
+          },
+          (err) => console.warn('[FirebaseService] Visitor analytics snapshot warning:', err)
+        );
+      } catch {}
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('site-visitor-stats-updated', handleEvent);
+      }
+      if (unsubFirestore) unsubFirestore();
+    };
+  }
+
+  public async recordSiteVisit(): Promise<SiteVisitorStats> {
+    const current = this.getSiteVisitorStats();
+    if (typeof window === 'undefined') return current;
+
+    // Prevent double-counting within the same tab session (including React StrictMode double mounts)
+    if (sessionStorage.getItem('camgo_session_visit_recorded') === 'true') {
+      return current;
+    }
+    sessionStorage.setItem('camgo_session_visit_recorded', 'true');
+
+    let visitorId = localStorage.getItem('camgo_visitor_id');
+    let isUniqueNew = false;
+    if (!visitorId) {
+      visitorId = 'vis-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 7);
+      localStorage.setItem('camgo_visitor_id', visitorId);
+      isUniqueNew = true;
+    }
+
+    const isMobile =
+      window.innerWidth < 768 ||
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+    const device: 'Mobile' | 'Desktop' = isMobile ? 'Mobile' : 'Desktop';
+    const todayDate = this.getTodayMyDate();
+    const nowIso = new Date().toISOString();
+    const user = this.getCurrentUser();
+
+    const logEntry: VisitorLogEntry = {
+      id: 'v-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
+      visitorId: visitorId.slice(0, 12),
+      timestamp: nowIso,
+      device,
+      path: window.location.pathname || '/',
+      userRole: user?.role || 'guest',
+      userName: user?.displayName || user?.fullName || undefined,
+      isUniqueNew,
+    };
+
+    const updatedLocal: SiteVisitorStats = {
+      totalVisits: current.totalVisits + 1,
+      uniqueVisitors: current.uniqueVisitors + (isUniqueNew ? 1 : 0),
+      todayVisits: (current.dailyCounts[todayDate] || 0) + 1,
+      todayDate,
+      mobileVisits: current.mobileVisits + (device === 'Mobile' ? 1 : 0),
+      desktopVisits: current.desktopVisits + (device === 'Desktop' ? 1 : 0),
+      dailyCounts: {
+        ...current.dailyCounts,
+        [todayDate]: (current.dailyCounts[todayDate] || 0) + 1,
+      },
+      recentVisits: [logEntry, ...current.recentVisits].slice(0, 30),
+      lastUpdated: nowIso,
+    };
+
+    this.setLocalStorageItem(STORAGE_KEYS.STATS, JSON.stringify(updatedLocal));
+    window.dispatchEvent(new CustomEvent('site-visitor-stats-updated', { detail: updatedLocal }));
+
+    if (db) {
+      try {
+        const analyticsRef = doc(db, 'settings', 'site_visitor_analytics');
+        const existingSnap = await getDoc(analyticsRef);
+        const existingData = existingSnap.exists() ? existingSnap.data() : {};
+        const existingRecent: VisitorLogEntry[] = Array.isArray(existingData?.recentVisits)
+          ? existingData.recentVisits
+          : [];
+        const cleanLogEntry = Object.fromEntries(
+          Object.entries(logEntry).filter(([_, v]) => v !== undefined)
+        );
+        const mergedRecent = [cleanLogEntry, ...existingRecent].slice(0, 30);
+
+        await setDoc(
+          analyticsRef,
+          {
+            totalVisits: increment(1),
+            uniqueVisitors: increment(isUniqueNew ? 1 : 0),
+            mobileVisits: increment(device === 'Mobile' ? 1 : 0),
+            desktopVisits: increment(device === 'Desktop' ? 1 : 0),
+            todayDate,
+            [`dailyCounts.${todayDate}`]: increment(1),
+            recentVisits: mergedRecent,
+            lastUpdated: nowIso,
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        console.warn('[FirebaseService] Could not sync site visit to Firestore:', err);
+      }
+    }
+
+    return updatedLocal;
   }
 }
 

@@ -46,8 +46,8 @@ export const translations = {
     widget_weather_subtitle: 'Real-time microclimates across highland elevations',
     widget_traffic_title: 'Live Traffic Alerts',
     widget_traffic_subtitle: 'Choke point updates & bypass advisories',
-    widget_hazard_title: 'Current Hazard Advisories',
-    widget_hazard_subtitle: 'Slope safety, mist, and road conditions',
+    widget_hazard_title: 'Live Notice/Hazard',
+    widget_hazard_subtitle: 'PDRM Cameron Highlands notices, JKR slope alerts & MDCH updates',
     widget_events_title: 'Live Events & Notices',
     widget_events_subtitle: 'What’s happening in the highlands today',
 
@@ -145,8 +145,8 @@ export const translations = {
     widget_weather_subtitle: 'Iklim mikro masa nyata merentasi ketinggian tanah tinggi',
     widget_traffic_title: 'Maklumat Trafik Langsung',
     widget_traffic_subtitle: 'Status laluan utama & nasihat jalan alternatif',
-    widget_hazard_title: 'Amaran Bahaya Semasa',
-    widget_hazard_subtitle: 'Keselamatan cerun, kabus tebal, dan keadaan jalan',
+    widget_hazard_title: 'Notis/Bahaya Langsung',
+    widget_hazard_subtitle: 'Notis PDRM Cameron Highlands, amaran cerun JKR & kemaskini MDCH',
     widget_events_title: 'Acara & Hebahan Langsung',
     widget_events_subtitle: 'Peristiwa dan aktiviti terkini hari ini',
 

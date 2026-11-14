@@ -142,6 +142,12 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [chatInputText, setChatInputText] = useState<string>('');
   const [sendingChat, setSendingChat] = useState<boolean>(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+  const [memberJoinBanner, setMemberJoinBanner] = useState<{
+    joinedNames: string[];
+    totalCount: number;
+  } | null>(null);
+  const prevMemberIdsRef = useRef<Set<string>>(new Set());
+  const prevSessionCodeRef = useRef<string | null>(null);
 
   // Dynamic Route & Path overlay state
   const [routeTravelMode, setRouteTravelMode] = useState<'walking' | 'driving'>('walking');
@@ -913,11 +919,14 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
   // Setup Leaflet Map
   useEffect(() => {
-    if (!isOpen || activeTab !== 'map' || !mapContainerRef.current) return;
+    if (!isOpen || !session?.code || !mapContainerRef.current) return;
 
     const currentMapEl = mapContainerRef.current;
 
     if (!mapInstanceRef.current) {
+      if ((currentMapEl as any)._leaflet_id) {
+        delete (currentMapEl as any)._leaflet_id;
+      }
       const initialLat = myCoords?.latitude || 4.5050;
       const initialLon = myCoords?.longitude || 101.4080;
 
@@ -936,20 +945,32 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       mapInstanceRef.current = map;
     }
 
-    setTimeout(() => {
-      mapInstanceRef.current?.invalidateSize();
-    }, 200);
-  }, [isOpen, activeTab]);
+    if (activeTab === 'map') {
+      const invalidate = () => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ animate: false });
+        }
+      };
+      const raf = requestAnimationFrame(invalidate);
+      const t1 = setTimeout(invalidate, 100);
+      const t2 = setTimeout(invalidate, 280);
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [isOpen, session?.code, activeTab]);
 
-  // Clean up map when modal closes
+  // Clean up map when modal closes or session clears
   useEffect(() => {
-    if (!isOpen && mapInstanceRef.current) {
+    if ((!isOpen || !session?.code) && mapInstanceRef.current) {
       mapInstanceRef.current.remove();
       mapInstanceRef.current = null;
       markersRef.current = {};
       circlesRef.current = {};
     }
-  }, [isOpen]);
+  }, [isOpen, session?.code]);
 
   // Sort and assign designated pins to all real members who join
   const designatedMembers = useMemo(() => {
@@ -961,6 +982,39 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
     });
   }, [session?.members, session?.createdBy]);
+
+  // Detect new members joining the group
+  useEffect(() => {
+    if (!isOpen || !session?.code) {
+      prevMemberIdsRef.current = new Set();
+      prevSessionCodeRef.current = null;
+      return;
+    }
+
+    if (prevSessionCodeRef.current !== session.code) {
+      prevSessionCodeRef.current = session.code;
+      prevMemberIdsRef.current = new Set(designatedMembers.map((m) => m.id));
+      return;
+    }
+
+    const currentIds = new Set(designatedMembers.map((m) => m.id));
+    const newlyJoined = designatedMembers.filter((m) => !prevMemberIdsRef.current.has(m.id));
+
+    if (newlyJoined.length > 0 && prevMemberIdsRef.current.size > 0) {
+      setMemberJoinBanner({
+        joinedNames: newlyJoined.map((m) => m.name || 'Companion'),
+        totalCount: designatedMembers.length,
+      });
+    }
+
+    prevMemberIdsRef.current = currentIds;
+  }, [isOpen, session?.code, designatedMembers]);
+
+  useEffect(() => {
+    if (!memberJoinBanner) return;
+    const timer = setTimeout(() => setMemberJoinBanner(null), 8000);
+    return () => clearTimeout(timer);
+  }, [memberJoinBanner]);
 
   // Update Designated Map Markers for each user who joins
   useEffect(() => {
@@ -1934,9 +1988,49 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                 </div>
               </div>
 
+              {/* Live Member Count & New Member Joined Banner */}
+              <div className="px-3.5 py-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="font-bold text-emerald-200 truncate">
+                    {language === 'bm'
+                      ? `${designatedMembers.length} pengguna sedang aktif dalam kumpulan ini`
+                      : `${designatedMembers.length} ${designatedMembers.length === 1 ? 'user' : 'users'} currently in group`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('members')}
+                  className="text-[11px] font-mono font-bold text-emerald-300 hover:text-white px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 cursor-pointer shrink-0"
+                >
+                  {language === 'bm' ? 'Lihat Ahli' : 'View Party'}
+                </button>
+              </div>
+
+              {memberJoinBanner && (
+                <div className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600/95 to-teal-600/95 border border-emerald-300/60 text-white shadow-lg flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Users className="w-4 h-4 text-white shrink-0" />
+                    <div className="text-xs font-bold truncate">
+                      {language === 'bm'
+                        ? `${memberJoinBanner.joinedNames.join(', ')} telah menyertai! • ${memberJoinBanner.totalCount} ahli dalam kumpulan sekarang`
+                        : `${memberJoinBanner.joinedNames.join(', ')} joined the group! • ${memberJoinBanner.totalCount} ${memberJoinBanner.totalCount === 1 ? 'user' : 'users'} currently in group`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMemberJoinBanner(null)}
+                    className="p-1 rounded-lg hover:bg-white/15 text-white/80 hover:text-white cursor-pointer shrink-0"
+                    aria-label="Dismiss banner"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {/* TAB 1: LIVE MAP WITH DESIGNATED PINS */}
-              {activeTab === 'map' && (
-                <div className="space-y-3">
+              <div className={activeTab === 'map' ? 'space-y-3' : 'hidden'}>
                   <div
                     ref={mapContainerRef}
                     className="w-full rounded-2xl overflow-hidden border border-white/15 shadow-inner relative z-10"
@@ -1971,7 +2065,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                     </div>
                   </div>
                 </div>
-              )}
 
               {/* TAB 2: COMPASS & DISTANCE */}
               {activeTab === 'compass' && (
@@ -2263,12 +2356,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           )}
         </div>
       </div>
+      </div>
 
       {/* QR Code Preview Modal */}
       {showQrModal && qrCodeDataUrl && (
         <div
           className="fixed inset-0 z-[140] flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setShowQrModal(false)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowQrModal(false);
+          }}
         >
           <div
             className="p-5 rounded-3xl bg-stone-900 border border-emerald-500/40 text-center space-y-4 max-w-sm w-full shadow-2xl"
@@ -2310,7 +2407,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           language={language}
         />
       )}
-      </div>
     </div>
   );
 };
