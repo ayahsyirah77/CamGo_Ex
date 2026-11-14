@@ -20,6 +20,7 @@ import { firebaseService, UserProfile, isMockMotorbikePartner } from '../service
 import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { INITIAL_MOTORBIKE_PARTNERS } from '../data/initialMotorbikeData';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 interface MotorbikeRentalModalProps {
   isOpen: boolean;
@@ -281,7 +282,7 @@ Please confirm availability!`;
             >
               <div className="relative h-48 w-full overflow-hidden">
                 <img
-                  src={partner.imageUrl}
+                  src={safeSrc(partner.imageUrl, DEFAULT_PLACE_IMAGE)}
                   alt={partner.businessName}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
@@ -497,7 +498,7 @@ Please confirm availability!`;
                   {/* Selected Bike Display Card */}
                   <div className="p-3 rounded-xl bg-stone-800/80 border border-white/10 flex items-center gap-3">
                     <img
-                      src={selectedPackage.imageUrl}
+                      src={safeSrc(selectedPackage.imageUrl, DEFAULT_PLACE_IMAGE)}
                       alt={selectedPackage.name}
                       className="w-16 h-16 rounded-lg object-cover"
                     />

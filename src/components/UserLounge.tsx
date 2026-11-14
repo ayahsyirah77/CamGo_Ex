@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { LoungePost, Language } from '../types';
 import { getTranslation } from '../services/i18n';
 import { firebaseService, UserProfile, isMockLoungePost, isMockLoungeReply } from '../services/firebase';
+import { safeSrc, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
 import {
   MessageSquare,
   ThumbsUp,
@@ -549,7 +550,7 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
                     {/* Circle Avatar Container */}
                     <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr from-emerald-400 via-teal-300 to-emerald-500 shadow-md shrink-0 flex items-center justify-center overflow-hidden bg-stone-950">
                       <img
-                        src={post.authorAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'}
+                        src={safeSrc(post.authorAvatar, DEFAULT_AVATAR_IMAGE)}
                         alt={post.authorName}
                         className="w-full h-full rounded-full object-cover bg-stone-950 shrink-0"
                       />
@@ -590,10 +591,10 @@ export const UserLounge: React.FC<UserLoungeProps> = ({
                 </div>
 
                 {/* Attached Image preview if any */}
-                {post.image && (
+                {safeSrc(post.image) && (
                   <div className="pl-2 sm:pl-12 pt-1">
                     <img
-                      src={post.image}
+                      src={safeSrc(post.image)}
                       alt="Attachment"
                       className="max-h-64 rounded-2xl object-cover border border-white/10 shadow-md"
                       onError={(e) => {

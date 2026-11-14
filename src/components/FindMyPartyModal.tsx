@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import L from 'leaflet';
+import { safeSrc } from '../utils/safeMedia';
 import {
   Users,
   Compass,
@@ -2263,10 +2264,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                               }`}
                             >
                               {/* Attached Image if present */}
-                              {msg.imageUrl && (
+                              {safeSrc(msg.imageUrl) && (
                                 <div className="mb-2 rounded-xl overflow-hidden border border-white/10 max-h-72">
                                   <img
-                                    src={msg.imageUrl}
+                                    src={safeSrc(msg.imageUrl)}
                                     alt="Attachment"
                                     className="w-full h-full object-cover cursor-pointer hover:scale-[1.02] transition-transform"
                                     onClick={() => window.open(msg.imageUrl, '_blank')}
@@ -2275,10 +2276,10 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                               )}
 
                               {/* Audio Attachment / Walkie-Talkie Voice Message if present */}
-                              {(msg.audioUrl || (msg as any).audioDataUrl) && (
+                              {safeSrc(msg.audioUrl || (msg as any).audioDataUrl) && (
                                 <div className="mb-2 flex items-center gap-2">
                                   <audio controls className="h-8 w-48 sm:w-60">
-                                    <source src={msg.audioUrl || (msg as any).audioDataUrl} type="audio/webm" />
+                                    <source src={safeSrc(msg.audioUrl || (msg as any).audioDataUrl)} type="audio/webm" />
                                     Your browser does not support the audio element.
                                   </audio>
                                 </div>
@@ -2359,7 +2360,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       </div>
 
       {/* QR Code Preview Modal */}
-      {showQrModal && qrCodeDataUrl && (
+      {showQrModal && safeSrc(qrCodeDataUrl) && (
         <div
           className="fixed inset-0 z-[140] flex items-center justify-center bg-black/80 p-4"
           onClick={(e) => {
@@ -2385,7 +2386,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
             </div>
 
             <div className="p-3 bg-white rounded-2xl inline-block shadow-inner">
-              <img src={qrCodeDataUrl} alt="Beacon QR Code" className="w-60 h-60 mx-auto" />
+              <img src={safeSrc(qrCodeDataUrl)} alt="Beacon QR Code" className="w-60 h-60 mx-auto" />
             </div>
 
             <p className="text-xs text-stone-400 font-mono">Code: {session?.code || preGeneratedCode}</p>

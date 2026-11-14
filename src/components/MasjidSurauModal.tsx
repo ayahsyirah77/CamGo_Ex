@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Place, Language, Township } from '../types';
 import { firebaseService } from '../services/firebase';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 interface MasjidSurauModalProps {
   isOpen: boolean;
@@ -340,7 +341,7 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
                       {/* Top Image + Badges */}
                       <div className="relative h-36 rounded-xl overflow-hidden mb-3 bg-stone-900">
                         <img
-                          src={place.imageUrl}
+                          src={safeSrc(place.imageUrl, DEFAULT_PLACE_IMAGE)}
                           alt={place.name}
                           loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

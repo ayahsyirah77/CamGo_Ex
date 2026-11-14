@@ -14,6 +14,7 @@ import {
   getTodayDaySchedule,
   getTodayDayName,
 } from '../utils/highlandLogic';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import {
   Compass,
   Search,
@@ -751,7 +752,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                 {/* Top Cover Image & Floating Badges */}
                 <div className="h-56 sm:h-64 relative overflow-hidden bg-stone-950 shrink-0">
                   <img
-                    src={selectedPlacePopup.imageUrl}
+                    src={safeSrc(selectedPlacePopup.imageUrl, DEFAULT_PLACE_IMAGE)}
                     alt={selectedPlacePopup.name}
                     className="w-full h-full object-cover"
                   />

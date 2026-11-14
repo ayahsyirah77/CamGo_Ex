@@ -2,6 +2,7 @@ import React from 'react';
 import { EventNotification, Language } from '../types';
 import { getTranslation } from '../services/i18n';
 import { Calendar, MapPin, Tag, ArrowRight } from 'lucide-react';
+import { safeSrc } from '../utils/safeMedia';
 
 interface EventsWidgetProps {
   events: EventNotification[];
@@ -47,10 +48,10 @@ export const EventsWidget: React.FC<EventsWidgetProps> = ({ events, language }) 
             key={evt.id}
             className="glass-card-hover rounded-2xl overflow-hidden bg-stone-900/80 border border-white/5 flex flex-col justify-between"
           >
-            {evt.imageUrl && (
+            {safeSrc(evt.imageUrl) && (
               <div className="h-40 relative overflow-hidden">
                 <img
-                  src={evt.imageUrl}
+                  src={safeSrc(evt.imageUrl)}
                   alt={evt.title}
                   className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                   loading="lazy"

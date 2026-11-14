@@ -16,6 +16,7 @@ import {
   getTodayDaySchedule,
   getTodayDayName,
 } from '../utils/highlandLogic';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import {
   Layers,
   MapPin,
@@ -729,6 +730,111 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   } | null>(null);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
 
+  // Dedicated Map Voice Guidance Language State ('bm' = Bahasa Malaysia, 'en' = English)
+  const [mapVoiceLang, setMapVoiceLang] = useState<'bm' | 'en'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('camgo_map_voice_lang');
+      if (saved === 'bm' || saved === 'en') return saved;
+    }
+    return language === 'bm' ? 'bm' : 'en';
+  });
+
+  const mapVoiceLangRef = useRef<'bm' | 'en'>(mapVoiceLang);
+  useEffect(() => {
+    mapVoiceLangRef.current = mapVoiceLang;
+  }, [mapVoiceLang]);
+
+  // Sync voice language when global language prop changes to BM
+  useEffect(() => {
+    if (language === 'bm') {
+      setMapVoiceLang('bm');
+      mapVoiceLangRef.current = 'bm';
+    }
+  }, [language]);
+
+  // Helpers to translate navigation maneuvers and directions between EN and BM
+  const translateNavInstructionToBm = (text: string): string => {
+    if (!text) return '';
+    let bm = text.trim();
+
+    // If already in Malay, return directly
+    if (/^(belok|terus|di bulatan|tiba di|bertolak|kekal|ikuti|ambil susur)/i.test(bm)) {
+      return bm;
+    }
+
+    bm = bm.replace(/depart from origin onto\s+/gi, 'Bertolak dari lokasi asal di ');
+    bm = bm.replace(/depart onto\s+/gi, 'Bertolak ke ');
+    bm = bm.replace(/head\s+(?:north|south|east|west|northeast|northwest|southeast|southwest)?\s*(?:towards|on)?\s+/gi, 'Bergerak ke hadapan menuju ');
+    bm = bm.replace(/head towards\s+/gi, 'Bergerak ke hadapan menuju ');
+    bm = bm.replace(/make a u-turn/gi, 'Buat pusingan U');
+    bm = bm.replace(/turn slight left onto\s+/gi, 'Ambil sedikit ke kiri ke ');
+    bm = bm.replace(/turn slight right onto\s+/gi, 'Ambil sedikit ke kanan ke ');
+    bm = bm.replace(/turn sharp left onto\s+/gi, 'Belok tajam ke kiri ke ');
+    bm = bm.replace(/turn sharp right onto\s+/gi, 'Belok tajam ke kanan ke ');
+    bm = bm.replace(/turn left onto\s+/gi, 'Belok kiri ke ');
+    bm = bm.replace(/turn right onto\s+/gi, 'Belok kanan ke ');
+    bm = bm.replace(/turn left/gi, 'Belok kiri');
+    bm = bm.replace(/turn right/gi, 'Belok kanan');
+    bm = bm.replace(/keep left/gi, 'Kekal di lorong kiri');
+    bm = bm.replace(/keep right/gi, 'Kekal di lorong kanan');
+    bm = bm.replace(/continue straight on\s+/gi, 'Terus ke hadapan di ');
+    bm = bm.replace(/continue straight/gi, 'Terus ke hadapan');
+    bm = bm.replace(/continue onto\s+/gi, 'Teruskan perjalanan ke ');
+    bm = bm.replace(/follow\s+/gi, 'Ikuti laluan ');
+    bm = bm.replace(/at the roundabout, take exit onto\s+/gi, 'Di bulatan, ambil susur keluar ke ');
+    bm = bm.replace(/at roundabout, take exit onto\s+/gi, 'Di bulatan, ambil susur keluar ke ');
+    bm = bm.replace(/at the roundabout/gi, 'Di bulatan');
+    bm = bm.replace(/at roundabout/gi, 'Di bulatan');
+    bm = bm.replace(/take the 1st exit/gi, 'ambil susur keluar pertama');
+    bm = bm.replace(/take the 2nd exit/gi, 'ambil susur keluar kedua');
+    bm = bm.replace(/take the 3rd exit/gi, 'ambil susur keluar ketiga');
+    bm = bm.replace(/take the 4th exit/gi, 'ambil susur keluar keempat');
+    bm = bm.replace(/take exit (\d+)/gi, 'ambil susur keluar ke-$1');
+    bm = bm.replace(/you have arrived at your destination:?/gi, 'Anda telah tiba di destinasi');
+    bm = bm.replace(/you have arrived at\s+/gi, 'Anda telah tiba di ');
+    bm = bm.replace(/arrive at destination:?/gi, 'Tiba di destinasi:');
+    bm = bm.replace(/arrive at\s+/gi, 'Tiba di ');
+    bm = bm.replace(/destination is on the left/gi, 'Destinasi berada di sebelah kiri anda');
+    bm = bm.replace(/destination is on the right/gi, 'Destinasi berada di sebelah kanan anda');
+    bm = bm.replace(/\bonto\b/gi, 'ke');
+    bm = bm.replace(/\bin (\d+)\s*meters?/gi, 'Dalam $1 meter');
+    bm = bm.replace(/\bin (\d+(?:\.\d+)?)\s*km/gi, 'Dalam $1 kilometer');
+
+    return bm;
+  };
+
+  const translateNavInstructionToEn = (text: string): string => {
+    if (!text) return '';
+    let en = text.trim();
+    en = en.replace(/^Bertolak dari lokasi (?:asal|permulaan) di\s+/gi, 'Depart from origin onto ');
+    en = en.replace(/^Bertolak ke\s+/gi, 'Depart onto ');
+    en = en.replace(/^Bergerak ke hadapan menuju\s+/gi, 'Head towards ');
+    en = en.replace(/^Belok kiri ke\s+/gi, 'Turn left onto ');
+    en = en.replace(/^Belok kanan ke\s+/gi, 'Turn right onto ');
+    en = en.replace(/^Belok kiri/gi, 'Turn left');
+    en = en.replace(/^Belok kanan/gi, 'Turn right');
+    en = en.replace(/^Terus di\s+/gi, 'Continue straight on ');
+    en = en.replace(/^Terus ke hadapan di\s+/gi, 'Continue straight on ');
+    en = en.replace(/^Terus ke hadapan/gi, 'Continue straight');
+    en = en.replace(/^Teruskan ke\s+/gi, 'Continue onto ');
+    en = en.replace(/^Teruskan perjalanan ke\s+/gi, 'Continue onto ');
+    en = en.replace(/^Di bulatan, ambil susur keluar ke\s+/gi, 'At roundabout, take exit onto ');
+    en = en.replace(/^Di bulatan/gi, 'At roundabout');
+    en = en.replace(/^Tiba di destinasi:?\s*/gi, 'Arrive at destination: ');
+    en = en.replace(/^Anda telah tiba di destinasi:?\s*/gi, 'You have arrived at destination: ');
+    en = en.replace(/^Anda telah tiba di\s+/gi, 'You have arrived at ');
+    en = en.replace(/^Ikuti laluan\s+/gi, 'Follow ');
+    en = en.replace(/^Kekal di lorong kiri/gi, 'Keep left');
+    en = en.replace(/^Kekal di lorong kanan/gi, 'Keep right');
+    return en;
+  };
+
+  const getVoiceInstruction = (rawText: string, targetLang: 'bm' | 'en'): string => {
+    return targetLang === 'bm'
+      ? translateNavInstructionToBm(rawText)
+      : translateNavInstructionToEn(rawText);
+  };
+
   // Requirement 3: Async Voice Loading for Android & Mobile Browsers
   useEffect(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
@@ -781,27 +887,61 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  const speakUtteranceMobileSafe = (text: string, cancelExisting: boolean) => {
+  const speakUtteranceMobileSafe = (
+    text: string,
+    cancelExisting: boolean,
+    forcedVoiceLang?: 'bm' | 'en'
+  ) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const synth = window.speechSynthesis;
-    const targetLang = language === 'bm' ? 'ms-MY' : 'en-US';
+    const activeVoiceLang = forcedVoiceLang || mapVoiceLangRef.current || 'en';
+    const isBm = activeVoiceLang === 'bm';
+    const targetLang = isBm ? 'ms-MY' : 'en-US';
+
+    const processedText = getVoiceInstruction(text, activeVoiceLang);
 
     const dispatchSpeak = () => {
       try {
         if (synth.paused) {
           synth.resume();
         }
-        const utterance = new SpeechSynthesisUtterance(text);
+        const utterance = new SpeechSynthesisUtterance(processedText);
         utterance.lang = targetLang;
-        utterance.rate = 1.0;
+        utterance.rate = isBm ? 0.95 : 1.0;
         utterance.pitch = 1.0;
 
         const voices = synth.getVoices();
         if (voices && voices.length > 0) {
-          const langPrefix = language === 'bm' ? 'ms' : 'en';
-          const preferredVoice =
-            voices.find((v) => v.lang.toLowerCase().startsWith(targetLang.toLowerCase())) ||
-            voices.find((v) => v.lang.toLowerCase().startsWith(langPrefix));
+          let preferredVoice: SpeechSynthesisVoice | undefined;
+          if (isBm) {
+            // Priority 1: Exact ms-MY / ms_MY
+            preferredVoice = voices.find(
+              (v) =>
+                v.lang.toLowerCase() === 'ms-my' ||
+                v.lang.toLowerCase() === 'ms_my' ||
+                v.lang.toLowerCase().replace('_', '-') === 'ms-my'
+            );
+            // Priority 2: Any ms-* prefix (ms, ms-SG, ms-BN)
+            if (!preferredVoice) {
+              preferredVoice = voices.find((v) => v.lang.toLowerCase().startsWith('ms'));
+            }
+            // Priority 3: Indonesian id-ID / id (Google Indonesian / Android TTS)
+            // Near-identical phonetics for Malay road names & vocabulary
+            if (!preferredVoice) {
+              preferredVoice = voices.find(
+                (v) =>
+                  v.lang.toLowerCase() === 'id-id' ||
+                  v.lang.toLowerCase() === 'id_id' ||
+                  v.lang.toLowerCase().startsWith('id')
+              );
+            }
+          } else {
+            preferredVoice =
+              voices.find(
+                (v) => v.lang.toLowerCase() === 'en-us' || v.lang.toLowerCase() === 'en-gb'
+              ) || voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+          }
+
           if (preferredVoice) {
             utterance.voice = preferredVoice;
           }
@@ -820,7 +960,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  const speakInstruction = (text: string, priority: 'turn' | 'nearby' | 'geofence' = 'turn') => {
+  const speakInstruction = (
+    text: string,
+    priority: 'turn' | 'nearby' | 'geofence' = 'turn',
+    forcedVoiceLang?: 'bm' | 'en'
+  ) => {
     // Check live PWA audio setting before executing speech synthesis
     const pwaAllowed =
       typeof window === 'undefined' ||
@@ -835,13 +979,38 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       }
       if (priority === 'turn' || priority === 'geofence') {
         lastTurnSpeechAtRef.current = now;
-        speakUtteranceMobileSafe(text, true);
+        speakUtteranceMobileSafe(text, true, forcedVoiceLang);
       } else if (!window.speechSynthesis.speaking) {
-        speakUtteranceMobileSafe(text, false);
+        speakUtteranceMobileSafe(text, false, forcedVoiceLang);
       }
     } catch (e) {
       console.warn('[TTS] Speech synthesis error:', e);
     }
+  };
+
+  const handleSetMapVoiceLang = (lang: 'bm' | 'en') => {
+    setMapVoiceLang(lang);
+    mapVoiceLangRef.current = lang;
+    try {
+      localStorage.setItem('camgo_map_voice_lang', lang);
+      window.dispatchEvent(new CustomEvent('camgo-map-voice-changed', { detail: lang }));
+    } catch {
+      // ignore
+    }
+    unlockAudioEngine(true);
+    if (!isAudioAlertsEnabledRef.current) {
+      togglePwaAudioAlerts(true);
+    }
+    const announce =
+      lang === 'bm'
+        ? 'Panduan suara Bahasa Malaysia diaktifkan'
+        : 'English voice guidance activated';
+    speakUtteranceMobileSafe(announce, true, lang);
+  };
+
+  const toggleMapVoiceLang = () => {
+    const nextLang = mapVoiceLang === 'bm' ? 'en' : 'bm';
+    handleSetMapVoiceLang(nextLang);
   };
 
   const [trafficSegments, setTrafficSegments] = useState<TrafficPolylineSegment[]>(HIGHWAY_TRAFFIC_SEGMENTS);
@@ -1936,8 +2105,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       if (idx >= coords.length - 1) {
         stopSimulatedDrive();
         speakInstruction(
-          language === 'bm'
-            ? `Anda telah tiba di ${activeRoute.destinationName}`
+          mapVoiceLangRef.current === 'bm' || language === 'bm'
+            ? `Anda telah tiba di destinasi ${activeRoute.destinationName}`
             : `You have arrived at ${activeRoute.destinationName}`,
           'turn'
         );
@@ -2342,7 +2511,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const popupContent = `
         <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 290px; max-width: 85vw; max-height: 430px; overflow-y: auto; padding: 4px; color: #1c1917;">
           <div style="position: relative; width: 100%; height: 130px; border-radius: 12px; overflow: hidden; margin-bottom: 8px;">
-            <img src="${hubInfo.imageUrl}" alt="${townshipName}" style="width: 100%; height: 100%; object-fit: cover;" />
+            <img src="${safeSrc(hubInfo.imageUrl, DEFAULT_PLACE_IMAGE)}" alt="${townshipName}" style="width: 100%; height: 100%; object-fit: cover;" />
             <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 60%);"></div>
             <div style="position: absolute; bottom: 8px; left: 10px; right: 10px; color: white;">
               <div style="font-size: 10px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">Cameron Highlands Township</div>
@@ -2989,10 +3158,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (nearestFuel) {
       const matchedFuel = nearestFuel as { id: string; name: string; distanceMeters: number; place?: Place };
       triggeredGeofencesRef.current.add(`fuel:${matchedFuel.id}`);
+      const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
       const fuelVoice =
-        language === 'bm'
-          ? 'Sila periksa paras minyak anda di hadapan.'
-          : 'Please check your fuel level ahead.';
+        isBm
+          ? `Sila periksa paras minyak kenderaan anda di hadapan. ${matchedFuel.name} berhampiran.`
+          : `Please check your fuel level ahead. ${matchedFuel.name} is nearby.`;
       showGeofenceBannerNotification({
         id: `geofence-fuel-${matchedFuel.id}`,
         kind: 'fuel',
@@ -3019,9 +3189,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       const distM = calculateDistanceMeters(lat, lng, pLat, pLng);
       if (distM <= ATTRACTION_RADIUS_M && (!nearestAttraction || distM < nearestAttraction.distanceMeters)) {
+        const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
         nearestAttraction = {
           place: p,
-          name: language === 'bm' ? p.nameBm || p.name : p.name,
+          name: (isBm ? p.nameBm : '') || p.name,
           distanceMeters: distM,
         };
       }
@@ -3030,17 +3201,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (nearestAttraction) {
       const matchedAttr = nearestAttraction as { place: Place; name: string; distanceMeters: number };
       triggeredGeofencesRef.current.add(`attraction:${matchedAttr.place.id}`);
+      const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
+      const attrName = (isBm ? matchedAttr.place.nameBm : '') || matchedAttr.place.name;
       const attrVoice =
-        language === 'bm'
-          ? `${matchedAttr.name} berada di hadapan, ${matchedAttr.distanceMeters} meter berhampiran anda.`
-          : `${matchedAttr.name} is just ahead, ${matchedAttr.distanceMeters} meters nearby.`;
+        isBm
+          ? `${attrName} berada berhampiran di hadapan anda, kira-kira ${matchedAttr.distanceMeters} meter.`
+          : `${attrName} is just ahead, ${matchedAttr.distanceMeters} meters nearby.`;
       showGeofenceBannerNotification({
         id: `geofence-attr-${matchedAttr.place.id}`,
         kind: 'attraction',
         title:
           language === 'bm'
-            ? `${matchedAttr.name} berada di hadapan`
-            : `${matchedAttr.name} is just ahead`,
+            ? `${attrName} berada di hadapan`
+            : `${attrName} is just ahead`,
         subtitle: `${matchedAttr.distanceMeters}m nearby • ${matchedAttr.place.township}`,
         voiceText: attrVoice,
         distanceMeters: matchedAttr.distanceMeters,
@@ -3054,7 +3227,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   useEffect(() => {
     if (!userGpsCoords) return;
     evaluateProximityGeofences(userGpsCoords.lat, userGpsCoords.lng);
-  }, [userGpsCoords, language]);
+  }, [userGpsCoords, language, mapVoiceLang]);
 
   // Invalidate Leaflet tile layout cleanly whenever toggling 3D Driver's Perspective stage size
   useEffect(() => {
@@ -3108,16 +3281,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       .join(',')}`;
   }, [nearbyAttractions]);
 
-  const buildNearbyVoiceText = (items: typeof nearbyAttractions) => {
+  const buildNearbyVoiceText = (items: typeof nearbyAttractions, voiceLang?: 'bm' | 'en') => {
+    const activeLang = voiceLang || mapVoiceLangRef.current || (language === 'bm' ? 'bm' : 'en');
+    const isBm = activeLang === 'bm';
     const count = items.length;
     const topNames = items
       .slice(0, 2)
-      .map((item) => (language === 'bm' ? item.place.nameBm || item.place.name : item.place.name))
+      .map((item) => (isBm ? item.place.nameBm || item.place.name : item.place.name))
       .join(', ');
-    if (language === 'bm') {
+    if (isBm) {
       return count === 1
-        ? `Terdapat 1 tarikan berhampiran anda: ${topNames}.`
-        : `Terdapat ${count} tarikan berhampiran anda, termasuk ${topNames}.`;
+        ? `Terdapat 1 tarikan menarik berhampiran anda: ${topNames}.`
+        : `Terdapat ${count} tarikan menarik berhampiran anda, termasuk ${topNames}.`;
     }
     return count === 1
       ? `There is 1 attraction nearby: ${topNames}.`
@@ -3135,10 +3310,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (!sameSig || cooldownElapsed) {
       lastSpokenNearbyRef.current = { sig: nearbyAttractionsSignature, timestamp: now };
       if (isVoiceNavEnabled) {
-        speakInstruction(buildNearbyVoiceText(nearbyAttractions), 'nearby');
+        speakInstruction(buildNearbyVoiceText(nearbyAttractions, mapVoiceLang), 'nearby');
       }
     }
-  }, [nearbyAttractionsSignature, isVoiceNavEnabled, language]);
+  }, [nearbyAttractionsSignature, isVoiceNavEnabled, language, mapVoiceLang]);
 
   const handleAddReview = (placeId: string) => {
     if (!newReviewComment.trim()) return;
@@ -3380,9 +3555,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const descText = language === 'bm' && place.descriptionBm ? place.descriptionBm : (place.description || '');
       const popupHtml = `
         <div style="width: 250px; font-family: inherit; color: #f8fafc; padding: 4px;">
-          ${place.imageUrl ? `
+          ${safeSrc(place.imageUrl) ? `
             <div style="width: 100%; height: 115px; border-radius: 12px; overflow: hidden; margin-bottom: 8px; background: #1c1917; border: 1px solid rgba(255,255,255,0.1);">
-              <img src="${place.imageUrl}" alt="${place.name}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'" />
+              <img src="${safeSrc(place.imageUrl, DEFAULT_PLACE_IMAGE)}" alt="${place.name}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'" />
             </div>
           ` : ''}
           <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
@@ -3749,7 +3924,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       if (!isVoiceNavEnabled) {
                         togglePwaAudioAlerts(true);
                       }
-                      speakUtteranceMobileSafe(buildNearbyVoiceText(nearbyAttractions), true);
+                      speakUtteranceMobileSafe(buildNearbyVoiceText(nearbyAttractions, mapVoiceLang), true);
                     }}
                     className="p-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 transition-colors cursor-pointer"
                     title={language === 'bm' ? 'Dengar Pengumuman Suara' : 'Announce Nearby Attractions'}
@@ -3860,6 +4035,40 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   >
                     {language === 'bm' ? 'Papar Semua' : 'Show All'}
                   </button>
+                </div>
+
+                {/* Voice Guidance Language Selector */}
+                <div className="pb-2 border-b border-white/10 mb-1">
+                  <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono mb-1.5 px-0.5">
+                    <span>{language === 'bm' ? 'Bahasa Suara Panduan' : 'Voice Guidance Language'}</span>
+                    <span className="text-[9px] font-bold text-emerald-400">
+                      {mapVoiceLang === 'bm' ? 'Bahasa Malaysia' : 'English'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSetMapVoiceLang('bm')}
+                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                        mapVoiceLang === 'bm'
+                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
+                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
+                      }`}
+                    >
+                      <span>🇲🇾 BM</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetMapVoiceLang('en')}
+                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                        mapVoiceLang === 'en'
+                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
+                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
+                      }`}
+                    >
+                      <span>🇬🇧 EN</span>
+                    </button>
+                  </div>
                 </div>
 
                 {[
@@ -4103,25 +4312,45 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 )}
               </div>
 
-              {/* PWA Audio Alerts Toggle */}
+              {/* PWA Audio Alerts Toggle & Voice Language Selector */}
               {mapToolsVisibility.audioButton && (
-                <button
-                  type="button"
-                  onClick={() => togglePwaAudioAlerts()}
-                  className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                    isVoiceNavEnabled
-                      ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-stone-800/80 hover:bg-stone-700 text-stone-500 border border-white/10'
-                  }`}
-                  title={
-                    isVoiceNavEnabled
-                      ? (language === 'bm' ? 'Makluman Suara PWA: Aktif' : 'PWA Audio Alerts: Enabled')
-                      : (language === 'bm' ? 'Makluman Suara PWA: Disenyapkan' : 'PWA Audio Alerts: Muted')
-                  }
-                  aria-label="Toggle PWA Voice Alerts"
-                >
-                  {isVoiceNavEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => togglePwaAudioAlerts()}
+                    className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                      isVoiceNavEnabled
+                        ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-stone-800/80 hover:bg-stone-700 text-stone-500 border border-white/10'
+                    }`}
+                    title={
+                      isVoiceNavEnabled
+                        ? (language === 'bm' ? 'Makluman Suara PWA: Aktif' : 'PWA Audio Alerts: Enabled')
+                        : (language === 'bm' ? 'Makluman Suara PWA: Disenyapkan' : 'PWA Audio Alerts: Muted')
+                    }
+                    aria-label="Toggle PWA Voice Alerts"
+                  >
+                    {isVoiceNavEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={toggleMapVoiceLang}
+                    className={`px-2 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 text-[11px] font-bold flex items-center gap-1 border ${
+                      mapVoiceLang === 'bm'
+                        ? 'bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border-emerald-500/40 shadow-emerald-900/20'
+                        : 'bg-stone-800 hover:bg-stone-700 text-sky-300 border-sky-500/30'
+                    }`}
+                    title={
+                      mapVoiceLang === 'bm'
+                        ? 'Suara Peta: Bahasa Malaysia (Klik untuk English)'
+                        : 'Map Voice: English (Click for Bahasa Malaysia)'
+                    }
+                    aria-label="Toggle Map Voice Language"
+                  >
+                    <span>{mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}</span>
+                  </button>
+                </div>
               )}
 
               {/* Locate Me Button */}
@@ -4239,9 +4468,25 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     )}
                   </div>
                   <div className="text-[11px] sm:text-sm font-bold text-emerald-50 truncate leading-snug mt-0.5">
-                    {activeRoute.steps[0]?.instruction || `Navigate towards ${activeRoute.destinationName}`}
+                    {mapVoiceLang === 'bm' || language === 'bm'
+                      ? translateNavInstructionToBm(activeRoute.steps[0]?.instruction || `Laluan ke ${activeRoute.destinationName}`)
+                      : (activeRoute.steps[0]?.instruction || `Navigate towards ${activeRoute.destinationName}`)}
                   </div>
                 </div>
+
+                {/* Voice Language HUD Quick Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleMapVoiceLang}
+                  className="px-2 py-1 rounded-xl bg-black/25 hover:bg-black/40 text-[10px] font-black tracking-tight text-white transition-colors cursor-pointer shrink-0 border border-white/10"
+                  title={
+                    mapVoiceLang === 'bm'
+                      ? 'Suara: Bahasa Malaysia (Klik untuk English)'
+                      : 'Voice: English (Click for Bahasa Malaysia)'
+                  }
+                >
+                  {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                </button>
 
                 {/* End / Exit Navigation Button */}
                 <button
@@ -4301,6 +4546,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   ) : (
                     <Pause className="w-3 h-3 text-amber-400 fill-current" />
                   )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleMapVoiceLang}
+                  className={`px-1.5 py-0.5 rounded-full text-[9.5px] font-black border transition-all cursor-pointer shrink-0 ${
+                    mapVoiceLang === 'bm'
+                      ? 'bg-emerald-900/80 text-emerald-300 border-emerald-500/40'
+                      : 'bg-stone-800 text-sky-300 border-white/10'
+                  }`}
+                  title={mapVoiceLang === 'bm' ? 'Suara: Bahasa Malaysia' : 'Voice: English'}
+                >
+                  {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
                 </button>
 
                 <button
@@ -4481,6 +4739,23 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
                   <button
                     type="button"
+                    onClick={toggleMapVoiceLang}
+                    className={`px-2 py-1 rounded-xl transition-colors cursor-pointer text-[10.5px] font-bold border ${
+                      mapVoiceLang === 'bm'
+                        ? 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-500/40'
+                        : 'bg-stone-800 hover:bg-stone-700 text-sky-300 border-white/10'
+                    }`}
+                    title={
+                      mapVoiceLang === 'bm'
+                        ? 'Suara Peta: Bahasa Malaysia (Klik untuk English)'
+                        : 'Map Voice: English (Click for Bahasa Malaysia)'
+                    }
+                  >
+                    {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setRouteStepsOpen(!routeStepsOpen)}
                     className="py-1.5 px-2.5 sm:px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
                   >
@@ -4541,7 +4816,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     >
                       <span className="text-base leading-none shrink-0 mt-0.5">{step.icon}</span>
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-stone-200 leading-snug">{step.instruction}</div>
+                        <div className="font-semibold text-stone-200 leading-snug">
+                          {mapVoiceLang === 'bm' || language === 'bm'
+                            ? translateNavInstructionToBm(step.instruction)
+                            : translateNavInstructionToEn(step.instruction)}
+                        </div>
                         {step.distanceMeters > 0 && (
                           <div className="text-[10px] font-mono text-emerald-400 mt-0.5">
                             {step.distanceMeters >= 1000
@@ -4615,7 +4894,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               <div className="flex items-start justify-between gap-2 w-full min-w-0 shrink-0">
                 <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1 overflow-hidden">
                   <img
-                    src={selectedPlace.imageUrl}
+                    src={safeSrc(selectedPlace.imageUrl, DEFAULT_PLACE_IMAGE)}
                     alt={selectedPlace.name}
                     className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl object-cover shrink-0 border border-white/10 shadow-md aspect-square"
                   />
@@ -4897,10 +5176,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
             <div className="relative h-[380px] sm:h-[460px] overflow-hidden bg-stone-950 select-none">
               <img
-                src={
-                  selectedPlace?.imageUrl ||
-                  'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1800&q=85'
-                }
+                src={safeSrc(selectedPlace?.imageUrl, DEFAULT_PLACE_IMAGE)}
                 alt="360 Panorama"
                 className="w-[180%] h-full object-cover transition-transform duration-300 ease-out cursor-grab active:cursor-grabbing"
                 style={{

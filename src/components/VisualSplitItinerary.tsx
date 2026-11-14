@@ -33,6 +33,7 @@ import {
 import { firebaseService } from '../services/firebase';
 import { geminiService } from '../services/gemini';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import { calculateDistanceKm, calculateTravelTimeMins } from '../utils/highlandLogic';
 import { calculateTotalCost, getAttractionTicketPrice } from '../utils/itineraryUtils';
 import {
@@ -1293,7 +1294,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
       const popupContent = `
         <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 285px; max-width: 85vw; max-height: 420px; overflow-y: auto; padding: 4px; color: #1c1917;">
           <div style="position: relative; width: 100%; height: 125px; border-radius: 12px; overflow: hidden; margin-bottom: 8px;">
-            <img src="${hubInfo.imageUrl}" alt="${townshipName}" style="width: 100%; height: 100%; object-fit: cover;" />
+            <img src="${safeSrc(hubInfo.imageUrl, DEFAULT_PLACE_IMAGE)}" alt="${townshipName}" style="width: 100%; height: 100%; object-fit: cover;" />
             <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 60%);"></div>
             <div style="position: absolute; bottom: 8px; left: 10px; right: 10px; color: white;">
               <div style="font-size: 10px; font-weight: 800; color: #38bdf8; text-transform: uppercase;">Township Hub</div>
@@ -2284,11 +2285,10 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
                             <img
-                              src={selectedPlace.imageUrl}
+                              src={safeSrc(selectedPlace.imageUrl, DEFAULT_PLACE_IMAGE)}
                               alt={selectedPlace.name}
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                  'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=120&q=80';
+                                (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
                               }}
                               className="w-14 h-14 rounded-2xl object-cover shrink-0 border border-emerald-500/30 shadow-md"
                             />
@@ -2394,11 +2394,10 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                               className="w-full text-left p-2 rounded-xl hover:bg-stone-800/90 flex items-center gap-3 text-xs text-stone-200 transition-colors group cursor-pointer border border-transparent hover:border-emerald-500/20"
                             >
                               <img
-                                src={p.imageUrl}
+                                src={safeSrc(p.imageUrl, DEFAULT_PLACE_IMAGE)}
                                 alt={p.name}
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).src =
-                                    'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=120&q=80';
+                                  (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
                                 }}
                                 className="w-10 h-10 rounded-lg object-cover shrink-0 border border-white/10"
                               />

@@ -5,6 +5,7 @@ import { UserProfile, firebaseService } from '../services/firebase';
 import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { CamLogo } from './CamLogo';
+import { safeSrc, DEFAULT_PLACE_IMAGE, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
 import {
   Bookmark,
   Calendar,
@@ -683,10 +684,10 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         {/* User Profile Card - Circular Avatar & Auto-Fit for Mobile */}
         <div className="p-3 sm:p-5 rounded-2xl sm:rounded-3xl glass-panel bg-stone-900/80 border border-white/5 flex flex-row items-center gap-3 sm:gap-4">
           <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-emerald-400 shadow-md shrink-0 aspect-square bg-emerald-950/80 flex items-center justify-center">
-            {currentUser?.photoURL ? (
+            {safeSrc(currentUser?.photoURL) ? (
               <img
-                src={currentUser.photoURL}
-                alt={currentUser.displayName || 'User'}
+                src={safeSrc(currentUser?.photoURL)}
+                alt={currentUser?.displayName || 'User'}
                 className="w-full h-full object-cover object-center rounded-full"
               />
             ) : (
@@ -1296,10 +1297,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                   >
                     {/* 2. AUTO-FIT & ASPECT RATIO: object-fit: cover inside circular container */}
                     <img
-                      src={
-                        editPhotoUrl ||
-                        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'
-                      }
+                      src={safeSrc(editPhotoUrl, DEFAULT_AVATAR_IMAGE)}
                       alt="Profile Avatar Preview"
                       className="w-full h-full object-cover object-center rounded-full select-none transition-transform duration-500 group-hover:scale-105"
                     />
@@ -1763,7 +1761,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                   >
                     <div className="flex items-start gap-3">
                       <img
-                        src={place.imageUrl}
+                        src={safeSrc(place.imageUrl, DEFAULT_PLACE_IMAGE)}
                         alt={place.name}
                         className="w-16 h-16 rounded-2xl object-cover shrink-0"
                       />

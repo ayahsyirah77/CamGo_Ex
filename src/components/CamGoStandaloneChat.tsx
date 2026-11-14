@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { safeSrc, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
 import {
   MessageSquare,
   Hash,
@@ -562,7 +563,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
             title="My Profile & Custom Status"
           >
             <img
-              src={myChatUser.avatar}
+              src={safeSrc(myChatUser.avatar, DEFAULT_AVATAR_IMAGE)}
               alt={myChatUser.name}
               className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover"
             />
@@ -724,7 +725,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
                     >
                       <div className="relative shrink-0">
                         <img
-                          src={thread.otherUser.avatar}
+                          src={safeSrc(thread.otherUser.avatar, DEFAULT_AVATAR_IMAGE)}
                           alt={thread.otherUser.name}
                           className="w-10 h-10 rounded-full object-cover border border-stone-700"
                         />
@@ -784,7 +785,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
             >
               <div className="relative shrink-0">
                 <img
-                  src={myChatUser.avatar}
+                  src={safeSrc(myChatUser.avatar, DEFAULT_AVATAR_IMAGE)}
                   alt={myChatUser.name}
                   className="w-8 h-8 rounded-full object-cover border border-emerald-500/50"
                 />
@@ -885,7 +886,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-inner">
                 {activeDmThread ? (
                   <img
-                    src={activeDmThread.otherUser.avatar}
+                    src={safeSrc(activeDmThread.otherUser.avatar, DEFAULT_AVATAR_IMAGE)}
                     alt={activeDmThread.otherUser.name}
                     className="w-full h-full rounded-2xl object-cover"
                   />
@@ -926,7 +927,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
                     title={`View ${msg.senderName}'s profile`}
                   >
                     <img
-                      src={msg.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'}
+                      src={safeSrc(msg.senderAvatar, DEFAULT_AVATAR_IMAGE)}
                       alt={msg.senderName}
                       className="w-8 h-8 rounded-full object-cover border border-stone-700 shadow"
                     />
@@ -966,13 +967,13 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
                       }`}
                     >
                       {/* Attached Image Preview */}
-                      {msg.imageUrl && (
+                      {safeSrc(msg.imageUrl) && (
                         <div
-                          onClick={() => setViewingImage(msg.imageUrl!)}
+                          onClick={() => setViewingImage(safeSrc(msg.imageUrl)!)}
                           className="mb-2 rounded-xl overflow-hidden max-h-60 cursor-pointer hover:opacity-90 transition-opacity"
                         >
                           <img
-                            src={msg.imageUrl}
+                            src={safeSrc(msg.imageUrl)}
                             alt="Attachment"
                             className="w-full h-full object-cover"
                           />
@@ -1087,10 +1088,10 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
             )}
 
             {/* Selected Image Preview Pill */}
-            {selectedImage && (
+            {safeSrc(selectedImage) && (
               <div className="mb-2 relative inline-block">
                 <img
-                  src={selectedImage}
+                  src={safeSrc(selectedImage)}
                   alt="Ready to send"
                   className="w-16 h-16 object-cover rounded-xl border-2 border-emerald-500 shadow-md"
                 />
@@ -1244,7 +1245,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
                   >
                     <div className="relative shrink-0">
                       <img
-                        src={user.avatar}
+                        src={safeSrc(user.avatar, DEFAULT_AVATAR_IMAGE)}
                         alt={user.name}
                         className="w-8 h-8 rounded-full object-cover"
                       />
@@ -1327,7 +1328,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
           className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-stone-400 hover:text-white"
         >
           <img
-            src={myChatUser.avatar}
+            src={safeSrc(myChatUser.avatar, DEFAULT_AVATAR_IMAGE)}
             alt="Profile"
             className="w-4 h-4 rounded-full object-cover border border-emerald-500/50"
           />
@@ -1560,7 +1561,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
               <div className="p-5 overflow-y-auto overscroll-contain space-y-4 flex-1 text-center">
                 <div className="relative inline-block mx-auto">
                   <img
-                    src={inspectingUser.avatar}
+                    src={safeSrc(inspectingUser.avatar, DEFAULT_AVATAR_IMAGE)}
                     alt={inspectingUser.name}
                     className="w-20 h-20 rounded-full object-cover border-2 border-emerald-500 shadow-xl"
                   />
@@ -1629,7 +1630,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
 
       {/* MODAL 4: IMAGE LIGHTBOX PREVIEW */}
       <AnimatePresence>
-        {viewingImage && (
+        {safeSrc(viewingImage) && (
           <div
             onClick={() => setViewingImage(null)}
             className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md"
@@ -1642,7 +1643,7 @@ export const CamGoStandaloneChat: React.FC<CamGoStandaloneChatProps> = ({
                 <X className="w-5 h-5" />
               </button>
               <img
-                src={viewingImage}
+                src={safeSrc(viewingImage)}
                 alt="Enlarged"
                 className="w-full h-full object-contain max-h-[85vh] rounded-2xl"
               />

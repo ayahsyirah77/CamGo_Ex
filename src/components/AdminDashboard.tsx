@@ -32,6 +32,7 @@ import { formatTimeTo12Hour } from '../utils/highlandLogic';
 import { CamLogo } from './CamLogo';
 import { BUSINESS_TAXONOMY, findBusinessSector } from '../data/businessTaxonomy';
 import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 import {
   ShieldCheck,
@@ -3047,7 +3048,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="p-3">
                           <div className="flex items-center gap-3">
                             <img
-                              src={stay.coverImage}
+                              src={safeSrc(stay.coverImage, DEFAULT_PLACE_IMAGE)}
                               alt={stay.realBusinessName}
                               className="w-11 h-11 rounded-xl object-cover border border-stone-800 shrink-0"
                             />
@@ -3245,7 +3246,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <tr key={item.id} className="hover:bg-white/5">
                         <td className="py-2">
                           <img
-                            src={item.thumbnailUrl || item.imageUrl}
+                            src={safeSrc(item.thumbnailUrl || item.imageUrl, DEFAULT_PLACE_IMAGE)}
                             alt={item.title}
                             className="w-10 h-10 rounded-lg object-cover border border-white/10"
                           />
@@ -3332,7 +3333,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="space-y-3">
                       <div className="relative w-full h-36 rounded-2xl overflow-hidden">
                         <img
-                          src={img}
+                          src={safeSrc(img, DEFAULT_PLACE_IMAGE)}
                           alt={townName}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
@@ -3668,13 +3669,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                {placeImageUrl && (
+                {safeSrc(placeImageUrl) && (
                   <div className="w-full">
                     <label className="text-xs font-bold text-stone-300 block mb-1">
                       Image Preview
                     </label>
                     <div className="relative w-full h-48 rounded-xl overflow-hidden border border-white/10 bg-stone-800 flex items-center justify-center">
-                      <img src={placeImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <img src={safeSrc(placeImageUrl)} alt="Preview" className="w-full h-full object-cover" />
                     </div>
                   </div>
                 )}
@@ -4214,12 +4215,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
 
-                {galleryImageUrl && (
+                {safeSrc(galleryImageUrl) && (
                   <div className="w-full">
                     <label className="text-xs font-bold text-stone-300 block mb-1">Image Preview</label>
                     <div className="relative w-full h-48 rounded-xl overflow-hidden border border-white/10 bg-stone-800 flex items-center justify-center">
                       <img
-                        src={galleryImageUrl}
+                        src={safeSrc(galleryImageUrl)}
                         alt="Preview"
                         className="w-full h-full object-cover"
                     />
@@ -4585,10 +4586,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) => handleImageUpload(e, setTownImageUrl)}
                     className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none cursor-pointer"
                   />
-                  {townImageUrl && (
+                  {safeSrc(townImageUrl) && (
                     <div className="mt-2 relative w-full h-40 rounded-xl overflow-hidden border border-white/10 bg-stone-950">
                       <img
-                        src={townImageUrl}
+                        src={safeSrc(townImageUrl)}
                         alt="Preview"
                         className="w-full h-full object-cover"
                       />
@@ -4889,9 +4890,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                         {/* Card Preview Miniature */}
                         <div className="relative h-28 rounded-xl overflow-hidden border border-white/10 bg-stone-900 my-2 group">
-                          {card.imageUrl ? (
+                          {safeSrc(card.imageUrl) ? (
                             <img
-                              src={card.imageUrl}
+                              src={safeSrc(card.imageUrl)}
                               alt={card.title}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
@@ -5202,9 +5203,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </label>
                   </div>
-                  {cardFormImageUrl && (
+                  {safeSrc(cardFormImageUrl) && (
                     <div className="relative h-28 rounded-xl overflow-hidden border border-white/10 mt-2">
-                      <img src={cardFormImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <img src={safeSrc(cardFormImageUrl)} alt="Preview" className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => setCardFormImageUrl('')}

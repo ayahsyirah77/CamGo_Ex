@@ -28,6 +28,7 @@ import {
 import QRCode from 'qrcode';
 import { AccommodationListing, AccommodationBooking, Township, Language } from '../types';
 import { firebaseService } from '../services/firebase';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 interface AccommodationListModalProps {
   isOpen: boolean;
@@ -359,7 +360,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                   {/* Top Image & Badges */}
                   <div className="relative aspect-[16/10] overflow-hidden bg-stone-950">
                     <img
-                      src={stay.coverImage}
+                      src={safeSrc(stay.coverImage, DEFAULT_PLACE_IMAGE)}
                       alt={stay.maskedTitle}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
@@ -534,7 +535,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
             {/* Selected Homestay Summary */}
             <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 flex items-center gap-3">
               <img
-                src={activeListingForBooking.coverImage}
+                src={safeSrc(activeListingForBooking.coverImage, DEFAULT_PLACE_IMAGE)}
                 alt=""
                 className="w-16 h-16 rounded-xl object-cover shrink-0"
               />
@@ -732,9 +733,9 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               <p className="text-[11px] text-stone-400 font-medium">
                 Present this QR code to host upon check-in to verify booking
               </p>
-              {voucherQrUrl ? (
+              {safeSrc(voucherQrUrl) ? (
                 <div className="inline-block p-2.5 bg-white rounded-2xl shadow-xl">
-                  <img src={voucherQrUrl} alt="Voucher QR Code" className="w-40 h-40 object-contain" />
+                  <img src={safeSrc(voucherQrUrl)} alt="Voucher QR Code" className="w-40 h-40 object-contain" />
                 </div>
               ) : (
                 <div className="w-40 h-40 mx-auto bg-stone-800 rounded-2xl flex items-center justify-center text-xs text-stone-500">

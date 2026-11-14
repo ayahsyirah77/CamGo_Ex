@@ -63,6 +63,7 @@ import {
   AlertTriangle,
   BedDouble,
 } from 'lucide-react';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import QRCode from 'qrcode';
 import {
   BUSINESS_TAXONOMY,
@@ -1895,14 +1896,14 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     </label>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {activeVendor.galleryImages.filter(img => !img.includes('unsplash.com')).length === 0 ? (
+                    {activeVendor.galleryImages.filter(img => safeSrc(img) && !img.includes('unsplash.com')).length === 0 ? (
                       <div className="col-span-full p-4 rounded-xl bg-stone-950 border border-stone-800 text-center text-xs text-stone-400">
                         No photos uploaded yet. Click &quot;Upload Photos from Folder / Computer&quot; above to upload your photos (up to 15 photos supported).
                       </div>
                     ) : (
-                      activeVendor.galleryImages.filter(img => !img.includes('unsplash.com')).map((img, idx) => (
+                      activeVendor.galleryImages.filter(img => safeSrc(img) && !img.includes('unsplash.com')).map((img, idx) => (
                         <div key={idx} className="relative group rounded-xl overflow-hidden border border-stone-800 aspect-video bg-stone-900">
-                          <img src={img} alt="Gallery" className="w-full h-full object-cover" />
+                          <img src={safeSrc(img)} alt="Gallery" className="w-full h-full object-cover" />
                           <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-mono text-white">
                             {idx === 0 ? 'Cover Photo' : `Photo ${idx + 1}`}
                           </span>
@@ -2246,7 +2247,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         <div key={pkg.id} className="p-3.5 rounded-xl bg-stone-900 border border-white/10 flex flex-col justify-between space-y-2">
                           <div className="flex items-start gap-3">
                             <img
-                              src={pkg.imageUrl || activeCategoryConfig?.defaultImage}
+                              src={safeSrc(pkg.imageUrl, activeCategoryConfig?.defaultImage || DEFAULT_PLACE_IMAGE)}
                               alt={pkg.name}
                               className="w-14 h-14 rounded-xl object-cover shrink-0 border border-stone-800"
                             />
@@ -2886,7 +2887,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                           <div key={pkg.id} className="p-3.5 rounded-xl bg-stone-900 border border-white/10 flex flex-col justify-between space-y-2">
                             <div className="flex items-start gap-3">
                               <img
-                                src={pkg.imageUrl || activeCategoryConfig?.defaultImage}
+                                src={safeSrc(pkg.imageUrl, activeCategoryConfig?.defaultImage || DEFAULT_PLACE_IMAGE)}
                                 alt={pkg.name}
                                 className="w-14 h-14 rounded-xl object-cover shrink-0 border border-stone-800"
                               />
@@ -4376,9 +4377,9 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               {/* QR Voucher Visual */}
               <div className="bg-stone-950 border border-emerald-500/30 rounded-2xl p-5 text-center space-y-3">
                 <p className="text-xs text-stone-400 font-medium">Scan Upon Arrival to Verify Booking &amp; Hand Over Keys</p>
-                {voucherQrDataUrl ? (
+                {safeSrc(voucherQrDataUrl) ? (
                   <div className="inline-block p-3 bg-white rounded-2xl shadow-xl">
-                    <img src={voucherQrDataUrl} alt="Voucher QR Code" className="w-44 h-44 object-contain" />
+                    <img src={safeSrc(voucherQrDataUrl)} alt="Voucher QR Code" className="w-44 h-44 object-contain" />
                   </div>
                 ) : (
                   <div className="w-44 h-44 mx-auto bg-stone-800 rounded-2xl flex items-center justify-center text-xs text-stone-500">

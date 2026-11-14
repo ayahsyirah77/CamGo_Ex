@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, MapPin, Mountain, Sparkles, Compass, Camera } from 'lucide-react';
 import { GalleryItem, Place, Township } from '../types';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 interface GalleryCarouselProps {
   items: GalleryItem[];
@@ -199,7 +200,7 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
         <div className="w-full md:w-1/2 h-[260px] sm:h-[250px] md:h-full relative overflow-hidden bg-stone-950 shrink-0">
           {/* Ambient Blurred Background to guarantee aesthetic fit regardless of aspect ratio */}
           <img
-            src={currentItem.imageUrl}
+            src={safeSrc(currentItem.imageUrl, DEFAULT_PLACE_IMAGE)}
             alt=""
             aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-30 pointer-events-none"
@@ -207,11 +208,10 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
 
           {/* Sharp Main Image with Consistent Object-Cover & Centered Positioning */}
           <img
-            src={currentItem.imageUrl}
+            src={safeSrc(currentItem.imageUrl, DEFAULT_PLACE_IMAGE)}
             alt={currentItem.title}
             onError={(e) => {
-              (e.target as HTMLImageElement).src =
-                'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1200&q=80';
+              (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
             }}
             className="relative z-10 w-full h-full object-cover object-center transition-transform duration-700 hover:scale-105"
           />

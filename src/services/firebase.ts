@@ -817,7 +817,7 @@ class FirebaseStorageService {
         email: updatedProfile.email,
         displayName: updatedProfile.displayName,
         fullName: updatedProfile.fullName,
-        photoURL: updatedProfile.photoURL || '',
+        ...(updatedProfile.photoURL?.trim() ? { photoURL: updatedProfile.photoURL.trim() } : {}),
         role: updatedProfile.role,
         isBlocked: false,
         createdAt: updatedProfile.createdAt,

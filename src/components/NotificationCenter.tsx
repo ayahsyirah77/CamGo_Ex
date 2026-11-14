@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { NotificationEvent } from '../hooks/useMultiChannelNotifications';
 import { chatLoungeService } from '../services/chatLoungeService';
+import { safeSrc } from '../utils/safeMedia';
 
 interface NotificationCenterProps {
   activeSos: NotificationEvent | null;
@@ -223,9 +224,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               </button>
             </div>
             <div className="flex items-start gap-2.5">
-              {activeChatPreview.payload.senderAvatar && (
+              {safeSrc(activeChatPreview.payload.senderAvatar) && (
                 <img
-                  src={activeChatPreview.payload.senderAvatar}
+                  src={safeSrc(activeChatPreview.payload.senderAvatar)}
                   alt={activeChatPreview.payload.sender || 'Sender'}
                   className="w-8 h-8 rounded-full border border-emerald-500/50 object-cover shrink-0 mt-0.5"
                 />

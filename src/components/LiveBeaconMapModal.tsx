@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Language, BeaconSession, BeaconMember } from '../types';
+import { safeSrc } from '../utils/safeMedia';
 import {
   calculateHaversineDistance,
   formatDistance,
@@ -1384,9 +1385,9 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
               </p>
             </div>
 
-            {qrCodeDataUrl ? (
+            {safeSrc(qrCodeDataUrl) ? (
               <div className="p-3 bg-white rounded-2xl shadow-inner inline-block mx-auto border-2 border-emerald-500/40">
-                <img src={qrCodeDataUrl} alt="Beacon QR Code" className="w-52 h-52 mx-auto" />
+                <img src={safeSrc(qrCodeDataUrl)} alt="Beacon QR Code" className="w-52 h-52 mx-auto" />
               </div>
             ) : (
               <div className="w-52 h-52 bg-stone-800 rounded-2xl flex items-center justify-center mx-auto text-stone-500 animate-pulse">

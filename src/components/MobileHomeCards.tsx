@@ -19,6 +19,7 @@ import {
 import { MobileHomeCard, Language, WeatherData, TrafficAlert, HazardAlert, AccommodationListing } from '../types';
 import { firebaseService } from '../services/firebase';
 import { INITIAL_MOBILE_HOME_CARDS } from '../data/initialHomeCards';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 interface MobileHomeCardsProps {
   language: Language;
@@ -172,10 +173,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             className="rounded-2xl p-3 bg-stone-900/95 backdrop-blur-xl border-2 border-cyan-400/60 hover:border-cyan-300 active:border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.2)] hover:shadow-[0_0_30px_rgba(34,211,238,0.4)] flex flex-col justify-between min-h-[148px] cursor-pointer active:scale-[0.96] hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
           >
             {/* Background Image with robust rendering */}
-            {weatherCard.imageUrl ? (
+            {safeSrc(weatherCard.imageUrl) ? (
               <div className="absolute inset-0 z-0">
                 <img
-                  src={weatherCard.imageUrl}
+                  src={safeSrc(weatherCard.imageUrl)}
                   alt=""
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                 />
@@ -252,7 +253,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             {/* Live camera thumbnail */}
             <div className="relative rounded-xl overflow-hidden my-auto aspect-[16/10] bg-stone-950 border-2 border-white/15 group-hover:border-emerald-400/60 transition-colors shadow-inner">
               <img
-                src={hazardCard.imageUrl || 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=600&q=80'}
+                src={safeSrc(hazardCard.imageUrl, 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=600&q=80')}
                 alt={hazardCard.title || 'Live Notice/Hazard'}
                 className="w-full h-full object-cover group-hover:scale-110 group-active:scale-105 transition-transform duration-500 ease-out"
               />
@@ -289,7 +290,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           {/* Background image overlay with soft gradient */}
           <div className="absolute inset-0 z-0">
             <img
-              src={mapCard.imageUrl || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80'}
+              src={safeSrc(mapCard.imageUrl, 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80')}
               alt={mapCard.title || 'Highland Escape'}
               className="w-full h-full object-cover opacity-30 group-hover:opacity-45 group-hover:scale-108 group-active:scale-105 transition-all duration-700 ease-out"
             />
@@ -332,11 +333,12 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           {/* Thumbnail preview */}
           <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-stone-950 shrink-0 border-2 border-white/15 group-hover:border-emerald-400/60 transition-colors shadow-md">
             <img
-              src={
+              src={safeSrc(
                 itineraryCard.imageUrl && itineraryCard.imageUrl !== 'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=600&q=80'
                   ? itineraryCard.imageUrl
-                  : 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80'
-              }
+                  : undefined,
+                'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80'
+              )}
               alt={itineraryCard.title || 'Plan Your Trip'}
               className="w-full h-full object-cover group-hover:scale-110 group-active:scale-105 transition-transform duration-500 ease-out"
             />
@@ -394,7 +396,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             {/* Trail gathering image */}
             <div className="relative rounded-xl overflow-hidden my-auto aspect-[16/10] bg-stone-950 border-2 border-white/15 group-hover:border-emerald-400/60 transition-colors shadow-inner">
               <img
-                src={partyCard.imageUrl || 'https://images.unsplash.com/photo-1528543606781-2f6e6857f318?auto=format&fit=crop&w=600&q=80'}
+                src={safeSrc(partyCard.imageUrl, 'https://images.unsplash.com/photo-1528543606781-2f6e6857f318?auto=format&fit=crop&w=600&q=80')}
                 alt={partyCard.title || 'Find My Party'}
                 className="w-full h-full object-cover group-hover:scale-110 group-active:scale-105 transition-transform duration-500 ease-out"
               />
@@ -432,11 +434,12 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             {/* Motorbike scenic image */}
             <div className="relative rounded-xl overflow-hidden my-auto aspect-[16/10] bg-stone-950 border-2 border-white/15 group-hover:border-cyan-400/60 transition-colors shadow-inner">
               <img
-                src={
+                src={safeSrc(
                   bikeCard.imageUrl && bikeCard.imageUrl !== 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=600&q=80'
                     ? bikeCard.imageUrl
-                    : 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=600&q=80'
-                }
+                    : undefined,
+                  'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=600&q=80'
+                )}
                 alt={bikeCard.title || 'Motorbike Rentals'}
                 className="w-full h-full object-cover group-hover:scale-110 group-active:scale-105 transition-transform duration-500 ease-out"
               />
@@ -464,10 +467,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
         {/* Subtle scenic background overlay */}
         <div className="absolute inset-0 z-0">
           <img
-            src={
-              accommodations[0]?.coverImage ||
+            src={safeSrc(
+              accommodations[0]?.coverImage,
               'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=600&q=80'
-            }
+            )}
             alt="Verified Homestays & Stays"
             className="w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-500"
           />
@@ -478,10 +481,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
         <div className="flex items-center gap-3 relative z-10">
           <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-stone-950 shrink-0 border-2 border-emerald-400/40 group-hover:border-emerald-300 transition-colors shadow-md">
             <img
-              src={
-                accommodations[0]?.coverImage ||
+              src={safeSrc(
+                accommodations[0]?.coverImage,
                 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=600&q=80'
-              }
+              )}
               alt="Cameron Highlands Verified Homestays"
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
             />
@@ -538,9 +541,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 </span>
               </div>
 
-              {card.imageUrl && (
+              {safeSrc(card.imageUrl) && (
                 <div className="rounded-xl overflow-hidden my-1.5 aspect-video bg-stone-950 border-2 border-white/10">
-                  <img src={card.imageUrl} alt={card.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                  <img src={safeSrc(card.imageUrl, DEFAULT_PLACE_IMAGE)} alt={card.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 </div>
               )}
 

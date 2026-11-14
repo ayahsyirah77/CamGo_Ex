@@ -16,6 +16,7 @@ import {
 import { getTranslation } from '../services/i18n';
 import { UserProfile, firebaseService } from '../services/firebase';
 import { PWAInstallButton } from './PWAInstallButton';
+import { safeSrc, DEFAULT_PLACE_IMAGE, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
 import {
   ChevronDown,
   Compass,
@@ -576,7 +577,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2.5 transition-colors cursor-pointer group"
                           >
                             <img
-                              src={place.imageUrl}
+                              src={safeSrc(place.imageUrl, DEFAULT_PLACE_IMAGE)}
                               alt={place.name}
                               className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg object-cover bg-stone-950 border border-white/10 shrink-0"
                             />
@@ -1032,7 +1033,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     <div className="w-5 h-5 rounded-full overflow-hidden border border-emerald-400 shrink-0 bg-stone-950 flex items-center justify-center">
                       <img
-                        src={currentUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'}
+                        src={safeSrc(currentUser.photoURL, DEFAULT_AVATAR_IMAGE)}
                         alt={currentUser.displayName}
                         className="w-full h-full object-cover"
                       />
@@ -1211,10 +1212,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="relative w-9 h-9 rounded-full p-[2px] bg-gradient-to-tr from-emerald-400 via-teal-300 to-emerald-500 shadow-md ring-2 ring-emerald-500/25 active:scale-95 transition-transform cursor-pointer overflow-hidden flex items-center justify-center shrink-0"
               >
                 <img
-                  src={
-                    currentUser?.photoURL ||
-                    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'
-                  }
+                  src={safeSrc(currentUser?.photoURL, DEFAULT_AVATAR_IMAGE)}
                   alt={currentUser?.displayName || 'User Avatar'}
                   className="w-full h-full rounded-full object-cover bg-stone-950"
                 />
@@ -1288,7 +1286,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2 transition-colors cursor-pointer group"
                           >
                             <img
-                              src={place.imageUrl}
+                              src={safeSrc(place.imageUrl, DEFAULT_PLACE_IMAGE)}
                               alt={place.name}
                               className="w-8 h-8 rounded-lg object-cover bg-stone-950 border border-white/10 shrink-0"
                             />
@@ -1525,10 +1523,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="relative shrink-0">
                     <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr from-emerald-400 via-teal-300 to-emerald-500 shadow-md shadow-emerald-950 group-hover:scale-105 transition-transform">
                       <img
-                        src={
-                          currentUser?.photoURL ||
-                          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'
-                        }
+                        src={safeSrc(currentUser?.photoURL, DEFAULT_AVATAR_IMAGE)}
                         alt={currentUser?.displayName || 'User Avatar'}
                         className="w-full h-full rounded-full object-cover bg-stone-950"
                       />

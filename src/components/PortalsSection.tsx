@@ -3,6 +3,7 @@ import { Township, Language, JobClassified, TownshipHubInfo } from '../types';
 import { TOWNSHIP_PORTALS, OFFICIAL_PORTALS } from '../data/initialData';
 import { firebaseService } from '../services/firebase';
 import { getTranslation } from '../services/i18n';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import {
   Layers,
   MapPin,
@@ -128,7 +129,7 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
                   {/* Normal Card Content (visible underneath on desktop or when unselected) */}
                   <div>
                     <div className="relative w-full h-36 rounded-2xl overflow-hidden mb-3">
-                      <img src={displayImg} alt={town.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      <img src={safeSrc(displayImg, DEFAULT_PLACE_IMAGE)} alt={town.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                       <div className="absolute top-2 right-2 px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-emerald-400 text-[10px] font-mono font-bold">
                         {town.elevation} ASL
                       </div>
@@ -180,7 +181,7 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
 
                         {/* Compact Image with Elevation */}
                         <div className="relative w-full h-28 rounded-xl overflow-hidden mb-3 shrink-0">
-                          <img src={displayImg} alt={town.name} className="w-full h-full object-cover" />
+                          <img src={safeSrc(displayImg, DEFAULT_PLACE_IMAGE)} alt={town.name} className="w-full h-full object-cover" />
                           <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-transparent" />
                           <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
                             <span className="px-2 py-0.5 rounded-full bg-emerald-500/30 backdrop-blur-md text-emerald-300 text-[10px] font-mono font-bold">
@@ -288,7 +289,7 @@ export const PortalsSection: React.FC<PortalsSectionProps> = ({
                     </div>
 
                     <div className="relative w-full h-48 sm:h-56 rounded-2xl overflow-hidden mb-5">
-                      <img src={selectedTownModal.imageUrl} alt={selectedTownModal.name} className="w-full h-full object-cover" />
+                      <img src={safeSrc(selectedTownModal.imageUrl, DEFAULT_PLACE_IMAGE)} alt={selectedTownModal.name} className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-transparent" />
                       <div className="absolute bottom-4 left-4">
                         <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-mono font-bold mb-1 inline-block">

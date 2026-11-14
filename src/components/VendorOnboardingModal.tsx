@@ -30,6 +30,7 @@ import {
 } from '../types';
 import { firebaseService, UserProfile } from '../services/firebase';
 import { INITIAL_PLACES } from '../data/initialData';
+import { safeSrc, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
 
 interface VendorOnboardingModalProps {
   isOpen: boolean;
@@ -252,10 +253,7 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
                 <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-500/30 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <img
-                      src={
-                        currentUser.photoURL ||
-                        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'
-                      }
+                      src={safeSrc(currentUser.photoURL, DEFAULT_AVATAR_IMAGE)}
                       alt={currentUser.displayName}
                       className="w-10 h-10 rounded-full object-cover border border-emerald-400"
                     />
@@ -681,10 +679,10 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
                     <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
                     <p className="text-xs font-bold text-white">{verificationDocFileName}</p>
                     <p className="text-[11px] text-emerald-400">Document ready for instant verification check</p>
-                    {verificationDocPreview && (
+                    {safeSrc(verificationDocPreview) && (
                       <div className="mt-2 max-w-xs mx-auto overflow-hidden rounded-xl border border-emerald-500/30">
                         <img
-                          src={verificationDocPreview}
+                          src={safeSrc(verificationDocPreview)}
                           alt="Doc preview"
                           className="w-full h-24 object-cover"
                         />

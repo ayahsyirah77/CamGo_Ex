@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Language, WeatherData, TrafficAlert, HazardAlert, EventNotification, Place } from '../types';
 import { firebaseService } from '../services/firebase';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 export interface GsapLoopGalleryProps {
   language?: Language;
@@ -437,7 +438,7 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
             <div className="flex-1 overflow-y-auto touch-pan-y p-4 sm:p-6 space-y-4">
               <div className="relative h-44 sm:h-52 w-full rounded-2xl overflow-hidden border border-white/10 shrink-0">
                 <img
-                  src={selectedCard.imageUrl}
+                  src={safeSrc(selectedCard.imageUrl, DEFAULT_PLACE_IMAGE)}
                   alt={selectedCard.title}
                   className="w-full h-full object-cover"
                 />
@@ -678,7 +679,7 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({ items = 
             className="group relative aspect-square rounded-2xl overflow-hidden cursor-pointer bg-stone-900 border border-white/10 hover:border-emerald-500/40 transition-all duration-300 shadow-lg"
           >
             <img
-              src={item.imageUrl}
+              src={safeSrc(item.imageUrl, DEFAULT_PLACE_IMAGE)}
               alt={item.title}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
               loading="lazy"
@@ -746,7 +747,7 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({ items = 
               <div className="flex flex-col md:flex-row gap-6 items-center">
                 <div className="w-full md:w-1/2 h-60 sm:h-72 md:h-80 rounded-2xl overflow-hidden bg-stone-950 relative border border-white/10 shrink-0">
                   <img
-                    src={activeItem.imageUrl}
+                    src={safeSrc(activeItem.imageUrl, DEFAULT_PLACE_IMAGE)}
                     alt={activeItem.title}
                     className="w-full h-full object-cover"
                   />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { safeSrc, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
 import {
   MessageSquare,
   Hash,
@@ -712,7 +713,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="relative shrink-0">
                             <img
-                              src={dm.otherUser.avatar}
+                              src={safeSrc(dm.otherUser.avatar, DEFAULT_AVATAR_IMAGE)}
                               alt={dm.otherUser.name}
                               className="w-9 h-9 rounded-full object-cover border border-stone-700"
                             />
@@ -764,7 +765,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <img
-                          src={u.avatar}
+                          src={safeSrc(u.avatar, DEFAULT_AVATAR_IMAGE)}
                           alt={u.name}
                           className="w-6 h-6 rounded-full object-cover shrink-0"
                         />
@@ -843,7 +844,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
               >
                 <div className="relative shrink-0">
                   <img
-                    src={myChatUser.avatar}
+                    src={safeSrc(myChatUser.avatar, DEFAULT_AVATAR_IMAGE)}
                     alt={myChatUser.name}
                     className="w-8 h-8 rounded-full object-cover border border-emerald-500/50"
                   />
@@ -947,7 +948,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                           title={`View ${msg.senderName}'s profile`}
                         >
                           <img
-                            src={msg.senderAvatar}
+                            src={safeSrc(msg.senderAvatar, DEFAULT_AVATAR_IMAGE)}
                             alt={msg.senderName}
                             className="w-8 h-8 rounded-full object-cover border border-stone-800 shadow-sm"
                           />
@@ -1003,10 +1004,10 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                           }`}
                         >
                           {/* Attached Image if present */}
-                          {msg.imageUrl && (
+                          {safeSrc(msg.imageUrl) && (
                             <div className="mb-2 rounded-xl overflow-hidden border border-white/10 max-h-72">
                               <img
-                                src={msg.imageUrl}
+                                src={safeSrc(msg.imageUrl)}
                                 alt="Attachment"
                                 className="w-full h-full object-cover cursor-pointer hover:scale-[1.02] transition-transform"
                                 onClick={() => window.open(msg.imageUrl, '_blank')}
@@ -1098,7 +1099,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                       {isMine && (
                         <div className="shrink-0 self-end mb-1">
                           <img
-                            src={myChatUser.avatar}
+                            src={safeSrc(myChatUser.avatar, DEFAULT_AVATAR_IMAGE)}
                             alt="Me"
                             className="w-8 h-8 rounded-full object-cover border border-emerald-500/50 shadow-sm"
                           />
@@ -1147,9 +1148,9 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
               {/* Attachment Preview (Image or File) */}
               {(selectedImage || attachedFile) && (
                 <div className="px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between text-xs">
-                  {selectedImage ? (
+                  {safeSrc(selectedImage) ? (
                     <div className="flex items-center gap-2">
-                      <img src={selectedImage} alt="Preview" className="w-10 h-10 rounded-lg object-cover" />
+                      <img src={safeSrc(selectedImage)} alt="Preview" className="w-10 h-10 rounded-lg object-cover" />
                       <span className="text-emerald-400 font-bold text-xs">Photo attached</span>
                     </div>
                   ) : (
@@ -1295,7 +1296,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                     >
                       <div className="relative shrink-0">
                         <img
-                          src={user.avatar}
+                          src={safeSrc(user.avatar, DEFAULT_AVATAR_IMAGE)}
                           alt={user.name}
                           className="w-7 h-7 rounded-full object-cover"
                         />
@@ -1376,7 +1377,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
             className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-stone-400 hover:text-white"
           >
             <img
-              src={myChatUser.avatar}
+              src={safeSrc(myChatUser.avatar, DEFAULT_AVATAR_IMAGE)}
               alt="Profile"
               className="w-4 h-4 rounded-full object-cover border border-emerald-500/50"
             />
@@ -1405,7 +1406,7 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
                 <div className="flex flex-col items-center text-center space-y-2">
                   <div className="relative">
                     <img
-                      src={inspectingUser.avatar}
+                      src={safeSrc(inspectingUser.avatar, DEFAULT_AVATAR_IMAGE)}
                       alt={inspectingUser.name}
                       className="w-20 h-20 rounded-full object-cover border-2 border-emerald-500 shadow-xl"
                     />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GalleryItem, Language } from '../types';
 import { getTranslation } from '../services/i18n';
+import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import {
   ZoomIn,
   ZoomOut,
@@ -138,10 +139,10 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({
             className="group relative aspect-square rounded-2xl overflow-hidden cursor-pointer bg-stone-900 border border-white/10 hover:border-emerald-500/40 transition-all duration-300 shadow-lg hover:shadow-emerald-950/40"
           >
             <img
-              src={item.thumbnailUrl || item.imageUrl}
+              src={safeSrc(item.thumbnailUrl || item.imageUrl, DEFAULT_PLACE_IMAGE)}
               alt={item.title}
               onError={(e) => {
-                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1200&q=80';
+                (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
               }}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
               loading="lazy"
@@ -208,10 +209,10 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({
             <div className="flex flex-col md:flex-row gap-6 items-center">
                 <div className="w-full md:w-1/2 h-72 md:h-80 rounded-2xl overflow-hidden bg-stone-950 shrink-0 border border-white/10">
                   <img
-                    src={activeItem.imageUrl}
+                    src={safeSrc(activeItem.imageUrl, DEFAULT_PLACE_IMAGE)}
                     alt={activeItem.title}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1200&q=80';
+                      (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
                     }}
                     className="w-full h-full object-cover"
                   />

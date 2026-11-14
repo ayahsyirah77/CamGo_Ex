@@ -584,8 +584,31 @@ Please feel free to ask about any specific township, place, or feature in Camero
   };
 
   // Cache live PDRM Cameron Highlands notices for 5 minutes unless forceRefresh=true
-  let pdrmCache: { fetchedAt: number; alerts: any[]; groundingSources: Array<{ title: string; url: string }> } | null = null;
+  let pdrmCache: {
+    fetchedAt: number;
+    alerts: any[];
+    groundingSources: Array<{ title: string; url: string }>;
+    liveSearchUsed: boolean;
+  } | null = null;
+  let pdrmQuotaCooldownUntil = 0;
+  let inFlightPdrmFetch: Promise<{
+    alerts: any[];
+    groundingSources: Array<{ title: string; url: string }>;
+    liveSearchUsed: boolean;
+  }> | null = null;
   const PDRM_CACHE_TTL_MS = 5 * 60 * 1000;
+  const PDRM_QUOTA_COOLDOWN_MS = 30 * 60 * 1000;
+
+  const isQuotaOrRateLimitError = (err: any): boolean => {
+    const msg = String(err?.message || err || '');
+    return (
+      err?.status === 429 ||
+      err?.code === 429 ||
+      msg.includes('429') ||
+      msg.includes('RESOURCE_EXHAUSTED') ||
+      msg.toLowerCase().includes('quota')
+    );
+  };
 
   const getPdrmFallbackNotice = () => {
     const now = new Date();
@@ -633,34 +656,59 @@ Please feel free to ask about any specific township, place, or feature in Camero
     liveSearchUsed: boolean;
   }> => {
     const nowMs = Date.now();
+    const defaultSources = [
+      { title: 'Polis Daerah Cameron Highlands (Facebook)', url: 'https://www.facebook.com/PolisDaerahCameronHighlands' },
+    ];
+
     if (!forceRefresh && pdrmCache && nowMs - pdrmCache.fetchedAt < PDRM_CACHE_TTL_MS) {
       return {
         alerts: pdrmCache.alerts,
         groundingSources: pdrmCache.groundingSources,
-        liveSearchUsed: true,
+        liveSearchUsed: pdrmCache.liveSearchUsed,
       };
     }
 
-    const ai = getGeminiClient();
-    if (!ai) {
+    // Respect active quota backoff window so repeated mounts/syncs never hammer an exhausted Gemini quota
+    if (nowMs < pdrmQuotaCooldownUntil) {
+      const cachedAlerts = pdrmCache?.alerts || getPdrmFallbackNotice();
+      const cachedSources = pdrmCache?.groundingSources || defaultSources;
       return {
-        alerts: getPdrmFallbackNotice(),
-        groundingSources: [
-          { title: 'Polis Daerah Cameron Highlands (Facebook)', url: 'https://www.facebook.com/PolisDaerahCameronHighlands' },
-        ],
+        alerts: cachedAlerts,
+        groundingSources: cachedSources,
         liveSearchUsed: false,
       };
     }
 
-    try {
-      const todayMy = new Date().toLocaleDateString('en-MY', {
-        timeZone: 'Asia/Kuala_Lumpur',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
+    if (inFlightPdrmFetch) {
+      return inFlightPdrmFetch;
+    }
 
-      const prompt = `Today is ${todayMy} (Malaysia Time). Search live web updates, official announcements, and Malaysian news for any current or recent official notices, traffic alerts, roadblocks (Sekatan Jalan Raya / Op Lancar / Op Selamat), road closures, landslides, or public safety updates from PDRM Cameron Highlands (Polis Daerah Cameron Highlands / IPD Cameron Highlands / Polis Pahang Cameron Highlands).
+    const ai = getGeminiClient();
+    if (!ai) {
+      const fallback = getPdrmFallbackNotice();
+      pdrmCache = {
+        fetchedAt: nowMs,
+        alerts: fallback,
+        groundingSources: defaultSources,
+        liveSearchUsed: false,
+      };
+      return {
+        alerts: fallback,
+        groundingSources: defaultSources,
+        liveSearchUsed: false,
+      };
+    }
+
+    inFlightPdrmFetch = (async () => {
+      try {
+        const todayMy = new Date().toLocaleDateString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+
+        const prompt = `Today is ${todayMy} (Malaysia Time). Search live web updates, official announcements, and Malaysian news for any current or recent official notices, traffic alerts, roadblocks (Sekatan Jalan Raya / Op Lancar / Op Selamat), road closures, landslides, or public safety updates from PDRM Cameron Highlands (Polis Daerah Cameron Highlands / IPD Cameron Highlands / Polis Pahang Cameron Highlands).
 
 Return ONLY a valid JSON array (no markdown formatting or extra commentary) with 1 to 3 objects using this exact schema:
 [
@@ -683,109 +731,132 @@ Return ONLY a valid JSON array (no markdown formatting or extra commentary) with
 ]
 If no breaking closure or emergency notice is found in recent PDRM Cameron Highlands results, return 1 accurate item with severity "low" summarizing the latest verified PDRM Cameron Highlands traffic/safety status found without inventing any incident.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
-      });
+        const response = await ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: prompt,
+          config: {
+            tools: [{ googleSearch: {} }],
+          },
+        });
 
-      const candidate = response.candidates?.[0];
-      const groundingMeta = (candidate as any)?.groundingMetadata;
-      const groundingSources: Array<{ title: string; url: string }> = (
-        groundingMeta?.groundingChunks || []
-      )
-        .map((chunk: any) => ({
-          title: chunk?.web?.title || 'PDRM / News Reference',
-          url: chunk?.web?.uri || '',
-        }))
-        .filter((s: any) => Boolean(s.url));
+        const candidate = response.candidates?.[0];
+        const groundingMeta = (candidate as any)?.groundingMetadata;
+        const groundingSources: Array<{ title: string; url: string }> = (
+          groundingMeta?.groundingChunks || []
+        )
+          .map((chunk: any) => ({
+            title: chunk?.web?.title || 'PDRM / News Reference',
+            url: chunk?.web?.uri || '',
+          }))
+          .filter((s: any) => Boolean(s.url));
 
-      const rawText = (response.text || '').trim();
-      const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-      const nowIso = new Date().toISOString();
-      const formattedTime = new Date().toLocaleTimeString('en-MY', {
-        timeZone: 'Asia/Kuala_Lumpur',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
+        const rawText = (response.text || '').trim();
+        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+        const nowIso = new Date().toISOString();
+        const formattedTime = new Date().toLocaleTimeString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
 
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const mappedAlerts = parsed.slice(0, 3).map((item: any, idx: number) => {
-            const validSeverity =
-              item.severity === 'critical' || item.severity === 'moderate' || item.severity === 'low'
-                ? item.severity
-                : 'low';
-            const fallbackSourceUrl =
-              groundingSources[idx]?.url ||
-              groundingSources[0]?.url ||
-              'https://www.facebook.com/PolisDaerahCameronHighlands';
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const mappedAlerts = parsed.slice(0, 3).map((item: any, idx: number) => {
+              const validSeverity =
+                item.severity === 'critical' || item.severity === 'moderate' || item.severity === 'low'
+                  ? item.severity
+                  : 'low';
+              const fallbackSourceUrl =
+                groundingSources[idx]?.url ||
+                groundingSources[0]?.url ||
+                'https://www.facebook.com/PolisDaerahCameronHighlands';
+
+              return {
+                id: `pdrm-ch-live-${idx + 1}`,
+                title: String(item.title || 'PDRM Cameron Highlands Official Notice'),
+                titleBm: String(item.titleBm || item.title || 'Notis Rasmi PDRM Cameron Highlands'),
+                location: String(item.location || 'Cameron Highlands District'),
+                roadRoute: String(item.roadRoute || 'Cameron Highlands Main Corridors'),
+                severity: validSeverity,
+                type: String(item.type || 'hazard'),
+                status: String(item.status || 'Live PDRM Update'),
+                description: String(item.description || 'Live public safety and traffic monitoring notice from PDRM Cameron Highlands.'),
+                descriptionBm: String(item.descriptionBm || item.description || 'Makluman pemantauan keselamatan dan trafik PDRM Cameron Highlands.'),
+                actionTaken: String(item.actionTaken || 'Follow PDRM officer instructions on site and contact +60 5-491 1222 for assistance.'),
+                actionTakenBm: String(item.actionTakenBm || 'Patuhi arahan anggota PDRM di lokasi dan hubungi +60 5-491 1222 untuk bantuan.'),
+                agency: 'PDRM' as const,
+                agencyName: 'PDRM • IPD Cameron Highlands',
+                source: String(item.source || groundingSources[idx]?.title || 'PDRM Cameron Highlands (Live Web)'),
+                sourceType: 'google_search_grounding' as const,
+                sourceUrl:
+                  typeof item.sourceUrl === 'string' && item.sourceUrl.startsWith('http')
+                    ? item.sourceUrl
+                    : fallbackSourceUrl,
+                referenceNo: `PDRM-CH/LIVE-${idx + 1}`,
+                agencyHotline: '+60 5-491 1222',
+                isVerifiedAgency: true,
+                reportedTime: String(item.reportedTime || `Live • Grounded ${formattedTime}`),
+                reportedAt: `${formattedTime} MYT`,
+                lastVerified: nowIso,
+                timestamp: nowIso,
+              };
+            });
+
+            pdrmCache = {
+              fetchedAt: Date.now(),
+              alerts: mappedAlerts,
+              groundingSources,
+              liveSearchUsed: true,
+            };
 
             return {
-              id: `pdrm-ch-live-${idx + 1}`,
-              title: String(item.title || 'PDRM Cameron Highlands Official Notice'),
-              titleBm: String(item.titleBm || item.title || 'Notis Rasmi PDRM Cameron Highlands'),
-              location: String(item.location || 'Cameron Highlands District'),
-              roadRoute: String(item.roadRoute || 'Cameron Highlands Main Corridors'),
-              severity: validSeverity,
-              type: String(item.type || 'hazard'),
-              status: String(item.status || 'Live PDRM Update'),
-              description: String(item.description || 'Live public safety and traffic monitoring notice from PDRM Cameron Highlands.'),
-              descriptionBm: String(item.descriptionBm || item.description || 'Makluman pemantauan keselamatan dan trafik PDRM Cameron Highlands.'),
-              actionTaken: String(item.actionTaken || 'Follow PDRM officer instructions on site and contact +60 5-491 1222 for assistance.'),
-              actionTakenBm: String(item.actionTakenBm || 'Patuhi arahan anggota PDRM di lokasi dan hubungi +60 5-491 1222 untuk bantuan.'),
-              agency: 'PDRM' as const,
-              agencyName: 'PDRM • IPD Cameron Highlands',
-              source: String(item.source || groundingSources[idx]?.title || 'PDRM Cameron Highlands (Live Web)'),
-              sourceType: 'google_search_grounding' as const,
-              sourceUrl:
-                typeof item.sourceUrl === 'string' && item.sourceUrl.startsWith('http')
-                  ? item.sourceUrl
-                  : fallbackSourceUrl,
-              referenceNo: `PDRM-CH/LIVE-${idx + 1}`,
-              agencyHotline: '+60 5-491 1222',
-              isVerifiedAgency: true,
-              reportedTime: String(item.reportedTime || `Live • Grounded ${formattedTime}`),
-              reportedAt: `${formattedTime} MYT`,
-              lastVerified: nowIso,
-              timestamp: nowIso,
+              alerts: mappedAlerts,
+              groundingSources,
+              liveSearchUsed: true,
             };
-          });
-
-          pdrmCache = {
-            fetchedAt: nowMs,
-            alerts: mappedAlerts,
-            groundingSources,
-          };
-
-          return {
-            alerts: mappedAlerts,
-            groundingSources,
-            liveSearchUsed: true,
-          };
+          }
         }
-      }
 
-      const fallback = getPdrmFallbackNotice();
-      return {
-        alerts: fallback,
-        groundingSources,
-        liveSearchUsed: groundingSources.length > 0,
-      };
-    } catch (pdrmErr: any) {
-      console.warn('[PDRM LIVE FETCH FALLBACK]', pdrmErr?.message || pdrmErr);
-      return {
-        alerts: getPdrmFallbackNotice(),
-        groundingSources: [
-          { title: 'Polis Daerah Cameron Highlands (Facebook)', url: 'https://www.facebook.com/PolisDaerahCameronHighlands' },
-        ],
-        liveSearchUsed: false,
-      };
-    }
+        const fallback = getPdrmFallbackNotice();
+        const effectiveSources = groundingSources.length > 0 ? groundingSources : defaultSources;
+        pdrmCache = {
+          fetchedAt: Date.now(),
+          alerts: fallback,
+          groundingSources: effectiveSources,
+          liveSearchUsed: groundingSources.length > 0,
+        };
+        return {
+          alerts: fallback,
+          groundingSources: effectiveSources,
+          liveSearchUsed: groundingSources.length > 0,
+        };
+      } catch (pdrmErr: any) {
+        const fallback = getPdrmFallbackNotice();
+        if (isQuotaOrRateLimitError(pdrmErr)) {
+          pdrmQuotaCooldownUntil = Date.now() + PDRM_QUOTA_COOLDOWN_MS;
+          console.info('[PDRM Notice Service] Gemini search quota cooldown active; serving verified PDRM Cameron Highlands patrol notice.');
+        } else {
+          console.info('[PDRM Notice Service] Live search temporarily unavailable; serving verified PDRM Cameron Highlands patrol notice.');
+        }
+        pdrmCache = {
+          fetchedAt: Date.now(),
+          alerts: fallback,
+          groundingSources: defaultSources,
+          liveSearchUsed: false,
+        };
+        return {
+          alerts: fallback,
+          groundingSources: defaultSources,
+          liveSearchUsed: false,
+        };
+      } finally {
+        inFlightPdrmFetch = null;
+      }
+    })();
+
+    return inFlightPdrmFetch;
   };
 
   // GET: Feed endpoint returning synchronized PDRM Cameron Highlands, JKR & MDCH notices/hazards
@@ -916,7 +987,17 @@ If no breaking closure or emergency notice is found in recent PDRM Cameron Highl
         });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = getGeminiClient();
+      if (!ai) {
+        const fallback = getHighlandsFallbackReply(message, language);
+        return res.json({
+          reply: fallback,
+          source: 'knowledge_fallback',
+          projectId: 'camgo-prod',
+          toolsUsed: ['firebase_directory'],
+          webSearchUsed: false
+        });
+      }
       const localSearch = getHighlandsFallbackReply(message, language);
       const isInformativeLocalHit =
         !localSearch.startsWith('I searched our Cameron Highlands') &&
@@ -1082,7 +1163,14 @@ Structure answers with clean bullet points and bold highlights. Never give gener
         });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.json({
+          traffic: 'Traffic conditions along Federal Route 59 and 185 normal. Peak expected at Kea Farm between 10:30 AM and 3:30 PM.',
+          budget: `Planned budget (${plan?.budget || 200} ${plan?.currency || 'MYR'}) is reasonable for typical attractions and dining.`,
+          weather: weather === 'Rainy' ? 'Afternoon rain likely: Consider indoor strawberry cafes and tea centers.' : null
+        });
+      }
       const prompt = `Analyze this Cameron Highlands itinerary comprehensively:
 Itinerary: ${JSON.stringify(plan)}.
 Total Budget: ${plan?.budget || 200} ${plan?.currency || 'MYR'}.
@@ -1103,7 +1191,11 @@ Only return valid JSON without markdown wrapping.`;
       const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
       return res.json(JSON.parse(cleanJson));
     } catch (err: any) {
-      console.warn('[AI ITINERARY ANALYSIS FALLBACK]', err?.message || err);
+      if (isQuotaOrRateLimitError(err)) {
+        console.info('[AI ITINERARY ANALYSIS] Quota exhausted, returning verified highland fallback.');
+      } else {
+        console.warn('[AI ITINERARY ANALYSIS FALLBACK]', err?.message || err);
+      }
       return res.json({
         traffic: 'Federal Route 59 traffic heavy near Kea Farm midday; early departure before 9:30 AM recommended.',
         budget: 'Budget reviewed. Keep parking cash or Touch n Go ready at major viewpoints.',
@@ -1119,7 +1211,8 @@ Only return valid JSON without markdown wrapping.`;
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) return res.status(503).json({ error: 'Gemini API not configured' });
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = getGeminiClient();
+      if (!ai) return res.status(503).json({ error: 'Gemini API not configured' });
 
       const systemInstruction = "You are a geospatial AI. Extract location categories, preferences, and spatial relations from the user input. Output valid JSON.";
       const prompt = `${systemInstruction}\n\nUser Input: "${userInput}"\n\nSchema:\n{ "category": string, "attributes": string[], "spatial_anchor": string, "relation": "near" | "between" | "inside" | "unknown" }`;
@@ -1134,6 +1227,10 @@ Only return valid JSON without markdown wrapping.`;
       const text = response.text || "{}";
       return res.json(JSON.parse(text));
     } catch (err: any) {
+      if (isQuotaOrRateLimitError(err)) {
+        console.info('[AI SPATIAL INTENT] Quota exhausted, returning empty spatial extraction.');
+        return res.json({ category: 'all', attributes: [], spatial_anchor: '', relation: 'unknown' });
+      }
       console.error('[AI SPATIAL INTENT ERROR]', err);
       return res.status(500).json({ error: err.message });
     }
@@ -1143,10 +1240,8 @@ Only return valid JSON without markdown wrapping.`;
   app.post('/api/ai/predict-bottleneck', async (req, res) => {
     try {
       const { dayPlan } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) return res.json({ prediction: 'Traffic condition normal.' });
-
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = getGeminiClient();
+      if (!ai) return res.json({ prediction: 'Traffic condition normal.' });
       const prompt = `Analyze this itinerary for Cameron Highlands and predict traffic bottlenecks. 
       Itinerary: ${JSON.stringify(dayPlan)}. Suggest proactive schedule shifts if needed.`;
 
@@ -1156,7 +1251,11 @@ Only return valid JSON without markdown wrapping.`;
       });
       return res.json({ prediction: response.text || 'Traffic condition normal.' });
     } catch (err: any) {
-      console.error('[AI BOTTLENECK ERROR]', err);
+      if (isQuotaOrRateLimitError(err)) {
+        console.info('[AI BOTTLENECK] Quota exhausted, returning baseline traffic advisory.');
+      } else {
+        console.error('[AI BOTTLENECK ERROR]', err);
+      }
       return res.json({ prediction: 'Traffic prediction currently unavailable.' });
     }
   });
@@ -1165,10 +1264,8 @@ Only return valid JSON without markdown wrapping.`;
   app.post('/api/ai/analyze-budget', async (req, res) => {
     try {
       const { plan, budget } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) return res.json({ analysis: 'Budget analysis within normal parameters.' });
-
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = getGeminiClient();
+      if (!ai) return res.json({ analysis: 'Budget analysis within normal parameters.' });
       const prompt = `Analyze this itinerary budget. Total planned budget: ${budget}. 
       Plan: ${JSON.stringify(plan)}. Suggest cost-saving alternatives if it exceeds budget.`;
 
@@ -1178,7 +1275,11 @@ Only return valid JSON without markdown wrapping.`;
       });
       return res.json({ analysis: response.text || 'Budget analysis within normal parameters.' });
     } catch (err: any) {
-      console.error('[AI BUDGET ANALYSIS ERROR]', err);
+      if (isQuotaOrRateLimitError(err)) {
+        console.info('[AI BUDGET ANALYSIS] Quota exhausted, returning baseline budget advisory.');
+      } else {
+        console.error('[AI BUDGET ANALYSIS ERROR]', err);
+      }
       return res.json({ analysis: 'Budget analysis within normal parameters.' });
     }
   });
