@@ -22,6 +22,10 @@ import {
 import {
   normalizeNavigationText,
 } from '../services/navigationTtsService.ts';
+import {
+  findStrictMsMyVoice,
+} from '../services/voiceLocalizationService.ts';
+
 
 
 test('parseElevationToMeters converts formatted strings to integer', () => {
@@ -237,4 +241,24 @@ test('Navigation Text Normalization Utility: expands abbreviations and smooths l
   assert.ok(normEn.includes('kilometers'));
   assert.ok(normEn.includes('Federal Route 59'));
 });
+
+test('Strict Voice Matcher: finds ms-MY voice while strictly rejecting id-ID Indonesian accents', () => {
+  const mockVoices = [
+    { name: 'Indonesian Voice', lang: 'id-ID' } as SpeechSynthesisVoice,
+    { name: 'English Voice', lang: 'en-US' } as SpeechSynthesisVoice,
+    { name: 'Malaysian Voice', lang: 'ms-MY' } as SpeechSynthesisVoice,
+  ];
+
+  const matched = findStrictMsMyVoice(mockVoices);
+  assert.ok(matched);
+  assert.equal(matched?.lang, 'ms-MY');
+
+  const idOnlyVoices = [
+    { name: 'Indonesian Voice 1', lang: 'id-ID' } as SpeechSynthesisVoice,
+    { name: 'Indonesian Voice 2', lang: 'id' } as SpeechSynthesisVoice,
+  ];
+  const matchedId = findStrictMsMyVoice(idOnlyVoices);
+  assert.equal(matchedId, null);
+});
+
 

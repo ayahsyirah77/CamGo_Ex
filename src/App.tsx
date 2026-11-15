@@ -42,7 +42,7 @@ import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { MasjidSurauModal } from './components/MasjidSurauModal';
 import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
 import { EmergencySosWidget } from './components/EmergencySosWidget';
-import { MsMyVoiceBanner } from './components/MsMyVoiceBanner';
+import { VoiceLanguageManager } from './components/VoiceLanguageManager';
 import { MobileStickyFooter } from './components/MobileStickyFooter';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
@@ -573,7 +573,7 @@ export default function App() {
       />
 
       {/* ms-MY Voice Localization Prompt Banner */}
-      <MsMyVoiceBanner language={language} />
+      <VoiceLanguageManager language={language} />
 
       {/* PWA New Version Update Prompt */}
       <ReloadPrompt />
