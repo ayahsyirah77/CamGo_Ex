@@ -150,6 +150,17 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const prevMemberIdsRef = useRef<Set<string>>(new Set());
   const prevSessionCodeRef = useRef<string | null>(null);
 
+  // Incoming Party Chat Pop-Up Banner Notification
+  const [chatPopupBanner, setChatPopupBanner] = useState<{
+    id: string;
+    senderName: string;
+    senderColor: string;
+    text: string;
+    timestamp: string;
+  } | null>(null);
+  const seenChatMsgIdsRef = useRef<Set<string>>(new Set());
+  const prevChatSessionCodeRef = useRef<string | null>(null);
+
   // Dynamic Route & Path overlay state
   const [routeTravelMode, setRouteTravelMode] = useState<'walking' | 'driving'>('walking');
   const [routePoints, setRoutePoints] = useState<[number, number][] | null>(null);
@@ -161,6 +172,61 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [activeTab, session?.messages?.length]);
+
+  // Detect new incoming chat messages while viewing Live Map or other non-chat tabs
+  useEffect(() => {
+    if (!isOpen || !session?.code) {
+      seenChatMsgIdsRef.current = new Set();
+      prevChatSessionCodeRef.current = null;
+      setChatPopupBanner(null);
+      return;
+    }
+
+    const msgs = Array.isArray(session.messages) ? session.messages : [];
+    const getMsgKey = (m: any) => String(m?.id || `${m?.senderId}-${m?.timestamp}-${m?.text}`);
+
+    if (prevChatSessionCodeRef.current !== session.code) {
+      prevChatSessionCodeRef.current = session.code;
+      seenChatMsgIdsRef.current = new Set(msgs.map(getMsgKey));
+      return;
+    }
+
+    let latestUnseenIncoming: any = null;
+    msgs.forEach((m: any) => {
+      const key = getMsgKey(m);
+      if (!seenChatMsgIdsRef.current.has(key)) {
+        seenChatMsgIdsRef.current.add(key);
+        if (!showLiveMapModal && activeTab !== 'chat' && m.senderId !== memberId) {
+          latestUnseenIncoming = m;
+        }
+      }
+    });
+
+    if (latestUnseenIncoming) {
+      setChatPopupBanner({
+        id: getMsgKey(latestUnseenIncoming),
+        senderName: latestUnseenIncoming.senderName || 'Party Member',
+        senderColor: latestUnseenIncoming.senderColor || '#10b981',
+        text: latestUnseenIncoming.text || (language === 'bm' ? 'Hantar mesej baharu' : 'Sent a new message'),
+        timestamp: latestUnseenIncoming.timestamp || new Date().toISOString(),
+      });
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([35, 45, 35]);
+      }
+    }
+  }, [isOpen, showLiveMapModal, session?.code, session?.messages, activeTab, memberId, language]);
+
+  useEffect(() => {
+    if (activeTab === 'chat' && chatPopupBanner) {
+      setChatPopupBanner(null);
+    }
+  }, [activeTab, chatPopupBanner]);
+
+  useEffect(() => {
+    if (!chatPopupBanner) return;
+    const timer = setTimeout(() => setChatPopupBanner(null), 10000);
+    return () => clearTimeout(timer);
+  }, [chatPopupBanner]);
 
   const handleSendChatMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -2027,6 +2093,61 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                   >
                     <X className="w-4 h-4" />
                   </button>
+                </div>
+              )}
+
+              {/* Clickable Incoming Party Chat Pop-Up Banner Notification (Opens Chat without closing Maps) */}
+              {chatPopupBanner && activeTab !== 'chat' && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setChatPopupBanner(null);
+                    setActiveTab('chat');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setChatPopupBanner(null);
+                      setActiveTab('chat');
+                    }
+                  }}
+                  className="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-stone-950/98 via-emerald-950/95 to-stone-950/98 border-2 border-emerald-400/80 text-white shadow-[0_12px_32px_rgba(16,185,129,0.3)] flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-200 cursor-pointer hover:border-emerald-300 transition-all"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div
+                      className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border border-white/25 shadow-sm"
+                      style={{ backgroundColor: chatPopupBanner.senderColor || '#10b981' }}
+                    >
+                      <MessageSquare className="w-4 h-4 text-white animate-bounce" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                        <span>{language === 'bm' ? 'Mesej Sembang Baharu' : 'New Party Chat'}</span>
+                        <span className="text-stone-400">•</span>
+                        <span className="text-white truncate">{chatPopupBanner.senderName}</span>
+                      </div>
+                      <div className="text-xs font-bold text-stone-100 truncate mt-0.5">
+                        {chatPopupBanner.text}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="px-2.5 py-1 rounded-xl bg-emerald-500 text-stone-950 text-[10px] font-black">
+                      {language === 'bm' ? 'Buka Sembang' : 'Open Chat'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setChatPopupBanner(null);
+                      }}
+                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-stone-200 hover:text-white cursor-pointer"
+                      aria-label="Dismiss chat notification"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               )}
 

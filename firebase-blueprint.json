@@ -192,6 +192,36 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "imageUrl"]
+    },
+    "CamgoHazard": {
+      "title": "CamgoHazard",
+      "description": "Geolocated Cameron Highlands traffic hazard with peer consensus voting and telemetry anomaly tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "titleBm": { "type": "string" },
+        "description": { "type": "string" },
+        "descriptionBm": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["landslide", "accident", "roadblock", "fallen_tree", "flood", "sudden_congestion"]
+        },
+        "severity": { "type": "string", "enum": ["low", "moderate", "high", "critical"] },
+        "location": { "type": "string" },
+        "corridor": { "type": "string" },
+        "milestoneKm": { "type": "number" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "source": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "cleared"] },
+        "stillThereVotes": { "type": "number" },
+        "clearedVotes": { "type": "number" },
+        "isProvisional": { "type": "boolean" },
+        "timestamp": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "type", "location", "lat", "lng", "status", "stillThereVotes", "clearedVotes", "timestamp"]
     }
   },
   "firestore": {
@@ -202,6 +232,10 @@
     "hazard_alerts/{alertId}": {
       "schema": { "$ref": "HazardAlert" },
       "description": "Collection of hazard alerts"
+    },
+    "camgo_hazards/{hazardId}": {
+      "schema": { "$ref": "CamgoHazard" },
+      "description": "Normalized Cameron Highlands geolocated hazards with peer consensus voting"
     },
     "events/{eventId}": {
       "schema": { "$ref": "Event" },

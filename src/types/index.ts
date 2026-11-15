@@ -307,6 +307,43 @@ export interface HazardAlert {
   lastVerified?: string;
 }
 
+export type CamgoHazardType =
+  | 'landslide'
+  | 'accident'
+  | 'roadblock'
+  | 'fallen_tree'
+  | 'flood'
+  | 'sudden_congestion';
+
+export interface CamgoHazard {
+  id: string;
+  title: string;
+  titleBm?: string;
+  description: string;
+  descriptionBm?: string;
+  type: CamgoHazardType;
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  location: string;
+  corridor?: string;
+  milestoneKm?: number | null;
+  lat: number;
+  lng: number;
+  source: string;
+  sourceChannel?: string;
+  rawText?: string;
+  status: 'active' | 'cleared';
+  stillThereVotes: number;
+  clearedVotes: number;
+  isProvisional?: boolean;
+  baselineSpeedKmh?: number;
+  liveSpeedKmh?: number;
+  speedDropPercent?: number;
+  extractionMethod?: 'gemini_multimodal' | 'deterministic_nlp_fallback' | 'telemetry_anomaly';
+  timestamp: string;
+  updatedAt?: string;
+  clearedAt?: string;
+}
+
 export interface VisitorLogEntry {
   id: string;
   visitorId: string;

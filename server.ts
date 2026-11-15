@@ -1,10 +1,12 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
 import { WebSocketServer, WebSocket } from 'ws';
+import { processAndIngestHazard } from './server/hazardIngestion';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +19,7 @@ async function startServer() {
   // Real-Time WebSocket Connected Clients Registry
   const connectedClients = new Set<WebSocket>();
 
-  app.use(express.json());
+  app.use(express.json({ limit: '15mb' }));
 
   // Automated Backend API: Emergency SOS Dispatch
   app.post('/api/emergency/dispatch', async (req, res) => {
@@ -127,6 +129,180 @@ async function startServer() {
     } catch (err: any) {
       console.error('[EMERGENCY SOS DISPATCH ERROR]', err);
       return res.status(500).json({ success: false, error: err.message || 'Dispatch failure' });
+    }
+  });
+
+  // Helper: Resolve Firebase projectId for Firestore REST sync
+  const resolveFirebaseProjectId = (): string | null => {
+    if (process.env.VITE_FIREBASE_PROJECT_ID) return process.env.VITE_FIREBASE_PROJECT_ID;
+    if (process.env.FIREBASE_PROJECT_ID) return process.env.FIREBASE_PROJECT_ID;
+    try {
+      const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(cfgPath)) {
+        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+        if (cfg?.projectId) return String(cfg.projectId);
+      }
+    } catch {
+      // ignore config read error
+    }
+    return null;
+  };
+
+  const toFirestoreRestValue = (val: unknown): Record<string, any> => {
+    if (val === null || val === undefined) return { nullValue: null };
+    if (typeof val === 'string') return { stringValue: val };
+    if (typeof val === 'boolean') return { booleanValue: val };
+    if (typeof val === 'number') {
+      return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+    }
+    if (Array.isArray(val)) {
+      return { arrayValue: { values: val.map((item) => toFirestoreRestValue(item)) } };
+    }
+    if (typeof val === 'object') {
+      const fields: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        if (v !== undefined) {
+          fields[k] = toFirestoreRestValue(v);
+        }
+      }
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(val) };
+  };
+
+  const syncSosDispatchToFirestore = async (
+    dispatchId: string,
+    record: Record<string, unknown>
+  ): Promise<{ synced: boolean; docPath: string; error?: string }> => {
+    const projectId = resolveFirebaseProjectId();
+    const docPath = `sos_dispatches/${dispatchId}`;
+    if (!projectId) {
+      return { synced: false, docPath, error: 'Missing Firebase projectId' };
+    }
+
+    const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      projectId
+    )}/databases/(default)/documents/sos_dispatches/${encodeURIComponent(dispatchId)}`;
+
+    const fields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(record)) {
+      if (v !== undefined) {
+        fields[k] = toFirestoreRestValue(v);
+      }
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { synced: false, docPath, error: `Firestore REST ${resp.status}: ${errText.slice(0, 160)}` };
+      }
+      return { synced: true, docPath };
+    } catch (err: any) {
+      return { synced: false, docPath, error: err?.message || 'Firestore network error' };
+    }
+  };
+
+  // Offline PWA Background Sync & Live SOS Endpoint (/api/sos)
+  app.post('/api/sos', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const dispatchId = String(
+        body.id || `sos-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`
+      );
+      const lat = typeof body.lat === 'number' && Number.isFinite(body.lat) ? body.lat : 4.472145;
+      const lng = typeof body.lng === 'number' && Number.isFinite(body.lng) ? body.lng : 101.376829;
+      const accuracy = typeof body.accuracy === 'number' ? body.accuracy : null;
+      const timestamp = body.timestamp ? String(body.timestamp) : new Date().toISOString();
+      const syncedAt = new Date().toISOString();
+      const userHandle = String(
+        body.userHandle || body.emergencyCard?.fullLegalName || body.senderName || 'Highland Visitor'
+      );
+      const sosType = String(body.sosType || 'critical');
+      const severity = String(body.severity || 'critical');
+      const recipientPhone = String(body.recipientPhone || '999');
+      const emergencyCard = body.emergencyCard || undefined;
+      const queuedOffline = Boolean(body.queuedOffline);
+      const attempts = Number.isFinite(Number(body.attempts)) ? Number(body.attempts) : 0;
+      const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+
+      const firestoreRecord: Record<string, unknown> = {
+        id: dispatchId,
+        userId: userHandle,
+        userHandle,
+        sosType,
+        severity,
+        recipientPhone,
+        coordinates: { lat, lng },
+        accuracy,
+        googleMapsUrl: mapsUrl,
+        emergencyCard: emergencyCard || null,
+        dispatchedAt: timestamp,
+        syncedAt,
+        queuedOffline,
+        attempts,
+        status: 'dispatched',
+        channel: queuedOffline
+          ? 'PWA Background Sync (Offline Outbox -> Cloud)'
+          : 'CamGo Direct Cloud SOS API',
+      };
+
+      const firestoreResult = await syncSosDispatchToFirestore(dispatchId, firestoreRecord);
+
+      console.log(
+        `[CAMGO SOS API] ID=${dispatchId} | Handle=${userHandle} | Type=${sosType} (${severity}) | GPS=${lat.toFixed(5)},${lng.toFixed(5)} | OfflineQueued=${queuedOffline} | FirestoreSynced=${firestoreResult.synced}`
+      );
+
+      // Broadcast Critical SOS Alert over WebSocket Grid
+      const sosBroadcastMsg = JSON.stringify({
+        id: dispatchId,
+        event: 'sos_alert',
+        priority: 'critical',
+        payload: {
+          title: `${queuedOffline ? 'OFFLINE-SYNCED SOS' : 'CRITICAL SOS'}: ${userHandle}`,
+          message: `Emergency beacon (${sosType}) synced. Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}.`,
+          sender: userHandle,
+          sosType,
+          severity,
+          location: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+          phone: recipientPhone,
+          dispatchId,
+          mapsUrl,
+          queuedOffline,
+        },
+        timestamp: syncedAt,
+      });
+
+      for (const client of connectedClients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(sosBroadcastMsg);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        id: dispatchId,
+        dispatchId,
+        status: 'synced',
+        syncedAt,
+        queuedOffline,
+        firestoreSynced: firestoreResult.synced,
+        firestoreDocPath: firestoreResult.docPath,
+        firestoreError: firestoreResult.error,
+        googleMapsUrl: mapsUrl,
+      });
+    } catch (err: any) {
+      console.error('[CAMGO /api/sos ERROR]', err);
+      return res.status(500).json({ success: false, error: err?.message || 'SOS sync failure' });
     }
   });
   // Local Knowledge Fallback Engine for Cameron Highlands & Website Search
@@ -942,6 +1118,50 @@ If no breaking closure or emergency notice is found in recent PDRM Cameron Highl
     }
   });
 
+  // POST: Multi-modal Background Ingestion Engine (Telegram / JKR / PDRM Text or Infographic OCR -> Firestore camgo_hazards)
+  app.post('/api/hazards/ingest', async (req, res) => {
+    try {
+      const { text, imageBase64, mimeType, source, sourceChannel, autoSyncFirestore } = req.body || {};
+      if ((!text || !String(text).trim()) && !imageBase64) {
+        return res.status(400).json({
+          success: false,
+          error: 'Either alert text or base64 image payload is required.',
+        });
+      }
+
+      const result = await processAndIngestHazard({
+        text: typeof text === 'string' ? text : undefined,
+        imageBase64: typeof imageBase64 === 'string' ? imageBase64 : undefined,
+        mimeType: typeof mimeType === 'string' ? mimeType : undefined,
+        source: typeof source === 'string' ? source : undefined,
+        sourceChannel: typeof sourceChannel === 'string' ? sourceChannel : undefined,
+        autoSyncFirestore: autoSyncFirestore !== false,
+      });
+
+      // Notify live connected clients via WebSocket grid
+      const wsPayload = JSON.stringify({
+        id: result.document.id,
+        event: 'camgo_hazard_ingested',
+        priority: result.document.severity === 'critical' ? 'critical' : 'high',
+        payload: result.document,
+        timestamp: result.document.timestamp,
+      });
+      for (const client of connectedClients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(wsPayload);
+        }
+      }
+
+      return res.json(result);
+    } catch (err: any) {
+      console.error('[HAZARD INGESTION API ERROR]', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed to ingest hazard alert',
+      });
+    }
+  });
+
   // Backwards compatibility endpoint: Alerts API
   app.get('/api/alerts', async (_req, res) => {
     const pdrmResult = await fetchLivePdrmNotices(false);
@@ -1236,6 +1456,52 @@ Only return valid JSON without markdown wrapping.`;
     }
   });
 
+  // Neural TTS Turn-by-Turn Navigation Proxy Endpoint (/api/tts/navigate)
+  app.post('/api/tts/navigate', async (req, res) => {
+    try {
+      const { text, language = 'bm', speed = 1.0 } = req.body || {};
+      const cleanText = String(text || '').trim();
+      if (!cleanText) {
+        return res.status(400).json({ error: 'Text payload required for TTS' });
+      }
+
+      // If ElevenLabs or Google Cloud TTS API keys are configured, proxy request
+      const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
+      if (elevenLabsKey) {
+        // Default multilingual V2 voice ID or custom Malay voice
+        const voiceId = process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; // Rachel / Multilingual
+        const ttsResp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': elevenLabsKey,
+          },
+          body: JSON.stringify({
+            text: cleanText,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75,
+              speed: Number(speed) || 1.0,
+            },
+          }),
+        });
+
+        if (ttsResp.ok) {
+          const audioBuffer = await ttsResp.arrayBuffer();
+          res.setHeader('Content-Type', 'audio/mpeg');
+          return res.send(Buffer.from(audioBuffer));
+        }
+      }
+
+      // Fallback: Inform client to use browser Web Speech API ms-MY/en-US neural synthesis
+      return res.status(204).send();
+    } catch (err: any) {
+      console.warn('[TTS NAVIGATE PROXY WARNING]', err?.message || err);
+      return res.status(503).json({ error: 'TTS service unavailable, use Web Speech fallback' });
+    }
+  });
+
   // AI Bottleneck Prediction Endpoint
   app.post('/api/ai/predict-bottleneck', async (req, res) => {
     try {
@@ -1321,6 +1587,110 @@ Only return valid JSON without markdown wrapping.`;
       console.error('[WS BROADCAST ERROR]', err);
       return res.status(500).json({ success: false, error: err.message });
     }
+  });
+
+  // Live Cameron Highlands (JAKIM Zone PHG04) Prayer Times Endpoint
+  let prayerTimesCache: { dateKey: string; fetchedAt: number; data: any } | null = null;
+  app.get('/api/prayer-times', async (_req, res) => {
+    const nowKl = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
+    const dateKey = `${nowKl.getFullYear()}-${String(nowKl.getMonth() + 1).padStart(2, '0')}-${String(nowKl.getDate()).padStart(2, '0')}`;
+
+    if (prayerTimesCache && prayerTimesCache.dateKey === dateKey && Date.now() - prayerTimesCache.fetchedAt < 3600 * 1000) {
+      return res.json(prayerTimesCache.data);
+    }
+
+    const formatHhMm = (raw: any, fallback: string) => {
+      if (!raw) return fallback;
+      if (typeof raw === 'number') {
+        const d = new Date(raw * 1000);
+        return d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+      const m = String(raw).match(/(\d{1,2}):(\d{2})/);
+      return m ? `${m[1].padStart(2, '0')}:${m[2]}` : fallback;
+    };
+
+    try {
+      const controller = new AbortController();
+      const tId = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch('https://www.e-solat.gov.my/index.php?r=esolatApi/takwimsolat&period=today&zone=PHG04', {
+        signal: controller.signal,
+      });
+      clearTimeout(tId);
+      if (resp.ok) {
+        const json: any = await resp.json();
+        const item = Array.isArray(json?.prayerTime) ? json.prayerTime[0] : null;
+        if (item) {
+          const payload = {
+            zone: 'PHG04',
+            region: 'Cameron Highlands, Pahang',
+            date: dateKey,
+            source: 'JAKIM e-Solat',
+            prayerTimes: {
+              subuh: formatHhMm(item.fajr, '06:05'),
+              syuruk: formatHhMm(item.syuruk, '07:18'),
+              zohor: formatHhMm(item.dhuhr, '13:21'),
+              asar: formatHhMm(item.asr, '16:38'),
+              maghrib: formatHhMm(item.maghrib, '19:22'),
+              isyak: formatHhMm(item.isha, '20:33'),
+            },
+          };
+          prayerTimesCache = { dateKey, fetchedAt: Date.now(), data: payload };
+          return res.json(payload);
+        }
+      }
+    } catch {
+      // Fall back to WaktuSolat API or baseline highland schedule
+    }
+
+    try {
+      const controller = new AbortController();
+      const tId = setTimeout(() => controller.abort(), 4000);
+      const resp2 = await fetch('https://api.waktusolat.app/v2/solat/PHG04', { signal: controller.signal });
+      clearTimeout(tId);
+      if (resp2.ok) {
+        const json2: any = await resp2.json();
+        const dayOfMonth = nowKl.getDate();
+        const todayEntry = Array.isArray(json2?.prayers)
+          ? json2.prayers.find((p: any) => Number(p.day) === dayOfMonth) || json2.prayers[0]
+          : null;
+        if (todayEntry) {
+          const payload = {
+            zone: 'PHG04',
+            region: 'Cameron Highlands, Pahang',
+            date: dateKey,
+            source: 'WaktuSolat PHG04',
+            prayerTimes: {
+              subuh: formatHhMm(todayEntry.fajr, '06:05'),
+              syuruk: formatHhMm(todayEntry.syuruk, '07:18'),
+              zohor: formatHhMm(todayEntry.dhuhr, '13:21'),
+              asar: formatHhMm(todayEntry.asr, '16:38'),
+              maghrib: formatHhMm(todayEntry.maghrib, '19:22'),
+              isyak: formatHhMm(todayEntry.isha, '20:33'),
+            },
+          };
+          prayerTimesCache = { dateKey, fetchedAt: Date.now(), data: payload };
+          return res.json(payload);
+        }
+      }
+    } catch {
+      // Fallback below
+    }
+
+    const fallbackPayload = {
+      zone: 'PHG04',
+      region: 'Cameron Highlands, Pahang',
+      date: dateKey,
+      source: 'Highland Baseline PHG04',
+      prayerTimes: {
+        subuh: '06:05',
+        syuruk: '07:18',
+        zohor: '13:21',
+        asar: '16:38',
+        maghrib: '19:22',
+        isyak: '20:33',
+      },
+    };
+    return res.json(fallbackPayload);
   });
 
   if (process.env.NODE_ENV === 'production') {

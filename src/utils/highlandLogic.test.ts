@@ -8,7 +8,21 @@ import {
   filterPlacesByQuery,
   calculateDistanceKm,
   calculateTravelTimeMins,
+  applyHazardConsensusVote,
+  calculateSosBackoffMs,
+  buildNextSosRetryState,
 } from './highlandLogic.ts';
+import {
+  normalizeCameronHazardLocation,
+  extractMilestoneKm,
+} from '../../server/hazardIngestion.ts';
+import {
+  detectTelemetrySpeedAnomalies,
+} from '../services/tomtomTrafficService.ts';
+import {
+  normalizeNavigationText,
+} from '../services/navigationTtsService.ts';
+
 
 test('parseElevationToMeters converts formatted strings to integer', () => {
   assert.equal(parseElevationToMeters('1,560 m'), 1560);
@@ -106,3 +120,121 @@ test('calculateTravelTimeMins computes realistic winding mountain drive times', 
   const mins10km = calculateTravelTimeMins(10);
   assert.ok(mins10km >= 20 && mins10km <= 30, `10km drive time was ${mins10km}`);
 });
+
+test('normalizeCameronHazardLocation maps KM milestones & highland landmarks within CH bounds', () => {
+  assert.equal(extractMilestoneKm('Tanah runtuh di KM 43 Jalan Tapah-Ringlet'), 43);
+
+  const km43 = normalizeCameronHazardLocation('Jalan Tapah-Ringlet', 43, 'Tanah runtuh di KM 43 Jalan Tapah-Ringlet');
+  assert.equal(km43.corridor, 'tapah_ft59');
+  assert.equal(km43.milestoneKm, 43);
+  assert.ok(km43.lat >= 4.30 && km43.lat <= 4.42, `KM 43 lat unexpected: ${km43.lat}`);
+  assert.ok(km43.lng >= 101.32 && km43.lng <= 101.38, `KM 43 lng unexpected: ${km43.lng}`);
+
+  const keaFarm = normalizeCameronHazardLocation('Kea Farm', null, 'Pokok tumbang near Kea Farm');
+  assert.equal(keaFarm.corridor, 'central_highlands');
+  assert.ok(Math.abs(keaFarm.lat - 4.5028) < 0.01);
+});
+
+test('Module A: applyHazardConsensusVote expires hazard after 3 Cleared votes', () => {
+  let hazard: any = {
+    id: 'test-haz-1',
+    title: 'Fallen tree near Kea Farm',
+    description: 'Blocking one lane',
+    type: 'fallen_tree',
+    severity: 'high',
+    location: 'Kea Farm',
+    lat: 4.5028,
+    lng: 101.4072,
+    source: 'Telegram',
+    status: 'active',
+    stillThereVotes: 0,
+    clearedVotes: 0,
+    timestamp: new Date().toISOString(),
+  };
+
+  hazard = applyHazardConsensusVote(hazard, 'still_there');
+  assert.equal(hazard.stillThereVotes, 1);
+  assert.equal(hazard.status, 'active');
+
+  hazard = applyHazardConsensusVote(hazard, 'cleared');
+  assert.equal(hazard.clearedVotes, 1);
+  assert.equal(hazard.status, 'active');
+
+  hazard = applyHazardConsensusVote(hazard, 'cleared');
+  assert.equal(hazard.clearedVotes, 2);
+  assert.equal(hazard.status, 'active');
+
+  // 3rd Cleared vote automatically triggers expiry
+  hazard = applyHazardConsensusVote(hazard, 'cleared');
+  assert.equal(hazard.clearedVotes, 3);
+  assert.equal(hazard.status, 'cleared');
+  assert.ok(Boolean(hazard.clearedAt));
+});
+
+test('Module B: detectTelemetrySpeedAnomalies flags >= 70% speed drop vs baseline', () => {
+  const sampleDate = new Date('2026-11-15T10:00:00Z');
+  const anomalies = detectTelemetrySpeedAnomalies(
+    [
+      // 75% drop: 10 km/h vs 40 km/h baseline -> MUST trigger
+      {
+        corridorId: 'telemetry-ringlet-tanah-rata',
+        liveSpeedKmh: 10,
+        baselineSpeedKmh: 40,
+      },
+      // 40% drop: 24 km/h vs 40 km/h baseline -> MUST NOT trigger
+      {
+        corridorId: 'telemetry-tanah-rata-brinchang',
+        liveSpeedKmh: 24,
+        baselineSpeedKmh: 40,
+      },
+    ],
+    sampleDate
+  );
+
+  assert.equal(anomalies.length, 1);
+  assert.equal(anomalies[0].type, 'sudden_congestion');
+  assert.equal(anomalies[0].isProvisional, true);
+  assert.equal(anomalies[0].speedDropPercent, 75);
+});
+
+test('Offline SOS Retry Backoff: calculateSosBackoffMs scales exponentially and caps at 5 minutes', () => {
+  assert.equal(calculateSosBackoffMs(1), 5000);
+  assert.equal(calculateSosBackoffMs(2), 10000);
+  assert.equal(calculateSosBackoffMs(3), 20000);
+  assert.equal(calculateSosBackoffMs(4), 40000);
+  assert.equal(calculateSosBackoffMs(10), 300000);
+
+  const initialPacket = {
+    id: 'sos-offline-test',
+    lat: 4.4734,
+    lng: 101.3787,
+    attempts: 0,
+    status: 'queued',
+  };
+
+  const now = 1_700_000_000_000;
+  const retry1 = buildNextSosRetryState(initialPacket, 'Network dropped', now);
+  assert.equal(retry1.attempts, 1);
+  assert.equal(retry1.status, 'retry_scheduled');
+  assert.equal(retry1.nextRetryAt, now + 5000);
+  assert.equal(retry1.lastError, 'Network dropped');
+
+  const retry2 = buildNextSosRetryState(retry1, 'Timeout mid-sync', now + 5000);
+  assert.equal(retry2.attempts, 2);
+  assert.equal(retry2.nextRetryAt, now + 5000 + 10000);
+});
+
+test('Navigation Text Normalization Utility: expands abbreviations and smooths landmarks for TTS', () => {
+  const rawBm = 'Belok Kanan di KM 45 Jln Tapah - Ringlet & terus ke Kea Farm.';
+  const normBm = normalizeNavigationText(rawBm, 'bm');
+  assert.ok(normBm.includes('kilometer'));
+  assert.ok(normBm.includes('Jalan'));
+  assert.ok(normBm.includes('dan'));
+  assert.ok(normBm.includes('Ki Faam'));
+
+  const rawEn = 'Turn left at KM 12 FT 59 near Mossy Forest.';
+  const normEn = normalizeNavigationText(rawEn, 'en');
+  assert.ok(normEn.includes('kilometers'));
+  assert.ok(normEn.includes('Federal Route 59'));
+});
+

@@ -55,7 +55,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          importScripts: ['/sw-custom.js'],
+          importScripts: ['/sw-custom.js', '/sw-sos-sync.js'],
           skipWaiting: true,
           clientsClaim: true,
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,

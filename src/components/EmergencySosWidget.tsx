@@ -18,9 +18,16 @@ import {
   Settings,
   Navigation,
   Sparkles,
+  WifiOff,
+  Wifi,
+  RefreshCw,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react';
 import { Language, EmergencyCard } from '../types';
 import { firebaseService, DEFAULT_EMERGENCY_CARD } from '../services/firebase';
+import { useOfflineSos } from '../hooks/useOfflineSos';
+import { SosSeverityType } from '../services/offlineSosQueue';
 
 interface EmergencySosWidgetProps {
   language: Language;
@@ -112,11 +119,23 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
 
   // Active target recipient selector ('primary' | 'secondary' | 'custom')
   const [selectedTarget, setSelectedTarget] = useState<'primary' | 'secondary'>('primary');
+  const [sosType, setSosType] = useState<SosSeverityType>('critical');
+  const {
+    isOnline,
+    queuedPackets,
+    queuedCount,
+    isSyncing,
+    lastSyncedSummary,
+    dispatchSos,
+    retrySyncNow,
+    dismissSyncedConfirmation,
+  } = useOfflineSos();
 
   // Dispatch state
   const [dispatchStatus, setDispatchStatus] = useState<
-    'idle' | 'locating' | 'dispatching' | 'success' | 'error'
+    'idle' | 'locating' | 'dispatching' | 'success' | 'queued_offline' | 'error'
   >('idle');
+  const [bgSyncRegistered, setBgSyncRegistered] = useState<boolean>(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [dispatchedPayload, setDispatchedPayload] = useState<string | null>(null);
@@ -245,9 +264,15 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
 
     const destinationPhone = getTargetPhoneNumber();
     const mapsLink = `https://www.google.com/maps?q=${userCoords.lat},${userCoords.lng}`;
+    const sosTypeLabels: Record<SosSeverityType, string> = {
+      critical: 'CRITICAL EMERGENCY',
+      medical: 'MEDICAL EMERGENCY',
+      accident_landslide: 'ACCIDENT / LANDSLIDE',
+      stranded_lost: 'STRANDED / FOREST TRAIL',
+    };
 
     const formattedPayload = [
-      `🚨 CAMGO EMERGENCY SOS ALERT 🚨`,
+      `🚨 CAMGO ${sosTypeLabels[sosType]} ALERT 🚨`,
       `Name: ${emergencyCard.fullLegalName || 'Highland Visitor'}${
         emergencyCard.preferredName ? ` (${emergencyCard.preferredName})` : ''
       }`,
@@ -265,7 +290,7 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
         accuracy ? ` (±${Math.round(accuracy)}m)` : ''
       }`,
       `🗺️ Live Map: ${mapsLink}`,
-      `📞 Target ICE: ${destinationPhone}`,
+      `📞 Target ICE: ${destinationPhone || '999'}`,
       `⏱️ Dispatched: ${new Date().toLocaleTimeString('en-MY', {
         hour: '2-digit',
         minute: '2-digit',
@@ -280,20 +305,58 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
     // Build the native SMS URI
     const smsUrl = buildSmsUrl(destinationPhone, formattedPayload);
 
-    // Save dispatch record to telemetry/local log
+    const userHandle =
+      firebaseService.getCurrentUser()?.displayName ||
+      emergencyCard.preferredName ||
+      emergencyCard.fullLegalName ||
+      'Highland Visitor';
+
     try {
-      await firebaseService.dispatchEmergencySos(destinationPhone, userCoords, emergencyCard);
+      const outcome = await dispatchSos({
+        lat: userCoords.lat,
+        lng: userCoords.lng,
+        accuracy,
+        userHandle,
+        sosType,
+        severity: sosType === 'critical' || sosType === 'medical' ? 'critical' : 'high',
+        recipientPhone: destinationPhone || '999',
+        emergencyCard,
+      });
+
+      setBgSyncRegistered(outcome.backgroundSyncRegistered);
+
+      if (outcome.outcome === 'queued_offline') {
+        setDispatchStatus('queued_offline');
+        return;
+      }
+
+      setDispatchStatus('success');
+
+      // Also persist local dispatch telemetry record for quick UI history
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('emergency-sos-dispatched', {
+            detail: {
+              id: outcome.packet.id,
+              recipientPhone: destinationPhone || '999',
+              coordinates: userCoords,
+              dispatchedAt: outcome.packet.timestamp,
+            },
+          })
+        );
+      }
+
+      // Trigger device native SMS messaging app when online / cellular available
+      try {
+        if (destinationPhone) {
+          window.location.href = smsUrl;
+        }
+      } catch (err) {
+        console.warn('Native SMS protocol redirect note:', err);
+      }
     } catch (e: any) {
-      console.warn('Backend telemetry logging notice:', e);
-    }
-
-    setDispatchStatus('success');
-
-    // Automatically trigger the device's native SMS messaging app via sms: protocol
-    try {
-      window.location.href = smsUrl;
-    } catch (err) {
-      console.warn('Native SMS protocol redirect note:', err);
+      console.warn('SOS dispatch fallback notice:', e);
+      setDispatchStatus('queued_offline');
     }
   };
 
@@ -429,6 +492,90 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
 
                   {/* Main Emergency Dispatch Box */}
                   <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-red-950/80 via-stone-950 to-stone-900 border-2 border-red-500/50 shadow-xl shadow-red-950/50 space-y-3.5 relative overflow-hidden">
+                    {/* Network & Offline Background Sync Banner */}
+                    {!isOnline && (
+                      <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/50 flex items-center gap-2.5 text-[11px] text-amber-200">
+                        <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="font-bold text-amber-100">
+                            {language === 'bm' ? 'Mod Luar Talian Aktif: ' : 'No Signal Detected: '}
+                          </span>
+                          <span>
+                            {language === 'bm'
+                              ? 'SOS akan disimpan dalam IndexedDB & dihantar automatik apabila isyarat kembali.'
+                              : 'SOS payloads save locally to IndexedDB & auto-transmit via Background Sync when signal returns.'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Auto-Sync Success Confirmation Banner */}
+                    {lastSyncedSummary && (
+                      <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-400/50 flex items-start justify-between gap-2 text-xs text-emerald-100">
+                        <div className="flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                          <div>
+                            <div className="font-bold text-emerald-200">
+                              {language === 'bm'
+                                ? 'Isyarat Dikesan: SOS Berjaya Dihantar!'
+                                : 'Signal Restored: Queued SOS Transmitted!'}
+                            </div>
+                            <div className="text-[11px] text-emerald-300/90 mt-0.5">
+                              {language === 'bm'
+                                ? `Amaran luar talian (${lastSyncedSummary.sosType}) disahkan diterima pada ${new Date(
+                                    lastSyncedSummary.syncedAt
+                                  ).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })}.`
+                                : `Offline SOS (${lastSyncedSummary.sosType}) acknowledged by rescue server at ${new Date(
+                                    lastSyncedSummary.syncedAt
+                                  ).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })}.`}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={dismissSyncedConfirmation}
+                          className="p-1 rounded-lg hover:bg-emerald-500/20 text-emerald-300 cursor-pointer shrink-0"
+                          aria-label="Dismiss sync confirmation"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Active Queued Outbox Status (visible whenever packets remain in IndexedDB) */}
+                    {queuedCount > 0 && (
+                      <div className="p-3 rounded-xl bg-amber-950/70 border border-amber-500/50 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-xs font-bold text-amber-200">
+                            <Clock className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                            <span>
+                              {language === 'bm'
+                                ? `Mod Luar Talian: ${queuedCount} SOS disimpan setempat. Auto-hantar bila ada isyarat.`
+                                : `Offline Mode: SOS saved locally (${queuedCount} queued). Will auto-transmit when signal is detected.`}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px] text-amber-300/80 font-mono">
+                          <span>
+                            {queuedPackets[0]?.attempts
+                              ? `Retry #${queuedPackets[0].attempts} scheduled`
+                              : bgSyncRegistered
+                              ? 'SW Background Sync: sync-sos armed'
+                              : 'Offline Outbox: IndexedDB + Auto-Retry armed'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => retrySyncNow(true)}
+                            disabled={!isOnline || isSyncing}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 border border-amber-400/40 text-amber-100 font-sans font-bold text-[11px] cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                            <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="relative flex h-2.5 w-2.5">
@@ -436,7 +583,7 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
                           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
                         </span>
                         <span className="text-xs font-mono font-black uppercase tracking-wider text-red-300">
-                          Native Phone SMS &amp; GPS Dispatch
+                          {isOnline ? 'Live Cloud + Native SMS SOS' : 'Offline IndexedDB SOS Queue'}
                         </span>
                       </div>
                       <button
@@ -452,11 +599,49 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
                       </button>
                     </div>
 
+                    {/* SOS Severity / Emergency Category Selector */}
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] text-stone-400 flex items-center justify-between">
+                        <span>{language === 'bm' ? 'Jenis Kecemasan / Tahap:' : 'Emergency Type / Severity:'}</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono text-stone-400">
+                          {isOnline ? (
+                            <Wifi className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <WifiOff className="w-3 h-3 text-amber-400" />
+                          )}
+                          <span>{isOnline ? 'Signal Ready' : 'Zero Signal'}</span>
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                        {(
+                          [
+                            { id: 'critical', labelEn: 'Critical SOS', labelBm: 'Kritikal' },
+                            { id: 'medical', labelEn: 'Medical', labelBm: 'Perubatan' },
+                            { id: 'accident_landslide', labelEn: 'Landslide/Crash', labelBm: 'Kemalangan' },
+                            { id: 'stranded_lost', labelEn: 'Stranded/Lost', labelBm: 'Tersesat' },
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setSosType(opt.id)}
+                            className={`px-2 py-1.5 rounded-lg border font-semibold transition-all cursor-pointer truncate ${
+                              sosType === opt.id
+                                ? 'bg-red-500/25 border-red-400 text-white shadow-sm'
+                                : 'bg-stone-950/60 border-white/10 text-stone-400 hover:border-white/25'
+                            }`}
+                          >
+                            {language === 'bm' ? opt.labelBm : opt.labelEn}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Recipient Selector: ICE 1 vs ICE 2 */}
                     <div className="space-y-1.5">
                       <div className="text-stone-400 text-[11px] flex items-center justify-between">
                         <span>Select Target Contact to Receive SOS:</span>
-                        <span className="text-[10px] text-red-400 font-mono">No Twilio Required</span>
+                        <span className="text-[10px] text-red-400 font-mono">Offline-Safe Queue</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <button
@@ -510,11 +695,16 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
                           className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-extrabold text-sm tracking-wide shadow-lg shadow-red-950/80 flex items-center justify-center gap-2.5 active:scale-95 transition-transform cursor-pointer border border-red-400/40"
                         >
                           <MapPin className="w-4 h-4 text-white animate-bounce shrink-0" />
-                          <span>SEND SOS WITH LIVE GPS COORDINATES</span>
+                          <span>
+                            {isOnline
+                              ? 'SEND SOS WITH LIVE GPS COORDINATES'
+                              : 'SAVE OFFLINE SOS & ARM AUTO-SYNC'}
+                          </span>
                         </button>
                         <p className="text-[10px] text-stone-400 text-center">
-                          ⚡ Captures high-accuracy GPS &amp; triggers your device&apos;s native{' '}
-                          <code className="text-red-300 font-mono">sms:</code> messaging composer instantly.
+                          {isOnline
+                            ? '⚡ Captures GPS, notifies CamGo Rescue Grid & launches native sms: composer.'
+                            : '📡 Zero signal? Captures GPS & saves to IndexedDB to auto-transmit on signal.'}
                         </p>
                       </div>
                     )}
@@ -525,8 +715,67 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
                         <span>
                           {dispatchStatus === 'locating'
                             ? 'Capturing exact GPS coordinates via Geolocation API...'
-                            : 'Opening native messaging app via sms: protocol...'}
+                            : isOnline
+                            ? 'Transmitting SOS & opening native messaging...'
+                            : 'Saving SOS packet to IndexedDB & registering sync-sos...'}
                         </span>
+                      </div>
+                    )}
+
+                    {dispatchStatus === 'queued_offline' && (
+                      <div className="p-4 rounded-xl bg-stone-900 border border-amber-500/60 space-y-3">
+                        <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                          <WifiOff className="w-4 h-4 shrink-0" />
+                          <span>
+                            {language === 'bm'
+                              ? 'Mod Luar Talian: SOS disimpan setempat. Akan dihantar automatik apabila isyarat dikesan.'
+                              : 'Offline Mode: SOS saved locally. Will auto-transmit when signal is detected.'}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-stone-300 leading-relaxed">
+                          {language === 'bm'
+                            ? 'Koordinat GPS dan profil kecemasan anda telah disimpan selamat dalam IndexedDB bersama Background Sync (sync-sos). Anda juga boleh mencuba SMS selular langsung jika terdapat isyarat suara terhad:'
+                            : 'Your GPS pin and emergency payload are stored in IndexedDB with Service Worker Background Sync (sync-sos). You can also try direct cellular SMS below if faint voice bars appear:'}
+                        </p>
+
+                        {coords && (
+                          <div className="text-xs space-y-1 font-mono text-stone-300 bg-stone-950 p-2.5 rounded-lg border border-white/5">
+                            <div className="flex items-center justify-between">
+                              <span>GPS: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}</span>
+                              {gpsAccuracy && (
+                                <span className="text-[10px] text-amber-400">±{gpsAccuracy}m</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <a
+                            href={currentSmsUrl}
+                            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs transition-colors"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Try Native SMS</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => retrySyncNow(true)}
+                            disabled={!isOnline || isSyncing}
+                            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold text-xs transition-colors cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                            <span>{isSyncing ? 'Syncing...' : 'Retry Transmit'}</span>
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setDispatchStatus('idle')}
+                          className="text-[11px] text-stone-400 hover:text-white underline cursor-pointer block text-center w-full pt-0.5"
+                        >
+                          Send another / Update GPS pin
+                        </button>
                       </div>
                     )}
 

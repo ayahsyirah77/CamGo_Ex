@@ -1,4 +1,4 @@
-import { OperatingHours, DayOfWeek, DaySchedule } from '../types';
+import { OperatingHours, DayOfWeek, DaySchedule, CamgoHazard } from '../types';
 export type { OperatingHours, DayOfWeek, DaySchedule };
 
 export function parseElevationToMeters(elevationStr: string): number {
@@ -161,3 +161,63 @@ export function formatOperatingHours(hours: OperatingHours): string {
 
   return `${formatTimeTo12Hour(hours.from)} - ${formatTimeTo12Hour(hours.to)}`;
 }
+
+export const CLEARED_VOTE_EXPIRY_THRESHOLD = 3;
+
+export function applyHazardConsensusVote(
+  hazard: CamgoHazard,
+  vote: 'still_there' | 'cleared',
+  expiryThreshold: number = CLEARED_VOTE_EXPIRY_THRESHOLD
+): CamgoHazard {
+  const nowIso = new Date().toISOString();
+  if (vote === 'still_there') {
+    return {
+      ...hazard,
+      stillThereVotes: (hazard.stillThereVotes || 0) + 1,
+      status: 'active',
+      updatedAt: nowIso,
+    };
+  }
+
+  const nextCleared = (hazard.clearedVotes || 0) + 1;
+  const expired = nextCleared >= expiryThreshold;
+  return {
+    ...hazard,
+    clearedVotes: nextCleared,
+    status: expired ? 'cleared' : 'active',
+    updatedAt: nowIso,
+    ...(expired ? { clearedAt: nowIso } : {}),
+  };
+}
+
+export const SOS_BASE_BACKOFF_MS = 5000;
+export const SOS_MAX_BACKOFF_MS = 300000;
+
+export function calculateSosBackoffMs(attempts: number): number {
+  const safeAttempts = Math.max(1, Math.floor(attempts || 1));
+  return Math.min(SOS_MAX_BACKOFF_MS, SOS_BASE_BACKOFF_MS * Math.pow(2, safeAttempts - 1));
+}
+
+export function buildNextSosRetryState<T extends { attempts?: number; status?: string }>(
+  packet: T,
+  errorMessage: string,
+  nowMs: number = Date.now()
+): T & {
+  attempts: number;
+  status: 'retry_scheduled';
+  lastAttemptAt: number;
+  nextRetryAt: number;
+  lastError: string;
+} {
+  const nextAttempts = (packet.attempts || 0) + 1;
+  const backoffMs = calculateSosBackoffMs(nextAttempts);
+  return {
+    ...packet,
+    attempts: nextAttempts,
+    status: 'retry_scheduled',
+    lastAttemptAt: nowMs,
+    nextRetryAt: nowMs + backoffMs,
+    lastError: errorMessage,
+  };
+}
+

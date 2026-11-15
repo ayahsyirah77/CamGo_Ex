@@ -6,7 +6,7 @@ if (typeof window !== 'undefined') {
   (window as any).L = L;
 }
 
-import { Place, Township, MainCategory, Language, PlaceReview } from '../types';
+import { Place, Township, MainCategory, Language, PlaceReview, CamgoHazard } from '../types';
 import { firebaseService } from '../services/firebase';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
 import { getTranslation } from '../services/i18n';
@@ -33,7 +33,6 @@ import {
   X,
   RotateCcw,
   ZoomIn,
-  Search,
   TrendingUp,
   ChevronDown,
   ChevronUp,
@@ -58,7 +57,6 @@ import {
   CornerUpRight,
   CornerUpLeft,
   ArrowUp,
-  ArrowLeft,
   LocateFixed,
   Volume2,
   VolumeX,
@@ -66,27 +64,37 @@ import {
   Menu,
   Minimize2,
   Fuel,
+  Moon,
+  Bell,
+  ThumbsUp,
+  Send,
+  FileImage,
 } from 'lucide-react';
 import { TrafficForecastingModule } from './TrafficForecastingModule';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
+import { MapSearchBar, GeocodingSearchResult, CorridorNavOption } from './MapSearchBar';
 import { RouteOptimizer } from '../lib/ai/routeOptimizer';
 import { TelemetryMonitor } from '../lib/ai/telemetryMonitor';
+import {
+  PredictiveTrafficSegment,
+  PredictiveFlowSummaryStats,
+  TrafficFlowDataSource,
+  evaluateHistoricalSegmentFlow,
+  enrichSegmentsWithPredictiveFlow,
+  fetchTomTomPredictiveRoute,
+  computePredictiveRouteTravelTime,
+  monitorCorridorTelemetryAnomalies,
+  getTomTomApiKey,
+} from '../services/tomtomTrafficService';
+import {
+  camgoHazardsService,
+  CLEARED_VOTE_EXPIRY_THRESHOLD,
+} from '../services/camgoHazardsService';
 
 const aiRouteOptimizer = new RouteOptimizer();
 const telemetryMonitor = new TelemetryMonitor();
 
-export interface TrafficPolylineSegment {
-  id: string;
-  name: string;
-  corridor: 'simpang-pulai' | 'tapah' | 'sungai-koyan' | 'central';
-  color: string;
-  speedKmh: number;
-  condition: 'clear' | 'moderate' | 'heavy' | 'gridlock';
-  statusLabel: string;
-  delayMins: number;
-  coordinates: [number, number][];
-  advisory: string;
-}
+export type TrafficPolylineSegment = PredictiveTrafficSegment;
 
 export interface CongestionHotspotPoint {
   id: string;
@@ -107,28 +115,36 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
     id: 'ft185-flatland',
     name: 'FT 185 Simpang Pulai Foothill Pass',
     corridor: 'simpang-pulai',
-    color: '#10b981', // TomTom Green
+    roadClass: 'expressway',
+    freeFlowSpeedKmh: 92,
+    color: '#10b981',
     speedKmh: 88,
     condition: 'clear',
     statusLabel: 'Free Flow',
     delayMins: 0,
+    confidence: 0.91,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.542, 101.128],
       [4.549, 101.165],
       [4.555, 101.198],
       [4.560, 101.220],
     ],
-    advisory: 'Wide dual-lane expressway approach. Free flow speed.',
+    advisory: 'Wide dual-lane expressway approach. Historical free-flow profile stable.',
   },
   {
     id: 'ft185-pos-slim',
     name: 'FT 185 Pos Slim Mountain Ascent',
     corridor: 'simpang-pulai',
-    color: '#f59e0b', // TomTom Amber
+    roadClass: 'mountain_pass',
+    freeFlowSpeedKmh: 62,
+    color: '#f59e0b',
     speedKmh: 42,
     condition: 'moderate',
     statusLabel: 'Moderate Crawl',
     delayMins: 6,
+    confidence: 0.88,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.560, 101.220],
       [4.571, 101.265],
@@ -136,17 +152,21 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
       [4.578, 101.355],
       [4.572, 101.395],
     ],
-    advisory: 'Moderate crawl behind agricultural lorries on climbing grade.',
+    advisory: 'Moderate climb behind agricultural lorries; use designated passing lanes.',
   },
   {
     id: 'ft185-blue-valley',
     name: 'FT 185 Blue Valley to Kampung Raja',
     corridor: 'simpang-pulai',
-    color: '#10b981', // TomTom Green
+    roadClass: 'expressway',
+    freeFlowSpeedKmh: 60,
+    color: '#10b981',
     speedKmh: 54,
     condition: 'clear',
-    statusLabel: 'Smooth Flow',
+    statusLabel: 'Free Flow',
     delayMins: 1,
+    confidence: 0.87,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.572, 101.395],
       [4.5683, 101.4087],
@@ -160,66 +180,82 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
     id: 'ft59-tapah-lowland',
     name: 'FT 59 Tapah Foothill Approach',
     corridor: 'tapah',
-    color: '#10b981', // TomTom Green
+    roadClass: 'expressway',
+    freeFlowSpeedKmh: 76,
+    color: '#10b981',
     speedKmh: 72,
     condition: 'clear',
-    statusLabel: 'Clear',
+    statusLabel: 'Free Flow',
     delayMins: 0,
+    confidence: 0.90,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.202, 101.261],
       [4.240, 101.275],
       [4.280, 101.295],
     ],
-    advisory: 'NSE Exit 132 connection to foothills. Normal speeds.',
+    advisory: 'NSE Exit 132 connection to foothills. Smooth weekday flow.',
   },
   {
     id: 'ft59-lata-iskandar-approach',
     name: 'FT 59 Lata Iskandar Mountain Hairpins',
     corridor: 'tapah',
-    color: '#f59e0b', // TomTom Amber
+    roadClass: 'mountain_pass',
+    freeFlowSpeedKmh: 50,
+    color: '#f59e0b',
     speedKmh: 36,
     condition: 'moderate',
-    statusLabel: 'Winding Crawl',
+    statusLabel: 'Moderate Crawl',
     delayMins: 7,
+    confidence: 0.86,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.280, 101.295],
       [4.305, 101.310],
       [4.325, 101.322],
     ],
-    advisory: '300+ tight hairpin turns. Heavy brake usage required.',
+    advisory: '300+ tight hairpin turns. Expect slower afternoon & weekend ascent speeds.',
   },
   {
     id: 'ft59-lata-iskandar-choke',
     name: 'FT 59 Lata Iskandar Waterfall Squeeze',
     corridor: 'tapah',
-    color: '#ef4444', // TomTom Red
+    roadClass: 'mountain_pass',
+    freeFlowSpeedKmh: 44,
+    color: '#ef4444',
     speedKmh: 20,
     condition: 'heavy',
     statusLabel: 'Heavy Delays',
     delayMins: 16,
+    confidence: 0.85,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.325, 101.322],
       [4.331, 101.328],
       [4.340, 101.338],
     ],
-    advisory: 'Tourist vehicles stopping along roadside stalls and falls.',
+    advisory: 'Roadside fruit stalls and waterfall stops compress single-lane throughput.',
   },
   {
     id: 'ft59-ascent-ringlet',
     name: 'FT 59 Lata Iskandar to Ringlet Climb',
     corridor: 'tapah',
-    color: '#f59e0b', // TomTom Amber
+    roadClass: 'mountain_pass',
+    freeFlowSpeedKmh: 48,
+    color: '#f59e0b',
     speedKmh: 34,
     condition: 'moderate',
-    statusLabel: 'Steep Climb',
+    statusLabel: 'Moderate Crawl',
     delayMins: 8,
+    confidence: 0.86,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.340, 101.338],
       [4.375, 101.355],
       [4.400, 101.370],
       [4.4147, 101.3820],
     ],
-    advisory: 'Narrow mountain road ascending to southern gateway Ringlet.',
+    advisory: 'Narrow mountain climb ascending into southern Ringlet basin.',
   },
 
   // --- FT 102 Gua Musang / Sg Koyan Central Spine Road ---
@@ -227,27 +263,35 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
     id: 'ft102-csr-expressway',
     name: 'FT 102 Central Spine Road (Raub / Sg Koyan)',
     corridor: 'sungai-koyan',
-    color: '#10b981', // TomTom Green
-    speedKmh: 96,
+    roadClass: 'expressway',
+    freeFlowSpeedKmh: 98,
+    color: '#10b981',
+    speedKmh: 94,
     condition: 'clear',
-    statusLabel: 'Fast Free Flow',
+    statusLabel: 'Free Flow',
     delayMins: 0,
+    confidence: 0.92,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.215, 101.815],
       [4.260, 101.750],
       [4.320, 101.650],
     ],
-    advisory: 'Modern dual-carriageway with high overtaking safety.',
+    advisory: 'Modern dual-carriageway with consistently clear historical travel speeds.',
   },
   {
     id: 'ft102-mountain-sweep',
     name: 'FT 102 Pos Betau to Ringlet Mountain Sweep',
     corridor: 'sungai-koyan',
-    color: '#10b981', // TomTom Green
+    roadClass: 'expressway',
+    freeFlowSpeedKmh: 72,
+    color: '#10b981',
     speedKmh: 64,
     condition: 'clear',
-    statusLabel: 'Gentle Gradients',
+    statusLabel: 'Free Flow',
     delayMins: 2,
+    confidence: 0.89,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.320, 101.650],
       [4.345, 101.580],
@@ -255,7 +299,7 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
       [4.380, 101.450],
       [4.4147, 101.3820],
     ],
-    advisory: 'Wide radius sweeping turns. Fastest ascent with lowest delay.',
+    advisory: 'Wide-radius sweeping curves with lowest historical weekend delay.',
   },
 
   // --- Highland Central Valley Spine (FT 59 Intra-Highland) ---
@@ -263,60 +307,76 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
     id: 'central-ringlet-tanah-rata',
     name: 'Ringlet to Tanah Rata Valley Pass',
     corridor: 'central',
-    color: '#f59e0b', // TomTom Amber
+    roadClass: 'town_strip',
+    freeFlowSpeedKmh: 52,
+    color: '#f59e0b',
     speedKmh: 36,
     condition: 'moderate',
-    statusLabel: 'Steady Flow',
+    statusLabel: 'Moderate Crawl',
     delayMins: 5,
+    confidence: 0.88,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.4147, 101.3820],
       [4.435, 101.379],
       [4.455, 101.381],
       [4.4715, 101.3805],
     ],
-    advisory: 'Moderate traffic approaching Tanah Rata municipal centre.',
+    advisory: 'Steady valley traffic approaching Tanah Rata municipal center.',
   },
   {
     id: 'central-tanah-rata-town',
     name: 'Tanah Rata Town Commercial Strip',
     corridor: 'central',
-    color: '#ef4444', // TomTom Red
+    roadClass: 'town_strip',
+    freeFlowSpeedKmh: 45,
+    color: '#ef4444',
     speedKmh: 18,
     condition: 'heavy',
-    statusLabel: 'Township Congestion',
+    statusLabel: 'Heavy Delays',
     delayMins: 10,
+    confidence: 0.90,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.4715, 101.3805],
       [4.478, 101.382],
       [4.4815, 101.3855],
     ],
-    advisory: 'Heavy town center traffic at taxi stands and banks.',
+    advisory: 'Commercial core traffic around bus terminal, taxi ranks, and cafés.',
   },
   {
     id: 'central-golden-hills-brinchang',
     name: 'Golden Hills to Brinchang Commercial Hub',
     corridor: 'central',
-    color: '#ef4444', // TomTom Red
+    roadClass: 'town_strip',
+    freeFlowSpeedKmh: 45,
+    color: '#ef4444',
     speedKmh: 16,
     condition: 'heavy',
-    statusLabel: 'Tourist Crawl',
+    statusLabel: 'Heavy Delays',
     delayMins: 14,
+    confidence: 0.89,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.4815, 101.3855],
       [4.486, 101.387],
       [4.4905, 101.3892],
     ],
-    advisory: 'Weekend Pasar Malam congestion & hotel turn-offs.',
+    advisory: 'Golden Hills Pasar Malam & Brinchang town turn-off delays during peak hours.',
   },
   {
     id: 'central-kea-farm-gridlock',
-    name: 'Brinchang to Kea Farm Agro Market Choke',
+    name: 'Brinchang to Kea Farm Agro Market Spine',
     corridor: 'central',
-    color: '#dc2626', // TomTom Crimson (Severe Gridlock)
-    speedKmh: 7,
+    roadClass: 'town_strip',
+    freeFlowSpeedKmh: 42,
+    color: '#dc2626',
+    speedKmh: 11,
     condition: 'gridlock',
     statusLabel: 'Critical Gridlock',
-    delayMins: 28,
+    delayMins: 24,
+    confidence: 0.87,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.4905, 101.3892],
       [4.496, 101.398],
@@ -324,40 +384,132 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
       [4.5028, 101.4072],
       [4.506, 101.412],
     ],
-    advisory: 'Severe bottleneck. Market car parks full; pedestrian spillover.',
+    advisory: 'Highland market bottleneck; predictive curve slows sharply 10:00 AM–5:00 PM on weekends.',
   },
   {
     id: 'central-kea-tringkap',
     name: 'Kea Farm to Tringkap & Kuala Terla',
     corridor: 'central',
-    color: '#f59e0b', // TomTom Amber
+    roadClass: 'mountain_pass',
+    freeFlowSpeedKmh: 54,
+    color: '#f59e0b',
     speedKmh: 38,
     condition: 'moderate',
-    statusLabel: 'Gradual Clearing',
+    statusLabel: 'Moderate Crawl',
     delayMins: 4,
+    confidence: 0.85,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.506, 101.412],
       [4.5126, 101.4258],
       [4.530, 101.422],
       [4.5458, 101.4172],
     ],
-    advisory: 'Traffic opens up heading down towards vegetable farms.',
+    advisory: 'Agro-market traffic disperses north along vegetable valley bends.',
   },
   {
     id: 'central-terla-raja',
     name: 'Kuala Terla to Kampung Raja Hub',
     corridor: 'central',
-    color: '#10b981', // TomTom Green
+    roadClass: 'mountain_pass',
+    freeFlowSpeedKmh: 58,
+    color: '#10b981',
     speedKmh: 52,
     condition: 'clear',
-    statusLabel: 'Clear Mountain Route',
+    statusLabel: 'Free Flow',
     delayMins: 1,
+    confidence: 0.86,
+    dataSource: 'historical_predictive',
     coordinates: [
       [4.5458, 101.4172],
       [4.558, 101.413],
       [4.5683, 101.4087],
     ],
     advisory: 'Smooth route linking Northern Highlands to Simpang Pulai exit.',
+  },
+
+  // --- Rural Highland Plantation & Interior Stretches (Sparse Live Probe Fallback Coverage) ---
+  {
+    id: 'interior-kea-farm-agro-spur',
+    name: 'Kea Farm Interior Orchard & Berry Spur',
+    corridor: 'interior',
+    roadClass: 'rural_plantation',
+    freeFlowSpeedKmh: 36,
+    color: '#f59e0b',
+    speedKmh: 24,
+    condition: 'moderate',
+    statusLabel: 'Moderate Crawl',
+    delayMins: 7,
+    confidence: 0.84,
+    dataSource: 'historical_predictive',
+    coordinates: [
+      [4.5028, 101.4072],
+      [4.5065, 101.4105],
+      [4.5095, 101.4148],
+    ],
+    advisory: 'Rural agro-market spur with sparse GPS probes; uses historical harvest & tourist parking speeds.',
+  },
+  {
+    id: 'interior-boh-sg-palas',
+    name: 'Boh Tea Sungai Palas Estate Road',
+    corridor: 'interior',
+    roadClass: 'rural_plantation',
+    freeFlowSpeedKmh: 34,
+    color: '#f59e0b',
+    speedKmh: 21,
+    condition: 'heavy',
+    statusLabel: 'Heavy Delays',
+    delayMins: 9,
+    confidence: 0.84,
+    dataSource: 'historical_predictive',
+    coordinates: [
+      [4.5060, 101.4120],
+      [4.5105, 101.4142],
+      [4.5138, 101.4158],
+      [4.5162, 101.4165],
+    ],
+    advisory: 'Narrow single-lane plantation passing road; predictive historical delays peak 10:00 AM–3:30 PM.',
+  },
+  {
+    id: 'interior-mossy-forest-ridge',
+    name: 'Gunung Brinchang & Mossy Forest Ridge Road',
+    corridor: 'interior',
+    roadClass: 'rural_plantation',
+    freeFlowSpeedKmh: 30,
+    color: '#10b981',
+    speedKmh: 24,
+    condition: 'moderate',
+    statusLabel: 'Moderate Crawl',
+    delayMins: 4,
+    confidence: 0.83,
+    dataSource: 'historical_predictive',
+    coordinates: [
+      [4.5125, 101.3910],
+      [4.5180, 101.3885],
+      [4.5240, 101.3850],
+      [4.5278, 101.3822],
+    ],
+    advisory: 'High-altitude ridge track (~2,000m); cautious passing required around blind mist bends.',
+  },
+  {
+    id: 'interior-habu-plantation',
+    name: 'Habu Boh Tea & Highland Farm Backroad',
+    corridor: 'interior',
+    roadClass: 'rural_plantation',
+    freeFlowSpeedKmh: 42,
+    color: '#10b981',
+    speedKmh: 36,
+    condition: 'clear',
+    statusLabel: 'Free Flow',
+    delayMins: 1,
+    confidence: 0.85,
+    dataSource: 'historical_predictive',
+    coordinates: [
+      [4.4480, 101.3810],
+      [4.4515, 101.3925],
+      [4.4552, 101.4050],
+    ],
+    advisory: 'Interior plantation valley link; clear alternative outside central weekend surges.',
   },
 ];
 
@@ -450,7 +602,11 @@ export interface TurnByTurnRoute {
   destinationCoords: [number, number];
   distanceKm: number;
   durationMins: number;
+  historicDurationMins?: number;
+  noTrafficDurationMins?: number;
   aiAdjustedMins?: number;
+  predictiveSource?: TrafficFlowDataSource;
+  predictiveSummaryNote?: string;
   steps: RouteStep[];
   coordinates: [number, number][];
   waypoints?: Array<{ lat: number; lng: number; name: string }>;
@@ -483,6 +639,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const townshipLayerRef = useRef<L.LayerGroup | null>(null);
+  const hazardLayerRef = useRef<L.LayerGroup | null>(null);
   const activeTileLayerRef = useRef<L.TileLayer | null>(null);
 
   // Turn-by-Turn GPS Live Routing States & Refs
@@ -627,6 +784,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const lastSpokenNearbyRef = useRef<{ sig: string; timestamp: number }>({ sig: '', timestamp: 0 });
   const lastTurnSpeechAtRef = useRef<number>(0);
   const audioUnlockedRef = useRef<boolean>(false);
+  const speechTimeoutRef = useRef<number | null>(null);
+  const speechActiveTokenRef = useRef<number>(0);
+
+  // Module A & B: Geolocated CamGo Hazards (Firestore camgo_hazards) + Telemetry Anomaly Provisional Pins
+  const [activeCamgoHazards, setActiveCamgoHazards] = useState<CamgoHazard[]>([]);
+  const [telemetryAnomalies, setTelemetryAnomalies] = useState<CamgoHazard[]>([]);
+  const [selectedHazardModal, setSelectedHazardModal] = useState<CamgoHazard | null>(null);
+  const [isHazardIngestModalOpen, setIsHazardIngestModalOpen] = useState<boolean>(false);
+  const [ingestAlertText, setIngestAlertText] = useState<string>('');
+  const [ingestImageBase64, setIngestImageBase64] = useState<string | null>(null);
+  const [ingestImageMimeType, setIngestImageMimeType] = useState<string>('image/jpeg');
+  const [ingestSourceLabel, setIngestSourceLabel] = useState<string>('Telegram Traffic Channel');
+  const [isIngestingHazard, setIsIngestingHazard] = useState<boolean>(false);
+  const [ingestFeedback, setIngestFeedback] = useState<string | null>(null);
 
   const [activeMapType, setActiveMapType] = useState<'osm' | 'satellite' | 'terrain'>('osm');
   const [activeCategory, setActiveCategory] = useState<MainCategory | 'all'>(filterCategory);
@@ -640,6 +811,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState<boolean>(false);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
+  const mobileFilterMenuRef = useRef<HTMLDivElement | null>(null);
   
   // AI States
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -648,10 +820,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Close dropdown on click/touch outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
-      if (
-        filterMenuRef.current &&
-        !filterMenuRef.current.contains(event.target as Node)
-      ) {
+      const target = event.target as Node;
+      const inDesktop = filterMenuRef.current?.contains(target) ?? false;
+      const inMobile = mobileFilterMenuRef.current?.contains(target) ?? false;
+      if (!inDesktop && !inMobile) {
         setIsFilterMenuOpen(false);
       }
     };
@@ -682,14 +854,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Corridor Polyline Highlight State
   const corridorLayerRef = useRef<L.Polyline | null>(null);
 
-  // Live TomTom Traffic Flow Layer & Overlay States
+  // Smart Traffic & Predictive Flow Layer States
   const trafficOverlayLayerRef = useRef<L.LayerGroup | null>(null);
   const tomtomRasterTileRef = useRef<L.TileLayer | null>(null);
   const [isTrafficOverlayActive, setIsTrafficOverlayActive] = useState<boolean>(true);
   const [trafficLegendOpen, setTrafficLegendOpen] = useState<boolean>(false);
+  const [predictiveDepartureProfile, setPredictiveDepartureProfile] = useState<
+    'live' | 'weekend_peak' | 'evening_market' | 'night_clear'
+  >('live');
+  const [predictiveFlowStats, setPredictiveFlowStats] = useState<PredictiveFlowSummaryStats | null>(null);
   const [selectedHotspot, setSelectedHotspot] = useState<CongestionHotspotPoint | null>(null);
   const [tomTomKeyPresent, setTomTomKeyPresent] = useState<boolean>(() => {
-    return Boolean(localStorage.getItem('tomtom_api_key'));
+    return Boolean(getTomTomApiKey());
   });
 
   const [isVoiceNavEnabled, setIsVoiceNavEnabled] = useState<boolean>(() => {
@@ -721,7 +897,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const geofenceBannerTimerRef = useRef<number | null>(null);
   const [activeGeofenceBanner, setActiveGeofenceBanner] = useState<{
     id: string;
-    kind: 'attraction' | 'fuel';
+    kind: 'attraction' | 'fuel' | 'food';
     title: string;
     subtitle: string;
     voiceText: string;
@@ -729,6 +905,67 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     place?: Place;
   } | null>(null);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
+
+  // Muslim Prayer Time ("Coming Soon") Special Alert States (JAKIM Zone PHG04 Cameron Highlands)
+  interface PrayerTimesSchedule {
+    subuh: string;
+    syuruk: string;
+    zohor: string;
+    asar: string;
+    maghrib: string;
+    isyak: string;
+  }
+  const DEFAULT_PHG04_PRAYERS: PrayerTimesSchedule = {
+    subuh: '06:05',
+    syuruk: '07:18',
+    zohor: '13:21',
+    asar: '16:38',
+    maghrib: '19:22',
+    isyak: '20:33',
+  };
+  const [prayerSchedule, setPrayerSchedule] = useState<PrayerTimesSchedule>(DEFAULT_PHG04_PRAYERS);
+  const [prayerSourceLabel, setPrayerSourceLabel] = useState<string>('JAKIM PHG04');
+  const [isMuslimPrayerAlertsEnabled, setIsMuslimPrayerAlertsEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('camgo_muslim_prayer_alerts') !== 'false';
+  });
+  const isMuslimPrayerAlertsEnabledRef = useRef<boolean>(isMuslimPrayerAlertsEnabled);
+  useEffect(() => {
+    isMuslimPrayerAlertsEnabledRef.current = isMuslimPrayerAlertsEnabled;
+  }, [isMuslimPrayerAlertsEnabled]);
+
+  const [activePrayerAlert, setActivePrayerAlert] = useState<{
+    id: string;
+    prayerKey: string;
+    prayerName: string;
+    timeStr: string;
+    time12h: string;
+    minsRemaining: number;
+    status: 'coming_soon' | 'entered';
+    nearestMasjid?: Place | null;
+    nearestDistanceKm?: number | null;
+    voiceText: string;
+  } | null>(null);
+  const [nextPrayerInfo, setNextPrayerInfo] = useState<{
+    prayerKey: string;
+    prayerName: string;
+    time12h: string;
+    minsRemaining: number;
+  } | null>(null);
+  const triggeredPrayerKeysRef = useRef<Set<string>>(new Set());
+
+  // Normal Flat 2D Modal for Township Hubs when in Low-Horizon 3D Pitch Mode
+  const [selectedTownshipHubModal, setSelectedTownshipHubModal] = useState<{
+    township: Township;
+    description: string;
+    imageUrl: string;
+    clinicsOrHospitals: string;
+    policeStation: string;
+    publicToilet: string;
+    gasStation: string;
+    placesOfInterest: string[] | string;
+    attractionsList: string;
+  } | null>(null);
 
   // Dedicated Map Voice Guidance Language State ('bm' = Bahasa Malaysia, 'en' = English)
   const [mapVoiceLang, setMapVoiceLang] = useState<'bm' | 'en'>(() => {
@@ -870,6 +1107,21 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
+  const stopAllVoiceAlerts = () => {
+    speechActiveTokenRef.current += 1;
+    if (speechTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(speechTimeoutRef.current);
+      speechTimeoutRef.current = null;
+    }
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // ignore speech cancel errors
+      }
+    }
+  };
+
   const togglePwaAudioAlerts = (explicitNext?: boolean) => {
     const nextState = typeof explicitNext === 'boolean' ? explicitNext : !isVoiceNavEnabled;
     setIsVoiceNavEnabled(nextState);
@@ -882,8 +1134,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
     if (nextState) {
       unlockAudioEngine(true);
-    } else if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
+    } else {
+      stopAllVoiceAlerts();
     }
   };
 
@@ -900,7 +1152,15 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     const processedText = getVoiceInstruction(text, activeVoiceLang);
 
+    speechActiveTokenRef.current += 1;
+    const currentToken = speechActiveTokenRef.current;
+    if (speechTimeoutRef.current !== null) {
+      window.clearTimeout(speechTimeoutRef.current);
+      speechTimeoutRef.current = null;
+    }
+
     const dispatchSpeak = () => {
+      if (currentToken !== speechActiveTokenRef.current) return;
       try {
         if (synth.paused) {
           synth.resume();
@@ -926,7 +1186,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               preferredVoice = voices.find((v) => v.lang.toLowerCase().startsWith('ms'));
             }
             // Priority 3: Indonesian id-ID / id (Google Indonesian / Android TTS)
-            // Near-identical phonetics for Malay road names & vocabulary
             if (!preferredVoice) {
               preferredVoice = voices.find(
                 (v) =>
@@ -954,7 +1213,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     if (cancelExisting && (synth.speaking || synth.pending)) {
       synth.cancel();
-      window.setTimeout(dispatchSpeak, 65);
+      speechTimeoutRef.current = window.setTimeout(dispatchSpeak, 65);
     } else {
       dispatchSpeak();
     }
@@ -1013,80 +1272,101 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     handleSetMapVoiceLang(nextLang);
   };
 
-  const [trafficSegments, setTrafficSegments] = useState<TrafficPolylineSegment[]>(HIGHWAY_TRAFFIC_SEGMENTS);
+  const [trafficSegments, setTrafficSegments] = useState<TrafficPolylineSegment[]>(() =>
+    HIGHWAY_TRAFFIC_SEGMENTS.map((seg) => evaluateHistoricalSegmentFlow(seg, new Date()))
+  );
   const [congestionHotspots, setCongestionHotspots] = useState<CongestionHotspotPoint[]>(CONGESTION_HOTSPOTS);
 
-  // Periodically refresh/simluate traffic data pulse
+  const getPredictiveTargetDate = (
+    profile: 'live' | 'weekend_peak' | 'evening_market' | 'night_clear'
+  ): Date => {
+    const now = new Date();
+    if (profile === 'live') return now;
+
+    const preview = new Date(now);
+    if (profile === 'weekend_peak') {
+      // Shift to upcoming Saturday 11:30 AM for Peak Highland Traffic Pattern
+      const daysUntilSat = (6 - now.getDay() + 7) % 7;
+      preview.setDate(now.getDate() + daysUntilSat);
+      preview.setHours(11, 30, 0, 0);
+    } else if (profile === 'evening_market') {
+      // Friday Evening 18:30 Golden Hills / Brinchang Surge
+      const daysUntilFri = (5 - now.getDay() + 7) % 7;
+      preview.setDate(now.getDate() + daysUntilFri);
+      preview.setHours(18, 30, 0, 0);
+    } else {
+      preview.setHours(23, 30, 0, 0);
+    }
+    return preview;
+  };
+
+  // Enrich highway corridors & rural highland plantation stretches using TomTom Live + Historical Fallback
   useEffect(() => {
-    const updateSimulatedTraffic = () => {
-      if (localStorage.getItem('tomtom_api_key')) return; // Don't simulate if real key is present
+    let isMounted = true;
+    const controller = new AbortController();
 
-      const now = new Date();
-      const hour = now.getHours();
-      const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+    const refreshPredictiveFlow = async () => {
+      const targetDate = getPredictiveTargetDate(predictiveDepartureProfile);
+      const apiKey = predictiveDepartureProfile === 'live' ? getTomTomApiKey() : '';
 
-      setTrafficSegments(prev => prev.map(seg => {
-        let speedMult = 1.0;
-        let delayMult = 1.0;
+      const { segments, stats } = await enrichSegmentsWithPredictiveFlow(
+        HIGHWAY_TRAFFIC_SEGMENTS,
+        targetDate,
+        apiKey,
+        controller.signal
+      );
 
-        // Peak/Off-peak Simulation Logic
-        if (hour >= 22 || hour <= 6) {
-          speedMult = 1.3; // Night free flow
-          delayMult = 0.05; // Almost zero delay
-        } else if (isWeekend && hour >= 10 && hour <= 17) {
-          speedMult = 0.6; // Heavy weekend daytime
-          delayMult = 1.8;
-        } else if (hour >= 11 && hour <= 14) {
-          speedMult = 0.8; // Weekday lunch peak
-          delayMult = 1.2;
-        }
-        
-        const jitter = 0.95 + (Math.random() * 0.1);
-        const newSpeed = Math.round(seg.speedKmh * speedMult * jitter);
-        const newDelay = Math.round(seg.delayMins * delayMult * jitter);
-        
-        // Dynamic status based on speed
-        let status: 'clear' | 'moderate' | 'heavy' | 'gridlock' = 'clear';
-        if (newSpeed < 15) status = 'gridlock';
-        else if (newSpeed < 30) status = 'heavy';
-        else if (newSpeed < 45) status = 'moderate';
+      if (!isMounted || controller.signal.aborted) return;
 
-        return {
-          ...seg,
-          speedKmh: newSpeed,
-          delayMins: newDelay,
-          condition: status,
-          statusLabel: status === 'gridlock' ? 'Critical Gridlock' : status === 'heavy' ? 'Heavy Delays' : status === 'moderate' ? 'Moderate Crawl' : 'Free Flow',
-          color: status === 'gridlock' ? '#dc2626' : status === 'heavy' ? '#ef4444' : status === 'moderate' ? '#f59e0b' : '#10b981'
-        };
-      }));
+      setTrafficSegments(segments);
+      setPredictiveFlowStats(stats);
 
-      setCongestionHotspots(prev => prev.map(hot => {
-        let delayMult = 1.0;
-        if (hour >= 19 || hour <= 7) {
-          delayMult = 0.1; // Night/Evening clearing at tourist spots
-        } else if (isWeekend) {
-          delayMult = 1.5;
-        }
+      const hour = targetDate.getHours();
+      const isWeekend = targetDate.getDay() === 0 || targetDate.getDay() === 6;
 
-        const jitter = 0.9 + (Math.random() * 0.2);
-        const newDelay = Math.round(hot.delayMins * delayMult * jitter);
-        const newSpeed = Math.round(hot.speedKmh * (1/delayMult || 1) * jitter);
+      setCongestionHotspots(
+        CONGESTION_HOTSPOTS.map((hot) => {
+          let delayMult = 1.0;
+          if (hour >= 20 || hour <= 7) {
+            delayMult = 0.12;
+          } else if (isWeekend && hour >= 9 && hour <= 17) {
+            delayMult = 1.25;
+          } else if (hour >= 10 && hour <= 15) {
+            delayMult = 0.72;
+          } else {
+            delayMult = 0.45;
+          }
 
-        return {
-          ...hot,
-          speedKmh: Math.max(5, Math.min(80, newSpeed)),
-          delayMins: newDelay,
-          severity: newDelay > 20 ? 'gridlock' : newDelay > 10 ? 'heavy' : 'moderate',
-          color: newDelay > 20 ? '#dc2626' : newDelay > 10 ? '#ef4444' : '#f59e0b'
-        };
-      }));
+          const predictedDelay = Math.max(1, Math.round(hot.delayMins * delayMult));
+          const predictedSpeed = Math.max(
+            6,
+            Math.min(62, Math.round(hot.speedKmh / Math.max(0.25, delayMult)))
+          );
+          const severity: 'gridlock' | 'heavy' | 'moderate' =
+            predictedDelay >= 20 ? 'gridlock' : predictedDelay >= 10 ? 'heavy' : 'moderate';
+
+          return {
+            ...hot,
+            speedKmh: predictedSpeed,
+            delayMins: predictedDelay,
+            severity,
+            color: severity === 'gridlock' ? '#dc2626' : severity === 'heavy' ? '#ef4444' : '#f59e0b',
+          };
+        })
+      );
     };
 
-    const interval = setInterval(updateSimulatedTraffic, 1000 * 60 * 5); // Update every 5 mins
-    updateSimulatedTraffic(); // Initial call
-    return () => clearInterval(interval);
-  }, []);
+    refreshPredictiveFlow();
+    const interval = window.setInterval(refreshPredictiveFlow, 1000 * 120); // Refresh every 2 mins
+    window.addEventListener('tomtom-key-updated', refreshPredictiveFlow);
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+      window.clearInterval(interval);
+      window.removeEventListener('tomtom-key-updated', refreshPredictiveFlow);
+    };
+  }, [predictiveDepartureProfile]);
 
   // Real-Time Distance & Mountain Driving Time Calculator (Haversine Formula)
   const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -1181,25 +1461,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   };
 
   // Map Traffic Search & Forecasting Navigation Feature
-  const [mapTrafficSearchQuery, setMapTrafficSearchQuery] = useState('');
-  const [isTrafficSearchDropdownOpen, setIsTrafficSearchDropdownOpen] = useState(false);
   const [selectedCorridorId, setSelectedCorridorId] = useState<
     'simpang-pulai' | 'tapah' | 'sungai-koyan'
   >('simpang-pulai');
-  const trafficSearchRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (trafficSearchRef.current && !trafficSearchRef.current.contains(e.target as Node)) {
-        setIsTrafficSearchDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const TRAFFIC_NAV_ITEMS = [
+  const TRAFFIC_NAV_ITEMS: CorridorNavOption[] = [
     {
       id: 'simpang-pulai',
       type: 'corridor' as const,
@@ -1290,31 +1556,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     },
   ];
 
-  const searchQueryTrimmed = mapTrafficSearchQuery.trim().toLowerCase();
-
-  const matchingPlaceResults = searchQueryTrimmed
-    ? places.filter((p) => {
-        const nameMatch = p.name.toLowerCase().includes(searchQueryTrimmed) || (p.nameBm && p.nameBm.toLowerCase().includes(searchQueryTrimmed));
-        const townMatch = p.township.toLowerCase().includes(searchQueryTrimmed);
-        const subCatMatch = p.subCategory && p.subCategory.toLowerCase().includes(searchQueryTrimmed);
-        const catMatch = p.category.toLowerCase().includes(searchQueryTrimmed);
-        const tagMatch = p.tags && p.tags.some((t) => t.toLowerCase().includes(searchQueryTrimmed));
-        return nameMatch || townMatch || subCatMatch || catMatch || tagMatch;
-      }).slice(0, 6)
-    : [];
-
-  const filteredTrafficNavItems = searchQueryTrimmed
-    ? TRAFFIC_NAV_ITEMS.filter((item) =>
-        item.title.toLowerCase().includes(searchQueryTrimmed) ||
-        item.subtitle.toLowerCase().includes(searchQueryTrimmed) ||
-        item.badge.toLowerCase().includes(searchQueryTrimmed)
-      )
-    : TRAFFIC_NAV_ITEMS;
-
   const handleSelectPlaceOnMap = (place: Place) => {
     onSelectPlace(place);
-    setMapTrafficSearchQuery(language === 'bm' ? place.nameBm || place.name : place.name);
-    setIsTrafficSearchDropdownOpen(false);
 
     if (mapInstanceRef.current) {
       const defaultCoord = TOWNSHIP_COORDS[place.township] || { lat: 4.475, lng: 101.385 };
@@ -1330,9 +1573,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  const handleSelectTrafficNav = (item: (typeof TRAFFIC_NAV_ITEMS)[0]) => {
-    setMapTrafficSearchQuery(item.title);
-    setIsTrafficSearchDropdownOpen(false);
+  const handleSelectTrafficNav = (item: CorridorNavOption) => {
     setSelectedCorridorId(item.corridorId);
     handleSelectCorridorOnMap(item.corridorId);
 
@@ -1344,42 +1585,51 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  const handleSearchKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      const query = mapTrafficSearchQuery.trim();
-      if (!query) return;
-
-      // Check if it's likely a natural language query (contains spaces, more than 3 words)
-      if (query.split(' ').length > 2) {
-        setIsAiSearching(true);
-        try {
-          const intent = await geminiService.parseSpatialIntent(query);
-          if (intent && intent.category) {
-            // Find a place that matches the category
-            const matches = places.filter(p => 
-              p.category.toLowerCase().includes(intent.category.toLowerCase()) ||
-              (p.subCategory && p.subCategory.toLowerCase().includes(intent.category.toLowerCase())) ||
-              (p.tags && p.tags.some(t => t.toLowerCase().includes(intent.category.toLowerCase())))
-            );
-            
-            if (matches.length > 0) {
-              handleSelectPlaceOnMap(matches[0]);
-              setIsAiSearching(false);
-              return;
-            }
-          }
-        } catch (err) {
-          console.warn('AI search error:', err);
+  const handleAiSearchSubmit = async (queryText: string): Promise<boolean> => {
+    setIsAiSearching(true);
+    try {
+      const intent = await geminiService.parseSpatialIntent(queryText);
+      if (intent && intent.category) {
+        const matches = livePlaces.filter(
+          (p) =>
+            p.category.toLowerCase().includes(intent.category.toLowerCase()) ||
+            (p.subCategory && p.subCategory.toLowerCase().includes(intent.category.toLowerCase())) ||
+            (p.tags && p.tags.some((t) => t.toLowerCase().includes(intent.category.toLowerCase())))
+        );
+        if (matches.length > 0) {
+          handleSelectPlaceOnMap(matches[0]);
+          setIsAiSearching(false);
+          return true;
         }
-        setIsAiSearching(false);
       }
-
-      if (matchingPlaceResults.length > 0) {
-        handleSelectPlaceOnMap(matchingPlaceResults[0]);
-      } else if (filteredTrafficNavItems.length > 0) {
-        handleSelectTrafficNav(filteredTrafficNavItems[0]);
-      }
+    } catch (err) {
+      console.warn('AI search error:', err);
     }
+    setIsAiSearching(false);
+    return false;
+  };
+
+  const handleNavigateGeocodedPin = (res: GeocodingSearchResult) => {
+    const tempPlace: Place = {
+      id: res.id,
+      name: res.name,
+      nameBm: res.name,
+      category: 'travel_tourism',
+      subCategory: 'attractions_sightseeing',
+      township: 'Tanah Rata',
+      location: res.address,
+      description: res.address,
+      descriptionBm: res.address,
+      operatingHours: { from: '00:00', to: '23:59', isOpen: true, isOpen24Hours: true },
+      imageUrl: DEFAULT_PLACE_IMAGE,
+      coordinates: { lat: res.lat, lng: res.lon },
+      rating: 4.8,
+      reviewsCount: 1,
+      elevation: '1,500m',
+      tags: ['Search Pin'],
+    };
+    onSelectPlace(null);
+    handleTriggerRoute(tempPlace);
   };
 
   // Listen for close-traffic-forecaster event to reset map scroll & invalidate map size
@@ -1445,71 +1695,33 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return { instruction: text, icon };
   };
 
-  // Parse TomTom maneuver/instruction types into icons
-  const parseTomTomManeuverIcon = (instructionType?: string, maneuver?: string): string => {
-    const type = (instructionType || '').toUpperCase();
-    const man = (maneuver || '').toUpperCase();
-
-    if (type.includes('DEPART') || man.includes('DEPART')) return '🚗';
-    if (type.includes('ARRIVE') || man.includes('ARRIVE')) return '🏁';
-    if (man.includes('LEFT') || type.includes('LEFT')) return '⬅️';
-    if (man.includes('RIGHT') || type.includes('RIGHT')) return '➡️';
-    if (man.includes('ROUNDABOUT') || type.includes('ROUNDABOUT')) return '🔄';
-    if (man.includes('BEER') || man.includes('SLIGHT')) return '↗️';
-    return '⬆️';
-  };
-
-  // TomTom Routing API Fetcher (Endpoint: https://api.tomtom.com/routing/1/calculateRoute/{origin}:{destination}/json)
+  // Smart Predictive TomTom Routing API Fetcher (traffic=true, computeTravelTimeFor=all, departAt, sectionType=traffic)
   const fetchTomTomRoute = async (
     origin: { lat: number; lng: number; name: string },
     destination: { lat: number; lng: number; name: string },
     apiKey: string
   ): Promise<TurnByTurnRoute | null> => {
-    try {
-      const url = `https://api.tomtom.com/routing/1/calculateRoute/${origin.lat},${origin.lng}:${destination.lat},${destination.lng}/json?key=${apiKey.trim()}&traffic=true&routeType=fastest&instructionsType=text`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`TomTom Routing HTTP ${response.status}`);
-      }
-      const data = await response.json();
+    const result = await fetchTomTomPredictiveRoute(origin, destination, apiKey, {
+      language,
+      departAt: getPredictiveTargetDate(predictiveDepartureProfile),
+    });
+    if (!result) return null;
 
-      if (!data.routes || data.routes.length === 0) {
-        throw new Error('No route returned by TomTom');
-      }
-
-      const route = data.routes[0];
-      const summary = route.summary || {};
-      const distanceKm = Number(((summary.lengthInMeters || 0) / 1000).toFixed(1));
-      const durationMins = Math.round((summary.travelTimeInSeconds || 0) / 60);
-
-      const points: { latitude: number; longitude: number }[] = route.legs?.[0]?.points || [];
-      const coordinates: [number, number][] = points.map((p) => [p.latitude, p.longitude]);
-
-      const instructions = route.guidance?.instructions || [];
-      const steps: RouteStep[] = instructions.map((inst: any) => ({
-        instruction: inst.message || (language === 'bm' ? `Laluan ke ${destination.name}` : `Route to ${destination.name}`),
-        distanceMeters: Math.round(inst.routeOffsetInMeters || 0),
-        durationSecs: Math.round(inst.travelTimeInSeconds || 0),
-        icon: parseTomTomManeuverIcon(inst.instructionType, inst.maneuver),
-      }));
-
-      return {
-        originName: origin.name,
-        originCoords: [origin.lat, origin.lng],
-        destinationName: destination.name,
-        destinationCoords: [destination.lat, destination.lng],
-        distanceKm,
-        durationMins,
-        steps: steps.length > 0 ? steps : [
-          { instruction: `Head towards ${destination.name}`, distanceMeters: summary.lengthInMeters || 0, durationSecs: summary.travelTimeInSeconds || 0, icon: '🚗' },
-          { instruction: `Arrive at ${destination.name}`, distanceMeters: 0, durationSecs: 0, icon: '🏁' },
-        ],
-        coordinates,
-      };
-    } catch (err) {
-      console.warn('[InteractiveMap] TomTom Routing API fetch error:', err);
-      return null;
-    }
+    return {
+      originName: result.originName,
+      originCoords: result.originCoords,
+      destinationName: result.destinationName,
+      destinationCoords: result.destinationCoords,
+      distanceKm: result.distanceKm,
+      durationMins: result.durationMins,
+      historicDurationMins: result.historicDurationMins,
+      noTrafficDurationMins: result.noTrafficDurationMins,
+      aiAdjustedMins: result.aiAdjustedMins,
+      predictiveSource: result.predictiveSource,
+      predictiveSummaryNote: result.predictiveSummaryNote,
+      steps: result.steps,
+      coordinates: result.coordinates,
+    };
   };
 
   // Helper to render polylines, start/destination markers, and auto-fit map bounds
@@ -1583,16 +1795,39 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     });
     routeLayerRef.current.addLayer(routePolyline);
 
-    // Apply AI Predictive ETA
-    aiRouteOptimizer.getPredictiveETA(
-      [routeData.originCoords[0], routeData.originCoords[1]],
-      [routeData.destinationCoords[0], routeData.destinationCoords[1]]
-    ).then(adjustedSeconds => {
-      setActiveRoute(prev => prev ? {
-        ...prev,
-        aiAdjustedMins: Math.round(adjustedSeconds / 60)
-      } : null);
-    });
+    // Apply Spatial-Temporal Predictive Travel Time Calculation (Historical fallback + Live blend)
+    const targetDate = getPredictiveTargetDate(predictiveDepartureProfile);
+    if (!routeData.predictiveSummaryNote) {
+      const baseSecs = Math.max(60, routeData.durationMins * 60);
+      const spatialPred = computePredictiveRouteTravelTime(
+        routeData.coordinates,
+        baseSecs,
+        targetDate
+      );
+      aiRouteOptimizer
+        .getPredictiveETA(
+          [routeData.originCoords[0], routeData.originCoords[1]],
+          [routeData.destinationCoords[0], routeData.destinationCoords[1]],
+          {
+            baseDurationSecs: baseSecs,
+            coordinates: routeData.coordinates,
+            departAt: targetDate,
+          }
+        )
+        .then((adjustedSeconds) => {
+          setActiveRoute((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  aiAdjustedMins: Math.max(1, Math.round(adjustedSeconds / 60)),
+                  historicDurationMins: Math.max(1, Math.round(spatialPred.adjustedDurationSecs / 60)),
+                  predictiveSource: prev.predictiveSource || 'historical_predictive',
+                  predictiveSummaryNote: prev.predictiveSummaryNote || spatialPred.summaryNote,
+                }
+              : null
+          );
+        });
+    }
 
     // Automatically initialize 3D Driver's Perspective (50-65° low-horizon pitch, heading-up & easeTo) when navigation starts
     const initialOrigin = routeData.coordinates[0] || routeData.originCoords;
@@ -2269,6 +2504,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   };
 
   const handleClearRoute = () => {
+    stopAllVoiceAlerts();
     setActiveRoute(null);
     setRouteError(null);
     setIs3dDriverMode(false);
@@ -2326,6 +2562,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
 
     return () => {
+      stopAllVoiceAlerts();
       stopLiveGpsTracking();
 
       if (geofenceBannerTimerRef.current !== null) {
@@ -2543,10 +2780,30 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       `;
 
       townshipMarker.bindPopup(popupContent, { maxWidth: 320 });
+
+      townshipMarker.on('click', () => {
+        if (is3dDriverModeRef.current) {
+          townshipMarker.closePopup();
+          setSelectedTownshipHubModal({
+            ...hubInfo,
+            attractionsList,
+          });
+        }
+      });
+
+      townshipMarker.on('popupopen', () => {
+        if (is3dDriverModeRef.current) {
+          townshipMarker.closePopup();
+          setSelectedTownshipHubModal({
+            ...hubInfo,
+            attractionsList,
+          });
+        }
+      });
     });
   };
 
-  // Reusable Live Colored TomTom Traffic Overlay Rendering Logic
+  // Smart Traffic & Predictive Flow Vector + TomTom Tile Overlay Rendering Logic
   const renderColoredTrafficOverlay = (map: L.Map) => {
     if (!trafficOverlayLayerRef.current) {
       trafficOverlayLayerRef.current = L.layerGroup().addTo(map);
@@ -2564,19 +2821,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       return;
     }
 
-    // Check for configured TomTom API Key
-    const apiKey = localStorage.getItem('tomtom_api_key');
+    // Only overlay live TomTom raster flow tiles when evaluating live window with a valid key
+    const apiKey = getTomTomApiKey();
     const hasValidKey = Boolean(apiKey && apiKey.trim().length > 10);
     setTomTomKeyPresent(hasValidKey);
 
-    if (hasValidKey && apiKey) {
+    if (hasValidKey && predictiveDepartureProfile === 'live') {
       try {
         const tomtomTile = L.tileLayer(
-          `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${apiKey.trim()}`,
+          `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${encodeURIComponent(apiKey.trim())}`,
           {
             maxZoom: 18,
-            opacity: 0.75,
-            attribution: '&copy; TomTom Traffic',
+            opacity: 0.65,
+            attribution: '&copy; TomTom Smart Traffic',
             zIndex: 400,
           }
         );
@@ -2587,13 +2844,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       }
     }
 
-    // Render High-Precision Colored TomTom Vector Segments along Corridors & Passes
+    // Render Color-Coded Predictive Flow & Historical Fallback Vector Segments
+    // Covers both main highland highways AND rural plantation roads where live probes are sparse
     trafficSegments.forEach((segment) => {
-      // 1. High contrast dark underlay casing for visibility on satellite and terrain maps
+      const isRural = segment.roadClass === 'rural_plantation';
+      const isLiveVerified = segment.dataSource === 'tomtom_live_flow';
+
+      // 1. High contrast dark underlay casing
       const underlay = L.polyline(segment.coordinates, {
         color: '#09090b',
-        weight: 9,
-        opacity: 0.7,
+        weight: isRural ? 7 : 9,
+        opacity: 0.72,
         lineCap: 'round',
         lineJoin: 'round',
       });
@@ -2601,15 +2862,21 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         underlay.addTo(trafficOverlayLayerRef.current);
       }
 
-      // 2. TomTom traffic flow colored polyline
+      // 2. Predictive flow colored polyline (dashed accent on rural historical-fallback spurs)
       const polyline = L.polyline(segment.coordinates, {
         color: segment.color,
-        weight: 6,
+        weight: isRural ? 4.5 : 6,
         opacity: 0.95,
+        dashArray: !isLiveVerified && isRural ? '8 5' : undefined,
         lineCap: 'round',
         lineJoin: 'round',
         className: 'traffic-polyline-glow',
       });
+
+      const sourceBadge = isLiveVerified
+        ? 'TomTom Live + Predictive'
+        : 'Historical-Predictive Fallback';
+      const confidencePct = Math.round((segment.confidence || 0.85) * 100);
 
       // Interactive hover tooltip
       polyline.bindTooltip(
@@ -2619,8 +2886,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
             <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${segment.color};"></span>
             <span style="font-weight: 800; color: ${segment.color};">${segment.speedKmh} km/h • ${segment.statusLabel}</span>
-            ${segment.delayMins > 0 ? `<span style="color: #fca5a5; font-weight: 700;">(+${segment.delayMins}m delay)</span>` : ''}
+            ${segment.delayMins > 0 ? `<span style="color: #fca5a5; font-weight: 700;">(+${segment.delayMins}m)</span>` : ''}
           </div>
+          <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">${sourceBadge} (${confidencePct}%)</div>
         </div>
         `,
         {
@@ -2632,10 +2900,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       // Interactive popup details
       const segmentPopupHtml = `
-        <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 260px; padding: 4px; color: #1c1917;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; background: #e2e8f0; color: #334155; padding: 2px 6px; border-radius: 6px;">
-              TomTom Corridor Flow
+        <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 270px; padding: 4px; color: #1c1917;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 4px;">
+            <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; background: ${isLiveVerified ? '#dcfce7' : '#fef3c7'}; color: ${isLiveVerified ? '#166534' : '#92400e'}; padding: 2px 6px; border-radius: 6px;">
+              ${sourceBadge}
             </span>
             <span style="font-size: 10px; font-weight: 800; color: ${segment.color};">
               ● ${segment.statusLabel}
@@ -2646,22 +2914,27 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           </h4>
           <div style="background: #f8fafc; border-radius: 8px; padding: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-              <span style="color: #64748b; font-weight: 600;">Current Speed:</span>
-              <strong style="color: #0f172a; font-weight: 800;">${segment.speedKmh} km/h</strong>
+              <span style="color: #64748b; font-weight: 600;">Predictive Speed:</span>
+              <strong style="color: #0f172a; font-weight: 800;">${segment.speedKmh} km/h <span style="font-weight:500;color:#64748b;">(avg max ${segment.freeFlowSpeedKmh})</span></strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <span style="color: #64748b; font-weight: 600;">Delay:</span>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+              <span style="color: #64748b; font-weight: 600;">Expected Delay:</span>
               <strong style="color: ${segment.delayMins > 10 ? '#dc2626' : segment.delayMins > 0 ? '#d97706' : '#16a34a'}; font-weight: 800;">
                 ${segment.delayMins > 0 ? `+${segment.delayMins} mins` : 'Free Flow'}
               </strong>
             </div>
+            <div style="display: flex; justify-content: space-between; font-size: 10.5px;">
+              <span style="color: #64748b; font-weight: 600;">Model Confidence:</span>
+              <strong style="color: #334155; font-weight: 800;">${confidencePct}%</strong>
+            </div>
           </div>
+          ${segment.fallbackReason ? `<div style="font-size: 10px; color: #78350f; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 5px 7px; margin-bottom: 6px;">${segment.fallbackReason}</div>` : ''}
           <p style="font-size: 11px; color: #475569; line-height: 1.4; margin: 0;">
             ${segment.advisory}
           </p>
         </div>
       `;
-      polyline.bindPopup(segmentPopupHtml, { maxWidth: 280 });
+      polyline.bindPopup(segmentPopupHtml, { maxWidth: 290 });
 
       if (trafficOverlayLayerRef.current) {
         polyline.addTo(trafficOverlayLayerRef.current);
@@ -2701,7 +2974,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               ${hotspot.severity.toUpperCase()} HOTSPOT
             </span>
             <span style="font-size: 10px; font-weight: 700; color: #64748b;">
-              TomTom Live Feed
+              Smart Predictive Flow
             </span>
           </div>
 
@@ -2714,7 +2987,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px;">
-              <div style="font-size: 9.5px; color: #64748b; font-weight: 700; text-transform: uppercase;">Live Speed</div>
+              <div style="font-size: 9.5px; color: #64748b; font-weight: 700; text-transform: uppercase;">Flow Speed</div>
               <div style="font-size: 16px; font-weight: 900; color: ${hotspot.color}; line-height: 1.2;">
                 ${hotspot.speedKmh} <span style="font-size: 10px; font-weight: 600;">km/h</span>
               </div>
@@ -2813,6 +3086,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         setIsAutoFollowEnabled(false);
       });
 
+      // Prevent tilted Leaflet popups from staying open while in Low-Horizon 3D Pitch mode
+      map.on('popupopen', (e: any) => {
+        if (is3dDriverModeRef.current && e?.popup) {
+          try {
+            map.closePopup(e.popup);
+          } catch {
+            // ignore
+          }
+        }
+      });
+
       // Check if there was a pending route calculation queued before map mounted
       if (pendingRouteTargetRef.current) {
         const targetToRoute = pendingRouteTargetRef.current;
@@ -2839,23 +3123,237 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
   }, []);
 
-  // Sync Traffic Overlay state changes and API Key updates
+  // Subscribe to Firestore camgo_hazards + Monitor Module B Corridor Telemetry Anomalies (≥70% speed drop)
+  const combinedActiveHazards = useMemo(() => {
+    const byId = new Map<string, CamgoHazard>();
+    activeCamgoHazards.forEach((h) => {
+      if (h.status === 'active') byId.set(h.id, h);
+    });
+    telemetryAnomalies.forEach((anom) => {
+      if (anom.status === 'active' && !byId.has(anom.id)) {
+        byId.set(anom.id, anom);
+      }
+    });
+    return Array.from(byId.values());
+  }, [activeCamgoHazards, telemetryAnomalies]);
+
+  const combinedHazardsRef = useRef<CamgoHazard[]>([]);
+  useEffect(() => {
+    combinedHazardsRef.current = combinedActiveHazards;
+  }, [combinedActiveHazards]);
+
+  const handleHazardVote = async (
+    hazard: CamgoHazard,
+    vote: 'still_there' | 'cleared'
+  ) => {
+    const isTransientTelemetry =
+      hazard.isProvisional &&
+      !activeCamgoHazards.some((existing) => existing.id === hazard.id);
+
+    const { updated, expired } = await camgoHazardsService.voteOnHazard(hazard, vote);
+
+    if (isTransientTelemetry) {
+      setTelemetryAnomalies((prev) =>
+        expired ? prev.filter((item) => item.id !== hazard.id) : prev.map((item) => (item.id === hazard.id ? updated : item))
+      );
+    }
+
+    if (expired) {
+      mapInstanceRef.current?.closePopup();
+      if (selectedHazardModal?.id === hazard.id) {
+        setSelectedHazardModal(null);
+      }
+    } else if (selectedHazardModal?.id === hazard.id) {
+      setSelectedHazardModal(updated);
+    }
+  };
+
+  useEffect(() => {
+    const unsub = camgoHazardsService.subscribeActiveHazards((hazards) => {
+      setActiveCamgoHazards(hazards);
+    });
+
+    const handleHazardVoteBridge = (e: Event) => {
+      const detail = (e as CustomEvent<{ id: string; vote: 'still_there' | 'cleared' }>).detail;
+      if (!detail?.id || !detail?.vote) return;
+      const target = combinedHazardsRef.current.find((h) => h.id === detail.id);
+      if (target) {
+        handleHazardVote(target, detail.vote);
+      }
+    };
+    window.addEventListener('camgo-vote-hazard', handleHazardVoteBridge);
+
+    let isMounted = true;
+    const ctrl = new AbortController();
+    const runTelemetryCheck = async () => {
+      const key = getTomTomApiKey();
+      const res = await monitorCorridorTelemetryAnomalies(key, new Date(), ctrl.signal);
+      if (!isMounted || ctrl.signal.aborted) return;
+      if (res.anomalies.length > 0) {
+        setTelemetryAnomalies(res.anomalies);
+      }
+    };
+    runTelemetryCheck();
+    const anomInterval = window.setInterval(runTelemetryCheck, 90_000);
+
+    return () => {
+      isMounted = false;
+      ctrl.abort();
+      unsub();
+      window.clearInterval(anomInterval);
+      window.removeEventListener('camgo-vote-hazard', handleHazardVoteBridge);
+    };
+  }, []);
+
+  const renderCamgoHazardPins = (map: L.Map) => {
+    if (!hazardLayerRef.current) {
+      hazardLayerRef.current = L.layerGroup().addTo(map);
+    } else {
+      hazardLayerRef.current.clearLayers();
+    }
+
+    combinedActiveHazards.forEach((hazard) => {
+      if (hazard.status !== 'active') return;
+      const lat = Number(hazard.lat);
+      const lng = Number(hazard.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const emojiByType: Record<string, string> = {
+        landslide: '⛰️',
+        accident: '💥',
+        roadblock: '🚧',
+        fallen_tree: '🌳',
+        flood: '🌊',
+        sudden_congestion: '🚨',
+      };
+      const colorByType: Record<string, string> = {
+        landslide: '#dc2626',
+        accident: '#ea580c',
+        roadblock: '#d97706',
+        fallen_tree: '#b45309',
+        flood: '#0284c7',
+        sudden_congestion: '#e11d48',
+      };
+
+      const badgeEmoji = emojiByType[hazard.type] || '⚠️';
+      const pinColor = colorByType[hazard.type] || '#dc2626';
+      const remainingToClear = Math.max(1, CLEARED_VOTE_EXPIRY_THRESHOLD - (hazard.clearedVotes || 0));
+
+      const hazardIcon = L.divIcon({
+        className: 'camgo-hazard-marker',
+        html: `
+          <div style="position: relative; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+            <div style="position: absolute; inset: -3px; border-radius: 9999px; background: ${pinColor}; opacity: 0.45;" class="animate-traffic-ping"></div>
+            <div style="width: 30px; height: 30px; border-radius: 9999px; background: #1c1917; border: 2.5px solid ${pinColor}; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.65); z-index: 2;">
+              <span style="font-size: 14px; line-height: 1;">${badgeEmoji}</span>
+            </div>
+            <div style="position: absolute; top: -16px; background: ${pinColor}; color: white; font-size: 8.5px; font-weight: 900; padding: 1px 5px; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.5); white-space: nowrap; text-transform: uppercase;">
+              ${hazard.isProvisional ? 'TELEMETRY -' + (hazard.speedDropPercent || 70) + '%' : hazard.type.replace('_', ' ')}
+            </div>
+          </div>
+        `,
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
+        popupAnchor: [0, -18],
+      });
+
+      const marker = L.marker([lat, lng], {
+        icon: hazardIcon,
+        zIndexOffset: 1020,
+      });
+
+      const popupHtml = `
+        <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 280px; max-width: 82vw; padding: 4px; color: #1c1917;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px;">
+            <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; background: ${pinColor}1a; color: ${pinColor}; padding: 2px 7px; border-radius: 6px; border: 1px solid ${pinColor}40;">
+              ${badgeEmoji} ${hazard.isProvisional ? 'PROVISIONAL TELEMETRY ANOMALY' : hazard.type.replace('_', ' ').toUpperCase()}
+            </span>
+            <span style="font-size: 9.5px; font-weight: 700; color: #64748b;">
+              ${hazard.severity.toUpperCase()}
+            </span>
+          </div>
+
+          <h4 style="font-size: 13.5px; font-weight: 900; color: #0f172a; margin: 0 0 4px 0; line-height: 1.3;">
+            ${language === 'bm' ? hazard.titleBm || hazard.title : hazard.title}
+          </h4>
+
+          <div style="font-size: 10.5px; font-weight: 700; color: #475569; margin-bottom: 6px;">
+            📍 ${hazard.location}${hazard.milestoneKm ? ` (KM ${hazard.milestoneKm})` : ''}
+          </div>
+
+          <p style="font-size: 11px; color: #334155; line-height: 1.4; margin: 0 0 8px 0;">
+            ${language === 'bm' ? hazard.descriptionBm || hazard.description : hazard.description}
+          </p>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 8px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 700; color: #475569; margin-bottom: 4px;">
+              <span>👍 Still There: <strong style="color: #b45309;">+${hazard.stillThereVotes || 0}</strong></span>
+              <span>✅ Cleared: <strong style="color: #047857;">${hazard.clearedVotes || 0}/${CLEARED_VOTE_EXPIRY_THRESHOLD}</strong></span>
+            </div>
+            <div style="font-size: 9.5px; color: #64748b;">
+              ${remainingToClear} more "Cleared" vote${remainingToClear > 1 ? 's' : ''} will auto-expire this pin.
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+            <button
+              type="button"
+              onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${hazard.id}', vote: 'still_there' } }))"
+              style="background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
+            >
+              👍 Still There (+1)
+            </button>
+            <button
+              type="button"
+              onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${hazard.id}', vote: 'cleared' } }))"
+              style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
+            >
+              ✅ Cleared (-1)
+            </button>
+          </div>
+          <div style="font-size: 9px; color: #94a3b8; margin-top: 6px; text-align: right;">
+            Source: ${hazard.source}
+          </div>
+        </div>
+      `;
+
+      marker.bindPopup(popupHtml, { maxWidth: 300 });
+      marker.on('click', () => {
+        if (is3dDriverModeRef.current) {
+          marker.closePopup();
+          setSelectedHazardModal(hazard);
+        }
+      });
+
+      if (hazardLayerRef.current) {
+        marker.addTo(hazardLayerRef.current);
+      }
+    });
+  };
+
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      renderCamgoHazardPins(mapInstanceRef.current);
+    }
+  }, [combinedActiveHazards, language]);
+
+  // Sync Smart Traffic / Predictive Flow overlay whenever segments, profile, or toggle change
   useEffect(() => {
     if (mapInstanceRef.current) {
       renderColoredTrafficOverlay(mapInstanceRef.current);
     }
-  }, [isTrafficOverlayActive]);
+  }, [isTrafficOverlayActive, trafficSegments, congestionHotspots, predictiveDepartureProfile]);
 
   useEffect(() => {
     const handleTomTomKeyUpdated = () => {
-      setTomTomKeyPresent(Boolean(localStorage.getItem('tomtom_api_key')));
+      setTomTomKeyPresent(Boolean(getTomTomApiKey()));
       if (mapInstanceRef.current) {
         renderColoredTrafficOverlay(mapInstanceRef.current);
       }
     };
     window.addEventListener('tomtom-key-updated', handleTomTomKeyUpdated);
     return () => window.removeEventListener('tomtom-key-updated', handleTomTomKeyUpdated);
-  }, [isTrafficOverlayActive]);
+  }, [isTrafficOverlayActive, trafficSegments]);
 
   // Handle mobile viewport loading, scrolling, and orientation shifts
   useEffect(() => {
@@ -3041,21 +3539,48 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     { id: 'gas-shell-kampung-raja', name: 'Shell Kampung Raja', nameBm: 'Stesen Shell Kampung Raja', lat: 4.5685, lng: 101.4092 },
   ];
 
-  const isAttractionOrSightseeingPoi = (p: Place): boolean => {
-    const isAdminUpdated = Boolean(
-      (p as any).updatedByAdmin || (p as any).updatedAt || (p.id && p.id.startsWith('place-'))
-    );
+  const TRAVEL_TOURISM_SUBCATS = new Set<string>([
+    'attractions_sightseeing',
+    'agrotourism_farms',
+    'outdoor_adventure',
+    'tour_agencies_guides',
+    'tourism_ticketing_attractions',
+    'tourism_agritourism_farm',
+    'tourism_tours_packages',
+    'tours_nature',
+    'agritourism_plantations',
+    'eco_adventure',
+    'floral_sanctuary',
+    'culture_history',
+  ]);
+
+  const FOOD_BEVERAGE_SUBCATS = new Set<string>([
+    'dining',
+    'steamboats',
+    'cafes',
+    'night_markets_street',
+    'bars_nightlife',
+    'fb_restaurants_cafes',
+    'fb_fast_food',
+    'fb_bakeries',
+    'fb_cloud_kitchens',
+    'fb_food_trucks',
+    'fb_beverage_boba',
+    'fb_catering',
+  ]);
+
+  const isTravelTourismPoi = (p: Place): boolean => {
     return (
       p.category === 'travel_tourism' ||
       p.category === 'attraction' ||
-      p.subCategory === 'attractions_sightseeing' ||
-      p.subCategory === 'agrotourism_farms' ||
-      p.subCategory === 'outdoor_adventure' ||
-      p.subCategory === 'tour_agencies_guides' ||
-      p.subCategory === 'tourism_ticketing_attractions' ||
-      p.subCategory === 'tourism_agritourism_farm' ||
-      p.subCategory === 'tourism_tours_packages' ||
-      isAdminUpdated
+      (p.subCategory ? TRAVEL_TOURISM_SUBCATS.has(p.subCategory) : false)
+    );
+  };
+
+  const isFoodBeveragePoi = (p: Place): boolean => {
+    return (
+      p.category === 'food' ||
+      (p.subCategory ? FOOD_BEVERAGE_SUBCATS.has(p.subCategory) : false)
     );
   };
 
@@ -3080,6 +3605,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return p.subCategory === 'fuel_ev_charging' || hasFuelKeyword;
   };
 
+  // Voice alerts strictly allowed ONLY for:
+  // 1. Travel & Highland Tourism
+  // 2. Gas Stations
+  // 3. Food & Beverages
+  const isAllowedVoiceAlertPoi = (p: Place): boolean => {
+    return isTravelTourismPoi(p) || isGasStationPoi(p) || isFoodBeveragePoi(p);
+  };
+
   const resetTripLegGeofences = () => {
     triggeredGeofencesRef.current.clear();
     spokenStepsMapRef.current = {};
@@ -3092,7 +3625,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   const showGeofenceBannerNotification = (banner: {
     id: string;
-    kind: 'attraction' | 'fuel';
+    kind: 'attraction' | 'fuel' | 'food';
     title: string;
     subtitle: string;
     voiceText: string;
@@ -3108,14 +3641,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }, 14000);
   };
 
-  // Geofence Proximity Detection Engine:
+  // Geofence Proximity Detection Engine (STRICTLY Travel & Highland Tourism, Gas Stations, and Food & Beverages ONLY):
   // 1) Gas Stations <= 500m -> "Please check your fuel level ahead." (once per trip leg)
-  // 2) Attractions / Sightseeing <= 280m -> "[Attraction Name] is just ahead / nearby" (once per trip leg)
+  // 2) Travel & Highland Tourism / Food & Beverages <= 280m -> contextual voice + banner alert (once per trip leg)
   const evaluateProximityGeofences = (lat: number, lng: number) => {
     if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
 
     const FUEL_RADIUS_M = 500;
-    const ATTRACTION_RADIUS_M = 280;
+    const POI_RADIUS_M = 280;
 
     // 1. Check Registered Gas Stations (500m radius)
     const placeFuelPois = livePlacesRef.current
@@ -3166,7 +3699,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       showGeofenceBannerNotification({
         id: `geofence-fuel-${matchedFuel.id}`,
         kind: 'fuel',
-        title: language === 'bm' ? 'Peringatan Bahan Api di Hadapan' : 'Please check your fuel level ahead.',
+        title: language === 'bm' ? 'Peringatan Stesen Minyak di Hadapan' : 'Please check your fuel level ahead.',
         subtitle: `${matchedFuel.name} • ${matchedFuel.distanceMeters}m`,
         voiceText: fuelVoice,
         distanceMeters: matchedFuel.distanceMeters,
@@ -3176,50 +3709,75 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       return;
     }
 
-    // 2. Check Attractions & Sightseeing POIs (strict 200-300m radius -> 280m)
-    let nearestAttraction: { place: Place; name: string; distanceMeters: number } | null = null;
+    // 2. Check ONLY Travel & Highland Tourism + Food & Beverages POIs (strict 280m radius)
+    let nearestAllowedPoi: {
+      place: Place;
+      kind: 'attraction' | 'food';
+      name: string;
+      distanceMeters: number;
+    } | null = null;
+
     livePlacesRef.current.forEach((p) => {
-      if (!isAttractionOrSightseeingPoi(p)) return;
+      const isTourism = isTravelTourismPoi(p);
+      const isFood = !isTourism && isFoodBeveragePoi(p);
+      if (!isTourism && !isFood) return;
+
       const pLat = Number(p.coordinates?.lat ?? (p as any).lat ?? 0);
       const pLng = Number(p.coordinates?.lng ?? (p as any).lng ?? 0);
       if (isNaN(pLat) || isNaN(pLng) || pLat === 0 || pLng === 0) return;
 
-      const key = `attraction:${p.id}`;
+      const kind: 'attraction' | 'food' = isTourism ? 'attraction' : 'food';
+      const key = `${kind}:${p.id}`;
       if (triggeredGeofencesRef.current.has(key)) return;
 
       const distM = calculateDistanceMeters(lat, lng, pLat, pLng);
-      if (distM <= ATTRACTION_RADIUS_M && (!nearestAttraction || distM < nearestAttraction.distanceMeters)) {
+      if (distM <= POI_RADIUS_M && (!nearestAllowedPoi || distM < nearestAllowedPoi.distanceMeters)) {
         const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
-        nearestAttraction = {
+        nearestAllowedPoi = {
           place: p,
+          kind,
           name: (isBm ? p.nameBm : '') || p.name,
           distanceMeters: distM,
         };
       }
     });
 
-    if (nearestAttraction) {
-      const matchedAttr = nearestAttraction as { place: Place; name: string; distanceMeters: number };
-      triggeredGeofencesRef.current.add(`attraction:${matchedAttr.place.id}`);
+    if (nearestAllowedPoi) {
+      const matchedPoi = nearestAllowedPoi as {
+        place: Place;
+        kind: 'attraction' | 'food';
+        name: string;
+        distanceMeters: number;
+      };
+      triggeredGeofencesRef.current.add(`${matchedPoi.kind}:${matchedPoi.place.id}`);
       const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
-      const attrName = (isBm ? matchedAttr.place.nameBm : '') || matchedAttr.place.name;
-      const attrVoice =
-        isBm
-          ? `${attrName} berada berhampiran di hadapan anda, kira-kira ${matchedAttr.distanceMeters} meter.`
-          : `${attrName} is just ahead, ${matchedAttr.distanceMeters} meters nearby.`;
+      const poiName = (isBm ? matchedPoi.place.nameBm : '') || matchedPoi.place.name;
+      const poiVoice =
+        matchedPoi.kind === 'food'
+          ? isBm
+            ? `Pilihan Makanan dan Minuman berhampiran: ${poiName}, kira-kira ${matchedPoi.distanceMeters} meter di hadapan.`
+            : `Food and Beverage spot ahead: ${poiName}, ${matchedPoi.distanceMeters} meters nearby.`
+          : isBm
+            ? `${poiName} berada berhampiran di hadapan anda, kira-kira ${matchedPoi.distanceMeters} meter.`
+            : `${poiName} is just ahead, ${matchedPoi.distanceMeters} meters nearby.`;
+
       showGeofenceBannerNotification({
-        id: `geofence-attr-${matchedAttr.place.id}`,
-        kind: 'attraction',
+        id: `geofence-${matchedPoi.kind}-${matchedPoi.place.id}`,
+        kind: matchedPoi.kind,
         title:
-          language === 'bm'
-            ? `${attrName} berada di hadapan`
-            : `${attrName} is just ahead`,
-        subtitle: `${matchedAttr.distanceMeters}m nearby • ${matchedAttr.place.township}`,
-        voiceText: attrVoice,
-        distanceMeters: matchedAttr.distanceMeters,
-        place: matchedAttr.place,
+          matchedPoi.kind === 'food'
+            ? language === 'bm'
+              ? `Makanan & Minuman: ${poiName}`
+              : `Dining Nearby: ${poiName}`
+            : language === 'bm'
+              ? `${poiName} berada di hadapan`
+              : `${poiName} is just ahead`,
+        subtitle: `${matchedPoi.distanceMeters}m nearby • ${matchedPoi.place.township}`,
+        voiceText: poiVoice,
+        distanceMeters: matchedPoi.distanceMeters,
+        place: matchedPoi.place,
       });
-      speakInstruction(attrVoice, 'geofence');
+      speakInstruction(poiVoice, 'geofence');
     }
   };
 
@@ -3228,6 +3786,263 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (!userGpsCoords) return;
     evaluateProximityGeofences(userGpsCoords.lat, userGpsCoords.lng);
   }, [userGpsCoords, language, mapVoiceLang]);
+
+  // Muslim Prayer Time ("Coming Soon") Live Fetcher & Reminder Engine (JAKIM PHG04 Cameron Highlands)
+  useEffect(() => {
+    let cancelled = false;
+    const loadPrayerSchedule = async () => {
+      try {
+        const res = await fetch('/api/prayer-times');
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && data?.prayerTimes) {
+            setPrayerSchedule({
+              subuh: data.prayerTimes.subuh || DEFAULT_PHG04_PRAYERS.subuh,
+              syuruk: data.prayerTimes.syuruk || DEFAULT_PHG04_PRAYERS.syuruk,
+              zohor: data.prayerTimes.zohor || DEFAULT_PHG04_PRAYERS.zohor,
+              asar: data.prayerTimes.asar || DEFAULT_PHG04_PRAYERS.asar,
+              maghrib: data.prayerTimes.maghrib || DEFAULT_PHG04_PRAYERS.maghrib,
+              isyak: data.prayerTimes.isyak || DEFAULT_PHG04_PRAYERS.isyak,
+            });
+            setPrayerSourceLabel(data.source || 'JAKIM PHG04');
+            return;
+          }
+        }
+      } catch {
+        // fallback to Firebase Township Hub or PHG04 baseline
+      }
+      try {
+        const hubs = firebaseService.getTownshipHubs();
+        const trPrayer = hubs?.['Tanah Rata']?.prayerTimes;
+        if (!cancelled && trPrayer) {
+          setPrayerSchedule((prev) => ({ ...prev, ...trPrayer }));
+        }
+      } catch {
+        // use baseline
+      }
+    };
+    loadPrayerSchedule();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const formatPrayerTime12h = (hhmm: string): string => {
+    const m = String(hhmm || '').match(/(\d{1,2}):(\d{2})/);
+    if (!m) return hhmm;
+    const h = Number(m[1]);
+    const min = m[2];
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${String(h12).padStart(2, '0')}:${min} ${ampm}`;
+  };
+
+  const findNearestMasjidSurau = (refLat: number, refLng: number): { place: Place | null; distanceKm: number | null } => {
+    const masjids = livePlacesRef.current.filter(
+      (p) =>
+        p.category === 'masjid_surau' ||
+        p.subCategory === 'masjid_surau' ||
+        p.subCategory === 'jumaat_masjid' ||
+        p.subCategory === 'other_surau' ||
+        p.tags?.some((t) => t.toLowerCase().includes('masjid') || t.toLowerCase().includes('surau'))
+    );
+    let bestPlace: Place | null = null;
+    let bestDist: number | null = null;
+    masjids.forEach((p) => {
+      const pLat = Number(p.coordinates?.lat ?? (p as any).lat ?? 0);
+      const pLng = Number(p.coordinates?.lng ?? (p as any).lng ?? 0);
+      if (isNaN(pLat) || isNaN(pLng) || pLat === 0 || pLng === 0) return;
+      const d = calculateDistanceKm(refLat, refLng, pLat, pLng);
+      if (bestDist === null || d < bestDist) {
+        bestDist = d;
+        bestPlace = p;
+      }
+    });
+    return { place: bestPlace, distanceKm: bestDist };
+  };
+
+  const buildPrayerVoiceText = (
+    prayerName: string,
+    minsRemaining: number,
+    time12h: string,
+    nearestMasjidName: string | null,
+    isBm: boolean
+  ): string => {
+    const masjidSuffixBm = nearestMasjidName ? ` Masjid atau surau terdekat ialah ${nearestMasjidName}.` : '';
+    const masjidSuffixEn = nearestMasjidName ? ` Nearest prayer spot is ${nearestMasjidName}.` : '';
+
+    if (minsRemaining <= 0) {
+      return isBm
+        ? `Peringatan waktu solat Muslim. Waktu solat ${prayerName} telah masuk pada pukul ${time12h}.${masjidSuffixBm}`
+        : `Muslim prayer reminder. ${prayerName} prayer time has begun at ${time12h}.${masjidSuffixEn}`;
+    }
+    return isBm
+      ? `Peringatan waktu solat Muslim. Waktu solat ${prayerName} akan masuk dalam ${minsRemaining} minit pada pukul ${time12h}.${masjidSuffixBm}`
+      : `Muslim prayer reminder. ${prayerName} prayer time is coming soon in ${minsRemaining} minutes at ${time12h}.${masjidSuffixEn}`;
+  };
+
+  const toggleMuslimPrayerAlerts = () => {
+    const nextVal = !isMuslimPrayerAlertsEnabled;
+    setIsMuslimPrayerAlertsEnabled(nextVal);
+    isMuslimPrayerAlertsEnabledRef.current = nextVal;
+    try {
+      localStorage.setItem('camgo_muslim_prayer_alerts', String(nextVal));
+    } catch {
+      // ignore
+    }
+    if (!nextVal) {
+      setActivePrayerAlert(null);
+    }
+  };
+
+  const triggerPreviewPrayerAlert = () => {
+    const refPt = userGpsCoords || mapCenterCoords || { lat: 4.4715, lng: 101.3805 };
+    const { place: nearestMasjid, distanceKm } = findNearestMasjidSurau(refPt.lat, refPt.lng);
+    const targetInfo = nextPrayerInfo || {
+      prayerKey: 'zohor',
+      prayerName: 'Zohor',
+      time12h: formatPrayerTime12h(prayerSchedule.zohor),
+      minsRemaining: 15,
+    };
+    const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
+    const voiceText = buildPrayerVoiceText(
+      targetInfo.prayerName,
+      targetInfo.minsRemaining,
+      targetInfo.time12h,
+      nearestMasjid ? ((isBm ? nearestMasjid.nameBm : '') || nearestMasjid.name) : null,
+      isBm
+    );
+    setActivePrayerAlert({
+      id: `prayer-preview-${Date.now()}`,
+      prayerKey: targetInfo.prayerKey,
+      prayerName: targetInfo.prayerName,
+      timeStr: (prayerSchedule as any)[targetInfo.prayerKey] || prayerSchedule.zohor,
+      time12h: targetInfo.time12h,
+      minsRemaining: targetInfo.minsRemaining,
+      status: targetInfo.minsRemaining <= 0 ? 'entered' : 'coming_soon',
+      nearestMasjid,
+      nearestDistanceKm: distanceKm,
+      voiceText,
+    });
+    unlockAudioEngine(true);
+    if (!isVoiceNavEnabled) togglePwaAudioAlerts(true);
+    speakUtteranceMobileSafe(voiceText, true);
+  };
+
+  useEffect(() => {
+    const evaluateMuslimPrayerSchedule = () => {
+      const klNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
+      const nowMins = klNow.getHours() * 60 + klNow.getMinutes();
+      const dateKey = `${klNow.getFullYear()}-${klNow.getMonth() + 1}-${klNow.getDate()}`;
+
+      const fardhPrayers: Array<{ key: keyof PrayerTimesSchedule; label: string }> = [
+        { key: 'subuh', label: 'Subuh' },
+        { key: 'zohor', label: 'Zohor' },
+        { key: 'asar', label: 'Asar' },
+        { key: 'maghrib', label: 'Maghrib' },
+        { key: 'isyak', label: 'Isyak' },
+      ];
+
+      const parseMins = (hhmm: string) => {
+        const m = String(hhmm || '').match(/(\d{1,2}):(\d{2})/);
+        if (!m) return 0;
+        return Number(m[1]) * 60 + Number(m[2]);
+      };
+
+      let upcomingNext: { prayerKey: string; prayerName: string; time12h: string; minsRemaining: number } | null = null;
+      let alertCandidate: {
+        prayerKey: string;
+        prayerName: string;
+        timeStr: string;
+        time12h: string;
+        minsRemaining: number;
+        status: 'coming_soon' | 'entered';
+      } | null = null;
+
+      for (const p of fardhPrayers) {
+        const timeStr = prayerSchedule[p.key];
+        const pMins = parseMins(timeStr);
+        const diff = pMins - nowMins;
+        if (diff > 0 && (!upcomingNext || diff < upcomingNext.minsRemaining)) {
+          upcomingNext = {
+            prayerKey: p.key,
+            prayerName: p.label,
+            time12h: formatPrayerTime12h(timeStr),
+            minsRemaining: diff,
+          };
+        }
+        // Alert window: coming soon within 30 mins OR entered within last 5 mins
+        if (diff <= 30 && diff >= -5) {
+          alertCandidate = {
+            prayerKey: p.key,
+            prayerName: p.label,
+            timeStr,
+            time12h: formatPrayerTime12h(timeStr),
+            minsRemaining: diff,
+            status: diff <= 0 ? 'entered' : 'coming_soon',
+          };
+          break;
+        }
+      }
+
+      if (!upcomingNext) {
+        const subuhTime = prayerSchedule.subuh;
+        const subuhMins = parseMins(subuhTime) + 24 * 60;
+        upcomingNext = {
+          prayerKey: 'subuh',
+          prayerName: 'Subuh',
+          time12h: formatPrayerTime12h(subuhTime),
+          minsRemaining: subuhMins - nowMins,
+        };
+      }
+      setNextPrayerInfo(upcomingNext);
+
+      if (!isMuslimPrayerAlertsEnabledRef.current || !alertCandidate) {
+        return;
+      }
+
+      const refPt = userGpsCoords || mapCenterCoords || { lat: 4.4715, lng: 101.3805 };
+      const { place: nearestMasjid, distanceKm } = findNearestMasjidSurau(refPt.lat, refPt.lng);
+      const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
+      const voiceText = buildPrayerVoiceText(
+        alertCandidate.prayerName,
+        alertCandidate.minsRemaining,
+        alertCandidate.time12h,
+        nearestMasjid ? ((isBm ? nearestMasjid.nameBm : '') || nearestMasjid.name) : null,
+        isBm
+      );
+
+      const triggerKey = `${dateKey}:${alertCandidate.prayerKey}:${alertCandidate.status}`;
+      if (!triggeredPrayerKeysRef.current.has(triggerKey)) {
+        triggeredPrayerKeysRef.current.add(triggerKey);
+        setActivePrayerAlert({
+          id: `prayer-${triggerKey}`,
+          ...alertCandidate,
+          nearestMasjid,
+          nearestDistanceKm: distanceKm,
+          voiceText,
+        });
+        speakInstruction(voiceText, 'geofence');
+      } else {
+        // Keep active banner countdown refreshed if still visible
+        setActivePrayerAlert((prev) =>
+          prev && prev.prayerKey === alertCandidate!.prayerKey && prev.status === alertCandidate!.status
+            ? {
+                ...prev,
+                minsRemaining: alertCandidate!.minsRemaining,
+                nearestMasjid,
+                nearestDistanceKm: distanceKm,
+                voiceText,
+              }
+            : prev
+        );
+      }
+    };
+
+    evaluateMuslimPrayerSchedule();
+    const timer = window.setInterval(evaluateMuslimPrayerSchedule, 30000);
+    return () => window.clearInterval(timer);
+  }, [prayerSchedule, isMuslimPrayerAlertsEnabled, userGpsCoords, language, mapVoiceLang]);
 
   // Invalidate Leaflet tile layout cleanly whenever toggling 3D Driver's Perspective stage size
   useEffect(() => {
@@ -3243,30 +4058,27 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
   }, [is3dDriverMode]);
 
-  // Nearby Attractions & Admin-Updated Spots Proximity Engine (2.5 km radius)
+  // Nearby Attractions, Food & Beverages, and Gas Stations Proximity Engine (2.5 km radius ONLY)
   const nearbyAttractions = useMemo(() => {
     const refPoint = userGpsCoords || mapCenterCoords;
     if (!refPoint) return [];
 
-    const results: Array<{ place: Place; distanceKm: number; isAdminUpdated: boolean }> = [];
+    const results: Array<{ place: Place; distanceKm: number; poiKind: 'attraction' | 'food' | 'fuel' }> = [];
     livePlaces.forEach((p) => {
+      if (!isAllowedVoiceAlertPoi(p)) return;
       const lat = Number(p.coordinates?.lat ?? (p as any).lat ?? 0);
       const lng = Number(p.coordinates?.lng ?? (p as any).lng ?? 0);
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
 
-      const isAdminUpdated = Boolean(
-        (p as any).updatedByAdmin || (p as any).updatedAt || (p.id && p.id.startsWith('place-'))
-      );
-      const isAttraction =
-        p.category === 'travel_tourism' ||
-        p.category === 'attraction' ||
-        isAdminUpdated;
-
-      if (!isAttraction) return;
+      const poiKind: 'attraction' | 'food' | 'fuel' = isGasStationPoi(p)
+        ? 'fuel'
+        : isTravelTourismPoi(p)
+          ? 'attraction'
+          : 'food';
 
       const dist = calculateDistanceKm(refPoint.lat, refPoint.lng, lat, lng);
       if (dist <= 2.5) {
-        results.push({ place: p, distanceKm: dist, isAdminUpdated });
+        results.push({ place: p, distanceKm: dist, poiKind });
       }
     });
 
@@ -3291,12 +4103,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       .join(', ');
     if (isBm) {
       return count === 1
-        ? `Terdapat 1 tarikan menarik berhampiran anda: ${topNames}.`
-        : `Terdapat ${count} tarikan menarik berhampiran anda, termasuk ${topNames}.`;
+        ? `Terdapat 1 lokasi pelancongan, makanan, atau stesen minyak berhampiran anda: ${topNames}.`
+        : `Terdapat ${count} lokasi pelancongan, makanan dan minuman, atau stesen minyak berhampiran anda, termasuk ${topNames}.`;
     }
     return count === 1
-      ? `There is 1 attraction nearby: ${topNames}.`
-      : `There are ${count} attractions nearby, including ${topNames}.`;
+      ? `There is 1 Highland tourism, dining, or gas station spot nearby: ${topNames}.`
+      : `There are ${count} Highland tourism, food & beverage, and gas station spots nearby, including ${topNames}.`;
   };
 
   useEffect(() => {
@@ -3588,6 +4400,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       });
 
       marker.on('popupopen', () => {
+        if (is3dDriverModeRef.current) {
+          marker.closePopup();
+          setIsPlaceCardMinimized(false);
+          onSelectPlace(place);
+          return;
+        }
         const btn = document.getElementById(`btn-select-${place.id}`);
         if (btn) {
           btn.onclick = (e) => {
@@ -3600,7 +4418,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       });
 
       marker.on('click', () => {
+        setIsPlaceCardMinimized(false);
         onSelectPlace(place);
+        if (is3dDriverModeRef.current) {
+          marker.closePopup();
+        }
       });
 
       markersRef.current[place.id] = marker;
@@ -3649,14 +4471,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const validLng = !isNaN(lng) && lng !== 0 ? lng : defaultCoord.lng;
 
     // Offset so the pin stays in the visible upper portion of the screen above the bottom sheet on mobile, and to the right on desktop
-    const isMobile = window.innerWidth < 768;
-    const targetLat = isMobile ? validLat - 0.0055 : validLat;
-    const targetLng = isMobile ? validLng : validLng - 0.005;
+    // Do not hijack active turn-by-turn route camera when viewing directory pin in Low-Horizon 3D mode
+    if (!activeRouteRef.current) {
+      const isMobile = window.innerWidth < 768;
+      const targetLat = isMobile ? validLat - 0.0055 : validLat;
+      const targetLng = isMobile ? validLng : validLng - 0.005;
 
-    map.flyTo([targetLat, targetLng], 15, {
-      duration: 1.0,
-      easeLinearity: 0.25,
-    });
+      map.flyTo([targetLat, targetLng], 15, {
+        duration: 1.0,
+        easeLinearity: 0.25,
+      });
+    }
 
     setAnalyzingTraffic(true);
     geminiService
@@ -3733,8 +4558,765 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       className="flex flex-col h-full w-full relative min-h-0"
       onPointerDown={() => unlockAudioEngine(false)}
     >
+      {/* UNIFIED TOP BAR: Replaces mobile title header cleanly at top; floats centered on desktop */}
+      <div className="relative z-50 shrink-0 w-full bg-stone-900 border-b border-stone-800 px-1.5 py-2 sm:p-0 sm:bg-transparent sm:border-b-0 sm:absolute sm:top-3 sm:left-4 sm:right-4 sm:max-w-3xl sm:mx-auto sm:pointer-events-none flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-2">
+        {/* Top Row on Mobile: Hamburger Tools Menu + Search Bar (or Nav HUD) + Mobile Close X */}
+        <div className="flex items-center gap-1.5 w-full sm:w-auto sm:flex-1 min-w-0">
+          {/* Little Hamburger Button for Hiding/Showing Map Tools */}
+          <div className="relative pointer-events-auto shrink-0" ref={toolsMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsToolsMenuOpen(!isToolsMenuOpen)}
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl backdrop-blur-xl border shadow-xl flex items-center justify-center transition-all active:scale-95 cursor-pointer relative ${
+                isToolsMenuOpen
+                  ? 'bg-emerald-600 text-white border-emerald-400/60'
+                  : 'bg-stone-950/90 sm:bg-stone-900/95 hover:bg-stone-800 text-stone-100 border-white/15'
+              }`}
+              title={language === 'bm' ? 'Tunjuk / Sembunyi Alatan Peta' : 'Show / Hide Map Tools'}
+              aria-label="Map Tools Visibility Menu"
+            >
+              <Menu className="w-4 h-4 text-emerald-400" />
+              {Object.values(mapToolsVisibility).some((v) => !v) || !isTrafficOverlayActive ? (
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
+              ) : null}
+            </button>
+
+            {isToolsMenuOpen && (
+              <div className="absolute left-0 top-11 z-[75] w-60 rounded-2xl bg-stone-950/96 backdrop-blur-2xl border border-emerald-500/35 shadow-2xl p-2.5 space-y-1.5 text-stone-100 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between px-1.5 pb-1.5 border-b border-white/10">
+                  <span className="text-[10.5px] font-mono font-black text-emerald-400 uppercase tracking-wider">
+                    {language === 'bm' ? 'Alatan Peta' : 'Map Tools'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={resetMapToolsVisibility}
+                    className="text-[10px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
+                  >
+                    {language === 'bm' ? 'Papar Semua' : 'Show All'}
+                  </button>
+                </div>
+
+                {/* Voice Guidance Language Selector */}
+                <div className="pb-2 border-b border-white/10 mb-1">
+                  <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono mb-1.5 px-0.5">
+                    <span>{language === 'bm' ? 'Bahasa Suara Panduan' : 'Voice Guidance Language'}</span>
+                    <span className="text-[9px] font-bold text-emerald-400">
+                      {mapVoiceLang === 'bm' ? 'Bahasa Malaysia' : 'English'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSetMapVoiceLang('bm')}
+                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                        mapVoiceLang === 'bm'
+                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
+                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
+                      }`}
+                    >
+                      <span>🇲🇾 BM</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetMapVoiceLang('en')}
+                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                        mapVoiceLang === 'en'
+                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
+                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
+                      }`}
+                    >
+                      <span>🇬🇧 EN</span>
+                    </button>
+                  </div>
+                </div>
+
+                {[
+                  { key: 'searchBar' as const, label: language === 'bm' ? 'Bar Carian & Penapis' : 'Search & Filter Bar' },
+                  { key: 'viewSwitcher' as const, label: language === 'bm' ? 'Peta / Satelit / Terrain' : 'Map / Sat / Terrain' },
+                  { key: 'zoomControls' as const, label: language === 'bm' ? 'Butang Zum (+/-)' : 'Zoom +/- Controls' },
+                  { key: 'alertBanners' as const, label: language === 'bm' ? 'Sepanduk Geofence & Tarikan' : 'Nearby & Geofence Banners' },
+                  { key: 'audioButton' as const, label: language === 'bm' ? 'Butang Suara PWA' : 'PWA Audio Button' },
+                  { key: 'locateButton' as const, label: language === 'bm' ? 'Butang Lokasi GPS' : 'GPS Locate Button' },
+                  { key: 'navHud' as const, label: language === 'bm' ? 'HUD Navigasi Atas' : 'Navigation Top HUD' },
+                ].map((item) => {
+                  const enabled = mapToolsVisibility[item.key];
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => toggleMapToolVisibility(item.key)}
+                      className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
+                        enabled
+                          ? 'bg-emerald-600/20 text-emerald-100 border border-emerald-500/30'
+                          : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
+                      }`}
+                    >
+                      <span className="truncate pr-2">{item.label}</span>
+                      <span
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                          enabled ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
+                        }`}
+                      >
+                        {enabled ? '✓' : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {/* Smart Traffic / Predictive Flow Mode & Time-of-Day Pattern Selector */}
+                <div className="pt-1.5 mt-1 border-t border-white/10 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsTrafficOverlayActive(!isTrafficOverlayActive)}
+                    className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
+                      isTrafficOverlayActive
+                        ? 'bg-emerald-600/20 text-emerald-100 border border-emerald-500/30'
+                        : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
+                    }`}
+                  >
+                    <span className="truncate pr-2">
+                      {language === 'bm' ? 'Trafik Pintar / Aliran Ramalan' : 'Smart Traffic / Predictive Flow'}
+                    </span>
+                    <span
+                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                        isTrafficOverlayActive ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
+                      }`}
+                    >
+                      {isTrafficOverlayActive ? '✓' : ''}
+                    </span>
+                  </button>
+
+                  {isTrafficOverlayActive && (
+                    <div className="px-1 space-y-1">
+                      <div className="flex items-center justify-between text-[9.5px] font-mono text-stone-400">
+                        <span>{language === 'bm' ? 'Profil Masa:' : 'Flow Pattern:'}</span>
+                        <button
+                          type="button"
+                          onClick={() => setTrafficLegendOpen(!trafficLegendOpen)}
+                          className="text-emerald-400 hover:text-emerald-300 font-bold cursor-pointer"
+                        >
+                          {trafficLegendOpen
+                            ? language === 'bm' ? 'Tutup Legenda' : 'Hide Legend'
+                            : language === 'bm' ? 'Legenda Kelajuan' : 'Speed Legend'}
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">
+                        {([
+                          { id: 'live' as const, label: language === 'bm' ? 'Sekarang' : 'Live / Auto' },
+                          { id: 'weekend_peak' as const, label: language === 'bm' ? 'Puncak Hujung Mgg' : 'Wknd Peak' },
+                          { id: 'evening_market' as const, label: language === 'bm' ? 'Pasar Malam' : 'Night Mkt' },
+                          { id: 'night_clear' as const, label: language === 'bm' ? 'Malam Lancar' : 'Night Clear' },
+                        ]).map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setPredictiveDepartureProfile(opt.id)}
+                            className={`px-1.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer border ${
+                              predictiveDepartureProfile === opt.id
+                                ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
+                                : 'bg-stone-900/80 border-white/10 text-stone-400 hover:text-stone-200'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Muslim Prayer Times ("Coming Soon") Alert Controls */}
+                <div className="pt-1.5 mt-1 border-t border-white/10 space-y-1">
+                  <button
+                    type="button"
+                    onClick={toggleMuslimPrayerAlerts}
+                    className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
+                      isMuslimPrayerAlertsEnabled
+                        ? 'bg-amber-500/20 text-amber-100 border border-amber-400/40'
+                        : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
+                    }`}
+                  >
+                    <span className="truncate pr-2">
+                      🕌 {language === 'bm' ? 'Peringatan Waktu Solat' : 'Muslim Prayer Alerts'}
+                    </span>
+                    <span
+                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                        isMuslimPrayerAlertsEnabled ? 'bg-amber-400 text-stone-950' : 'bg-stone-700 text-stone-400'
+                      }`}
+                    >
+                      {isMuslimPrayerAlertsEnabled ? '✓' : ''}
+                    </span>
+                  </button>
+                  {nextPrayerInfo && (
+                    <div className="px-2 py-1 rounded-lg bg-stone-900/90 border border-white/5 flex items-center justify-between text-[10px] text-stone-300">
+                      <span className="truncate">
+                        {language === 'bm' ? 'Seterusnya:' : 'Next:'}{' '}
+                        <strong className="text-amber-300">{nextPrayerInfo.prayerName}</strong> ({nextPrayerInfo.time12h})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsToolsMenuOpen(false);
+                          triggerPreviewPrayerAlert();
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 font-bold cursor-pointer shrink-0 ml-1"
+                        title={language === 'bm' ? 'Uji Peringatan Solat' : 'Preview Prayer Alert'}
+                      >
+                        <Bell className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Quick Ingest Hazard Alert (Telegram / JKR / Image OCR -> camgo_hazards) */}
+                  <div className="pt-1.5 mt-1 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        setIngestFeedback(null);
+                        setIsHazardIngestModalOpen(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/35 transition-colors cursor-pointer"
+                    >
+                      <span className="truncate pr-2">
+                        ⚠️ {language === 'bm' ? 'Lapor / Ingat Bahaya AI' : 'Report / Ingest Hazard'}
+                      </span>
+                      <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300">
+                        {combinedActiveHazards.length}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Search Pill (when not navigating) OR Navigation HUD */}
+          {!activeRoute && !isCalculatingRoute ? (
+            <div className="pointer-events-auto flex-1 min-w-0 rounded-xl sm:rounded-2xl bg-stone-950/90 sm:bg-stone-900/95 backdrop-blur-xl border border-white/15 shadow-xl sm:shadow-2xl px-2 py-1.5 sm:p-1.5 flex items-center gap-1.5 sm:gap-2">
+              {mapToolsVisibility.searchBar ? (
+                <MapSearchBar
+                  mapRef={mapInstanceRef}
+                  language={language}
+                  localPlaces={livePlaces}
+                  corridorItems={TRAFFIC_NAV_ITEMS}
+                  tomTomApiKey={typeof window !== 'undefined' ? localStorage.getItem('tomtom_api_key') : null}
+                  isAiSearching={isAiSearching}
+                  onSelectLocalPlace={handleSelectPlaceOnMap}
+                  onSelectCorridor={handleSelectTrafficNav}
+                  onAiSearchSubmit={handleAiSearchSubmit}
+                  onNavigateGeocodedResult={handleNavigateGeocodedPin}
+                />
+              ) : (
+                <span className="text-xs font-bold text-emerald-400 px-1 truncate flex-1">
+                  Cameron Highlands Map
+                </span>
+              )}
+
+              {/* Desktop inline controls inside the unified floating pill */}
+              <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                {mapToolsVisibility.viewSwitcher && (
+                  <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-stone-950/80 border border-white/10 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setActiveMapType('osm')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                        activeMapType === 'osm' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                      }`}
+                    >
+                      Map
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMapType('satellite')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                        activeMapType === 'satellite' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                      }`}
+                    >
+                      Sat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMapType('terrain')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                        activeMapType === 'terrain' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                      }`}
+                    >
+                      Terrain
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStreetViewOpen(true)}
+                      className="p-1 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-white/5 transition-all cursor-pointer"
+                      title="360° Street View"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="relative" ref={filterMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
+                    className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5 whitespace-nowrap ${
+                      isFilterMenuOpen || proximityRadius !== 'all' || activeTownship !== 'all'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-stone-800 hover:bg-stone-700 text-stone-200'
+                    }`}
+                    title="Filter Menu"
+                  >
+                    <Layers className="w-4 h-4 text-emerald-400" />
+                    <span className="text-[10px] font-bold">{language === 'bm' ? 'Tapis' : 'Filter'}</span>
+                  </button>
+
+                  {isFilterMenuOpen && (
+                    <div className="hidden sm:block absolute right-0 top-11 z-[75] w-64 max-h-[65vh] overflow-y-auto rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 shadow-2xl p-3 space-y-4 text-stone-100 animate-in fade-in duration-200">
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Proximity Radius</div>
+                        {(['all', '5', '10', '25'] as const).map((rad) => (
+                          <button
+                            key={rad}
+                            type="button"
+                            onClick={() => {
+                              if (rad !== 'all' && !userGpsCoords) handleLocateMe();
+                              setProximityRadius(rad);
+                            }}
+                            className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-between ${
+                              proximityRadius === rad ? 'bg-emerald-600 text-white' : 'hover:bg-stone-800 text-stone-300'
+                            }`}
+                          >
+                            <span>{rad === 'all' ? 'All Range' : `Within ${rad} km`}</span>
+                            {proximityRadius === rad && <span className="text-[10px]">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="space-y-1 pt-2 border-t border-white/10">
+                        <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Categories</div>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('travel_tourism', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'travel_tourism' || activeCategory === 'attraction'
+                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🌴</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('accommodation', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'accommodation'
+                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🏨</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('services_utilities', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'services_utilities' || activeCategory === 'local_services'
+                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🔧</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('shopping', 'all')}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'shopping' || activeCategory === 'business'
+                              ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
+                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">🛍️</span>
+                            <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {mapToolsVisibility.audioButton && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => togglePwaAudioAlerts()}
+                      className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                        isVoiceNavEnabled
+                          ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-stone-800/80 hover:bg-stone-700 text-stone-500 border border-white/10'
+                      }`}
+                      title={
+                        isVoiceNavEnabled
+                          ? (language === 'bm' ? 'Makluman Suara PWA: Aktif' : 'PWA Audio Alerts: Enabled')
+                          : (language === 'bm' ? 'Makluman Suara PWA: Disenyapkan' : 'PWA Audio Alerts: Muted')
+                      }
+                      aria-label="Toggle PWA Voice Alerts"
+                    >
+                      {isVoiceNavEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={toggleMapVoiceLang}
+                      className={`px-2 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 text-[11px] font-bold whitespace-nowrap flex items-center gap-1 border ${
+                        mapVoiceLang === 'bm'
+                          ? 'bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border-emerald-500/40 shadow-emerald-900/20'
+                          : 'bg-stone-800 hover:bg-stone-700 text-sky-300 border-sky-500/30'
+                      }`}
+                      title={
+                        mapVoiceLang === 'bm'
+                          ? 'Suara Peta: Bahasa Malaysia (Klik untuk English)'
+                          : 'Map Voice: English (Click for Bahasa Malaysia)'
+                      }
+                      aria-label="Toggle Map Voice Language"
+                    >
+                      <span>{mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}</span>
+                    </button>
+                  </div>
+                )}
+
+                {mapToolsVisibility.locateButton && (
+                  <button
+                    type="button"
+                    onClick={handleLocateMe}
+                    disabled={isLocatingUser}
+                    className={`p-2 rounded-xl text-white transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                      isLocatingUser
+                        ? 'bg-amber-600 animate-pulse'
+                        : 'bg-emerald-600 hover:bg-emerald-500'
+                    }`}
+                    title={language === 'bm' ? 'Kesan Lokasi GPS Anda' : 'Locate My GPS Position'}
+                  >
+                    <LocateFixed className={`w-4 h-4 ${isLocatingUser ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : activeRoute && mapToolsVisibility.navHud ? (
+            /* TOP NAVIGATION HUD BANNER (Waze / Google Maps Style): Active during navigation */
+            <div className="flex-1 min-w-0 pointer-events-auto select-none animate-in slide-in-from-top duration-300">
+              <div className="rounded-2xl sm:rounded-3xl bg-emerald-700/95 backdrop-blur-2xl border border-emerald-400/40 shadow-2xl p-2 sm:p-4 text-white flex items-center justify-between gap-2 sm:gap-3">
+                <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white text-emerald-800 flex items-center justify-center shrink-0 shadow-md">
+                  <span className="text-lg sm:text-2xl font-black leading-none">
+                    {activeRoute.steps[0]?.icon || '⬆️'}
+                  </span>
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-1.5 sm:gap-2">
+                    <span className="text-base sm:text-2xl font-black tracking-tight text-white whitespace-nowrap">
+                      {activeRoute.steps[0]?.distanceMeters > 0
+                        ? activeRoute.steps[0].distanceMeters >= 1000
+                          ? `${(activeRoute.steps[0].distanceMeters / 1000).toFixed(1)} km`
+                          : `${activeRoute.steps[0].distanceMeters} m`
+                        : 'Now'}
+                    </span>
+                    {activeRoute.steps[1] && (
+                      <span className="text-[10px] sm:text-[11px] font-medium text-emerald-200/90 truncate">
+                        Then {activeRoute.steps[1].icon}{' '}
+                        {activeRoute.steps[1].distanceMeters >= 1000
+                          ? `${(activeRoute.steps[1].distanceMeters / 1000).toFixed(1)} km`
+                          : `${activeRoute.steps[1].distanceMeters} m`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] sm:text-sm font-bold text-emerald-50 truncate leading-snug mt-0.5">
+                    {mapVoiceLang === 'bm' || language === 'bm'
+                      ? translateNavInstructionToBm(activeRoute.steps[0]?.instruction || `Laluan ke ${activeRoute.destinationName}`)
+                      : (activeRoute.steps[0]?.instruction || `Navigate towards ${activeRoute.destinationName}`)}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={toggleMapVoiceLang}
+                  className="px-2 py-1 rounded-xl bg-black/25 hover:bg-black/40 text-[10px] font-black tracking-tight text-white transition-colors cursor-pointer shrink-0 border border-white/10 whitespace-nowrap"
+                  title={
+                    mapVoiceLang === 'bm'
+                      ? 'Suara: Bahasa Malaysia (Klik untuk English)'
+                      : 'Voice: English (Click for Bahasa Malaysia)'
+                  }
+                >
+                  {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleClearRoute}
+                  className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-black/30 hover:bg-black/50 text-white transition-colors cursor-pointer shrink-0"
+                  title="End Navigation"
+                >
+                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 min-w-0 sm:hidden text-xs font-bold text-emerald-400 px-1 truncate">
+              {language === 'bm' ? 'Mengira laluan...' : 'Calculating route...'}
+            </div>
+          )}
+
+          {/* Mobile Close Map Button (replaces removed mobile header X button) */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={() => {
+                stopAllVoiceAlerts();
+                onClose();
+              }}
+              className="sm:hidden w-9 h-9 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-white/15 flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+              title={language === 'bm' ? 'Tutup Peta' : 'Close Map'}
+              aria-label="Close Map"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Mobile Row 2 (in the removed header spot): Strictly 1 row — Terrain Toggle, Filter, Audio Language, Locate Me */}
+        {!activeRoute && !isCalculatingRoute && (
+          <div className="sm:hidden flex flex-nowrap items-center justify-between gap-1 w-full pointer-events-auto">
+            {/* Terrain / Map / Satellite + 360° */}
+            {mapToolsVisibility.viewSwitcher && (
+              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-stone-950 border border-white/10 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveMapType('osm')}
+                  className={`px-1.5 py-1 rounded-md text-[10px] leading-none font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    activeMapType === 'osm' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  Map
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMapType('satellite')}
+                  className={`px-1.5 py-1 rounded-md text-[10px] leading-none font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    activeMapType === 'satellite' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  Sat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMapType('terrain')}
+                  className={`px-1.5 py-1 rounded-md text-[10px] leading-none font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    activeMapType === 'terrain' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  Terrain
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStreetViewOpen(true)}
+                  className="p-1 rounded-md text-amber-400 hover:text-amber-300 hover:bg-white/5 transition-all cursor-pointer shrink-0"
+                  title="360° Street View"
+                  aria-label="360 Street View"
+                >
+                  <Eye className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            {/* Filter Button */}
+            <div className="relative shrink-0" ref={mobileFilterMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
+                className={`px-1.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 flex items-center gap-0.5 whitespace-nowrap text-[10px] leading-none font-bold ${
+                  isFilterMenuOpen || proximityRadius !== 'all' || activeTownship !== 'all'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10'
+                }`}
+                title="Filter Menu"
+              >
+                <Layers className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>{language === 'bm' ? 'Tapis' : 'Filter'}</span>
+              </button>
+
+              {isFilterMenuOpen && (
+                <div className="fixed inset-x-3 top-[102px] z-[75] max-h-[65vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-xl border border-emerald-500/35 shadow-2xl p-3 space-y-4 text-stone-100 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10.5px] font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                      {language === 'bm' ? 'Tapis Peta' : 'Map Filters'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsFilterMenuOpen(false)}
+                      className="p-1 rounded-lg bg-stone-800 text-stone-300 hover:text-white cursor-pointer"
+                      aria-label="Close filter menu"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Proximity Radius</div>
+                    {(['all', '5', '10', '25'] as const).map((rad) => (
+                      <button
+                        key={rad}
+                        type="button"
+                        onClick={() => {
+                          if (rad !== 'all' && !userGpsCoords) handleLocateMe();
+                          setProximityRadius(rad);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-between ${
+                          proximityRadius === rad ? 'bg-emerald-600 text-white' : 'hover:bg-stone-800 text-stone-300'
+                        }`}
+                      >
+                        <span>{rad === 'all' ? 'All Range' : `Within ${rad} km`}</span>
+                        {proximityRadius === rad && <span className="text-[10px]">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="space-y-1 pt-2 border-t border-white/10">
+                    <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Categories</div>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectCategory('travel_tourism', 'all')}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                        activeCategory === 'travel_tourism' || activeCategory === 'attraction'
+                          ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
+                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-base">🌴</span>
+                        <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectCategory('accommodation', 'all')}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                        activeCategory === 'accommodation'
+                          ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
+                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-base">🏨</span>
+                        <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectCategory('services_utilities', 'all')}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                        activeCategory === 'services_utilities' || activeCategory === 'local_services'
+                          ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
+                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-base">🔧</span>
+                        <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectCategory('shopping', 'all')}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                        activeCategory === 'shopping' || activeCategory === 'business'
+                          ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
+                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-base">🛍️</span>
+                        <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Audio Mute & Voice Language Toggle */}
+            {mapToolsVisibility.audioButton && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => togglePwaAudioAlerts()}
+                  className={`p-1 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 ${
+                    isVoiceNavEnabled
+                      ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-stone-800/80 hover:bg-stone-700 text-stone-500 border border-white/10'
+                  }`}
+                  title={
+                    isVoiceNavEnabled
+                      ? (language === 'bm' ? 'Makluman Suara PWA: Aktif' : 'PWA Audio Alerts: Enabled')
+                      : (language === 'bm' ? 'Makluman Suara PWA: Disenyapkan' : 'PWA Audio Alerts: Muted')
+                  }
+                  aria-label="Toggle PWA Voice Alerts"
+                >
+                  {isVoiceNavEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleMapVoiceLang}
+                  className={`px-1.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 text-[10px] leading-none font-bold whitespace-nowrap flex items-center gap-0.5 border ${
+                    mapVoiceLang === 'bm'
+                      ? 'bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border-emerald-500/40'
+                      : 'bg-stone-800 hover:bg-stone-700 text-sky-300 border-sky-500/30'
+                  }`}
+                  title={
+                    mapVoiceLang === 'bm'
+                      ? 'Suara Peta: Bahasa Malaysia (Klik untuk English)'
+                      : 'Map Voice: English (Click for Bahasa Malaysia)'
+                  }
+                  aria-label="Toggle Map Voice Language"
+                >
+                  <span>{mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Locate Me Button */}
+            {mapToolsVisibility.locateButton && (
+              <button
+                type="button"
+                onClick={handleLocateMe}
+                disabled={isLocatingUser}
+                className={`px-1.5 py-1 rounded-lg text-white transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 flex items-center gap-0.5 whitespace-nowrap text-[10px] leading-none font-bold ${
+                  isLocatingUser
+                    ? 'bg-amber-600 animate-pulse'
+                    : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+                title={language === 'bm' ? 'Kesan Lokasi GPS Anda' : 'Locate My GPS Position'}
+              >
+                <LocateFixed className={`w-3 h-3 shrink-0 ${isLocatingUser ? 'animate-spin' : ''}`} />
+                <span>{language === 'bm' ? 'Lokasi' : 'Locate'}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Map Container with Automatic 3D Driver's Perspective Navigation Rig (50-65° pitch + heading-up) */}
-      <div className="map-wrapper relative w-full h-full flex-1 min-h-[420px] rounded-none sm:rounded-2xl overflow-hidden border-0 sm:border border-white/10 shadow-2xl glass-panel select-none">
+      <div className="map-wrapper relative isolate z-0 w-full h-full flex-1 min-h-0 rounded-none sm:rounded-2xl overflow-hidden border-0 sm:border border-white/10 shadow-2xl glass-panel select-none">
         {/* 3D Perspective Positioning & Heading-Up Camera Rig */}
         <div
           className={
@@ -3797,188 +5379,962 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           </div>
         )}
 
-        {/* Strict Geofence Proximity Alert Banner (280m Attraction / 500m Fuel Reminder) */}
-        {mapToolsVisibility.alertBanners && activeGeofenceBanner && (
-          <div
-            className={`absolute left-3 right-3 sm:left-6 sm:right-6 max-w-xl sm:mx-auto z-[45] pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300 ${
-              activeRoute ? 'top-[86px] sm:top-[104px]' : 'top-[68px] sm:top-[72px]'
-            }`}
-          >
+        {/* Smart Traffic / Predictive Flow Compact Status Pill & Expandable Speed Legend (Bottom-Left) */}
+        {isTrafficOverlayActive && !activeRoute && !selectedPlace && !selectedTownshipHubModal && (
+          <div className="absolute bottom-3 left-2.5 sm:bottom-4 sm:left-4 z-[35] pointer-events-auto max-w-[calc(100vw-72px)] sm:max-w-xs">
+            {trafficLegendOpen ? (
+              <div className="rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-emerald-500/35 shadow-2xl p-2.5 text-stone-100 space-y-2 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-[10.5px] font-black uppercase tracking-wider text-emerald-300 truncate">
+                      {language === 'bm' ? 'Trafik Pintar / Aliran Ramalan' : 'Smart Traffic / Predictive Flow'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTrafficLegendOpen(false)}
+                    className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white cursor-pointer"
+                    aria-label="Close speed legend"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Color-coded speed bands */}
+                <div className="grid grid-cols-2 gap-1 text-[9.5px] font-bold">
+                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shrink-0" />
+                    <span>≥44 km/h Clear</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] shrink-0" />
+                    <span>28–43 km/h Moderate</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0" />
+                    <span>15–27 km/h Heavy</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#dc2626] shrink-0" />
+                    <span>&lt;15 km/h Gridlock</span>
+                  </div>
+                </div>
+
+                {/* Historical-Predictive Time-of-Day Pattern Selector */}
+                <div className="grid grid-cols-4 gap-1">
+                  {([
+                    { id: 'live' as const, label: language === 'bm' ? 'Auto' : 'Live' },
+                    { id: 'weekend_peak' as const, label: 'Wknd' },
+                    { id: 'evening_market' as const, label: 'Mkt' },
+                    { id: 'night_clear' as const, label: 'Night' },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setPredictiveDepartureProfile(opt.id)}
+                      className={`py-1 rounded-lg text-[9.5px] font-bold transition-colors cursor-pointer border ${
+                        predictiveDepartureProfile === opt.id
+                          ? 'bg-emerald-600/35 border-emerald-400 text-emerald-200'
+                          : 'bg-stone-900/80 border-white/10 text-stone-400 hover:text-stone-200'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {predictiveFlowStats && (
+                  <div className="flex items-center justify-between text-[9.5px] font-mono text-stone-400 pt-1 border-t border-white/10">
+                    <span>
+                      Live: <strong className="text-emerald-300">{predictiveFlowStats.liveVerifiedCount}</strong> • Hist:{' '}
+                      <strong className="text-amber-300">{predictiveFlowStats.historicalFallbackCount}</strong>
+                    </span>
+                    <span className="text-stone-300 font-bold">Avg {predictiveFlowStats.avgSpeedKmh} km/h</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setTrafficLegendOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-stone-900/92 hover:bg-stone-800 backdrop-blur-xl border border-emerald-500/35 shadow-xl text-[10px] font-bold text-stone-100 flex items-center gap-1.5 cursor-pointer transition-colors"
+                title={
+                  language === 'bm'
+                    ? 'Trafik Pintar & Aliran Ramalan (Klik untuk Legenda)'
+                    : 'Smart Traffic / Predictive Flow (Click for Speed Legend)'
+                }
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="truncate">
+                  {language === 'bm' ? 'Trafik Pintar' : 'Smart Traffic'}
+                  {predictiveDepartureProfile !== 'live'
+                    ? predictiveDepartureProfile === 'weekend_peak'
+                      ? ' • Wknd Peak'
+                      : predictiveDepartureProfile === 'evening_market'
+                        ? ' • Night Mkt'
+                        : ' • Night'
+                    : tomTomKeyPresent
+                      ? ' • Live+Hist'
+                      : ' • Predictive'}
+                </span>
+                {predictiveFlowStats && (
+                  <span className="font-mono text-amber-300 shrink-0">
+                    {predictiveFlowStats.avgSpeedKmh} km/h
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* NON-OVERLAPPING MOBILE-FIT ALERT & DIRECTORY OVERLAY STACK */}
+        {(() => {
+          const isAnyDirectoryPopupExpanded = Boolean(
+            (selectedPlace && (!isPlaceCardMinimized || is3dDriverMode)) || selectedTownshipHubModal
+          );
+          const hasTopAlert =
+            (isMuslimPrayerAlertsEnabled && Boolean(activePrayerAlert)) ||
+            (mapToolsVisibility.alertBanners &&
+              (Boolean(activeGeofenceBanner) ||
+                (!isAnyDirectoryPopupExpanded &&
+                  nearbyAttractions.length > 0 &&
+                  dismissedNearbySig !== nearbyAttractionsSignature)));
+
+          return (
             <div
-              className={`rounded-2xl backdrop-blur-2xl border shadow-2xl px-3.5 py-2.5 text-stone-100 flex items-center justify-between gap-2.5 ${
-                activeGeofenceBanner.kind === 'fuel'
-                  ? 'bg-amber-950/95 border-amber-400/70'
-                  : 'bg-emerald-950/95 border-emerald-400/70'
+              className={`absolute inset-x-2 bottom-2 sm:inset-x-5 sm:bottom-4 z-40 pointer-events-none flex flex-col justify-between gap-2 min-h-0 top-2.5 ${
+                activeRoute
+                  ? 'sm:top-[96px]'
+                  : mapToolsVisibility.searchBar
+                    ? 'sm:top-[66px]'
+                    : 'sm:top-[66px]'
               }`}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                    activeGeofenceBanner.kind === 'fuel'
-                      ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
-                      : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
-                  }`}
-                >
-                  {activeGeofenceBanner.kind === 'fuel' ? (
-                    <Fuel className="w-4 h-4 animate-pulse" />
-                  ) : (
-                    <MapPin className="w-4 h-4 animate-bounce" />
+              {/* TOP ALERT ZONE: Prayer Popup + Geofence/Nearby Banner stacked cleanly with zero overlap */}
+              {hasTopAlert ? (
+                <div className="shrink-0 flex flex-col gap-1.5 w-full max-w-xl sm:mx-auto pointer-events-none">
+                  {/* Special Muslim Prayer Time Alert Banner (Coming Soon / Just Entered) */}
+                  {isMuslimPrayerAlertsEnabled && activePrayerAlert && (
+                    <div className="pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div
+                        className={`rounded-2xl bg-gradient-to-r from-emerald-950/96 via-teal-950/96 to-stone-950/96 backdrop-blur-2xl border border-amber-400/75 shadow-[0_14px_40px_rgba(0,0,0,0.65)] text-stone-100 flex flex-col ${
+                          isAnyDirectoryPopupExpanded ? 'px-2.5 py-2 gap-1.5' : 'px-3 py-2.5 sm:px-3.5 gap-2'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div
+                              className={`rounded-xl bg-amber-500/20 border border-amber-400/60 text-amber-300 flex items-center justify-center shrink-0 ${
+                                isAnyDirectoryPopupExpanded ? 'w-7 h-7' : 'w-8 h-8 sm:w-9 sm:h-9'
+                              }`}
+                            >
+                              <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[9.5px] sm:text-[10px] font-mono font-black uppercase tracking-wider text-amber-300 flex items-center gap-1 flex-wrap">
+                                <span>🕌 {language === 'bm' ? 'WAKTU SOLAT' : 'PRAYER ALERT'}</span>
+                                <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                                  {prayerSourceLabel}
+                                </span>
+                              </div>
+                              <div className="text-[11.5px] sm:text-sm font-black text-white leading-tight mt-0.5 truncate">
+                                {activePrayerAlert.status === 'entered'
+                                  ? language === 'bm'
+                                    ? `Solat ${activePrayerAlert.prayerName} masuk (${activePrayerAlert.time12h})`
+                                    : `${activePrayerAlert.prayerName} Prayer begun (${activePrayerAlert.time12h})`
+                                  : language === 'bm'
+                                    ? `Solat ${activePrayerAlert.prayerName} dlm ${activePrayerAlert.minsRemaining} min (${activePrayerAlert.time12h})`
+                                    : `${activePrayerAlert.prayerName} in ${activePrayerAlert.minsRemaining}m (${activePrayerAlert.time12h})`}
+                              </div>
+                              {!isAnyDirectoryPopupExpanded && activePrayerAlert.nearestMasjid && (
+                                <div className="text-[10.5px] sm:text-[11px] text-emerald-200 truncate mt-0.5">
+                                  {language === 'bm' ? 'Terdekat:' : 'Nearest:'}{' '}
+                                  <span className="font-bold text-white">
+                                    {language === 'bm'
+                                      ? activePrayerAlert.nearestMasjid.nameBm || activePrayerAlert.nearestMasjid.name
+                                      : activePrayerAlert.nearestMasjid.name}
+                                  </span>
+                                  {activePrayerAlert.nearestDistanceKm !== null &&
+                                  activePrayerAlert.nearestDistanceKm !== undefined
+                                    ? ` • ${activePrayerAlert.nearestDistanceKm} km`
+                                    : ''}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                unlockAudioEngine(true);
+                                if (!isVoiceNavEnabled) togglePwaAudioAlerts(true);
+                                speakUtteranceMobileSafe(activePrayerAlert.voiceText, true);
+                              }}
+                              className="p-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 transition-colors cursor-pointer"
+                              title={language === 'bm' ? 'Dengar Peringatan Suara' : 'Replay Prayer Alert'}
+                            >
+                              <Volume2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                stopAllVoiceAlerts();
+                                setActivePrayerAlert(null);
+                              }}
+                              className="p-1.5 rounded-lg bg-black/35 hover:bg-black/55 text-stone-300 hover:text-white transition-colors cursor-pointer"
+                              title="Dismiss prayer alert"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {activePrayerAlert.nearestMasjid && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const masjid = activePrayerAlert.nearestMasjid!;
+                                setActivePrayerAlert(null);
+                                handleTriggerRoute(masjid);
+                              }}
+                              className="px-2 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] sm:text-[10.5px] font-black flex items-center gap-1 cursor-pointer transition-colors shadow-md"
+                            >
+                              <Navigation2 className="w-3 h-3 fill-current" />
+                              <span>{language === 'bm' ? 'Navigasi Masjid' : 'Navigate Masjid'}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => window.dispatchEvent(new CustomEvent('open-masjid-modal'))}
+                            className="px-2 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 text-[10px] sm:text-[10.5px] font-bold cursor-pointer transition-colors"
+                          >
+                            {language === 'bm' ? 'Jadual Solat & Masjid' : 'All Masjid & Schedule'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   )}
-                </div>
-                <div className="min-w-0">
-                  <div
-                    className={`text-[10px] font-mono font-black uppercase tracking-wider ${
-                      activeGeofenceBanner.kind === 'fuel' ? 'text-amber-300' : 'text-emerald-300'
-                    }`}
-                  >
-                    {activeGeofenceBanner.kind === 'fuel'
-                      ? 'FUEL GEOFENCE (<=500M)'
-                      : 'ATTRACTION GEOFENCE (<=280M)'}
-                  </div>
-                  <div className="text-xs sm:text-sm font-black text-white truncate">
-                    {activeGeofenceBanner.title}
-                  </div>
-                  <div className="text-[11px] text-stone-300 truncate">
-                    {activeGeofenceBanner.subtitle}
-                  </div>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
-                {activeGeofenceBanner.place && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const target = activeGeofenceBanner.place!;
-                      onSelectPlace(target);
-                      if (mapInstanceRef.current && target.coordinates) {
-                        mapInstanceRef.current.flyTo(
-                          [Number(target.coordinates.lat), Number(target.coordinates.lng)],
-                          17,
-                          { duration: 0.85 }
-                        );
-                      }
-                    }}
-                    className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[10.5px] font-bold cursor-pointer transition-colors"
-                  >
-                    {language === 'bm' ? 'Lihat' : 'View'}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    unlockAudioEngine(true);
-                    if (!isVoiceNavEnabled) togglePwaAudioAlerts(true);
-                    speakUtteranceMobileSafe(activeGeofenceBanner.voiceText, true);
-                  }}
-                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                  title={language === 'bm' ? 'Ulang Suara' : 'Replay Voice Alert'}
-                >
-                  <Volume2 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveGeofenceBanner(null)}
-                  className="p-1.5 rounded-lg bg-black/30 hover:bg-black/50 text-stone-300 hover:text-white transition-colors cursor-pointer"
-                  title="Dismiss"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+                  {/* Strict Geofence Proximity Alert Banner */}
+                  {mapToolsVisibility.alertBanners && activeGeofenceBanner && (
+                    <div className="pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div
+                        className={`rounded-2xl backdrop-blur-2xl border shadow-2xl px-3 py-2 text-stone-100 flex items-center justify-between gap-2 ${
+                          activeGeofenceBanner.kind === 'fuel'
+                            ? 'bg-amber-950/95 border-amber-400/70'
+                            : activeGeofenceBanner.kind === 'food'
+                              ? 'bg-teal-950/95 border-teal-400/70'
+                              : 'bg-emerald-950/95 border-emerald-400/70'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                              activeGeofenceBanner.kind === 'fuel'
+                                ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
+                                : activeGeofenceBanner.kind === 'food'
+                                  ? 'bg-teal-500/20 border-teal-400/50 text-teal-300'
+                                  : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                            }`}
+                          >
+                            {activeGeofenceBanner.kind === 'fuel' ? (
+                              <Fuel className="w-4 h-4 animate-pulse" />
+                            ) : activeGeofenceBanner.kind === 'food' ? (
+                              <Utensils className="w-4 h-4 animate-bounce" />
+                            ) : (
+                              <Palmtree className="w-4 h-4 animate-bounce" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div
+                              className={`text-[9.5px] font-mono font-black uppercase tracking-wider truncate ${
+                                activeGeofenceBanner.kind === 'fuel'
+                                  ? 'text-amber-300'
+                                  : activeGeofenceBanner.kind === 'food'
+                                    ? 'text-teal-300'
+                                    : 'text-emerald-300'
+                              }`}
+                            >
+                              {activeGeofenceBanner.kind === 'fuel'
+                                ? 'GAS STATION (<=500M)'
+                                : activeGeofenceBanner.kind === 'food'
+                                  ? 'FOOD & BEVERAGE (<=280M)'
+                                  : 'TRAVEL & TOURISM (<=280M)'}
+                            </div>
+                            <div className="text-xs font-black text-white truncate">
+                              {activeGeofenceBanner.title}
+                            </div>
+                            <div className="text-[10.5px] text-stone-300 truncate">
+                              {activeGeofenceBanner.subtitle}
+                            </div>
+                          </div>
+                        </div>
 
-        {/* Nearby Attractions & Admin-Updated Spots Floating Voice + Banner Alert */}
-        {mapToolsVisibility.alertBanners &&
-          !activeGeofenceBanner &&
-          nearbyAttractions.length > 0 &&
-          dismissedNearbySig !== nearbyAttractionsSignature && (
-          <div
-            className={`absolute left-3 right-3 sm:left-6 sm:right-6 max-w-xl sm:mx-auto z-40 pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300 ${
-              activeRoute ? 'top-[86px] sm:top-[104px]' : 'top-[68px] sm:top-[72px]'
-            }`}
-          >
-            <div className="rounded-2xl bg-stone-950/92 backdrop-blur-2xl border border-amber-400/45 shadow-2xl px-3 py-2 text-stone-100 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-black text-amber-200 truncate">
-                      {language === 'bm'
-                        ? `Terdapat ${nearbyAttractions.length} tarikan berhampiran anda`
-                        : `There ${nearbyAttractions.length === 1 ? 'is' : 'are'} ${nearbyAttractions.length} ${
-                            nearbyAttractions.length === 1 ? 'attraction' : 'attractions'
-                          } nearby`}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {activeGeofenceBanner.place && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const target = activeGeofenceBanner.place!;
+                                onSelectPlace(target);
+                                if (mapInstanceRef.current && target.coordinates && !activeRouteRef.current) {
+                                  mapInstanceRef.current.flyTo(
+                                    [Number(target.coordinates.lat), Number(target.coordinates.lng)],
+                                    17,
+                                    { duration: 0.85 }
+                                  );
+                                }
+                              }}
+                              className="px-2 py-1 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[10px] font-bold cursor-pointer transition-colors"
+                            >
+                              {language === 'bm' ? 'Lihat' : 'View'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              unlockAudioEngine(true);
+                              if (!isVoiceNavEnabled) togglePwaAudioAlerts(true);
+                              speakUtteranceMobileSafe(activeGeofenceBanner.voiceText, true);
+                            }}
+                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                            title={language === 'bm' ? 'Ulang Suara' : 'Replay Voice Alert'}
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              stopAllVoiceAlerts();
+                              setActiveGeofenceBanner(null);
+                            }}
+                            className="p-1.5 rounded-lg bg-black/30 hover:bg-black/50 text-stone-300 hover:text-white transition-colors cursor-pointer"
+                            title="Dismiss"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Nearby Travel & Highland Tourism, Gas Stations, and Food & Beverages Banner */}
+                  {mapToolsVisibility.alertBanners &&
+                    !activeGeofenceBanner &&
+                    !isAnyDirectoryPopupExpanded &&
+                    nearbyAttractions.length > 0 &&
+                    dismissedNearbySig !== nearbyAttractionsSignature && (
+                      <div className="pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div className="rounded-2xl bg-stone-950/92 backdrop-blur-2xl border border-amber-400/45 shadow-2xl px-3 py-2 text-stone-100 flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-6 h-6 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center shrink-0">
+                                <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                              </span>
+                              <div className="min-w-0">
+                                <div className="text-xs sm:text-sm font-black text-amber-200 truncate">
+                                  {language === 'bm'
+                                    ? `${nearbyAttractions.length} lokasi Pelancongan, F&B & Minyak berhampiran`
+                                    : `${nearbyAttractions.length} Tourism, Dining & Gas spots nearby`}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  unlockAudioEngine(true);
+                                  if (!isVoiceNavEnabled) {
+                                    togglePwaAudioAlerts(true);
+                                  }
+                                  speakUtteranceMobileSafe(buildNearbyVoiceText(nearbyAttractions, mapVoiceLang), true);
+                                }}
+                                className="p-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 transition-colors cursor-pointer"
+                                title={language === 'bm' ? 'Dengar Pengumuman Suara' : 'Announce Nearby Spots'}
+                              >
+                                <Volume2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  stopAllVoiceAlerts();
+                                  setDismissedNearbySig(nearbyAttractionsSignature);
+                                }}
+                                className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                                title="Dismiss nearby banner"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+                            {nearbyAttractions.slice(0, 5).map(({ place, distanceKm, poiKind }) => (
+                              <button
+                                key={`nearby-attr-${place.id}`}
+                                type="button"
+                                onClick={() => {
+                                  onSelectPlace(place);
+                                  if (mapInstanceRef.current && place.coordinates && !activeRouteRef.current) {
+                                    mapInstanceRef.current.flyTo(
+                                      [Number(place.coordinates.lat), Number(place.coordinates.lng)],
+                                      16.5,
+                                      { duration: 0.9 }
+                                    );
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-xl bg-stone-900 hover:bg-emerald-950/70 border border-white/10 hover:border-emerald-400/50 text-[10.5px] font-bold text-stone-200 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                              >
+                                {poiKind === 'fuel' ? (
+                                  <Fuel className="w-3 h-3 text-amber-400 shrink-0" />
+                                ) : poiKind === 'food' ? (
+                                  <Utensils className="w-3 h-3 text-teal-400 shrink-0" />
+                                ) : (
+                                  <Palmtree className="w-3 h-3 text-emerald-400 shrink-0" />
+                                )}
+                                <span className="truncate max-w-[140px]">
+                                  {language === 'bm' ? place.nameBm || place.name : place.name}
+                                </span>
+                                <span className="text-[9.5px] font-mono text-amber-300">{distanceKm} km</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                </div>
+              ) : (
+                <div className="shrink-0" />
+              )}
+
+              {/* LOWER / CENTER DIRECTORY & POPUP SLOT: Flex-constrained (max-h-full) so it NEVER overlaps Prayer Alert above */}
+              <div className="flex-1 min-h-0 flex flex-col justify-end pointer-events-none">
+                {/* 4A. NORMAL FLAT 2D DIRECTORY POPUP MODAL WHEN IN LOW-HORIZON 3D PITCH MODE */}
+                {selectedPlace && is3dDriverMode && (
+                  <div className="flex-1 min-h-0 flex items-center justify-center pointer-events-none">
+                    <div
+                      className="pointer-events-auto w-full max-w-md rounded-2xl sm:rounded-3xl bg-stone-900/98 border border-emerald-500/50 shadow-[0_24px_70px_rgba(0,0,0,0.95)] p-3 sm:p-4 text-stone-100 flex flex-col gap-2.5 max-h-full overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-start justify-between gap-2 shrink-0">
+                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                          <img
+                            src={safeSrc(selectedPlace.imageUrl, DEFAULT_PLACE_IMAGE)}
+                            alt={selectedPlace.name}
+                            className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl object-cover shrink-0 border border-white/15 shadow-md"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-400 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30">
+                                {selectedPlace.township}
+                              </span>
+                              {selectedPlace.elevation && (
+                                <span className="text-[9px] font-mono text-stone-400">
+                                  {selectedPlace.elevation}
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="text-sm sm:text-base font-black text-white mt-0.5 leading-snug line-clamp-1">
+                              {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
+                            </h3>
+                            <div className="flex items-center gap-2 text-[11px] sm:text-xs text-stone-400 mt-0.5">
+                              <span className="text-amber-400 font-bold">★ {selectedPlace.rating}</span>
+                              <span>({selectedPlace.reviewsCount || 85} reviews)</span>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            stopAllVoiceAlerts();
+                            onSelectPlace(null);
+                          }}
+                          className="p-1.5 sm:p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                          aria-label="Close directory popup"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {userGpsCoords &&
+                        selectedPlace.coordinates?.lat &&
+                        selectedPlace.coordinates?.lng && (
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[11px] sm:text-xs shrink-0">
+                            <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
+                              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>
+                                {calculateDistanceKm(
+                                  userGpsCoords.lat,
+                                  userGpsCoords.lng,
+                                  Number(selectedPlace.coordinates.lat),
+                                  Number(selectedPlace.coordinates.lng)
+                                )}{' '}
+                                km away
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-amber-300 font-bold font-mono text-[10.5px] sm:text-[11px]">
+                              <Car className="w-3.5 h-3.5 text-amber-400" />
+                              <span>
+                                ~
+                                {Math.max(
+                                  3,
+                                  Math.round(
+                                    (calculateDistanceKm(
+                                      userGpsCoords.lat,
+                                      userGpsCoords.lng,
+                                      Number(selectedPlace.coordinates.lat),
+                                      Number(selectedPlace.coordinates.lng)
+                                    ) /
+                                      32) *
+                                      60
+                                  )
+                                )}{' '}
+                                mins drive
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = selectedPlace;
+                          onSelectPlace(null);
+                          handleTriggerRoute(target);
+                        }}
+                        className="w-full py-2 sm:py-2.5 px-4 rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl active:scale-95 transition-all cursor-pointer shrink-0"
+                      >
+                        <Navigation2 className="w-4 h-4 fill-current" />
+                        <span>
+                          {activeRoute
+                            ? language === 'bm'
+                              ? 'Tukar Laluan Navigasi ke Sini'
+                              : 'Switch Navigation to Here'
+                            : language === 'bm'
+                              ? 'Mula Navigasi GPS'
+                              : 'Start Navigation'}
+                        </span>
+                      </button>
+
+                      <div className="overflow-y-auto pr-1 space-y-2 text-xs [scrollbar-width:thin] min-h-0 flex-1">
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="py-1.5 px-1.5 rounded-xl bg-blue-600/90 hover:bg-blue-600 text-white font-bold text-[10px] sm:text-[10.5px] flex items-center justify-center gap-1"
+                          >
+                            <span>Google Maps</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                          <a
+                            href={`https://waze.com/ul?ll=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}&navigate=yes`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="py-1.5 px-1.5 rounded-xl bg-cyan-600/90 hover:bg-cyan-600 text-white font-bold text-[10px] sm:text-[10.5px] flex items-center justify-center gap-1"
+                          >
+                            <span>Waze</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => setStreetViewOpen(true)}
+                            className="py-1.5 px-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-[10px] sm:text-[10.5px] flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 shrink-0" />
+                            <span>360° View</span>
+                          </button>
+                        </div>
+
+                        <div className="p-2.5 rounded-2xl bg-stone-950/80 border border-white/10 space-y-1 text-[11px] sm:text-xs text-stone-300">
+                          <p className="leading-relaxed">
+                            {language === 'bm' ? selectedPlace.descriptionBm : selectedPlace.description}
+                          </p>
+                          {selectedPlace.contact &&
+                            selectedPlace.contact.trim() !== '' &&
+                            selectedPlace.contact !== '+60 5-491 1234' && (
+                              <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px] pt-1">
+                                <Phone className="w-3 h-3 shrink-0" />
+                                <a href={`tel:${selectedPlace.contact}`} className="underline hover:text-emerald-300">
+                                  {selectedPlace.contact}
+                                </a>
+                              </div>
+                            )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      unlockAudioEngine(true);
-                      if (!isVoiceNavEnabled) {
-                        togglePwaAudioAlerts(true);
-                      }
-                      speakUtteranceMobileSafe(buildNearbyVoiceText(nearbyAttractions, mapVoiceLang), true);
-                    }}
-                    className="p-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 transition-colors cursor-pointer"
-                    title={language === 'bm' ? 'Dengar Pengumuman Suara' : 'Announce Nearby Attractions'}
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDismissedNearbySig(nearbyAttractionsSignature)}
-                    className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer"
-                    title="Dismiss nearby banner"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
+                {/* 4B. NORMAL FLAT 2D TOWNSHIP HUB MODAL IN LOW-HORIZON 3D PITCH MODE */}
+                {selectedTownshipHubModal && (
+                  <div className="flex-1 min-h-0 flex items-center justify-center pointer-events-none">
+                    <div
+                      className="pointer-events-auto w-full max-w-md rounded-2xl sm:rounded-3xl bg-stone-900/98 border border-sky-500/45 shadow-2xl overflow-hidden text-stone-100 flex flex-col max-h-full animate-in fade-in zoom-in-95 duration-200"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="relative h-28 sm:h-36 shrink-0">
+                        <img
+                          src={safeSrc(selectedTownshipHubModal.imageUrl, DEFAULT_PLACE_IMAGE)}
+                          alt={selectedTownshipHubModal.township}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/40 to-transparent" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            stopAllVoiceAlerts();
+                            setSelectedTownshipHubModal(null);
+                          }}
+                          className="absolute top-2.5 right-2.5 p-1.5 sm:p-2 rounded-full bg-black/60 hover:bg-black/80 text-white cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <div className="absolute bottom-2.5 left-3.5 right-3.5">
+                          <div className="text-[9.5px] font-black uppercase tracking-wider text-sky-400">
+                            Cameron Highlands Township Hub
+                          </div>
+                          <h3 className="text-base sm:text-lg font-black text-white">
+                            {selectedTownshipHubModal.township} Hub
+                          </h3>
+                        </div>
+                      </div>
+                      <div className="p-3 sm:p-4 space-y-2.5 overflow-y-auto text-[11px] sm:text-xs min-h-0 flex-1 [scrollbar-width:thin]">
+                        <p className="text-stone-300 leading-relaxed">{selectedTownshipHubModal.description}</p>
+                        <div className="p-2.5 rounded-2xl bg-stone-950/80 border border-white/10 space-y-1">
+                          <div>🏥 <strong>Clinic/Hospital:</strong> {selectedTownshipHubModal.clinicsOrHospitals}</div>
+                          <div>👮 <strong>Police:</strong> {selectedTownshipHubModal.policeStation}</div>
+                          <div>🚻 <strong>Public Toilet:</strong> {selectedTownshipHubModal.publicToilet}</div>
+                          <div>⛽ <strong>Gas Station:</strong> {selectedTownshipHubModal.gasStation}</div>
+                        </div>
+                        <div className="text-stone-300">
+                          <div className="font-bold text-emerald-400 uppercase text-[10px] mb-1">Places of Interest</div>
+                          <div>{selectedTownshipHubModal.attractionsList}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const town = selectedTownshipHubModal.township;
+                            setSelectedTownshipHubModal(null);
+                            window.dispatchEvent(new CustomEvent('filter-township-hub', { detail: town }));
+                          }}
+                          className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                        >
+                          Filter Directory & Map by {selectedTownshipHubModal.township}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-                {nearbyAttractions.slice(0, 5).map(({ place, distanceKm, isAdminUpdated }) => (
-                  <button
-                    key={`nearby-attr-${place.id}`}
-                    type="button"
-                    onClick={() => {
-                      onSelectPlace(place);
-                      if (mapInstanceRef.current && place.coordinates) {
-                        mapInstanceRef.current.flyTo(
-                          [Number(place.coordinates.lat), Number(place.coordinates.lng)],
-                          16.5,
-                          { duration: 0.9 }
-                        );
-                      }
-                    }}
-                    className="px-2.5 py-1 rounded-xl bg-stone-900 hover:bg-emerald-950/70 border border-white/10 hover:border-emerald-400/50 text-[10.5px] font-bold text-stone-200 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
-                  >
-                    <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span className="truncate max-w-[140px]">
-                      {language === 'bm' ? place.nameBm || place.name : place.name}
-                    </span>
-                    <span className="text-[9.5px] font-mono text-amber-300">{distanceKm} km</span>
-                    {isAdminUpdated && (
-                      <span className="text-[8.5px] px-1 rounded bg-emerald-500/20 text-emerald-300 font-mono">
-                        NEW
-                      </span>
-                    )}
-                  </button>
-                ))}
+                {/* 4C. REGULAR 2D DIRECTORY PLACE POPUP / BOTTOM SHEET (Flex-constrained so it NEVER overlaps Prayer Alert!) */}
+                {selectedPlace && !activeRoute && !is3dDriverMode && (
+                  isPlaceCardMinimized ? (
+                    <div className="pointer-events-auto self-center select-none max-w-full animate-in slide-in-from-bottom duration-200">
+                      <div className="rounded-full bg-stone-900/95 backdrop-blur-2xl border border-emerald-500/45 shadow-2xl px-3 py-1.5 text-stone-100 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsPlaceCardMinimized(false)}
+                          className="flex items-center gap-1.5 min-w-0 cursor-pointer"
+                          title="Expand Place Card"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="text-xs font-extrabold text-white truncate max-w-[140px] sm:max-w-[200px]">
+                            {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = selectedPlace;
+                            onSelectPlace(null);
+                            handleTriggerRoute(target);
+                          }}
+                          className="px-2.5 py-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <Navigation2 className="w-3 h-3 fill-current" />
+                          <span>{language === 'bm' ? 'Pergi' : 'Go'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsPlaceCardMinimized(false)}
+                          className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-emerald-300 cursor-pointer shrink-0"
+                          title="Expand Place Card"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            stopAllVoiceAlerts();
+                            onSelectPlace(null);
+                          }}
+                          className="p-1.5 rounded-full bg-black/40 hover:bg-stone-700 text-stone-400 hover:text-white cursor-pointer shrink-0"
+                          title="Close Place Card"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pointer-events-auto w-full sm:w-[410px] max-h-full flex flex-col select-none animate-in slide-in-from-bottom duration-300">
+                      <div className="rounded-2xl sm:rounded-3xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/50 shadow-[0_20px_60px_rgba(0,0,0,0.9)] p-3 sm:p-4 text-stone-100 flex flex-col gap-2 sm:gap-2.5 max-h-full w-full overflow-hidden box-border">
+                        {/* Drag Handle Indicator */}
+                        <div className="w-10 h-1 bg-stone-600/80 rounded-full mx-auto -mt-0.5 mb-0.5 shrink-0" />
+
+                        {/* Header: Place Photo + Titles + Minimize/Close Buttons */}
+                        <div className="flex items-start justify-between gap-2 w-full min-w-0 shrink-0">
+                          <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1 overflow-hidden">
+                            <img
+                              src={safeSrc(selectedPlace.imageUrl, DEFAULT_PLACE_IMAGE)}
+                              alt={selectedPlace.name}
+                              className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl object-cover shrink-0 border border-white/10 shadow-md aspect-square"
+                            />
+                            <div className="min-w-0 flex-1 overflow-hidden pr-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-400 px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 truncate max-w-[130px]">
+                                  {selectedPlace.township}
+                                </span>
+                                {selectedPlace.elevation && (
+                                  <span className="text-[9px] font-mono text-stone-400 shrink-0">
+                                    {selectedPlace.elevation}
+                                  </span>
+                                )}
+                              </div>
+                              <h3 className="text-xs sm:text-base font-extrabold text-white mt-1 leading-snug line-clamp-1 break-words truncate">
+                                {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
+                              </h3>
+                              <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-stone-400 mt-0.5 truncate">
+                                <span className="text-amber-400 font-bold shrink-0">★ {selectedPlace.rating}</span>
+                                <span className="truncate">({selectedPlace.reviewsCount || 85} reviews)</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0 ml-1">
+                            <button
+                              type="button"
+                              onClick={() => setIsPlaceCardMinimized(true)}
+                              className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                              title={language === 'bm' ? 'Kecilkan kepada kapsul' : 'Minimize to capsule'}
+                            >
+                              <Minimize2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                stopAllVoiceAlerts();
+                                onSelectPlace(null);
+                              }}
+                              className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                              title="Close place card"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Live Distance & Estimated Mountain Drive Time */}
+                        {(() => {
+                          const lat = Number(selectedPlace.coordinates?.lat);
+                          const lng = Number(selectedPlace.coordinates?.lng);
+                          const hasValidCoords = !isNaN(lat) && !isNaN(lng) && lat !== 0;
+
+                          if (!hasValidCoords) return null;
+
+                          if (userGpsCoords) {
+                            const dist = calculateDistanceKm(userGpsCoords.lat, userGpsCoords.lng, lat, lng);
+                            const estMins = Math.max(3, Math.round((dist / 32) * 60));
+
+                            return (
+                              <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs shrink-0 w-full min-w-0 overflow-hidden">
+                                <div className="flex items-center gap-1.5 text-emerald-300 font-bold min-w-0 truncate">
+                                  <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span className="truncate">{dist} km away</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-amber-300 font-bold font-mono shrink-0 pl-1 text-[11px] sm:text-xs">
+                                  <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  <span>~{estMins} mins drive</span>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex items-center justify-between p-1.5 sm:p-2 rounded-xl bg-stone-950/80 border border-emerald-500/20 text-xs shrink-0 w-full min-w-0">
+                              <div className="flex items-center gap-1.5 text-stone-300 text-[11px] min-w-0 truncate">
+                                <LocateFixed className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span className="truncate">{language === 'bm' ? 'Jarak GPS masa nyata' : 'Real-time GPS distance'}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleLocateMe();
+                                }}
+                                disabled={isLocatingUser}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-[10px] flex items-center gap-1 shrink-0 cursor-pointer shadow-sm transition-all"
+                              >
+                                <LocateFixed className={`w-3 h-3 ${isLocatingUser ? 'animate-spin' : ''}`} />
+                                <span>{isLocatingUser ? (language === 'bm' ? 'Mengesan...' : 'Locating...') : (language === 'bm' ? 'Kesan GPS' : 'Locate Me')}</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
+
+                        {/* PROMINENT "START NAVIGATION" BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = selectedPlace;
+                            onSelectPlace(null);
+                            handleTriggerRoute(target);
+                          }}
+                          className="w-full py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-950/80 active:scale-95 transition-all cursor-pointer shrink-0 min-w-0 truncate"
+                        >
+                          <Navigation2 className="w-4 h-4 sm:w-5 sm:h-5 fill-current shrink-0" />
+                          <span className="truncate">{language === 'bm' ? 'Mula Navigasi GPS' : 'Start Navigation'}</span>
+                        </button>
+
+                        {/* Scrollable details: Flex-1 min-h-0 guarantees card never exceeds remaining mobile height */}
+                        <div className="overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#059669_transparent] pr-1 space-y-2 flex-1 min-h-0 w-full min-w-0">
+                          <div className="grid grid-cols-3 gap-1 pt-0.5 w-full">
+                            <a
+                              href={`https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="py-1.5 px-1 rounded-xl bg-blue-600/90 hover:bg-blue-600 text-white font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all text-center min-w-0 overflow-hidden"
+                            >
+                              <span className="truncate">Google Maps</span>
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                            </a>
+                            <a
+                              href={`https://waze.com/ul?ll=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}&navigate=yes`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="py-1.5 px-1 rounded-xl bg-cyan-600/90 hover:bg-cyan-600 text-white font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all text-center min-w-0 overflow-hidden"
+                            >
+                              <span className="truncate">Waze</span>
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => setStreetViewOpen(true)}
+                              className="py-1.5 px-1 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer text-center min-w-0 overflow-hidden"
+                            >
+                              <Eye className="w-3 h-3 shrink-0" />
+                              <span className="truncate">360° View</span>
+                            </button>
+                          </div>
+
+                          <details className="text-xs bg-stone-950/70 rounded-xl p-2 sm:p-2.5 border border-white/5 group w-full overflow-hidden">
+                            <summary className="font-bold text-stone-300 cursor-pointer flex items-center justify-between select-none min-w-0">
+                              <span className="truncate pr-1 text-[11px] sm:text-xs">
+                                {language === 'bm' ? 'Maklumat & Waktu Operasi' : 'Place Details & Operating Hours'}
+                              </span>
+                              <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform shrink-0">▼</span>
+                            </summary>
+                            <div className="mt-2 space-y-2 pt-2 border-t border-white/5 text-stone-300 text-[11px] overflow-hidden">
+                              <p className="leading-relaxed break-words">
+                                {language === 'bm' ? selectedPlace.descriptionBm : selectedPlace.description}
+                              </p>
+                              {selectedPlace.contact && selectedPlace.contact.trim() !== '' && selectedPlace.contact !== '+60 5-491 1234' && (
+                                <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px] break-all">
+                                  <Phone className="w-3 h-3 shrink-0" />
+                                  <a href={`tel:${selectedPlace.contact}`} className="underline hover:text-emerald-300 truncate">
+                                    {selectedPlace.contact}
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          </details>
+
+                          <div className="bg-stone-950/90 rounded-2xl p-3 border border-emerald-500/30 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                                <span>⭐</span>
+                                <span>Visitor Check-in & Reviews</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-stone-400">
+                                {selectedPlace.reviews?.length || 0} reviews
+                              </span>
+                            </div>
+
+                            <div className="space-y-1.5 pt-1 border-t border-white/10">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-stone-300 font-bold">Your Rating:</span>
+                                <div className="flex items-center gap-1">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <button
+                                      key={star}
+                                      type="button"
+                                      onClick={() => setNewReviewRating(star)}
+                                      className={`text-sm cursor-pointer ${star <= newReviewRating ? 'text-amber-400' : 'text-stone-600'}`}
+                                    >
+                                      ★
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Your Name (optional)"
+                                value={newReviewAuthor}
+                                onChange={(e) => setNewReviewAuthor(e.target.value)}
+                                className="w-full bg-stone-900 border border-white/15 rounded-lg px-2.5 py-1 text-xs text-stone-100 placeholder-stone-500 outline-none focus:border-emerald-500"
+                              />
+                              <textarea
+                                placeholder="Leave a review, safety update, or photo check-in note..."
+                                value={newReviewComment}
+                                onChange={(e) => setNewReviewComment(e.target.value)}
+                                rows={2}
+                                className="w-full bg-stone-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 placeholder-stone-500 outline-none focus:border-emerald-500 resize-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleAddReview(selectedPlace.id)}
+                                className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-md transition-all flex items-center justify-center gap-1"
+                              >
+                                <span>Post Check-in & Review</span>
+                              </button>
+                            </div>
+
+                            {selectedPlace.reviews && selectedPlace.reviews.length > 0 ? (
+                              <div className="space-y-1.5 pt-2 border-t border-white/10 max-h-36 overflow-y-auto [scrollbar-width:thin]">
+                                {selectedPlace.reviews.map((rev) => (
+                                  <div key={rev.id} className="p-2 rounded-xl bg-stone-900/90 border border-white/5 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-stone-200">{rev.authorName}</span>
+                                      <span className="text-amber-400 font-mono font-bold">★ {rev.rating}</span>
+                                    </div>
+                                    <p className="text-[11px] text-stone-300 leading-snug">{rev.comment}</p>
+                                    <div className="text-[9.5px] text-stone-500 font-mono">{rev.timestamp}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-stone-400 italic text-center py-1">
+                                No check-ins or reviews yet. Be the first to review!
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* AI Telemetry Alert Overlay */}
         {activeTelemetryAlert && (
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm animate-bounce">
+          <div className="absolute top-3 sm:top-20 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm animate-bounce">
             <div className={`p-3 rounded-2xl border backdrop-blur-xl shadow-2xl flex items-center gap-3 ${
               activeTelemetryAlert.severity === 'high' 
                 ? 'bg-red-950/90 border-red-500/50 text-red-200' 
@@ -3992,7 +6348,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 <div className="text-xs font-bold leading-tight">{activeTelemetryAlert.message}</div>
               </div>
               <button 
-                onClick={() => setActiveTelemetryAlert(null)}
+                onClick={() => {
+                  stopAllVoiceAlerts();
+                  setActiveTelemetryAlert(null);
+                }}
                 className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -4000,507 +6359,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             </div>
           </div>
         )}
-
-        {/* UNIFIED TOP BAR ROW: Always-Accessible Little Hamburger Tools Menu + Search Bar OR Navigation HUD */}
-        <div className="absolute top-2.5 left-2.5 right-2.5 sm:top-3 sm:left-4 sm:right-4 z-[46] pointer-events-none flex items-start gap-1.5 sm:gap-2 max-w-2xl sm:mx-auto">
-          {/* Little Hamburger Button for Hiding/Showing Map Tools */}
-          <div className="relative pointer-events-auto shrink-0" ref={toolsMenuRef}>
-            <button
-              type="button"
-              onClick={() => setIsToolsMenuOpen(!isToolsMenuOpen)}
-              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl backdrop-blur-xl border shadow-xl flex items-center justify-center transition-all active:scale-95 cursor-pointer relative ${
-                isToolsMenuOpen
-                  ? 'bg-emerald-600 text-white border-emerald-400/60'
-                  : 'bg-stone-900/95 hover:bg-stone-800 text-stone-100 border-white/15'
-              }`}
-              title={language === 'bm' ? 'Tunjuk / Sembunyi Alatan Peta' : 'Show / Hide Map Tools'}
-              aria-label="Map Tools Visibility Menu"
-            >
-              <Menu className="w-4 h-4 text-emerald-400" />
-              {Object.values(mapToolsVisibility).some((v) => !v) || !isTrafficOverlayActive ? (
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
-              ) : null}
-            </button>
-
-            {isToolsMenuOpen && (
-              <div className="absolute left-0 top-11 z-[60] w-60 rounded-2xl bg-stone-950/96 backdrop-blur-2xl border border-emerald-500/35 shadow-2xl p-2.5 space-y-1.5 text-stone-100 animate-in fade-in duration-150">
-                <div className="flex items-center justify-between px-1.5 pb-1.5 border-b border-white/10">
-                  <span className="text-[10.5px] font-mono font-black text-emerald-400 uppercase tracking-wider">
-                    {language === 'bm' ? 'Alatan Peta' : 'Map Tools'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={resetMapToolsVisibility}
-                    className="text-[10px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
-                  >
-                    {language === 'bm' ? 'Papar Semua' : 'Show All'}
-                  </button>
-                </div>
-
-                {/* Voice Guidance Language Selector */}
-                <div className="pb-2 border-b border-white/10 mb-1">
-                  <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono mb-1.5 px-0.5">
-                    <span>{language === 'bm' ? 'Bahasa Suara Panduan' : 'Voice Guidance Language'}</span>
-                    <span className="text-[9px] font-bold text-emerald-400">
-                      {mapVoiceLang === 'bm' ? 'Bahasa Malaysia' : 'English'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleSetMapVoiceLang('bm')}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
-                        mapVoiceLang === 'bm'
-                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
-                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
-                      }`}
-                    >
-                      <span>🇲🇾 BM</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSetMapVoiceLang('en')}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
-                        mapVoiceLang === 'en'
-                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
-                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
-                      }`}
-                    >
-                      <span>🇬🇧 EN</span>
-                    </button>
-                  </div>
-                </div>
-
-                {[
-                  { key: 'searchBar' as const, label: language === 'bm' ? 'Bar Carian & Penapis' : 'Search & Filter Bar' },
-                  { key: 'viewSwitcher' as const, label: language === 'bm' ? 'Peta / Satelit / 360°' : 'Map / Sat / 360° Switch' },
-                  { key: 'zoomControls' as const, label: language === 'bm' ? 'Butang Zum (+/-)' : 'Zoom +/- Controls' },
-                  { key: 'alertBanners' as const, label: language === 'bm' ? 'Sepanduk Geofence & Tarikan' : 'Nearby & Geofence Banners' },
-                  { key: 'audioButton' as const, label: language === 'bm' ? 'Butang Suara PWA' : 'PWA Audio Button' },
-                  { key: 'locateButton' as const, label: language === 'bm' ? 'Butang Lokasi GPS' : 'GPS Locate Button' },
-                  { key: 'navHud' as const, label: language === 'bm' ? 'HUD Navigasi Atas' : 'Navigation Top HUD' },
-                ].map((item) => {
-                  const enabled = mapToolsVisibility[item.key];
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => toggleMapToolVisibility(item.key)}
-                      className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
-                        enabled
-                          ? 'bg-emerald-600/20 text-emerald-100 border border-emerald-500/30'
-                          : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
-                      }`}
-                    >
-                      <span className="truncate pr-2">{item.label}</span>
-                      <span
-                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                          enabled ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
-                        }`}
-                      >
-                        {enabled ? '✓' : ''}
-                      </span>
-                    </button>
-                  );
-                })}
-
-                <button
-                  type="button"
-                  onClick={() => setIsTrafficOverlayActive(!isTrafficOverlayActive)}
-                  className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
-                    isTrafficOverlayActive
-                      ? 'bg-emerald-600/20 text-emerald-100 border border-emerald-500/30'
-                      : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
-                  }`}
-                >
-                  <span className="truncate pr-2">{language === 'bm' ? 'Lapisan Trafik Langsung' : 'Live Traffic Layer'}</span>
-                  <span
-                    className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                      isTrafficOverlayActive ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
-                    }`}
-                  >
-                    {isTrafficOverlayActive ? '✓' : ''}
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* 1. TOP FLOATING SEARCH HEADER: Active when navigation is NOT active */}
-          {!activeRoute && !isCalculatingRoute && mapToolsVisibility.searchBar && (
-            <div className="flex-1 min-w-0 flex flex-col gap-2">
-              {/* Top Search & Controls Bar */}
-              <div className="pointer-events-auto rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-1.5 flex items-center gap-1.5 sm:gap-2">
-                {onClose && (
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="sm:hidden p-1.5 rounded-xl bg-stone-800/90 hover:bg-stone-700 text-stone-200 transition-colors cursor-pointer shrink-0"
-                    title={language === 'bm' ? 'Tutup Peta' : 'Close Map'}
-                    aria-label="Close Map"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                )}
-                <Search className="w-4 h-4 text-emerald-400 ml-1 sm:ml-2 shrink-0 pointer-events-none" />
-                <input
-                  type="text"
-                  value={mapTrafficSearchQuery}
-                  onChange={(e) => {
-                    setMapTrafficSearchQuery(e.target.value);
-                    setIsTrafficSearchDropdownOpen(true);
-                  }}
-                  disabled={isAiSearching}
-                  onKeyDown={handleSearchKeyDown}
-                  onFocus={() => setIsTrafficSearchDropdownOpen(true)}
-                  placeholder={
-                    isAiSearching
-                      ? (language === 'bm' ? 'AI sedang menganalisis...' : 'AI analyzing intent...')
-                      : (language === 'bm'
-                        ? 'Cari destinasi, pekan, tarikan Cameron...'
-                        : 'Search destinations, towns, places...')
-                  }
-                  className={`w-full bg-transparent text-xs sm:text-sm text-stone-100 placeholder-stone-400 outline-none px-1 ${isAiSearching ? 'animate-pulse' : ''}`}
-                />
-                {isAiSearching && <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin mr-1" />}
-                {mapTrafficSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMapTrafficSearchQuery('');
-                      setIsTrafficSearchDropdownOpen(false);
-                    }}
-                    className="p-1 text-stone-400 hover:text-white transition-colors cursor-pointer"
-                    title="Clear search"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-
-                {/* View Type Toggle Pills */}
-                {mapToolsVisibility.viewSwitcher && (
-                  <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-stone-950/80 border border-white/10 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setActiveMapType('osm')}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                        activeMapType === 'osm' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                      }`}
-                    >
-                      Map
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveMapType('satellite')}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                        activeMapType === 'satellite' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                      }`}
-                    >
-                      Sat
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStreetViewOpen(true)}
-                      className="p-1 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-white/5 transition-all cursor-pointer"
-                      title="360° Street View"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-              {/* Filter Menu Hamburger Dropdown */}
-              <div className="relative" ref={filterMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
-                  className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                    isFilterMenuOpen || proximityRadius !== 'all' || activeTownship !== 'all'
-                      ? 'bg-emerald-600 text-white' 
-                      : 'bg-stone-800 hover:bg-stone-700 text-stone-200'
-                  }`}
-                  title="Filter Menu"
-                >
-                  <Layers className="w-4 h-4 text-emerald-400" />
-                  <span className="text-[10px] font-bold hidden sm:inline">Filters</span>
-                </button>
-
-                {isFilterMenuOpen && (
-                  <div className="absolute right-0 top-11 z-50 w-64 max-h-[70vh] overflow-y-auto rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 shadow-2xl p-3 space-y-4 text-stone-100 animate-in fade-in duration-200">
-                    {/* Proximity Radius */}
-                    <div className="space-y-1">
-                      <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Proximity Radius</div>
-                      {(['all', '5', '10', '25'] as const).map((rad) => (
-                        <button
-                          key={rad}
-                          type="button"
-                          onClick={() => {
-                            if (rad !== 'all' && !userGpsCoords) handleLocateMe();
-                            setProximityRadius(rad);
-                          }}
-                          className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-between ${
-                            proximityRadius === rad ? 'bg-emerald-600 text-white' : 'hover:bg-stone-800 text-stone-300'
-                          }`}
-                        >
-                          <span>{rad === 'all' ? 'All Range' : `Within ${rad} km`}</span>
-                          {proximityRadius === rad && <span className="text-[10px]">✓</span>}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Category Filter */}
-                    <div className="space-y-1 pt-2 border-t border-white/10">
-                      <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Categories</div>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('travel_tourism', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'travel_tourism' || activeCategory === 'attraction'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🌴</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('accommodation', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'accommodation'
-                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏨</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('services_utilities', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'services_utilities' || activeCategory === 'local_services'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🔧</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectCategory('shopping', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                            activeCategory === 'shopping' || activeCategory === 'business'
-                              ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🛍️</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
-                          </div>
-                        </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* PWA Audio Alerts Toggle & Voice Language Selector */}
-              {mapToolsVisibility.audioButton && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => togglePwaAudioAlerts()}
-                    className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                      isVoiceNavEnabled
-                        ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-stone-800/80 hover:bg-stone-700 text-stone-500 border border-white/10'
-                    }`}
-                    title={
-                      isVoiceNavEnabled
-                        ? (language === 'bm' ? 'Makluman Suara PWA: Aktif' : 'PWA Audio Alerts: Enabled')
-                        : (language === 'bm' ? 'Makluman Suara PWA: Disenyapkan' : 'PWA Audio Alerts: Muted')
-                    }
-                    aria-label="Toggle PWA Voice Alerts"
-                  >
-                    {isVoiceNavEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={toggleMapVoiceLang}
-                    className={`px-2 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 text-[11px] font-bold flex items-center gap-1 border ${
-                      mapVoiceLang === 'bm'
-                        ? 'bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border-emerald-500/40 shadow-emerald-900/20'
-                        : 'bg-stone-800 hover:bg-stone-700 text-sky-300 border-sky-500/30'
-                    }`}
-                    title={
-                      mapVoiceLang === 'bm'
-                        ? 'Suara Peta: Bahasa Malaysia (Klik untuk English)'
-                        : 'Map Voice: English (Click for Bahasa Malaysia)'
-                    }
-                    aria-label="Toggle Map Voice Language"
-                  >
-                    <span>{mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Locate Me Button */}
-              {mapToolsVisibility.locateButton && (
-                <button
-                  type="button"
-                  onClick={handleLocateMe}
-                  disabled={isLocatingUser}
-                  className={`p-2 rounded-xl text-white transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                    isLocatingUser
-                      ? 'bg-amber-600 animate-pulse'
-                      : 'bg-emerald-600 hover:bg-emerald-500'
-                  }`}
-                  title={language === 'bm' ? 'Kesan Lokasi GPS Anda' : 'Locate My GPS Position'}
-                >
-                  <LocateFixed className={`w-4 h-4 ${isLocatingUser ? 'animate-spin' : ''}`} />
-                </button>
-              )}
-            </div>
-
-            {/* Dropdown Suggestions */}
-            {isTrafficSearchDropdownOpen && (
-              <div
-                ref={trafficSearchRef}
-                className="pointer-events-auto max-h-64 overflow-y-auto rounded-2xl bg-stone-950/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 text-stone-100 space-y-1.5 [scrollbar-width:thin]"
-              >
-                {matchingPlaceResults.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-1">
-                      📍 Verified Places ({matchingPlaceResults.length})
-                    </div>
-                    {matchingPlaceResults.map((place) => (
-                      <button
-                        key={`search-place-${place.id}`}
-                        onClick={() => handleSelectPlaceOnMap(place)}
-                        className="w-full p-2 rounded-xl text-left hover:bg-emerald-950/60 bg-stone-900/60 border border-emerald-500/20 transition-colors cursor-pointer flex items-center justify-between"
-                      >
-                        <div className="min-w-0 pr-2">
-                          <div className="font-bold text-xs text-stone-100 truncate">
-                            {language === 'bm' ? place.nameBm || place.name : place.name}
-                          </div>
-                          <div className="text-[10px] text-stone-400 truncate">
-                            {place.township} • {place.subCategory?.replace(/_/g, ' ') || place.category}
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                          ★ {place.rating}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {filteredTrafficNavItems.length > 0 && (
-                  <div className="space-y-1 pt-1 border-t border-white/10">
-                    <div className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-1">
-                      🛣️ Mountain Corridors
-                    </div>
-                    {filteredTrafficNavItems.map((item) => (
-                      <button
-                        key={`search-corridor-${item.id}`}
-                        onClick={() => handleSelectTrafficNav(item)}
-                        className="w-full p-2 rounded-xl text-left hover:bg-stone-800 bg-stone-900/40 transition-colors cursor-pointer flex items-center justify-between"
-                      >
-                        <div className="min-w-0 pr-2">
-                          <div className="font-bold text-xs text-stone-200 truncate">{item.title}</div>
-                          <div className="text-[10px] text-stone-400 truncate">{item.subtitle}</div>
-                        </div>
-                        <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-stone-900 border border-white/10 shrink-0 ${item.color}`}>
-                          {item.badge}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {matchingPlaceResults.length === 0 && filteredTrafficNavItems.length === 0 && (
-                  <div className="p-3 text-center text-xs text-stone-400 font-mono">
-                    No places or routes match &quot;{mapTrafficSearchQuery}&quot;
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-          {/* 2. TOP NAVIGATION HUD BANNER (Waze / Google Maps Style): Active during navigation */}
-          {activeRoute && mapToolsVisibility.navHud && (
-            <div className="flex-1 min-w-0 pointer-events-auto select-none animate-in slide-in-from-top duration-300">
-              <div className="rounded-2xl sm:rounded-3xl bg-emerald-700/95 backdrop-blur-2xl border border-emerald-400/40 shadow-2xl p-2.5 sm:p-4 text-white flex items-center justify-between gap-2.5 sm:gap-3">
-                {/* Maneuver Icon */}
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white text-emerald-800 flex items-center justify-center shrink-0 shadow-md">
-                  <span className="text-xl sm:text-2xl font-black leading-none">
-                    {activeRoute.steps[0]?.icon || '⬆️'}
-                  </span>
-                </div>
-
-                {/* Maneuver Details */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-1.5 sm:gap-2">
-                    <span className="text-lg sm:text-2xl font-black tracking-tight text-white">
-                      {activeRoute.steps[0]?.distanceMeters > 0
-                        ? activeRoute.steps[0].distanceMeters >= 1000
-                          ? `${(activeRoute.steps[0].distanceMeters / 1000).toFixed(1)} km`
-                          : `${activeRoute.steps[0].distanceMeters} m`
-                        : 'Now'}
-                    </span>
-                    {activeRoute.steps[1] && (
-                      <span className="text-[10px] sm:text-[11px] font-medium text-emerald-200/90 truncate">
-                        Then {activeRoute.steps[1].icon}{' '}
-                        {activeRoute.steps[1].distanceMeters >= 1000
-                          ? `${(activeRoute.steps[1].distanceMeters / 1000).toFixed(1)} km`
-                          : `${activeRoute.steps[1].distanceMeters} m`}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] sm:text-sm font-bold text-emerald-50 truncate leading-snug mt-0.5">
-                    {mapVoiceLang === 'bm' || language === 'bm'
-                      ? translateNavInstructionToBm(activeRoute.steps[0]?.instruction || `Laluan ke ${activeRoute.destinationName}`)
-                      : (activeRoute.steps[0]?.instruction || `Navigate towards ${activeRoute.destinationName}`)}
-                  </div>
-                </div>
-
-                {/* Voice Language HUD Quick Toggle */}
-                <button
-                  type="button"
-                  onClick={toggleMapVoiceLang}
-                  className="px-2 py-1 rounded-xl bg-black/25 hover:bg-black/40 text-[10px] font-black tracking-tight text-white transition-colors cursor-pointer shrink-0 border border-white/10"
-                  title={
-                    mapVoiceLang === 'bm'
-                      ? 'Suara: Bahasa Malaysia (Klik untuk English)'
-                      : 'Voice: English (Click for Bahasa Malaysia)'
-                  }
-                >
-                  {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
-                </button>
-
-                {/* End / Exit Navigation Button */}
-                <button
-                  type="button"
-                  onClick={handleClearRoute}
-                  className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-black/30 hover:bg-black/50 text-white transition-colors cursor-pointer shrink-0"
-                  title="End Navigation"
-                >
-                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Calculating Route Spinner Overlay */}
         {isCalculatingRoute && (
@@ -4513,7 +6371,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         )}
 
         {/* 3. BOTTOM NAVIGATION CONTROL CARD & SLIDE-UP STEP MODAL (Minimizable to Small Capsule) */}
-        {activeRoute && !isCalculatingRoute && (
+        {activeRoute &&
+          !isCalculatingRoute &&
+          !(selectedPlace && is3dDriverMode) &&
+          !selectedTownshipHubModal && (
           isNavCardMinimized ? (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto select-none max-w-[calc(100vw-20px)] animate-in slide-in-from-bottom duration-200">
               <div className="rounded-full bg-stone-900/95 backdrop-blur-2xl border border-emerald-500/45 shadow-2xl px-3 py-1.5 text-stone-100 flex items-center gap-2 sm:gap-2.5">
@@ -4625,12 +6486,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 <div className="text-center font-mono">
                   <div className="flex flex-col items-center">
                     <div className="text-sm sm:text-lg font-extrabold text-stone-100 leading-tight">
-                      {activeRoute.durationMins} min
+                      {activeRoute.aiAdjustedMins || activeRoute.durationMins} min
                     </div>
-                    {activeRoute.aiAdjustedMins && activeRoute.aiAdjustedMins !== activeRoute.durationMins && (
-                      <div className="flex items-center gap-1 px-1 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 mt-0.5">
-                        <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
-                        <span className="text-[9px] font-black text-emerald-400 uppercase tracking-tighter">AI: {activeRoute.aiAdjustedMins}m</span>
+                    {activeRoute.predictiveSummaryNote && (
+                      <div
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 mt-0.5 max-w-[165px]"
+                        title={activeRoute.predictiveSummaryNote}
+                      >
+                        <Sparkles className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                        <span className="text-[8.5px] font-black text-emerald-300 uppercase tracking-tighter truncate">
+                          {activeRoute.predictiveSource === 'tomtom_predictive_route'
+                            ? 'Predictive Flow'
+                            : 'Historical Profile'}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -4838,302 +6706,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           )
         )}
 
-        {/* 4. SLIDE-UP BOTTOM SHEET (Waze / Google Maps Style Place Card - also minimizable to capsule) */}
-        {selectedPlace && !activeRoute && (
-          isPlaceCardMinimized ? (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[1050] pointer-events-auto select-none max-w-[calc(100vw-20px)] animate-in slide-in-from-bottom duration-200">
-              <div className="rounded-full bg-stone-900/95 backdrop-blur-2xl border border-emerald-500/45 shadow-2xl px-3 py-1.5 text-stone-100 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsPlaceCardMinimized(false)}
-                  className="flex items-center gap-1.5 min-w-0 cursor-pointer"
-                  title="Expand Place Card"
-                >
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-xs font-extrabold text-white truncate max-w-[140px] sm:max-w-[200px]">
-                    {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = selectedPlace;
-                    onSelectPlace(null);
-                    handleTriggerRoute(target);
-                  }}
-                  className="px-2.5 py-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black flex items-center gap-1 cursor-pointer shrink-0"
-                >
-                  <Navigation2 className="w-3 h-3 fill-current" />
-                  <span>{language === 'bm' ? 'Pergi' : 'Go'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsPlaceCardMinimized(false)}
-                  className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-emerald-300 cursor-pointer shrink-0"
-                  title="Expand Place Card"
-                >
-                  <Maximize2 className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectPlace(null)}
-                  className="p-1.5 rounded-full bg-black/40 hover:bg-stone-700 text-stone-400 hover:text-white cursor-pointer shrink-0"
-                  title="Close Place Card"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          ) : (
-          <div className="absolute bottom-2 sm:bottom-4 left-2 right-2 sm:left-6 sm:bottom-6 sm:w-[410px] sm:right-auto z-[1050] pointer-events-auto select-none animate-in slide-in-from-bottom duration-300 max-w-[calc(100vw-16px)]">
-            <div className="rounded-2xl sm:rounded-3xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/50 shadow-[0_20px_60px_rgba(0,0,0,0.9)] p-3 sm:p-4 text-stone-100 flex flex-col gap-2 sm:gap-2.5 max-h-[66vh] sm:max-h-[75vh] w-full overflow-hidden box-border">
-              {/* Drag Handle Indicator */}
-              <div className="w-10 h-1 bg-stone-600/80 rounded-full mx-auto -mt-0.5 mb-0.5 shrink-0" />
-
-              {/* Header: Place Photo + Titles + Minimize/Close Buttons */}
-              <div className="flex items-start justify-between gap-2 w-full min-w-0 shrink-0">
-                <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1 overflow-hidden">
-                  <img
-                    src={safeSrc(selectedPlace.imageUrl, DEFAULT_PLACE_IMAGE)}
-                    alt={selectedPlace.name}
-                    className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl object-cover shrink-0 border border-white/10 shadow-md aspect-square"
-                  />
-                  <div className="min-w-0 flex-1 overflow-hidden pr-0.5">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-400 px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 truncate max-w-[130px]">
-                        {selectedPlace.township}
-                      </span>
-                      {selectedPlace.elevation && (
-                        <span className="text-[9px] font-mono text-stone-400 shrink-0">
-                          {selectedPlace.elevation}
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="text-xs sm:text-base font-extrabold text-white mt-1 leading-snug line-clamp-1 break-words truncate">
-                      {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
-                    </h3>
-                    <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-stone-400 mt-0.5 truncate">
-                      <span className="text-amber-400 font-bold shrink-0">★ {selectedPlace.rating}</span>
-                      <span className="truncate">({selectedPlace.reviewsCount || 85} reviews)</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0 ml-1">
-                  <button
-                    type="button"
-                    onClick={() => setIsPlaceCardMinimized(true)}
-                    className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
-                    title={language === 'bm' ? 'Kecilkan kepada kapsul' : 'Minimize to capsule'}
-                  >
-                    <Minimize2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSelectPlace(null)}
-                    className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition-colors cursor-pointer"
-                    title="Close place card"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Live Distance & Estimated Mountain Drive Time */}
-              {(() => {
-                const lat = Number(selectedPlace.coordinates?.lat);
-                const lng = Number(selectedPlace.coordinates?.lng);
-                const hasValidCoords = !isNaN(lat) && !isNaN(lng) && lat !== 0;
-
-                if (!hasValidCoords) return null;
-
-                if (userGpsCoords) {
-                  const dist = calculateDistanceKm(userGpsCoords.lat, userGpsCoords.lng, lat, lng);
-                  const estMins = Math.max(3, Math.round((dist / 32) * 60));
-
-                  return (
-                    <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs shrink-0 w-full min-w-0 overflow-hidden">
-                      <div className="flex items-center gap-1.5 text-emerald-300 font-bold min-w-0 truncate">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span className="truncate">{dist} km away</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-amber-300 font-bold font-mono shrink-0 pl-1 text-[11px] sm:text-xs">
-                        <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        <span>~{estMins} mins drive</span>
-                      </div>
-                    </div>
-                  );
-                }
-
-                // If GPS is not yet acquired, do NOT show inaccurate 27.5 km! Show direct Locate Me button
-                return (
-                  <div className="flex items-center justify-between p-1.5 sm:p-2 rounded-xl bg-stone-950/80 border border-emerald-500/20 text-xs shrink-0 w-full min-w-0">
-                    <div className="flex items-center gap-1.5 text-stone-300 text-[11px] min-w-0 truncate">
-                      <LocateFixed className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="truncate">{language === 'bm' ? 'Jarak GPS masa nyata' : 'Real-time GPS distance'}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleLocateMe();
-                      }}
-                      disabled={isLocatingUser}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-[10px] flex items-center gap-1 shrink-0 cursor-pointer shadow-sm transition-all"
-                    >
-                      <LocateFixed className={`w-3 h-3 ${isLocatingUser ? 'animate-spin' : ''}`} />
-                      <span>{isLocatingUser ? (language === 'bm' ? 'Mengesan...' : 'Locating...') : (language === 'bm' ? 'Kesan GPS' : 'Locate Me')}</span>
-                    </button>
-                  </div>
-                );
-              })()}
-
-              {/* PROMINENT "START NAVIGATION" BUTTON (Google Maps / Waze Style) */}
-              <button
-                type="button"
-                onClick={() => {
-                  const target = selectedPlace;
-                  onSelectPlace(null);
-                  handleTriggerRoute(target);
-                }}
-                className="w-full py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-950/80 active:scale-95 transition-all cursor-pointer shrink-0 min-w-0 truncate"
-              >
-                <Navigation2 className="w-4 h-4 sm:w-5 sm:h-5 fill-current shrink-0" />
-                <span className="truncate">{language === 'bm' ? 'Mula Navigasi GPS' : 'Start Navigation'}</span>
-              </button>
-
-              {/* Scrollable details: Quick Action Links & Operating info */}
-              <div className="overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#059669_transparent] pr-1 space-y-2 max-h-[160px] sm:max-h-[220px] w-full min-w-0">
-                {/* Secondary Actions: Google Maps, Waze, 360° Panorama */}
-                <div className="grid grid-cols-3 gap-1 pt-0.5 w-full">
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="py-1.5 px-1 rounded-xl bg-blue-600/90 hover:bg-blue-600 text-white font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all text-center min-w-0 overflow-hidden"
-                  >
-                    <span className="truncate">Google Maps</span>
-                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                  </a>
-                  <a
-                    href={`https://waze.com/ul?ll=${selectedPlace.coordinates?.lat || 4.49},${selectedPlace.coordinates?.lng || 101.39}&navigate=yes`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="py-1.5 px-1 rounded-xl bg-cyan-600/90 hover:bg-cyan-600 text-white font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all text-center min-w-0 overflow-hidden"
-                  >
-                    <span className="truncate">Waze</span>
-                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setStreetViewOpen(true)}
-                    className="py-1.5 px-1 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer text-center min-w-0 overflow-hidden"
-                  >
-                    <Eye className="w-3 h-3 shrink-0" />
-                    <span className="truncate">360° View</span>
-                  </button>
-                </div>
-
-                {/* Place Details Accordion */}
-                <details className="text-xs bg-stone-950/70 rounded-xl p-2 sm:p-2.5 border border-white/5 group w-full overflow-hidden">
-                  <summary className="font-bold text-stone-300 cursor-pointer flex items-center justify-between select-none min-w-0">
-                    <span className="truncate pr-1 text-[11px] sm:text-xs">
-                      {language === 'bm' ? 'Maklumat & Waktu Operasi' : 'Place Details & Operating Hours'}
-                    </span>
-                    <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform shrink-0">▼</span>
-                  </summary>
-                  <div className="mt-2 space-y-2 pt-2 border-t border-white/5 text-stone-300 text-[11px] overflow-hidden">
-                    <p className="leading-relaxed break-words">
-                      {language === 'bm' ? selectedPlace.descriptionBm : selectedPlace.description}
-                    </p>
-                    {selectedPlace.contact && selectedPlace.contact.trim() !== '' && selectedPlace.contact !== '+60 5-491 1234' && (
-                      <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px] break-all">
-                        <Phone className="w-3 h-3 shrink-0" />
-                        <a href={`tel:${selectedPlace.contact}`} className="underline hover:text-emerald-300 truncate">
-                          {selectedPlace.contact}
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </details>
-
-                {/* Crowdsourced Check-ins & Star Rating Reviews Section */}
-                <div className="bg-stone-950/90 rounded-2xl p-3 border border-emerald-500/30 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
-                      <span>⭐</span>
-                      <span>Visitor Check-in & Reviews</span>
-                    </div>
-                    <span className="text-[10px] font-mono text-stone-400">
-                      {selectedPlace.reviews?.length || 0} reviews
-                    </span>
-                  </div>
-
-                  {/* Submit Review Form */}
-                  <div className="space-y-1.5 pt-1 border-t border-white/10">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-stone-300 font-bold">Your Rating:</span>
-                      <div className="flex items-center gap-1">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            key={star}
-                            type="button"
-                            onClick={() => setNewReviewRating(star)}
-                            className={`text-sm cursor-pointer ${star <= newReviewRating ? 'text-amber-400' : 'text-stone-600'}`}
-                          >
-                            ★
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="Your Name (optional)"
-                      value={newReviewAuthor}
-                      onChange={(e) => setNewReviewAuthor(e.target.value)}
-                      className="w-full bg-stone-900 border border-white/15 rounded-lg px-2.5 py-1 text-xs text-stone-100 placeholder-stone-500 outline-none focus:border-emerald-500"
-                    />
-                    <textarea
-                      placeholder="Leave a review, safety update, or photo check-in note..."
-                      value={newReviewComment}
-                      onChange={(e) => setNewReviewComment(e.target.value)}
-                      rows={2}
-                      className="w-full bg-stone-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 placeholder-stone-500 outline-none focus:border-emerald-500 resize-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleAddReview(selectedPlace.id)}
-                      className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-md transition-all flex items-center justify-center gap-1"
-                    >
-                      <span>Post Check-in & Review</span>
-                    </button>
-                  </div>
-
-                  {/* Existing Reviews List */}
-                  {selectedPlace.reviews && selectedPlace.reviews.length > 0 ? (
-                    <div className="space-y-1.5 pt-2 border-t border-white/10 max-h-36 overflow-y-auto [scrollbar-width:thin]">
-                      {selectedPlace.reviews.map((rev) => (
-                        <div key={rev.id} className="p-2 rounded-xl bg-stone-900/90 border border-white/5 space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-bold text-stone-200">{rev.authorName}</span>
-                            <span className="text-amber-400 font-mono font-bold">★ {rev.rating}</span>
-                          </div>
-                          <p className="text-[11px] text-stone-300 leading-snug">{rev.comment}</p>
-                          <div className="text-[9.5px] text-stone-500 font-mono">{rev.timestamp}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-stone-400 italic text-center py-1">
-                      No check-ins or reviews yet. Be the first to review!
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          )
-        )}
       </div>
 
       {/* Real-Time & Predictive Traffic Forecasting Module for Long-Distance Drivers */}
@@ -5149,8 +6721,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       {/* Street View 360° Panorama Simulator Modal */}
       {streetViewOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-start justify-center bg-black/85 backdrop-blur-md p-2 overflow-y-auto"
-          onClick={() => setStreetViewOpen(false)}
+          className="fixed inset-0 z-[140] flex items-start justify-center bg-black/85 backdrop-blur-md p-2 overflow-y-auto"
+          onClick={() => {
+            stopAllVoiceAlerts();
+            setStreetViewOpen(false);
+          }}
         >
           <div
             className="glass-panel w-full max-w-4xl mt-16 mb-20 pb-28 overflow-y-auto rounded-3xl bg-stone-900 border border-emerald-500/30 shadow-2xl relative"
@@ -5166,7 +6741,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 </h3>
               </div>
               <button
-                onClick={() => setStreetViewOpen(false)}
+                onClick={() => {
+                  stopAllVoiceAlerts();
+                  setStreetViewOpen(false);
+                }}
                 className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -5217,6 +6795,234 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 ? 'Paparan jalan 360° interaktif disimulasikan dari koordinat satelit Cameron Highlands.'
                 : 'Interactive 360° ground perspective rendered from Cameron Highlands geo-coordinates.'}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flat 2D Consensus Hazard Modal (when tapping a hazard pin in 3D Driver Mode) */}
+      {selectedHazardModal && (
+        <div
+          className="fixed inset-0 z-[145] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3"
+          onClick={() => setSelectedHazardModal(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-stone-900 border border-rose-500/45 shadow-2xl p-4 text-stone-100 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-mono font-black uppercase tracking-wider text-rose-300">
+                  {selectedHazardModal.isProvisional
+                    ? `🚨 TELEMETRY ANOMALY (-${selectedHazardModal.speedDropPercent || 70}% SPEED)`
+                    : `⚠️ ${selectedHazardModal.type.replace('_', ' ').toUpperCase()}`}
+                </div>
+                <h4 className="text-base font-black text-white mt-0.5">
+                  {language === 'bm' ? selectedHazardModal.titleBm || selectedHazardModal.title : selectedHazardModal.title}
+                </h4>
+                <div className="text-xs text-amber-300 font-semibold mt-0.5">
+                  📍 {selectedHazardModal.location}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  stopAllVoiceAlerts();
+                  setSelectedHazardModal(null);
+                }}
+                className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer"
+                aria-label="Close hazard modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-300 leading-relaxed">
+              {language === 'bm'
+                ? selectedHazardModal.descriptionBm || selectedHazardModal.description
+                : selectedHazardModal.description}
+            </p>
+
+            <div className="p-2.5 rounded-xl bg-stone-950 border border-white/10 flex items-center justify-between text-xs">
+              <span>
+                👍 Still There: <strong className="text-amber-300">+{selectedHazardModal.stillThereVotes}</strong>
+              </span>
+              <span>
+                ✅ Cleared:{' '}
+                <strong className="text-emerald-400">
+                  {selectedHazardModal.clearedVotes}/{CLEARED_VOTE_EXPIRY_THRESHOLD}
+                </strong>
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleHazardVote(selectedHazardModal, 'still_there')}
+                className="py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ThumbsUp className="w-3.5 h-3.5" />
+                <span>Still There (+1)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleHazardVote(selectedHazardModal, 'cleared')}
+                className="py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Cleared (-1)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-Modal Telegram / JKR / PDRM Hazard Ingestion Modal -> camgo_hazards */}
+      {isHazardIngestModalOpen && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-md p-3"
+          onClick={() => setIsHazardIngestModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-stone-900 border border-emerald-500/40 shadow-2xl p-4 text-stone-100 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2 pb-2 border-b border-white/10">
+              <div>
+                <div className="text-[10px] font-mono font-black uppercase tracking-wider text-emerald-400">
+                  Gemini Multi-Modal Extraction → Firestore camgo_hazards
+                </div>
+                <h3 className="text-sm sm:text-base font-black text-white mt-0.5">
+                  {language === 'bm'
+                    ? 'Ingest Amaran Trafik (Telegram / JKR / Infografik)'
+                    : 'Ingest Traffic Alert (Telegram / JKR / Infographic)'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  stopAllVoiceAlerts();
+                  setIsHazardIngestModalOpen(false);
+                }}
+                className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer"
+                aria-label="Close ingest modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                'Tanah runtuh di KM 43 Jalan Tapah-Ringlet, satu lorong terhalang.',
+                'Pokok tumbang near Kea Farm market stretch causing heavy crawl.',
+                'Sekatan jalan raya PDRM berhampiran Pos Slim FT185 Simpang Pulai.',
+              ].map((sample) => (
+                <button
+                  key={sample}
+                  type="button"
+                  onClick={() => setIngestAlertText(sample)}
+                  className="text-[10px] px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-white/10 truncate max-w-full cursor-pointer"
+                >
+                  {sample}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[11px] font-bold text-stone-300">
+                Source Channel
+                <select
+                  value={ingestSourceLabel}
+                  onChange={(e) => setIngestSourceLabel(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-stone-950 border border-white/15 px-3 py-1.5 text-xs text-stone-100"
+                >
+                  <option value="Telegram Traffic Channel">Telegram Traffic Channel</option>
+                  <option value="JKR Cameron Highlands Facebook">JKR Cameron Highlands Facebook</option>
+                  <option value="PDRM Cameron Highlands Facebook">PDRM Cameron Highlands Facebook</option>
+                  <option value="Driver Report">Driver Live Report</option>
+                </select>
+              </label>
+
+              <textarea
+                rows={3}
+                value={ingestAlertText}
+                onChange={(e) => setIngestAlertText(e.target.value)}
+                placeholder="Paste BM/EN alert e.g. Tanah runtuh di KM 43 Jalan Tapah-Ringlet..."
+                className="w-full rounded-xl bg-stone-950 border border-white/15 p-2.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+              />
+
+              <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-stone-950 border border-dashed border-white/20 text-xs text-stone-300 cursor-pointer hover:border-emerald-400/50">
+                <span className="flex items-center gap-2 truncate">
+                  <FileImage className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="truncate">
+                    {ingestImageBase64
+                      ? 'Infographic / Screenshot attached'
+                      : 'Optional: Upload Telegram/FB Infographic Screenshot'}
+                  </span>
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIngestImageMimeType(file.type || 'image/jpeg');
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      if (typeof reader.result === 'string') {
+                        setIngestImageBase64(reader.result);
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+            </div>
+
+            {ingestFeedback && (
+              <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/35 text-[11px] text-emerald-200 font-semibold">
+                {ingestFeedback}
+              </div>
+            )}
+
+            <button
+              type="button"
+              disabled={isIngestingHazard || (!ingestAlertText.trim() && !ingestImageBase64)}
+              onClick={async () => {
+                setIsIngestingHazard(true);
+                setIngestFeedback(null);
+                try {
+                  const res = await camgoHazardsService.ingestHazardViaApi({
+                    text: ingestAlertText,
+                    imageBase64: ingestImageBase64 || undefined,
+                    mimeType: ingestImageMimeType,
+                    source: ingestSourceLabel,
+                  });
+                  if (res.document) {
+                    setIngestFeedback(
+                      `Pinned "${res.document.title}" at (${res.document.lat}, ${res.document.lng}) [${res.document.type}]`
+                    );
+                    setIngestAlertText('');
+                    setIngestImageBase64(null);
+                    mapInstanceRef.current?.flyTo([res.document.lat, res.document.lng], 14.5, {
+                      duration: 1.0,
+                    });
+                  }
+                } catch (err: any) {
+                  setIngestFeedback(err?.message || 'Failed to ingest alert');
+                } finally {
+                  setIsIngestingHazard(false);
+                }
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isIngestingHazard ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              <span>{isIngestingHazard ? 'Extracting & Pinning...' : 'Extract & Pin to Map'}</span>
+            </button>
           </div>
         </div>
       )}

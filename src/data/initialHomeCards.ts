@@ -27,7 +27,7 @@ export const INITIAL_MOBILE_HOME_CARDS: MobileHomeCard[] = [
   {
     id: 'card-3-map',
     type: 'map',
-    title: 'Plan Your Highland Escape',
+    title: 'Highland Map',
     buttonText: 'Explore Now',
     imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
     size: 'full',

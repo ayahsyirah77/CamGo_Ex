@@ -42,6 +42,7 @@ import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { MasjidSurauModal } from './components/MasjidSurauModal';
 import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
 import { EmergencySosWidget } from './components/EmergencySosWidget';
+import { MsMyVoiceBanner } from './components/MsMyVoiceBanner';
 import { MobileStickyFooter } from './components/MobileStickyFooter';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
@@ -571,6 +572,9 @@ export default function App() {
         }}
       />
 
+      {/* ms-MY Voice Localization Prompt Banner */}
+      <MsMyVoiceBanner language={language} />
+
       {/* PWA New Version Update Prompt */}
       <ReloadPrompt />
 
@@ -904,10 +908,15 @@ export default function App() {
       {/* Map Modal */}
       {isMapModalOpen && (
         <div className="fixed inset-0 z-[110] bg-stone-950 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 bg-stone-900 border-b border-stone-800">
+          <div className="hidden sm:flex items-center justify-between px-4 py-3 bg-stone-900 border-b border-stone-800">
             <h3 className="font-bold text-emerald-400 text-sm">Cameron Highlands Interactive Map</h3>
             <button
-              onClick={() => setIsMapModalOpen(false)}
+              onClick={() => {
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                  window.speechSynthesis.cancel();
+                }
+                setIsMapModalOpen(false);
+              }}
               className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
               aria-label="Close"
             >
@@ -920,7 +929,12 @@ export default function App() {
               language={language}
               selectedPlace={selectedPlaceForMap}
               onSelectPlace={(p) => setSelectedPlaceForMap(p)}
-              onClose={() => setIsMapModalOpen(false)}
+              onClose={() => {
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                  window.speechSynthesis.cancel();
+                }
+                setIsMapModalOpen(false);
+              }}
             />
           </div>
         </div>

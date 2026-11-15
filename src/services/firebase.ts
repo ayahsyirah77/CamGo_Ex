@@ -617,6 +617,9 @@ class FirebaseStorageService {
             if (c.id === 'card-2-hazard' && c.title === 'Live Traffic/Hazard') {
               return { ...c, title: 'Live Notice/Hazard', subtitle: c.subtitle === 'Kea Farm' ? 'PDRM • JKR • MDCH' : c.subtitle };
             }
+            if (c.id === 'card-3-map' && c.title === 'Plan Your Highland Escape') {
+              return { ...c, title: 'Highland Map' };
+            }
             return c;
           });
           cloudCards.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -1627,6 +1630,11 @@ class FirebaseStorageService {
                 ...c,
                 title: 'Live Notice/Hazard',
                 subtitle: c.subtitle === 'Kea Farm' ? 'PDRM • JKR • MDCH' : c.subtitle,
+              });
+            } else if (c && c.id === 'card-3-map' && c.title === 'Plan Your Highland Escape') {
+              cardMap.set(c.id, {
+                ...c,
+                title: 'Highland Map',
               });
             } else {
               cardMap.set(c.id, c);

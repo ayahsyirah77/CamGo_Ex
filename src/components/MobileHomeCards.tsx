@@ -278,7 +278,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
         )}
       </div>
 
-      {/* Row 2: Card 3: Plan Your Highland Escape (Full-Width Banner) */}
+      {/* Row 2: Card 3: Highland Map (Full-Width Banner) */}
       {mapCard && mapCard.isActive && (
         <div
           onClick={() => handleCardClick(mapCard)}
@@ -291,7 +291,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           <div className="absolute inset-0 z-0">
             <img
               src={safeSrc(mapCard.imageUrl, 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80')}
-              alt={mapCard.title || 'Highland Escape'}
+              alt={mapCard.title === 'Plan Your Highland Escape' || !mapCard.title ? 'Highland Map' : mapCard.title}
               className="w-full h-full object-cover opacity-30 group-hover:opacity-45 group-hover:scale-108 group-active:scale-105 transition-all duration-700 ease-out"
             />
             <div className="absolute inset-0 bg-gradient-to-r from-stone-950 via-stone-950/80 to-transparent" />
@@ -299,7 +299,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
           <div className="relative z-10">
             <h4 className="text-base font-black text-white tracking-tight leading-tight group-hover:text-emerald-200 transition-colors">
-              {mapCard.title || 'Plan Your Highland Escape'}
+              {mapCard.title === 'Plan Your Highland Escape' || !mapCard.title ? 'Highland Map' : mapCard.title}
             </h4>
             {mapCard.subtitle && (
               <p className="text-xs text-stone-300 mt-0.5 font-medium">{mapCard.subtitle}</p>

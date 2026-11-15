@@ -49,6 +49,26 @@ service cloud.firestore {
       }
     }
 
+    match /camgo_hazards/{hazardId} {
+      allow read: if true;
+      allow create: if request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.lat is number
+                    && request.resource.data.lng is number
+                    && request.resource.data.lat >= 4.0 && request.resource.data.lat <= 5.0
+                    && request.resource.data.lng >= 101.0 && request.resource.data.lng <= 102.0
+                    && request.resource.data.type in ['landslide', 'accident', 'roadblock', 'fallen_tree', 'flood', 'sudden_congestion']
+                    && request.resource.data.status in ['active', 'cleared']
+                    && request.resource.data.stillThereVotes is number
+                    && request.resource.data.clearedVotes is number;
+      allow update: if request.resource.data.status in ['active', 'cleared']
+                    && request.resource.data.stillThereVotes is number
+                    && request.resource.data.stillThereVotes >= 0
+                    && request.resource.data.clearedVotes is number
+                    && request.resource.data.clearedVotes >= 0;
+      allow delete: if isAdmin();
+    }
+
     match /vendor_listings/{listingId} {
       allow read, write: if true;
       match /{allSubpaths=**} {

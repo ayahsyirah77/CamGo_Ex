@@ -112,6 +112,17 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
   const prevMemberIdsRef = useRef<Set<string>>(new Set());
   const prevSessionCodeRef = useRef<string | null>(null);
 
+  // Incoming Party Chat Pop-Up Banner Notification
+  const [chatPopupBanner, setChatPopupBanner] = useState<{
+    id: string;
+    senderName: string;
+    senderColor: string;
+    text: string;
+    timestamp: string;
+  } | null>(null);
+  const seenChatMsgIdsRef = useRef<Set<string>>(new Set());
+  const prevChatSessionCodeRef = useRef<string | null>(null);
+
   const hasAutoCenteredRef = useRef(false);
 
   // Auto-center map on first valid GPS fix
@@ -250,6 +261,62 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
     const timer = setTimeout(() => setMemberJoinBanner(null), 8000);
     return () => clearTimeout(timer);
   }, [memberJoinBanner]);
+
+  // Detect new incoming chat messages while on Live Map or non-chat tabs
+  useEffect(() => {
+    if (!isOpen || !session?.code) {
+      seenChatMsgIdsRef.current = new Set();
+      prevChatSessionCodeRef.current = null;
+      setChatPopupBanner(null);
+      return;
+    }
+
+    const msgs = Array.isArray(session.messages) ? session.messages : [];
+    const getMsgKey = (m: any) => String(m?.id || `${m?.senderId}-${m?.timestamp}-${m?.text}`);
+
+    // Seed existing messages on initial open/session change so history doesn't pop up
+    if (prevChatSessionCodeRef.current !== session.code) {
+      prevChatSessionCodeRef.current = session.code;
+      seenChatMsgIdsRef.current = new Set(msgs.map(getMsgKey));
+      return;
+    }
+
+    let latestUnseenIncoming: any = null;
+    msgs.forEach((m: any) => {
+      const key = getMsgKey(m);
+      if (!seenChatMsgIdsRef.current.has(key)) {
+        seenChatMsgIdsRef.current.add(key);
+        if (activeTab !== 'chat' && m.senderId !== memberId) {
+          latestUnseenIncoming = m;
+        }
+      }
+    });
+
+    if (latestUnseenIncoming) {
+      setChatPopupBanner({
+        id: getMsgKey(latestUnseenIncoming),
+        senderName: latestUnseenIncoming.senderName || 'Party Member',
+        senderColor: latestUnseenIncoming.senderColor || '#10b981',
+        text: latestUnseenIncoming.text || (language === 'bm' ? 'Hantar mesej baharu' : 'Sent a new message'),
+        timestamp: latestUnseenIncoming.timestamp || new Date().toISOString(),
+      });
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([35, 45, 35]);
+      }
+    }
+  }, [isOpen, session?.code, session?.messages, activeTab, memberId, language]);
+
+  useEffect(() => {
+    if (activeTab === 'chat' && chatPopupBanner) {
+      setChatPopupBanner(null);
+    }
+  }, [activeTab, chatPopupBanner]);
+
+  useEffect(() => {
+    if (!chatPopupBanner) return;
+    const timer = setTimeout(() => setChatPopupBanner(null), 10000);
+    return () => clearTimeout(timer);
+  }, [chatPopupBanner]);
 
   // Proximity Sensor Logic for 500m Radius Alert (checking all party members)
   const notifiedNearbyMembersRef = useRef<Set<string>>(new Set());
@@ -993,6 +1060,62 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             <button onClick={() => setTelemetryAnomaly(null)} className="p-1 hover:bg-white/10 rounded-lg">
               <X className="w-4 h-4" />
             </button>
+          </div>
+        )}
+
+        {/* Clickable Incoming Chat Pop-Up Banner Notification (Opens Chat without closing Maps) */}
+        {chatPopupBanner && activeTab !== 'chat' && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setChatPopupBanner(null);
+              setActiveTab('chat');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setChatPopupBanner(null);
+                setActiveTab('chat');
+              }
+            }}
+            className="mx-3 sm:mx-6 mt-2.5 px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-stone-950/98 via-emerald-950/95 to-stone-950/98 border-2 border-emerald-400/80 text-white shadow-[0_12px_36px_rgba(16,185,129,0.35)] flex items-center justify-between gap-3 animate-in slide-in-from-top-3 duration-200 cursor-pointer hover:border-emerald-300 transition-all shrink-0 z-[470]"
+          >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border border-white/25 shadow-md"
+                style={{ backgroundColor: chatPopupBanner.senderColor || '#10b981' }}
+              >
+                <MessageSquare className="w-4 h-4 text-white animate-bounce" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                  <span>{language === 'bm' ? 'Mesej Sembang Baharu' : 'New Party Chat'}</span>
+                  <span className="text-stone-400">•</span>
+                  <span className="text-white truncate">{chatPopupBanner.senderName}</span>
+                </div>
+                <div className="text-xs font-bold text-stone-100 truncate mt-0.5">
+                  {chatPopupBanner.text}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="px-2.5 py-1 rounded-xl bg-emerald-500 text-stone-950 text-[10.5px] font-black">
+                {language === 'bm' ? 'Buka Sembang' : 'Open Chat'}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setChatPopupBanner(null);
+                }}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-stone-200 hover:text-white cursor-pointer"
+                aria-label="Dismiss chat banner"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
 

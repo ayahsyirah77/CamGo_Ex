@@ -3,6 +3,10 @@ import { createPortal } from 'react-dom';
 import { Language } from '../types';
 import { getTranslation } from '../services/i18n';
 import {
+  CORRIDOR_GATEWAY_PROBES,
+  fetchTomTomFlowSegment,
+} from '../services/tomtomTrafficService';
+import {
   Car,
   Navigation,
   Clock,
@@ -337,34 +341,52 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
     },
   ]);
 
-  // Real-time TomTom Traffic API fetch silently in background if admin configured a key
+  // Smart Traffic & Predictive Flow fetch across all 3 highland gateways
+  // Gracefully falls back to historical time-of-day / day-of-week corridor averages if probes are sparse
   const fetchTomTomTrafficData = async (key: string) => {
-    try {
-      const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${key}&point=4.582,101.312`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.flowSegmentData) {
-          const currentSpeed = data.flowSegmentData.currentSpeed || 45;
-          const delaySec = Math.max(0, data.flowSegmentData.currentTravelTime - data.flowSegmentData.freeFlowTravelTime);
+    const now = new Date();
+    const hour = now.getHours();
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+    const isPeak = (isWeekend && hour >= 9 && hour <= 17) || (hour >= 10 && hour <= 14);
 
-          setCorridors((prev) =>
-            prev.map((c) => {
-              if (c.id === 'simpang-pulai') {
-                return {
-                  ...c,
-                  mountainSpeedKmh: Math.round(currentSpeed),
-                  currentDelayMinutes: Math.round(delaySec / 60),
-                  status: currentSpeed < 35 ? 'heavy' : currentSpeed < 48 ? 'moderate' : 'smooth',
-                };
-              }
-              return c;
-            })
-          );
-        }
-      }
+    try {
+      const probeResults = await Promise.all(
+        CORRIDOR_GATEWAY_PROBES.map(async (probe) => {
+          const live = await fetchTomTomFlowSegment(probe.point[0], probe.point[1], key);
+          return { probe, live };
+        })
+      );
+
+      setCorridors((prev) =>
+        prev.map((corridor) => {
+          const match = probeResults.find((p) => p.probe.id === corridor.id);
+          if (!match) return corridor;
+
+          const { probe, live } = match;
+          // Use verified live telemetry if present; otherwise gracefully fall back to historical speed
+          const resolvedSpeed = live
+            ? Math.max(8, Math.round(live.currentSpeed))
+            : isPeak
+              ? probe.historicalPeakKmh
+              : probe.historicalOffPeakKmh;
+
+          const resolvedDelayMins = live
+            ? Math.max(0, Math.round((live.currentTravelTime - live.freeFlowTravelTime) / 60))
+            : Math.max(0, Math.round(((corridor.mountainKm / Math.max(15, resolvedSpeed)) - (corridor.mountainKm / 62)) * 60));
+
+          const resolvedStatus: 'smooth' | 'moderate' | 'heavy' =
+            resolvedSpeed < 34 ? 'heavy' : resolvedSpeed < 48 ? 'moderate' : 'smooth';
+
+          return {
+            ...corridor,
+            mountainSpeedKmh: resolvedSpeed,
+            currentDelayMinutes: resolvedDelayMins,
+            status: resolvedStatus,
+          };
+        })
+      );
     } catch {
-      // Silent fallback to built-in highland model
+      // Silent fallback to built-in highland predictive historical model
     }
   };
 
@@ -489,10 +511,10 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
                   </span>
                   <div className="min-w-0">
                     <h3 className="text-[10px] min-[360px]:text-[11px] sm:text-base font-heading font-black text-stone-100 leading-tight">
-                      {language === 'bm' ? 'Telemetri & Ramalan Trafik' : 'Real-Time & Predictive Highway Telemetry'}
+                      {language === 'bm' ? 'Trafik Pintar & Aliran Ramalan' : 'Smart Traffic / Predictive Flow Telemetry'}
                     </h3>
                     <p className="text-[8.5px] min-[360px]:text-[9.5px] sm:text-xs text-emerald-400 font-mono font-bold leading-tight mt-0.5">
-                      {language === 'bm' ? 'Enjin Ramalan Trafik Cameron Highlands' : 'Cameron Highlands Traffic Forecaster Engine'}
+                      {language === 'bm' ? 'Analitik Sejarah & Corak Masa Tanah Tinggi' : 'Historical Speed Profiles + Predictive Routing Engine'}
                     </p>
                   </div>
                 </div>
@@ -521,7 +543,7 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
                         <Car className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
                       </span>
                       <span className="text-[8.5px] min-[360px]:text-[9.5px] sm:text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                        Real-Time &amp; Predictive Highway Telemetry
+                        Smart Traffic &amp; Predictive Flow Analytics
                       </span>
                     </div>
                     <h2 className="text-sm sm:text-2xl font-heading font-extrabold text-stone-100 tracking-tight mt-1.5">
