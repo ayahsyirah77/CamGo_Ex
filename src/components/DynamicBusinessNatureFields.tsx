@@ -49,7 +49,8 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
   const isAccommodation =
     catStr === 'accommodation' ||
     subCatStr.startsWith('realestate_') ||
-    subCatStr === 'hotels_resorts';
+    subCatStr === 'hotels_resorts' ||
+    subCatStr === 'hostels_roomstay';
 
   const isFnB =
     catStr === 'food' ||

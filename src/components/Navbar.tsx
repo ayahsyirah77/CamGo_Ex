@@ -769,6 +769,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           { key: 'hotels_resorts', label: 'Hotels & Resorts' },
                           { key: 'guesthouses', label: 'Guesthouses' },
                           { key: 'chalets', label: 'Chalets' },
+                          { key: 'hostels_roomstay', label: 'Hostels / Roomstay' },
                           { key: 'homestay', label: 'Homestays' },
                           { key: 'camping_glamping', label: 'Camping & Glamping' },
                         ].map((sub) => (
@@ -798,6 +799,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                           { key: 'car_bike_rentals', label: 'Car & Bike Rentals' },
                           { key: 'taxi_ehailing', label: 'Taxi & E-Hailing' },
                           { key: 'auto_repair_roadside', label: 'Auto Repair & Roadside' },
+                          { key: 'tyre_shop', label: 'Tyre Shop' },
+                          { key: 'car_battery_shop', label: 'Car Battery Shop' },
                           { key: 'fuel_ev_charging', label: 'Fuel & EV Charging' },
                         ].map((sub) => (
                           <li key={sub.key}>
@@ -823,6 +826,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </div>
                       <ul className="space-y-1 text-xs">
                         {[
+                          { key: 'clinic_hospital', label: 'Clinic / Hospital' },
                           { key: 'health_wellness', label: 'Health & Wellness' },
                           { key: 'banking_financial', label: 'Banking & Financial' },
                           { key: 'logistics_freight', label: 'Logistics & Freight' },

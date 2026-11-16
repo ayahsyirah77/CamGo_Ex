@@ -488,31 +488,31 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
     }
   };
 
+  const createEmptyItineraryPlan = (): ItineraryPlan => ({
+    id: 'itinerary-highland-01',
+    title: 'Highland Scenic Trail Itinerary',
+    days: [
+      { dayNumber: 1, title: 'Day 1', activities: [] },
+      { dayNumber: 2, title: 'Day 2', activities: [] },
+    ],
+    updatedAt: new Date().toISOString(),
+  });
+
   const [plan, setPlan] = useState<ItineraryPlan>(() => {
     const saved = firebaseService.getItinerary();
     if (saved && saved.days && saved.days.length > 0) return saved;
-
-    const starterActivities: ItineraryActivity[] = places.slice(0, 3).map((p, idx) => ({
-      id: generateUniqueId(),
-      placeId: p.id,
-      title: p.name,
-      township: p.township,
-      timeSlot: idx === 0 ? '09:00 AM' : idx === 1 ? '12:00 PM' : '03:30 PM',
-      coordinates: p.coordinates,
-      elevation: p.elevation,
-      imageUrl: p.imageUrl,
-    }));
-
-    return {
-      id: 'itinerary-highland-01',
-      title: 'Highland Scenic Trail Itinerary',
-      days: [
-        { dayNumber: 1, title: 'Day 1: Tea & Heritage Explorer', activities: starterActivities },
-        { dayNumber: 2, title: 'Day 2: Alpine Farms & Nature', activities: [] },
-      ],
-      updatedAt: new Date().toISOString(),
-    };
+    return createEmptyItineraryPlan();
   });
+
+  useEffect(() => {
+    const handleItineraryCleared = () => {
+      setPlan(createEmptyItineraryPlan());
+      setActiveDayIdx(0);
+      setSelectedActivityId(null);
+    };
+    window.addEventListener('itinerary-cleared', handleItineraryCleared);
+    return () => window.removeEventListener('itinerary-cleared', handleItineraryCleared);
+  }, []);
 
   const [activeDayIdx, setActiveDayIdx] = useState<number>(0);
 
@@ -900,7 +900,9 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
     if (navigator.geolocation) {
       handleDetectCurrentLocation(false);
     }
+  }, []);
 
+  useEffect(() => {
     const handleAddBudgetItem = (e: any) => {
       const { title, estimatedCost, township } = e.detail;
       const newAct: ItineraryActivity = {
@@ -1063,7 +1065,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
         };
       } else return;
     } else {
-      const finalTitle = customTitle.trim() || searchQuery.trim();
+      const finalTitle = customTitle.trim();
       if (!finalTitle) return;
 
       const coords = TOWNSHIP_COORDS[customTownship] || { lat: 4.475, lng: 101.385 };
@@ -1094,6 +1096,19 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
       previewMarkerRef.current.remove();
       previewMarkerRef.current = null;
     }
+  };
+
+  const openAddStopModal = () => {
+    setSelectedPlaceId('');
+    setCustomTitle('');
+    setSearchQuery('');
+    setIsSearchOpen(false);
+    setActivityTimeSlot('10:00 AM');
+    if (previewMarkerRef.current) {
+      previewMarkerRef.current.remove();
+      previewMarkerRef.current = null;
+    }
+    setShowAddModal(true);
   };
 
   const handleCloseAddModal = () => {
@@ -1858,7 +1873,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
               <div className="text-center py-12 px-4 rounded-3xl border border-dashed border-white/10 bg-stone-900/40">
                 <Compass className="w-10 h-10 text-stone-600 mx-auto mb-3" />
                 <h4 className="font-bold text-sm text-stone-300 mb-1">No activities for Day {currentDay?.dayNumber}</h4>
-                <button onClick={() => setShowAddModal(true)} className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer transition-colors">
+                <button onClick={openAddStopModal} className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer transition-colors">
                   <Plus className="w-4 h-4" /> Add First Activity
                 </button>
               </div>
@@ -1898,7 +1913,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
 
           {/* Add Stop Button */}
           <div className="p-3 sm:p-4 border-t border-white/10 bg-stone-900/60 shrink-0">
-            <button onClick={() => setShowAddModal(true)} className="w-full py-2.5 rounded-xl border border-dashed border-emerald-500/40 hover:border-emerald-400 bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-300 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer">
+            <button onClick={openAddStopModal} className="w-full py-2.5 rounded-xl border border-dashed border-emerald-500/40 hover:border-emerald-400 bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-300 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer">
               <Plus className="w-4 h-4" /> Add Stop to Day {currentDay?.dayNumber}
             </button>
           </div>
@@ -2333,6 +2348,9 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                         <Search className="w-4 h-4 text-emerald-400 shrink-0" />
                         <input
                           type="text"
+                          name="itinerary-directory-search"
+                          autoComplete="off"
+                          data-lpignore="true"
                           value={searchQuery}
                           onChange={(e) => {
                             setSearchQuery(e.target.value);
@@ -2436,6 +2454,9 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                     </label>
                     <input
                       type="text"
+                      name="itinerary-custom-stop"
+                      autoComplete="off"
+                      data-lpignore="true"
                       placeholder="e.g. Sunrise Breakfast at Local Kopitiam"
                       value={customTitle}
                       onChange={(e) => {
@@ -2510,7 +2531,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                 <button
                   type="button"
                   onClick={handleAddActivity}
-                  disabled={!selectedPlaceId && !customTitle.trim() && !searchQuery.trim()}
+                  disabled={!selectedPlaceId && !customTitle.trim()}
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-bold text-white cursor-pointer transition-all shadow-md"
                 >
                   Add to Itinerary

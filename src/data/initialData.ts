@@ -390,7 +390,7 @@ export const INITIAL_PLACES: Place[] = [
     name: 'Sultanah Hajah Kalsom Hospital & Clinic',
     nameBm: 'Hospital Sultanah Hajah Kalsom Tanah Rata',
     category: 'local_services',
-    subCategory: 'health_wellness',
+    subCategory: 'clinic_hospital',
     township: 'Tanah Rata',
     description: 'Main public general hospital with emergency room services, inpatient wards, and pharmacy in Tanah Rata.',
     descriptionBm: 'Hospital awam utama dengan perkhidmatan kecemasan 24 jam, wad pesakit dan farmasi.',

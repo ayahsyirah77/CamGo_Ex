@@ -433,14 +433,16 @@ class FirebaseStorageService {
 
     try {
       // 1. Real-time Places Listener
-      getDocs(collection(db, 'places')).then(snap => {
-        const cloudPlaces = snap.docs.map((d) => d.data() as Place);
-        if (cloudPlaces.length > 0) {
-          this.places = cloudPlaces;
-          this.setLocalStorageItem(STORAGE_KEYS.PLACES, JSON.stringify(cloudPlaces));
-          this.notify();
-        }
-      });
+      getDocs(collection(db, 'places'))
+        .then(snap => {
+          const cloudPlaces = snap.docs.map((d) => d.data() as Place);
+          if (cloudPlaces.length > 0) {
+            this.places = cloudPlaces;
+            this.setLocalStorageItem(STORAGE_KEYS.PLACES, JSON.stringify(cloudPlaces));
+            this.notify();
+          }
+        })
+        .catch((err) => console.warn('Initial places fetch notice:', err));
       onSnapshot(collection(db, 'places'), (snap) => {
 
         const cloudPlaces = snap.docs.map((d) => d.data() as Place);
@@ -549,13 +551,15 @@ class FirebaseStorageService {
       }, (err) => console.warn('Realtime tickets listener warning:', err));
 
       // 9. Real-time Vendor Listings Listener
-      getDocs(collection(db, 'vendor_listings')).then(snap => {
-        const cloudListings = snap.docs
-          .map((d) => d.data() as VendorListing)
-          .filter((v) => !isMockVendorListing(v) && !isDirectoryAccommodationId(v.id));
-        this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
-        this.notify();
-      });
+      getDocs(collection(db, 'vendor_listings'))
+        .then(snap => {
+          const cloudListings = snap.docs
+            .map((d) => d.data() as VendorListing)
+            .filter((v) => !isMockVendorListing(v) && !isDirectoryAccommodationId(v.id));
+          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(cloudListings));
+          this.notify();
+        })
+        .catch((err) => console.warn('Initial vendor listings fetch notice:', err));
       onSnapshot(collection(db, 'vendor_listings'), (snap) => {
 
         const cloudListings = snap.docs
@@ -729,7 +733,7 @@ class FirebaseStorageService {
                   window.dispatchEvent(new CustomEvent('emergency-card-updated', { detail: sanitized }));
                 }
               }
-            });
+            }, (err) => console.warn('Realtime emergency card listener warning:', err));
 
             try {
               const [userSnap, cardSnap] = await Promise.all([
@@ -3087,6 +3091,7 @@ class FirebaseStorageService {
         v.subCategory === 'homestay_apartment' ||
         v.subCategory === 'homestay_landed' ||
         v.subCategory === 'chalets' ||
+        v.subCategory === 'hostels_roomstay' ||
         v.subCategory === 'hotels_resorts' ||
         (v.subCategory as string) === 'realestate_vacation_homestay' ||
         (v.subCategory as string) === 'realestate_agritourism_farm';

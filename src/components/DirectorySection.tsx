@@ -38,6 +38,7 @@ import {
   RotateCcw,
   BedDouble,
   ArrowRight,
+  BatteryCharging,
 } from 'lucide-react';
 import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
@@ -58,16 +59,20 @@ export const SUB_CATEGORY_LABELS: Record<string, string> = {
   hotels_resorts: 'Hotels & Resorts',
   guesthouses: 'Guesthouses',
   chalets: 'Chalets',
+  hostels_roomstay: 'Hostels / Roomstay',
   homestay: 'Homestays',
   homestay_apartment: 'Homestay (Apartment)',
   homestay_landed: 'Homestay (Landed)',
   camping_glamping: 'Camping & Glamping',
   // Transport
   auto_repair_roadside: 'Auto Repair & Roadside',
+  tyre_shop: 'Tyre Shop',
+  car_battery_shop: 'Car Battery Shop',
   car_bike_rentals: 'Car & Bike Rentals',
   taxi_ehailing: 'Taxi & E-Hailing',
   fuel_ev_charging: 'Fuel & EV Charging',
   // Local Services
+  clinic_hospital: 'Clinic / Hospital',
   health_wellness: 'Health & Wellness',
   banking_financial: 'Banking & Financial',
   logistics_freight: 'Logistics & Freight',
@@ -227,6 +232,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'hotels_resorts', label: 'Hotels & Resorts' },
       { key: 'guesthouses', label: 'Guesthouses' },
       { key: 'chalets', label: 'Chalets' },
+      { key: 'hostels_roomstay', label: 'Hostels / Roomstay' },
       { key: 'homestay_apartment', label: 'Homestay (Apartment)' },
       { key: 'homestay_landed', label: 'Homestay (Landed)' },
       { key: 'camping_glamping', label: 'Camping & Glamping' },
@@ -235,8 +241,11 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'fuel_ev_charging', label: 'Fuel & EV Charging', icon: <Car className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'taxi_ehailing', label: 'Taxi & E-Hailing', icon: <Car className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'auto_repair_roadside', label: 'Auto Repair & Roadside', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'tyre_shop', label: 'Tyre Shop', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'car_battery_shop', label: 'Car Battery Shop', icon: <BatteryCharging className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     local_services: [
+      { key: 'clinic_hospital', label: 'Clinic / Hospital', icon: <HeartPulse className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'health_wellness', label: 'Health & Wellness', icon: <HeartPulse className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'banking_financial', label: 'Banking & Financial', icon: <KeyRound className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'logistics_freight', label: 'Logistics & Freight', icon: <Truck className="w-3.5 h-3.5 inline mr-1" /> },

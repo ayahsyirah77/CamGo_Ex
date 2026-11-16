@@ -504,22 +504,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
   const itineraryDays = [
     {
-      day: 'Day 1: Misty Peaks & Heritage High Tea',
-      items: [
-        { time: '08:30 AM', title: 'BOH Sungei Palas Tea Centre', note: 'Scenic morning tea overlooking emerald ridges' },
-        { time: '11:00 AM', title: 'Big Red Strawberry Farm', note: 'Pick fresh sweet strawberries with chocolate dip' },
-        { time: '02:00 PM', title: 'The Lord’s Cafe Tanah Rata', note: 'Famous warm scones with homemade strawberry jam' },
-        { time: '06:30 PM', title: 'Water Crest Valley Steamboat', note: 'Boiling organic watercress soup over charcoal' },
-      ],
+      day: 'Day 1',
+      items: [] as { time: string; title: string; note: string }[],
     },
     {
-      day: 'Day 2: Cloud Forests & Highland Agriculture',
-      items: [
-        { time: '09:00 AM', title: 'Mossy Forest Nature Reserve', note: 'Cloud forest boardwalk at 2,032m elevation' },
-        { time: '01:30 PM', title: 'Kea Farm Highland Market', note: 'Steaming pearl corn, honey, and succulents' },
-        { time: '03:30 PM', title: 'Cameron Lavender Garden', note: 'Purple lavender flowerbeds and lavender ice cream' },
-        { time: '06:00 PM', title: 'Golden Hills Night Market', note: 'Street food delicacies and highland souvenirs' },
-      ],
+      day: 'Day 2',
+      items: [] as { time: string; title: string; note: string }[],
     },
   ];
 
@@ -1827,7 +1817,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full bg-stone-800 text-stone-400 border border-white/10 text-[10px] font-mono font-bold">
-                        Sample Preview Plan
+                        Empty Plan
                       </span>
                     )}
                   </h4>
@@ -1937,8 +1927,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             ) : (
               <div className="space-y-4">
                 <div className="p-4 rounded-2xl bg-stone-950/60 border border-white/5 text-xs text-stone-400 flex items-center justify-between">
-                  <span>Displaying default sample itinerary structure:</span>
-                  <span className="font-mono text-[10px] text-stone-500">2 Days • 8 Recommended Spots</span>
+                  <span>No stops added yet. Open Plan Your Trip and click "Add Stop to Day 1" to choose places.</span>
+                  <span className="font-mono text-[10px] text-stone-500">2 Days • 0 Stops</span>
                 </div>
 
                 {itineraryDays.map((plan, idx) => (
@@ -1946,26 +1936,37 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                     key={idx}
                     className="p-5 rounded-3xl glass-panel bg-stone-900/80 border border-white/5 space-y-3"
                   >
-                    <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
-                      <Calendar className="w-4 h-4" />
-                      <span>{plan.day}</span>
+                    <div className="flex items-center justify-between text-emerald-400 font-bold text-sm">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        <span>{plan.day}</span>
+                      </div>
+                      <span className="text-xs text-stone-400 font-normal">
+                        {plan.items.length} stops
+                      </span>
                     </div>
 
                     <div className="space-y-2.5">
-                      {plan.items.map((item, itemIdx) => (
-                        <div
-                          key={itemIdx}
-                          className="p-3 rounded-2xl bg-stone-950/70 border border-white/5 flex items-start gap-3 text-xs"
-                        >
-                          <span className="font-mono text-emerald-400 font-bold shrink-0 mt-0.5">
-                            {item.time}
-                          </span>
-                          <div>
-                            <div className="font-bold text-stone-100">{item.title}</div>
-                            <div className="text-stone-400 text-[11px] mt-0.5">{item.note}</div>
+                      {plan.items.length > 0 ? (
+                        plan.items.map((item, itemIdx) => (
+                          <div
+                            key={itemIdx}
+                            className="p-3 rounded-2xl bg-stone-950/70 border border-white/5 flex items-start gap-3 text-xs"
+                          >
+                            <span className="font-mono text-emerald-400 font-bold shrink-0 mt-0.5">
+                              {item.time}
+                            </span>
+                            <div>
+                              <div className="font-bold text-stone-100">{item.title}</div>
+                              <div className="text-stone-400 text-[11px] mt-0.5">{item.note}</div>
+                            </div>
                           </div>
+                        ))
+                      ) : (
+                        <div className="p-3 rounded-2xl bg-stone-950/40 text-stone-500 text-xs text-center">
+                          No stops added for {plan.day}.
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 ))}

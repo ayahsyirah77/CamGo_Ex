@@ -4357,6 +4357,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     switch (cat) {
       case 'accommodation':
         if (subCat === 'camping_glamping') return { pinColor: '#2563eb', iconEmoji: '⛺', label: 'Glamping & Camp' };
+        if (subCat === 'hostels_roomstay') return { pinColor: '#2563eb', iconEmoji: '🛏️', label: 'Hostels / Roomstay' };
         if (subCat === 'homestay' || subCat === 'chalets') return { pinColor: '#2563eb', iconEmoji: '🏡', label: 'Chalet & Homestay' };
         return { pinColor: '#1d4ed8', iconEmoji: '🏨', label: 'Hotel & Resort' };
 
@@ -4376,10 +4377,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         if (subCat === 'car_bike_rentals') return { pinColor: '#0284c7', iconEmoji: '🛵', label: 'Motorbike / Car Rental' };
         if (subCat === 'fuel_ev_charging') return { pinColor: '#0ea5e9', iconEmoji: '⚡', label: 'EV & Fuel' };
         if (subCat === 'taxi_ehailing') return { pinColor: '#0284c7', iconEmoji: '🚕', label: 'Taxi & E-Hailing' };
+        if (subCat === 'tyre_shop') return { pinColor: '#0284c7', iconEmoji: '🛞', label: 'Tyre Shop' };
+        if (subCat === 'car_battery_shop') return { pinColor: '#0284c7', iconEmoji: '🔋', label: 'Car Battery Shop' };
+        if (subCat === 'auto_repair_roadside') return { pinColor: '#0284c7', iconEmoji: '🔧', label: 'Auto Repair & Roadside' };
         return { pinColor: '#0369a1', iconEmoji: '🚗', label: 'Transport' };
 
       case 'local_services':
         if (subCat === 'public_toilets_restrooms') return { pinColor: '#0d9488', iconEmoji: '🚻', label: 'Public Restroom' };
+        if (subCat === 'clinic_hospital') return { pinColor: '#e11d48', iconEmoji: '🏥', label: 'Clinic / Hospital' };
         if (subCat === 'health_wellness') return { pinColor: '#e11d48', iconEmoji: '🏥', label: 'Clinic & Hospital' };
         if (subCat === 'banking_financial') return { pinColor: '#0d9488', iconEmoji: '🏦', label: 'ATM & Banking' };
         return { pinColor: '#0f766e', iconEmoji: '🏢', label: 'Local Services' };

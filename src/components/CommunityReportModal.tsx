@@ -62,6 +62,34 @@ const compressImageFile = (
     reader.readAsDataURL(file);
   });
 
+const CAMERON_GPS_HUBS = [
+  { name: 'Tanah Rata', lat: 4.4715, lng: 101.3805 },
+  { name: 'Brinchang', lat: 4.4905, lng: 101.3892 },
+  { name: 'Kea Farm', lat: 4.5078, lng: 101.4088 },
+  { name: 'Ringlet', lat: 4.4128, lng: 101.3812 },
+  { name: 'Habu', lat: 4.4472, lng: 101.3838 },
+  { name: 'Tringkap', lat: 4.5122, lng: 101.4215 },
+  { name: 'Kuala Terla', lat: 4.5422, lng: 101.4182 },
+  { name: 'Kampung Raja', lat: 4.5668, lng: 101.4112 },
+  { name: 'Bertam Valley', lat: 4.4178, lng: 101.3985 },
+  { name: 'Blue Valley', lat: 4.5888, lng: 101.4215 },
+];
+
+const resolveNearestCameronArea = (latitude: number, longitude: number): string => {
+  let nearest = CAMERON_GPS_HUBS[0].name;
+  let minSqDist = Infinity;
+  for (const hub of CAMERON_GPS_HUBS) {
+    const dLat = latitude - hub.lat;
+    const dLng = longitude - hub.lng;
+    const sqDist = dLat * dLat + dLng * dLng;
+    if (sqDist < minSqDist) {
+      minSqDist = sqDist;
+      nearest = hub.name;
+    }
+  }
+  return minSqDist < 0.04 ? `Near ${nearest}` : 'Cameron Highlands';
+};
+
 export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
   language,
   isOpen,
@@ -71,13 +99,12 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
   const [hazardType, setHazardType] = useState<CamgoHazardType>('landslide');
   const [severity, setSeverity] = useState<'low' | 'moderate' | 'high' | 'critical'>('high');
   const [titleInput, setTitleInput] = useState<string>('');
-  const [locationName, setLocationName] = useState<string>('Jalan Tapah - Ringlet (FT59)');
-  const [textReport, setTextReport] = useState<string>('');
 
-  // Precise Location Sharing
+  // Precise Location Sharing (Get Current GPS)
   const [lat, setLat] = useState<number>(4.4734);
   const [lng, setLng] = useState<number>(101.3787);
   const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [gpsStatus, setGpsStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Multimedia Support (Image Attachment)
   const [imageUrl, setImageUrl] = useState<string>('');
@@ -90,22 +117,45 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
 
   const handleCaptureGps = () => {
     setIsLocating(true);
+    setGpsStatus(null);
     if (!('geolocation' in navigator)) {
-      alert(language === 'bm' ? 'Geolocation tidak disokong oleh pelayar anda.' : 'Geolocation not supported by browser.');
+      setGpsStatus({
+        type: 'error',
+        text:
+          language === 'bm'
+            ? 'Geolocation tidak disokong oleh pelayar anda.'
+            : 'Geolocation not supported by browser.',
+      });
       setIsLocating(false);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLat(pos.coords.latitude);
-        setLng(pos.coords.longitude);
+        const nextLat = pos.coords.latitude;
+        const nextLng = pos.coords.longitude;
+        setLat(nextLat);
+        setLng(nextLng);
         setIsLocating(false);
+        const area = resolveNearestCameronArea(nextLat, nextLng);
+        setGpsStatus({
+          type: 'success',
+          text:
+            language === 'bm'
+              ? `GPS dikesan: ${area} (${nextLat.toFixed(5)}, ${nextLng.toFixed(5)})`
+              : `GPS locked: ${area} (${nextLat.toFixed(5)}, ${nextLng.toFixed(5)})`,
+        });
       },
       (err) => {
         console.warn('Geolocation capture warning:', err);
         setIsLocating(false);
-        alert(language === 'bm' ? 'Gagal mendapatkan GPS semasa. Menggunakan koordinat default Cameron Highlands.' : 'Failed to capture GPS. Using default Cameron Highlands coordinates.');
+        setGpsStatus({
+          type: 'error',
+          text:
+            language === 'bm'
+              ? 'Gagal mendapatkan GPS semasa. Menggunakan koordinat lalai Cameron Highlands.'
+              : 'Failed to capture GPS. Using default Cameron Highlands coordinates.',
+        });
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -127,7 +177,8 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!textReport.trim()) return;
+    const finalTitle = titleInput.trim();
+    if (!finalTitle) return;
 
     setIsSubmitting(true);
     try {
@@ -135,17 +186,19 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
       const author = currentUser?.displayName || currentUser?.email || 'CamGo Community Driver';
       const hazardId = 'comm-rep-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
       const nowIso = new Date().toISOString();
-      const finalTitle = titleInput.trim() || textReport.slice(0, 50) + (textReport.length > 50 ? '...' : '');
+      const areaLabel = resolveNearestCameronArea(lat, lng);
+      const gpsLocation = `${areaLabel} (GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+      const autoSummary = `${finalTitle} • ${gpsLocation}`;
 
       const newHazard: CamgoHazard & { imageUrl?: string; status: 'pending' | 'active' } = {
         id: hazardId,
         title: finalTitle,
         titleBm: finalTitle,
-        description: textReport,
-        descriptionBm: textReport,
+        description: autoSummary,
+        descriptionBm: autoSummary,
         type: hazardType,
         severity,
-        location: locationName,
+        location: gpsLocation,
         corridor: 'central_highlands',
         milestoneKm: null,
         lat,
@@ -165,9 +218,9 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
 
       setIsSubmitting(false);
       setSuccessMessage(true);
-      setTextReport('');
       setTitleInput('');
       setImageUrl('');
+      setGpsStatus(null);
 
       if (onSuccess) onSuccess();
 
@@ -337,35 +390,17 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <span className="text-[10px] text-stone-400">{language === 'bm' ? 'Nama Lokasi / Jalan' : 'Location / Road Label'}</span>
-                  <input
-                    type="text"
-                    value={locationName}
-                    onChange={(e) => setLocationName(e.target.value)}
-                    placeholder="e.g. FT59 Jalan Tapah-Ringlet"
-                    className="w-full px-3 py-1.5 rounded-lg bg-stone-900 border border-white/10 text-xs text-white outline-none focus:border-emerald-400"
-                  />
-                </div>
-              </div>
-
-              {/* Detailed Description */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-stone-300">
-                  {language === 'bm' ? 'Butiran Laporan Terperinci' : 'Detailed Description'}
-                </label>
-                <textarea
-                  rows={3}
-                  value={textReport}
-                  onChange={(e) => setTextReport(e.target.value)}
-                  placeholder={
-                    language === 'bm'
-                      ? 'Berikan maklumat lengkap insiden, keadaan laluan, atau bantuan diperlukan...'
-                      : 'Provide comprehensive details regarding the event, road state, or assistance needed...'
-                  }
-                  className="w-full px-3 py-2.5 rounded-xl bg-stone-950 border border-white/15 text-xs text-white placeholder-stone-500 focus:border-emerald-400 outline-none resize-none"
-                  required
-                />
+                {gpsStatus && (
+                  <div
+                    className={`px-3 py-2 rounded-xl text-[11px] font-medium border ${
+                      gpsStatus.type === 'success'
+                        ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300'
+                        : 'bg-amber-950/60 border-amber-500/30 text-amber-300'
+                    }`}
+                  >
+                    {gpsStatus.text}
+                  </div>
+                )}
               </div>
 
               {/* Multimedia Support: Image Upload & Preview */}
@@ -409,7 +444,7 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isSubmitting || !textReport.trim()}
+                disabled={isSubmitting || !titleInput.trim()}
                 className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider uppercase shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-transform"
               >
                 {isSubmitting ? (
