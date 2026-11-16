@@ -957,3 +957,290 @@ export async function monitorCorridorTelemetryAnomalies(
   };
 }
 
+// =========================================================================
+// MODULE C: Incident-Aware Traffic Flow Impact & AI Prediction Helpers
+// =========================================================================
+
+export interface HazardImpactedSegment extends PredictiveTrafficSegment {
+  incidentImpactCount?: number;
+  impactingHazardTitles?: string[];
+}
+
+export interface HazardTrafficImpactPrediction {
+  hazardId: string;
+  affectedCorridor: string;
+  affectedSegments: Array<{
+    id: string;
+    name: string;
+    predictedSpeedKmh: number;
+    baselineSpeedKmh: number;
+    addedDelayMins: number;
+    condition: TrafficCondition;
+    color: string;
+  }>;
+  predictedSpeedKmh: number;
+  baselineSpeedKmh: number;
+  predictedDelayMins: number;
+  congestionSpreadKm: number;
+  flowTrend: 'worsening' | 'peaking' | 'stabilizing';
+  recommendedBypass: string;
+  recommendedBypassBm: string;
+  summary: string;
+  summaryBm: string;
+}
+
+function getHazardImpactProfile(hazard: CamgoHazard): {
+  speedMultiplier: number;
+  extraDelayMins: number;
+  radiusKm: number;
+  spreadKm: number;
+} {
+  const sev = hazard.severity || 'moderate';
+  const type = hazard.type;
+
+  const isBlocking = type === 'landslide' || type === 'roadblock' || type === 'fallen_tree';
+
+  if (sev === 'critical') {
+    return {
+      speedMultiplier: isBlocking ? 0.22 : 0.30,
+      extraDelayMins: isBlocking ? 32 : 24,
+      radiusKm: 4.5,
+      spreadKm: isBlocking ? 4.2 : 3.1,
+    };
+  }
+  if (sev === 'high') {
+    return {
+      speedMultiplier: isBlocking ? 0.38 : 0.45,
+      extraDelayMins: isBlocking ? 20 : 15,
+      radiusKm: 3.5,
+      spreadKm: isBlocking ? 2.6 : 1.9,
+    };
+  }
+  if (sev === 'moderate') {
+    return {
+      speedMultiplier: 0.65,
+      extraDelayMins: 9,
+      radiusKm: 2.5,
+      spreadKm: 1.1,
+    };
+  }
+  return {
+    speedMultiplier: 0.82,
+    extraDelayMins: 4,
+    radiusKm: 1.8,
+    spreadKm: 0.5,
+  };
+}
+
+function minDistanceToSegmentKm(
+  lat: number,
+  lng: number,
+  coordinates: [number, number][]
+): number {
+  if (!coordinates || coordinates.length === 0) return Infinity;
+  let minKm = Infinity;
+  for (let i = 0; i < coordinates.length; i++) {
+    const pt = coordinates[i];
+    const d = approxDistanceKm(lat, lng, pt[0], pt[1]);
+    if (d < minKm) minKm = d;
+  }
+  return minKm;
+}
+
+/**
+ * Dynamically adjusts road segments whenever active community/admin/telemetry incidents exist
+ * near a highland stretch, turning affected routes amber/red/gridlock in real time.
+ */
+export function applyHazardImpactToSegments(
+  segments: PredictiveTrafficSegment[],
+  hazards: CamgoHazard[]
+): HazardImpactedSegment[] {
+  const activeHazards = hazards.filter(
+    (h) => h && h.status !== 'cleared' && Number.isFinite(Number(h.lat)) && Number.isFinite(Number(h.lng))
+  );
+  if (activeHazards.length === 0) return segments;
+
+  return segments.map((seg) => {
+    let minSpeedFactor = 1.0;
+    let totalExtraDelay = 0;
+    const matchedTitles: string[] = [];
+
+    activeHazards.forEach((hazard) => {
+      const hLat = Number(hazard.lat);
+      const hLng = Number(hazard.lng);
+      const profile = getHazardImpactProfile(hazard);
+      const distKm = minDistanceToSegmentKm(hLat, hLng, seg.coordinates);
+
+      const corridorMatches =
+        hazard.corridor &&
+        (hazard.corridor === seg.corridor ||
+          (hazard.corridor === 'central_highlands' && seg.corridor === 'central'));
+
+      if (distKm <= profile.radiusKm || (corridorMatches && distKm <= profile.radiusKm * 1.35)) {
+        const proximityWeight = Math.max(0.4, 1 - distKm / (profile.radiusKm * 1.5));
+        const adjustedFactor = 1 - (1 - profile.speedMultiplier) * proximityWeight;
+        minSpeedFactor = Math.min(minSpeedFactor, adjustedFactor);
+        totalExtraDelay += Math.round(profile.extraDelayMins * proximityWeight);
+        matchedTitles.push(hazard.title);
+      }
+    });
+
+    if (matchedTitles.length === 0) return seg;
+
+    const impactedSpeed = Math.max(6, Math.round(seg.speedKmh * minSpeedFactor));
+    const impactedDelay = seg.delayMins + totalExtraDelay;
+    const { condition, color, statusLabel } = classifyTrafficSpeed(
+      impactedSpeed,
+      seg.freeFlowSpeedKmh
+    );
+
+    return {
+      ...seg,
+      speedKmh: impactedSpeed,
+      delayMins: impactedDelay,
+      condition,
+      color,
+      statusLabel,
+      incidentImpactCount: matchedTitles.length,
+      impactingHazardTitles: matchedTitles,
+      advisory: `⚠️ Incident Alert (${matchedTitles[0]}): Flow slowed to ${impactedSpeed} km/h (+${totalExtraDelay}m queue). ${seg.advisory}`,
+    };
+  });
+}
+
+/**
+ * Spatial-Temporal Incident Traffic Flow Predictor:
+ * Evaluates road geometry, time-of-day load, and hazard severity to forecast bottleneck
+ * speed, queue length, trend, and smart highland bypass routes.
+ */
+export function predictHazardTrafficImpact(
+  hazard: CamgoHazard,
+  segments: PredictiveTrafficSegment[],
+  targetDate: Date = new Date()
+): HazardTrafficImpactPrediction {
+  const hLat = Number(hazard.lat) || CAMERON_TRAFFIC_CENTER.lat;
+  const hLng = Number(hazard.lng) || CAMERON_TRAFFIC_CENTER.lon;
+  const profile = getHazardImpactProfile(hazard);
+
+  const hour = targetDate.getHours() + targetDate.getMinutes() / 60;
+  const day = targetDate.getDay();
+  const isWeekend = day === 0 || day === 6;
+
+  // Time-of-day traffic pressure amplifies incident tailback during busy windows
+  let demandMultiplier = 1.0;
+  if (hour >= 22.0 || hour < 6.5) {
+    demandMultiplier = 0.55;
+  } else if (isWeekend && hour >= 9.5 && hour <= 17.5) {
+    demandMultiplier = 1.35;
+  } else if (hour >= 10.5 && hour <= 18.5) {
+    demandMultiplier = 1.15;
+  }
+
+  const nearbySegments = segments
+    .map((seg) => ({
+      seg,
+      distKm: minDistanceToSegmentKm(hLat, hLng, seg.coordinates),
+    }))
+    .sort((a, b) => a.distKm - b.distKm)
+    .filter((entry, idx) => entry.distKm <= 6.5 || idx < 2);
+
+  const affectedSegments = nearbySegments.slice(0, 3).map(({ seg, distKm }) => {
+    const proximityWeight = Math.max(0.45, 1 - distKm / 7.0);
+    const factor = 1 - (1 - profile.speedMultiplier) * proximityWeight;
+    const predictedSpeed = Math.max(6, Math.round(seg.speedKmh * factor));
+    const addedDelay = Math.max(
+      2,
+      Math.round(profile.extraDelayMins * proximityWeight * demandMultiplier)
+    );
+    const { condition, color } = classifyTrafficSpeed(predictedSpeed, seg.freeFlowSpeedKmh);
+    return {
+      id: seg.id,
+      name: seg.name,
+      predictedSpeedKmh: predictedSpeed,
+      baselineSpeedKmh: seg.speedKmh,
+      addedDelayMins: addedDelay,
+      condition,
+      color,
+    };
+  });
+
+  const primary = affectedSegments[0];
+  const predictedSpeedKmh = primary ? primary.predictedSpeedKmh : 18;
+  const baselineSpeedKmh = primary ? primary.baselineSpeedKmh : 42;
+  const predictedDelayMins = primary
+    ? primary.addedDelayMins
+    : Math.round(profile.extraDelayMins * demandMultiplier);
+  const congestionSpreadKm = Number((profile.spreadKm * demandMultiplier).toFixed(1));
+
+  const flowTrend: 'worsening' | 'peaking' | 'stabilizing' =
+    hour >= 20.5 || hour < 6.0
+      ? 'stabilizing'
+      : isWeekend && hour >= 9.0 && hour <= 14.0
+        ? 'worsening'
+        : hour >= 14.0 && hour <= 18.5
+          ? 'peaking'
+          : 'stabilizing';
+
+  const locLower = `${hazard.location || ''} ${hazard.corridor || ''} ${hazard.title || ''}`.toLowerCase();
+  let recommendedBypass =
+    'Use FT185 Simpang Pulai or FT102 Sungai Koyan as an alternative mountain gateway if delays exceed 25 mins.';
+  let recommendedBypassBm =
+    'Gunakan laluan alternatif FT185 Simpang Pulai atau FT102 Sungai Koyan jika kelewatan melebihi 25 minit.';
+
+  if (locLower.includes('tapah') || locLower.includes('lata') || locLower.includes('ringlet') || hLat < 4.44) {
+    recommendedBypass =
+      'Reroute uphill/downhill via FT185 Simpang Pulai (Ipoh Exit 137) or FT102 Sungai Koyan–Raub to bypass FT59 Tapah hairpins.';
+    recommendedBypassBm =
+      'Tukar laluan melalui FT185 Simpang Pulai (Tol Ipoh 137) atau FT102 Sungai Koyan–Raub untuk mengelak laluan sempit FT59 Tapah.';
+  } else if (
+    locLower.includes('brinchang') ||
+    locLower.includes('golden') ||
+    locLower.includes('kea') ||
+    locLower.includes('tanah rata')
+  ) {
+    recommendedBypass =
+      'Use Sungai Ruil bypass link road between Tanah Rata and Golden Hills, or delay Kea Farm transit until after 5:30 PM.';
+    recommendedBypassBm =
+      'Gunakan jalan pintas Sungai Ruil antara Tanah Rata–Golden Hills, atau tangguh perjalanan ke Kea Farm selepas 5:30 petang.';
+  } else if (locLower.includes('simpang pulai') || locLower.includes('pos slim') || locLower.includes('blue valley') || hLat > 4.54) {
+    recommendedBypass =
+      'Consider FT102 Sungai Koyan (East Coast/Central) or FT59 Tapah approach; watch out for heavy agro lorries in single-lane zones.';
+    recommendedBypassBm =
+      'Pertimbangkan laluan FT102 Sungai Koyan atau FT59 Tapah; awas lori sayur perlahan di laluan satu lorong.';
+  }
+
+  const affectedCorridor = primary ? primary.name : hazard.location || 'Cameron Highlands Corridor';
+
+  const trendTextEn =
+    flowTrend === 'worsening'
+      ? 'Queue expected to lengthen over the next 45 mins'
+      : flowTrend === 'peaking'
+        ? 'Peak bottleneck active along nearby bends'
+        : 'Off-peak demand allows faster dispersal';
+  const trendTextBm =
+    flowTrend === 'worsening'
+      ? 'Barisan kenderaan dijangka memanjang dalam 45 minit akan datang'
+      : flowTrend === 'peaking'
+        ? 'Kesesakan berada di tahap puncak di selekoh berhampiran'
+        : 'Aliran luar puncak membantu kesesakan surut lebih cepat';
+
+  const summary = `${affectedCorridor} slowed from ${baselineSpeedKmh} km/h to ~${predictedSpeedKmh} km/h (+${predictedDelayMins}m delay, ~${congestionSpreadKm} km tailback). ${trendTextEn}.`;
+  const summaryBm = `${affectedCorridor} perlahan dari ${baselineSpeedKmh} km/j ke ~${predictedSpeedKmh} km/j (+${predictedDelayMins}m lewat, barisan ~${congestionSpreadKm} km). ${trendTextBm}.`;
+
+  return {
+    hazardId: hazard.id,
+    affectedCorridor,
+    affectedSegments,
+    predictedSpeedKmh,
+    baselineSpeedKmh,
+    predictedDelayMins,
+    congestionSpreadKm,
+    flowTrend,
+    recommendedBypass,
+    recommendedBypassBm,
+    summary,
+    summaryBm,
+  };
+}
+
+

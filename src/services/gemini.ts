@@ -105,6 +105,80 @@ class GeminiHighlandService {
   }
 
   /**
+   * AI Incident Traffic Flow & Detour Forecaster
+   */
+  public async predictIncidentFlow(
+    hazard: {
+      title: string;
+      type: string;
+      severity: string;
+      location: string;
+      description?: string;
+      lat: number;
+      lng: number;
+    },
+    algoPrediction: {
+      affectedCorridor: string;
+      predictedSpeedKmh: number;
+      predictedDelayMins: number;
+      congestionSpreadKm: number;
+      flowTrend: string;
+      recommendedBypass: string;
+      summary: string;
+      summaryBm: string;
+    },
+    language: 'en' | 'bm' = 'en'
+  ): Promise<{ forecast: string; isAiEnhanced: boolean }> {
+    const fallback = language === 'bm' ? algoPrediction.summaryBm : algoPrediction.summary;
+    try {
+      const response = await fetch('/api/ai/predict-bottleneck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dayPlan: {
+            mode: 'incident_traffic_flow_prediction',
+            language,
+            currentLocalTime: new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }),
+            incident: {
+              title: hazard.title,
+              type: hazard.type,
+              severity: hazard.severity,
+              location: hazard.location,
+              coordinates: [hazard.lat, hazard.lng],
+              description: hazard.description,
+            },
+            telemetryBaseline: {
+              affectedCorridor: algoPrediction.affectedCorridor,
+              predictedSpeedKmh: algoPrediction.predictedSpeedKmh,
+              predictedDelayMins: algoPrediction.predictedDelayMins,
+              congestionSpreadKm: algoPrediction.congestionSpreadKm,
+              flowTrend: algoPrediction.flowTrend,
+            },
+            instruction:
+              language === 'bm'
+                ? 'Berikan ramalan ringkas (maksimum 2-3 ayat) dalam Bahasa Malaysia tentang aliran trafik, tempoh kesesakan dan laluan alternatif terbaik di Cameron Highlands.'
+                : 'Provide a concise 2-3 sentence traffic flow prediction, clearance expectation, and best Cameron Highlands detour recommendation.',
+          },
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const text = String(data?.prediction || '').trim();
+        if (
+          text &&
+          text !== 'Traffic condition normal.' &&
+          text !== 'Traffic prediction currently unavailable.'
+        ) {
+          return { forecast: text, isAiEnhanced: true };
+        }
+      }
+    } catch (e) {
+      console.warn('[GeminiService] predictIncidentFlow warning:', e);
+    }
+    return { forecast: fallback, isAiEnhanced: false };
+  }
+
+  /**
    * Unified AI Itinerary Analysis (Traffic, Budget, Weather)
    */
   public async analyzeItinerary(plan: ItineraryPlan, weather: 'Clear' | 'Rainy'): Promise<{ traffic: string, budget: string, weather: string | null }> {

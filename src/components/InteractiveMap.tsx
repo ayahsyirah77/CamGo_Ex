@@ -81,8 +81,11 @@ import {
   PredictiveTrafficSegment,
   PredictiveFlowSummaryStats,
   TrafficFlowDataSource,
+  HazardTrafficImpactPrediction,
   evaluateHistoricalSegmentFlow,
   enrichSegmentsWithPredictiveFlow,
+  applyHazardImpactToSegments,
+  predictHazardTrafficImpact,
   fetchTomTomPredictiveRoute,
   computePredictiveRouteTravelTime,
   monitorCorridorTelemetryAnomalies,
@@ -623,6 +626,8 @@ interface InteractiveMapProps {
   filterTownship?: Township | 'all';
   originCoords?: { lat: number; lng: number; name?: string } | null;
   destinationCoords?: { lat: number; lng: number; name?: string } | null;
+  focusedHazard?: CamgoHazard | null;
+  onClearFocusedHazard?: () => void;
   onClose?: () => void;
 }
 
@@ -635,6 +640,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   filterTownship = 'all',
   originCoords = null,
   destinationCoords = null,
+  focusedHazard = null,
+  onClearFocusedHazard,
   onClose,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -793,6 +800,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const [activeCamgoHazards, setActiveCamgoHazards] = useState<CamgoHazard[]>([]);
   const [telemetryAnomalies, setTelemetryAnomalies] = useState<CamgoHazard[]>([]);
   const [selectedHazardModal, setSelectedHazardModal] = useState<CamgoHazard | null>(null);
+  const [aiIncidentForecast, setAiIncidentForecast] = useState<{
+    hazardId: string;
+    forecast: string;
+    isAiEnhanced: boolean;
+    loading: boolean;
+  } | null>(null);
   const [isHazardIngestModalOpen, setIsHazardIngestModalOpen] = useState<boolean>(false);
   const [ingestAlertText, setIngestAlertText] = useState<string>('');
   const [ingestImageBase64, setIngestImageBase64] = useState<string | null>(null);
@@ -2810,8 +2823,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
 
     // Render Color-Coded Predictive Flow & Historical Fallback Vector Segments
-    // Covers both main highland highways AND rural plantation roads where live probes are sparse
-    trafficSegments.forEach((segment) => {
+    // Adjusted dynamically by active incidents, covering highways AND rural plantation roads
+    incidentAdjustedSegments.forEach((segment) => {
       const isRural = segment.roadClass === 'rural_plantation';
       const isLiveVerified = segment.dataSource === 'tomtom_live_flow';
 
@@ -3099,8 +3112,98 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         byId.set(anom.id, anom);
       }
     });
+    if (focusedHazard && focusedHazard.status !== 'cleared' && !byId.has(focusedHazard.id)) {
+      byId.set(focusedHazard.id, focusedHazard);
+    }
     return Array.from(byId.values());
-  }, [activeCamgoHazards, telemetryAnomalies]);
+  }, [activeCamgoHazards, telemetryAnomalies, focusedHazard]);
+
+  const incidentAdjustedSegments = useMemo(
+    () => applyHazardImpactToSegments(trafficSegments, combinedActiveHazards),
+    [trafficSegments, combinedActiveHazards]
+  );
+
+  const selectedHazardImpact: HazardTrafficImpactPrediction | null = useMemo(() => {
+    if (!selectedHazardModal) return null;
+    return predictHazardTrafficImpact(
+      selectedHazardModal,
+      trafficSegments,
+      getPredictiveTargetDate(predictiveDepartureProfile)
+    );
+  }, [selectedHazardModal, trafficSegments, predictiveDepartureProfile]);
+
+  const resolveHazardCoords = (hazard: CamgoHazard): { lat: number; lng: number } => {
+    const lat = Number(hazard.lat);
+    const lng = Number(hazard.lng);
+    if (Number.isFinite(lat) && lat !== 0 && Number.isFinite(lng) && lng !== 0) {
+      return { lat, lng };
+    }
+    const locStr = `${hazard.location || ''} ${hazard.corridor || ''} ${hazard.title || ''}`.toLowerCase();
+    for (const [town, coords] of Object.entries(TOWNSHIP_COORDS)) {
+      if (locStr.includes(town.toLowerCase())) {
+        return coords;
+      }
+    }
+    if (locStr.includes('tapah') || locStr.includes('lata')) return { lat: 4.331, lng: 101.328 };
+    if (locStr.includes('simpang') || locStr.includes('pos slim')) return { lat: 4.582, lng: 101.312 };
+    if (locStr.includes('koyan')) return { lat: 4.351, lng: 101.528 };
+    return { lat: 4.475, lng: 101.385 };
+  };
+
+  const triggerAiFlowForecast = async (hazard: CamgoHazard) => {
+    const resolved = resolveHazardCoords(hazard);
+    const algo = predictHazardTrafficImpact(
+      { ...hazard, lat: resolved.lat, lng: resolved.lng },
+      trafficSegments,
+      getPredictiveTargetDate(predictiveDepartureProfile)
+    );
+    setAiIncidentForecast({
+      hazardId: hazard.id,
+      forecast: language === 'bm' ? algo.summaryBm : algo.summary,
+      isAiEnhanced: false,
+      loading: true,
+    });
+    const res = await geminiService.predictIncidentFlow(
+      {
+        title: hazard.title,
+        type: hazard.type,
+        severity: hazard.severity,
+        location: hazard.location,
+        description: hazard.description,
+        lat: resolved.lat,
+        lng: resolved.lng,
+      },
+      algo,
+      language
+    );
+    setAiIncidentForecast((prev) =>
+      prev && prev.hazardId === hazard.id
+        ? { hazardId: hazard.id, forecast: res.forecast, isAiEnhanced: res.isAiEnhanced, loading: false }
+        : prev
+    );
+  };
+
+  const focusHazardOnMap = (hazard: CamgoHazard) => {
+    const resolved = resolveHazardCoords(hazard);
+    const normalizedHazard: CamgoHazard = { ...hazard, lat: resolved.lat, lng: resolved.lng };
+    setIsTrafficOverlayActive(true);
+    setSelectedHazardModal(normalizedHazard);
+    triggerAiFlowForecast(normalizedHazard);
+
+    if (mapInstanceRef.current) {
+      const isMobile = window.innerWidth < 768;
+      const targetLat = isMobile ? resolved.lat - 0.0045 : resolved.lat;
+      const targetLng = isMobile ? resolved.lng : resolved.lng - 0.003;
+      mapInstanceRef.current.closePopup();
+      mapInstanceRef.current.flyTo([targetLat, targetLng], 15, {
+        duration: 1.0,
+        easeLinearity: 0.25,
+      });
+    }
+  };
+
+  const focusHazardOnMapRef = useRef(focusHazardOnMap);
+  focusHazardOnMapRef.current = focusHazardOnMap;
 
   const combinedHazardsRef = useRef<CamgoHazard[]>([]);
   useEffect(() => {
@@ -3146,7 +3249,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         handleHazardVote(target, detail.vote);
       }
     };
+    const handleHazardInspectBridge = (e: Event) => {
+      const hazardId = (e as CustomEvent<{ id: string }>).detail?.id;
+      if (!hazardId) return;
+      const target = combinedHazardsRef.current.find((h) => h.id === hazardId);
+      if (target) {
+        focusHazardOnMapRef.current(target);
+      }
+    };
     window.addEventListener('camgo-vote-hazard', handleHazardVoteBridge);
+    window.addEventListener('camgo-inspect-hazard', handleHazardInspectBridge);
 
     let isMounted = true;
     const ctrl = new AbortController();
@@ -3167,8 +3279,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       unsub();
       window.clearInterval(anomInterval);
       window.removeEventListener('camgo-vote-hazard', handleHazardVoteBridge);
+      window.removeEventListener('camgo-inspect-hazard', handleHazardInspectBridge);
     };
   }, []);
+
+  useEffect(() => {
+    if (!focusedHazard) return;
+    const timer = window.setTimeout(() => {
+      focusHazardOnMap(focusedHazard);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [focusedHazard]);
 
   const renderCamgoHazardPins = (map: L.Map) => {
     if (!hazardLayerRef.current) {
@@ -3266,7 +3387,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
             <button
               type="button"
               onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${hazard.id}', vote: 'still_there' } }))"
@@ -3282,6 +3403,13 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               ✅ Cleared (-1)
             </button>
           </div>
+          <button
+            type="button"
+            onclick="window.dispatchEvent(new CustomEvent('camgo-inspect-hazard', { detail: { id: '${hazard.id}' } }))"
+            style="width: 100%; background: #0f172a; color: #34d399; border: 1px solid #10b981; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
+          >
+            ✨ AI Traffic Flow Prediction
+          </button>
           <div style="font-size: 9px; color: #94a3b8; margin-top: 6px; text-align: right;">
             Source: ${hazard.source}
           </div>
@@ -3292,7 +3420,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       marker.on('click', () => {
         if (is3dDriverModeRef.current) {
           marker.closePopup();
-          setSelectedHazardModal(hazard);
+          focusHazardOnMap(hazard);
         }
       });
 
@@ -3308,12 +3436,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   }, [combinedActiveHazards, language]);
 
-  // Sync Smart Traffic / Predictive Flow overlay whenever segments, profile, or toggle change
+  // Sync Smart Traffic / Predictive Flow overlay whenever segments, profile, hazards, or toggle change
   useEffect(() => {
     if (mapInstanceRef.current) {
       renderColoredTrafficOverlay(mapInstanceRef.current);
     }
-  }, [isTrafficOverlayActive, trafficSegments, congestionHotspots, predictiveDepartureProfile]);
+  }, [isTrafficOverlayActive, incidentAdjustedSegments, congestionHotspots, predictiveDepartureProfile]);
 
   useEffect(() => {
     const handleTomTomKeyUpdated = () => {
@@ -5367,7 +5495,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         )}
 
         {/* Smart Traffic / Predictive Flow Compact Status Pill & Expandable Speed Legend (Bottom-Left) */}
-        {isTrafficOverlayActive && !activeRoute && !selectedPlace && !selectedTownshipHubModal && (
+        {isTrafficOverlayActive && !activeRoute && !selectedPlace && !selectedTownshipHubModal && !selectedHazardModal && (
           <div className="absolute bottom-3 left-2.5 sm:bottom-4 sm:left-4 z-[35] pointer-events-auto max-w-[calc(100vw-72px)] sm:max-w-xs">
             {trafficLegendOpen ? (
               <div className="rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-emerald-500/35 shadow-2xl p-2.5 text-stone-100 space-y-2 animate-in fade-in duration-150">
@@ -6786,28 +6914,36 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         </div>
       )}
 
-      {/* Flat 2D Consensus Hazard Modal (when tapping a hazard pin in 3D Driver Mode) */}
+      {/* Non-Blocking Docked Incident Location & AI Traffic Flow Prediction Panel */}
       {selectedHazardModal && (
-        <div
-          className="fixed inset-0 z-[145] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3"
-          onClick={() => setSelectedHazardModal(null)}
-        >
+        <div className="fixed inset-x-2.5 bottom-2.5 sm:inset-x-auto sm:bottom-4 sm:left-4 z-[145] pointer-events-none flex justify-start">
           <div
-            className="w-full max-w-md rounded-2xl bg-stone-900 border border-rose-500/45 shadow-2xl p-4 text-stone-100 space-y-3"
+            className="pointer-events-auto w-full sm:w-[410px] max-h-[60vh] sm:max-h-[76vh] overflow-y-auto rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-rose-500/45 shadow-2xl p-4 text-stone-100 space-y-3 animate-in slide-in-from-bottom-4 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-[10px] font-mono font-black uppercase tracking-wider text-rose-300">
-                  {selectedHazardModal.isProvisional
-                    ? `🚨 TELEMETRY ANOMALY (-${selectedHazardModal.speedDropPercent || 70}% SPEED)`
-                    : `⚠️ ${selectedHazardModal.type.replace('_', ' ').toUpperCase()}`}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-500/20 border border-rose-400/40 text-rose-300">
+                    {selectedHazardModal.isProvisional
+                      ? `🚨 TELEMETRY (-${selectedHazardModal.speedDropPercent || 70}%)`
+                      : `⚠️ ${selectedHazardModal.type.replace('_', ' ').toUpperCase()}`}
+                  </span>
+                  <span className="text-[10px] font-mono font-bold uppercase text-amber-300">
+                    {selectedHazardModal.severity}
+                  </span>
                 </div>
-                <h4 className="text-base font-black text-white mt-0.5">
-                  {language === 'bm' ? selectedHazardModal.titleBm || selectedHazardModal.title : selectedHazardModal.title}
+                <h4 className="text-sm sm:text-base font-black text-white mt-1 leading-snug">
+                  {language === 'bm'
+                    ? selectedHazardModal.titleBm || selectedHazardModal.title
+                    : selectedHazardModal.title}
                 </h4>
-                <div className="text-xs text-amber-300 font-semibold mt-0.5">
-                  📍 {selectedHazardModal.location}
+                <div className="text-xs text-emerald-300 font-semibold mt-0.5 flex items-center gap-1.5 flex-wrap">
+                  <span>📍 {selectedHazardModal.location}</span>
+                  <span className="text-[10px] font-mono text-stone-400">
+                    ({resolveHazardCoords(selectedHazardModal).lat.toFixed(4)},{' '}
+                    {resolveHazardCoords(selectedHazardModal).lng.toFixed(4)})
+                  </span>
                 </div>
               </div>
               <button
@@ -6815,9 +6951,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 onClick={() => {
                   stopAllVoiceAlerts();
                   setSelectedHazardModal(null);
+                  onClearFocusedHazard?.();
                 }}
-                className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer"
-                aria-label="Close hazard modal"
+                className="p-1.5 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer shrink-0"
+                aria-label="Close incident prediction panel"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -6829,9 +6966,108 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 : selectedHazardModal.description}
             </p>
 
-            <div className="p-2.5 rounded-xl bg-stone-950 border border-white/10 flex items-center justify-between text-xs">
+            {/* Smart Algorithm + AI Traffic Flow Prediction */}
+            {selectedHazardImpact && (
+              <div className="rounded-xl bg-stone-900/95 border border-emerald-500/35 p-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-emerald-300">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>
+                      {language === 'bm'
+                        ? 'Ramalan Aliran Trafik Pintar & AI'
+                        : 'AI & Smart Traffic Flow Prediction'}
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[9.5px] font-mono font-black uppercase px-2 py-0.5 rounded-full border ${
+                      selectedHazardImpact.flowTrend === 'worsening'
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-400/40'
+                        : selectedHazardImpact.flowTrend === 'peaking'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                    }`}
+                  >
+                    {selectedHazardImpact.flowTrend}
+                  </span>
+                </div>
+
+                {/* Live Predictive Metrics */}
+                <div className="grid grid-cols-3 gap-1.5 text-center">
+                  <div className="p-2 rounded-lg bg-stone-950 border border-white/10">
+                    <div className="text-[9.5px] text-stone-400 uppercase font-bold">
+                      {language === 'bm' ? 'Kelajuan' : 'Pred. Speed'}
+                    </div>
+                    <div className="text-sm font-black text-amber-300 mt-0.5">
+                      {selectedHazardImpact.predictedSpeedKmh} <span className="text-[10px]">km/h</span>
+                    </div>
+                    <div className="text-[9px] text-stone-500">
+                      norm {selectedHazardImpact.baselineSpeedKmh}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-stone-950 border border-white/10">
+                    <div className="text-[9.5px] text-stone-400 uppercase font-bold">
+                      {language === 'bm' ? 'Kelewatan' : 'Added Delay'}
+                    </div>
+                    <div className="text-sm font-black text-rose-400 mt-0.5">
+                      +{selectedHazardImpact.predictedDelayMins} <span className="text-[10px]">min</span>
+                    </div>
+                    <div className="text-[9px] text-stone-500">live est.</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-stone-950 border border-white/10">
+                    <div className="text-[9.5px] text-stone-400 uppercase font-bold">
+                      {language === 'bm' ? 'Barisan' : 'Tailback'}
+                    </div>
+                    <div className="text-sm font-black text-cyan-300 mt-0.5">
+                      ~{selectedHazardImpact.congestionSpreadKm} <span className="text-[10px]">km</span>
+                    </div>
+                    <div className="text-[9px] text-stone-500">queue zone</div>
+                  </div>
+                </div>
+
+                {/* AI Natural-Language Forecast */}
+                <div className="p-2.5 rounded-lg bg-stone-950/90 border border-emerald-500/20 text-[11px] text-stone-200 leading-relaxed">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-mono font-bold text-emerald-400 flex items-center gap-1">
+                      {aiIncidentForecast?.loading && <Loader2 className="w-3 h-3 animate-spin" />}
+                      {aiIncidentForecast?.isAiEnhanced
+                        ? '✨ Gemini AI Live Flow Forecast'
+                        : '⚡ Spatial-Temporal Traffic Model'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => triggerAiFlowForecast(selectedHazardModal)}
+                      disabled={aiIncidentForecast?.loading}
+                      className="text-[10px] font-bold text-cyan-300 hover:text-cyan-200 underline cursor-pointer disabled:opacity-50"
+                    >
+                      {language === 'bm' ? 'Kemas kini AI' : 'Refresh AI'}
+                    </button>
+                  </div>
+                  <p>
+                    {aiIncidentForecast && aiIncidentForecast.hazardId === selectedHazardModal.id
+                      ? aiIncidentForecast.forecast
+                      : language === 'bm'
+                        ? selectedHazardImpact.summaryBm
+                        : selectedHazardImpact.summary}
+                  </p>
+                </div>
+
+                {/* Bypass Advisory */}
+                <div className="p-2 rounded-lg bg-emerald-950/50 border border-emerald-500/30 text-[11px] text-emerald-200 leading-snug">
+                  <strong className="text-emerald-300">
+                    {language === 'bm' ? 'Cadangan Pintasan: ' : 'Recommended Bypass: '}
+                  </strong>
+                  {language === 'bm'
+                    ? selectedHazardImpact.recommendedBypassBm
+                    : selectedHazardImpact.recommendedBypass}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Map Re-Center + Community Consensus */}
+            <div className="p-2.5 rounded-xl bg-stone-900 border border-white/10 flex items-center justify-between text-xs">
               <span>
-                👍 Still There: <strong className="text-amber-300">+{selectedHazardModal.stillThereVotes}</strong>
+                👍 Still There:{' '}
+                <strong className="text-amber-300">+{selectedHazardModal.stillThereVotes}</strong>
               </span>
               <span>
                 ✅ Cleared:{' '}
@@ -6841,22 +7077,30 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => focusHazardOnMap(selectedHazardModal)}
+                className="py-2 px-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/50 text-cyan-200 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <LocateFixed className="w-3.5 h-3.5" />
+                <span>{language === 'bm' ? 'Fokus' : 'Locate'}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => handleHazardVote(selectedHazardModal, 'still_there')}
-                className="py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                className="py-2 px-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer"
               >
                 <ThumbsUp className="w-3.5 h-3.5" />
-                <span>Still There (+1)</span>
+                <span>Still (+1)</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleHazardVote(selectedHazardModal, 'cleared')}
-                className="py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                className="py-2 px-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Cleared (-1)</span>
+                <span>Cleared</span>
               </button>
             </div>
           </div>

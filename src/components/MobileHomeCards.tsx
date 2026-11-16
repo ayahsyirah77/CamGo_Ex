@@ -13,7 +13,6 @@ import {
   BedDouble,
   ShieldCheck,
   Car,
-  Layers,
   ArrowRightLeft,
   Briefcase,
   Compass,
@@ -58,7 +57,6 @@ interface MobileHomeCardsProps {
   onOpenParkingEv?: () => void;
   onOpenCurrency?: () => void;
   onOpenClassifieds?: () => void;
-  onOpenPortals?: () => void;
   onSelectTownshipOnMap?: (town: Township) => void;
   weatherList?: WeatherData[];
   trafficAlerts?: TrafficAlert[];
@@ -83,7 +81,6 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
   onOpenParkingEv,
   onOpenCurrency,
   onOpenClassifieds,
-  onOpenPortals,
   onSelectTownshipOnMap,
   weatherList = [],
   hazards = [],
@@ -244,12 +241,6 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
       label: 'Masjid',
       icon: <MasjidIcon className="w-5 h-5 text-teal-400" />,
       onClick: () => onOpenMasjid && onOpenMasjid(),
-    },
-    {
-      id: 'hub',
-      label: 'Hub',
-      icon: <Layers className="w-5 h-5 text-indigo-400" />,
-      onClick: () => onOpenPortals && onOpenPortals(),
     },
     {
       id: 'currency',
@@ -715,7 +706,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
          ===================================================================== */}
       <div className="hidden sm:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 space-y-6">
         {/* PC Quick-Launch Utility Bar (Matches Mobile Row 3 + Mobile Bottom Nav) */}
-        <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
           {quickDockItems.map((item) => (
             <button
               key={item.id}

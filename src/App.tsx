@@ -16,6 +16,7 @@ import {
   MainCategory,
   SubCategory,
   Township,
+  CamgoHazard,
 } from './types';
 import { weatherService } from './services/weather';
 import { firebaseService, UserProfile } from './services/firebase';
@@ -150,6 +151,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(firebaseService.getCurrentUser());
 
   const [selectedPlaceForMap, setSelectedPlaceForMap] = useState<Place | null>(null);
+  const [selectedHazardForMap, setSelectedHazardForMap] = useState<CamgoHazard | null>(null);
 
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isCommunityReportOpen, setIsCommunityReportOpen] = useState(false);
@@ -629,7 +631,6 @@ export default function App() {
           onOpenParkingEv={() => setIsParkingEvOpen(true)}
           onOpenCurrency={() => setIsCurrencyOpen(true)}
           onOpenClassifieds={() => setIsClassifiedsModalOpen(true)}
-          onOpenPortals={() => setIsPortalsModalOpen(true)}
           onSelectTownshipOnMap={(town) => {
             const match = places.find((p) => p.township === town);
             if (match) setSelectedPlaceForMap(match);
@@ -714,6 +715,7 @@ export default function App() {
                   window.speechSynthesis.cancel();
                 }
                 setIsMapModalOpen(false);
+                setSelectedHazardForMap(null);
               }}
               className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
               aria-label="Close"
@@ -727,11 +729,14 @@ export default function App() {
               language={language}
               selectedPlace={selectedPlaceForMap}
               onSelectPlace={(p) => setSelectedPlaceForMap(p)}
+              focusedHazard={selectedHazardForMap}
+              onClearFocusedHazard={() => setSelectedHazardForMap(null)}
               onClose={() => {
                 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
                   window.speechSynthesis.cancel();
                 }
                 setIsMapModalOpen(false);
+                setSelectedHazardForMap(null);
               }}
             />
           </div>
@@ -875,6 +880,11 @@ export default function App() {
       <CommunityTicker
         language={language}
         onOpenReportModal={() => setIsCommunityReportOpen(true)}
+        onSelectHazard={(hazard) => {
+          setSelectedHazardForMap(hazard);
+          setSelectedPlaceForMap(null);
+          setIsMapModalOpen(true);
+        }}
       />
 
       {/* Community Report Submission Modal / Drawer */}
