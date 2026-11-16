@@ -50,6 +50,7 @@ import {
   Users,
   Bell,
   BellRing,
+  FileText,
 } from 'lucide-react';
 
 // Dedicated Masjid / Mosque silhouette icon with central dome, crescent & minarets
@@ -1738,6 +1739,33 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                     <ChevronRight className="w-4 h-4 text-red-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
+
+                  {/* Official User Manual (PDF) Download */}
+                  <a
+                    href="/camgo_user_manual.pdf"
+                    download="CamGo_User_Manual.pdf"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/90 hover:bg-stone-800 text-stone-200 hover:text-white border border-emerald-500/40 transition-all cursor-pointer text-left group shadow-md"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileText className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors">
+                          {language === 'bm' ? 'Panduan Pengguna (PDF)' : 'Official User Manual (PDF)'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                          PDF
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-stone-400 block truncate">
+                        {language === 'bm' ? 'Muat turun manual navigasi & fungsi lengkap' : 'Download complete navigation & feature guide'}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </a>
 
                   {currentUser && (
                     <button

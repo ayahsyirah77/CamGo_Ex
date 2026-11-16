@@ -1,7 +1,7 @@
 import React from 'react';
 import { CamLogo } from './CamLogo';
 import { Language, Township } from '../types';
-import { MapPin, ExternalLink, Github, Database, Share2 } from 'lucide-react';
+import { MapPin, ExternalLink, Github, Database, Share2, FileText } from 'lucide-react';
 
 interface FooterProps {
   language: Language;
@@ -198,8 +198,8 @@ export const Footer: React.FC<FooterProps> = ({
 
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
-          {/* GitHub & Firebase Ready Badge */}
-          <div className="flex items-center gap-2">
+          {/* GitHub, Firebase & User Manual Ready Badge */}
+          <div className="flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-900 border border-white/10 text-[11px] text-stone-400">
               <Database className="w-3 h-3 text-emerald-400" />
               <span>Firebase Connected</span>
@@ -208,6 +208,17 @@ export const Footer: React.FC<FooterProps> = ({
               <Github className="w-3 h-3 text-stone-300" />
               <span>GitHub Portable</span>
             </span>
+            <a
+              href="/camgo_user_manual.pdf"
+              download="CamGo_User_Manual.pdf"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/30 text-[11px] font-bold text-emerald-300 transition-colors shadow-sm"
+              title="Download Complete System & User Manual (PDF)"
+            >
+              <FileText className="w-3 h-3 text-emerald-400" />
+              <span>{language === 'bm' ? 'Manual Pengguna (PDF)' : 'User Manual (PDF)'}</span>
+            </a>
           </div>
 
           {/* Language Switcher */}

@@ -25,6 +25,11 @@ import {
 import {
   findStrictMsMyVoice,
 } from '../services/voiceLocalizationService.ts';
+import {
+  CAMERON_TRAILS,
+  CAMERON_TRAILS_GEOJSON,
+  CAMERON_SUMMIT_TRAILS_GEOJSON,
+} from '../data/trailsData.ts';
 
 
 
@@ -268,5 +273,60 @@ test('Strict Voice Matcher: finds ms-MY voice while strictly rejecting id-ID Ind
   assert.ok(matchedUnderscore);
   assert.equal(matchedUnderscore?.lang, 'ms_MY');
 });
+
+test('Cameron Trails Module: includes Gunung Irau, Gunung Siku, and Gunung Jasar with valid GeoJSON LineStrings and Peaks', () => {
+  assert.equal(CAMERON_TRAILS.length, 15);
+
+  const jasar = CAMERON_TRAILS.find((t) => t.id === 'trail-10');
+  const irau = CAMERON_TRAILS.find((t) => t.id === 'trail-14');
+  const siku = CAMERON_TRAILS.find((t) => t.id === 'trail-15');
+
+  assert.ok(jasar && jasar.maxElevationM === 1696);
+  assert.ok(irau && irau.maxElevationM === 2110);
+  assert.ok(siku && siku.maxElevationM === 1916);
+
+  assert.equal(CAMERON_TRAILS_GEOJSON.features.length, 30);
+  assert.equal(CAMERON_SUMMIT_TRAILS_GEOJSON.type, 'FeatureCollection');
+  assert.equal(CAMERON_SUMMIT_TRAILS_GEOJSON.features.length, 6);
+
+  const trailFeatures = CAMERON_SUMMIT_TRAILS_GEOJSON.features.filter(
+    (f) => f.properties.type === 'trail'
+  );
+  const peakFeatures = CAMERON_SUMMIT_TRAILS_GEOJSON.features.filter(
+    (f) => f.properties.type === 'peak'
+  );
+
+  assert.equal(trailFeatures.length, 3);
+  assert.equal(peakFeatures.length, 3);
+
+  for (const trailFeature of trailFeatures) {
+    assert.equal(trailFeature.geometry.type, 'LineString');
+    assert.ok(trailFeature.geometry.coordinates.length >= 6);
+    assert.match(trailFeature.properties.color, /^#[0-9a-fA-F]{6}$/);
+    assert.ok(trailFeature.properties.id);
+    assert.ok(trailFeature.properties.name);
+    assert.ok(trailFeature.properties.elevation > 1600);
+    assert.ok(trailFeature.properties.difficulty);
+
+    for (const [lng, lat] of trailFeature.geometry.coordinates) {
+      assert.ok(lat >= 4.45 && lat <= 4.53, `Latitude out of range: ${lat}`);
+      assert.ok(lng >= 101.37 && lng <= 101.40, `Longitude out of range: ${lng}`);
+    }
+
+    const matchingPeak = peakFeatures.find(
+      (p) => p.properties.id === `${trailFeature.properties.id}-peak`
+    );
+    assert.ok(matchingPeak, `Missing matching peak for ${trailFeature.properties.id}`);
+    assert.equal(matchingPeak.geometry.type, 'Point');
+
+    const lastTrailCoord =
+      trailFeature.geometry.coordinates[trailFeature.geometry.coordinates.length - 1];
+    assert.deepEqual(matchingPeak.geometry.coordinates, lastTrailCoord);
+    assert.equal(matchingPeak.properties.elevation, trailFeature.properties.elevation);
+    assert.equal(matchingPeak.properties.difficulty, trailFeature.properties.difficulty);
+    assert.equal(matchingPeak.properties.color, trailFeature.properties.color);
+  }
+});
+
 
 

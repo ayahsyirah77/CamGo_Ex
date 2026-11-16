@@ -1801,6 +1801,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span>GitHub / Firebase Sync</span>
               </button>
 
+              <a
+                href="/camgo_user_manual.pdf"
+                download="CamGo_User_Manual.pdf"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 border border-white/10 transition-colors cursor-pointer"
+                title="Download Official CamGo System & User Manual (PDF)"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span>System Manual (PDF)</span>
+              </a>
+
               {!isAdmin ? (
                 <button
                   onClick={async () => {

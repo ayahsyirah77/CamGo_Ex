@@ -1693,6 +1693,8 @@ Only return valid JSON without markdown wrapping.`;
     return res.json(fallbackPayload);
   });
 
+  app.use(express.static(path.resolve(__dirname, 'public')));
+
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (_req, res) => {

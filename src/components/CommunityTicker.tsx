@@ -36,21 +36,12 @@ export const CommunityTicker: React.FC<CommunityTickerProps> = ({ language, onOp
       ? hazards
       : [
           {
-            id: 'default-1',
-            title: language === 'bm' ? 'Laluan Simpang Pulai (FT185) dibuka & lancar.' : 'Simpang Pulai Route (FT185) open and flowing smoothly.',
-            location: 'FT185',
-            severity: 'low',
-          },
-          {
-            id: 'default-2',
-            title: language === 'bm' ? 'Pasar Malam Golden Hills dibuka 4 petang hingga 9 malam.' : 'Golden Hills Night Market active from 4 PM to 9 PM.',
-            location: 'Golden Hills',
-            severity: 'moderate',
-          },
-          {
-            id: 'default-3',
-            title: language === 'bm' ? 'Suhu malam turun ke 14°C, pastikan memakai pakaian tebal.' : 'Night temperature drops to 14°C, please wear warm layers.',
-            location: 'Cameron Highlands',
+            id: 'empty-notice',
+            title:
+              language === 'bm'
+                ? 'Tiada laporan insiden aktif daripada komuniti atau admin. Klik Ticker Live untuk hantar laporan.'
+                : 'No active community or admin incident reports at this moment. Click Ticker Live to report an incident.',
+            location: 'CamGo Live',
             severity: 'low',
           },
         ];

@@ -21,6 +21,10 @@ import {
   Mountain,
   Lock,
   UserCheck,
+  ExternalLink,
+  FileText,
+  Users,
+  Info,
 } from 'lucide-react';
 import { CAMERON_TRAILS, TrailRoute } from '../data/trailsData';
 import { Language } from '../types';
@@ -66,6 +70,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   const [downloadProgress, setDownloadProgress] = useState(100);
   const [cacheVerified, setCacheVerified] = useState(false);
   const [safetyStatus, setSafetyStatus] = useState<TrailSafetyStatus | null>(null);
+  const [isPermitInfoOpen, setIsPermitInfoOpen] = useState(false);
 
   // Leaflet Map Ref
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -511,6 +516,52 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
             </div>
           )}
 
+          {/* Mandatory Forestry Permit (HSK) & Malim Gunung Disclaimer Notice */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-amber-950/35 border border-amber-500/40 text-amber-100 flex flex-col items-center text-center gap-3.5">
+            <div className="flex flex-col sm:flex-row items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="font-extrabold text-amber-200 uppercase tracking-wide text-xs">
+                {language === 'bm'
+                  ? 'Notis Rasmi: Permit Perhutanan (HSK) & Malim Gunung (MGP)'
+                  : 'Official Notice: Forestry Permit (HSK) & Malim Gunung (MGP)'}
+              </div>
+            </div>
+
+            <p className="text-xs text-stone-300 max-w-2xl leading-relaxed">
+              {language === 'bm'
+                ? 'Laluan di dalam Hutan Simpanan Kekal (HSK) mewajibkan permit perhutanan rasmi dan Malim Gunung Perhutanan (MGP) berdaftar (nisbah 1:7, had kuota 60 pendaki/hari). Hanya laluan berisiko rendah berhampiran pekan atau pelantar pelancong dikecualikan.'
+                : 'Trails inside a Permanent Forest Reserve (Hutan Simpanan Kekal - HSK) officially require a forestry permit and a registered Malim Gunung Perhutanan (MGP) for high-altitude peaks & deep jungle routes (1:7 ratio, 60 hikers/day cap). Only short, low-risk town trails or tourist boardwalks are exempted.'}
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsPermitInfoOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/50 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <Info className="w-3.5 h-3.5 text-amber-300" />
+                <span>
+                  {language === 'bm'
+                    ? 'Syarat & Senarai Gunung Wajib'
+                    : 'Permit & Guide Requirements'}
+                </span>
+              </button>
+
+              <a
+                href="https://www.facebook.com/p/Persatuan-Malim-Gunung-Cameron-Highlands-PMGCH-100088179327815/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 text-xs font-bold transition-all cursor-pointer shadow-sm"
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-300" />
+                <span>PMGCH (Book Guide)</span>
+                <ExternalLink className="w-3 h-3 text-emerald-300" />
+              </a>
+            </div>
+          </div>
+
           {/* Top Grid: Trail Selector & Condition Badge */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Left Col: Trail Selector (Trails 1 - 14) */}
@@ -597,7 +648,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     }`}
                   >
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <div>
+                    <div className="flex-1 space-y-1">
                       <div className="font-bold uppercase text-[10px] tracking-wider opacity-90">Live Trail Condition</div>
                       <div className="font-semibold">{selectedTrail.conditionBadge}</div>
                     </div>
@@ -890,6 +941,177 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
           </div>
         </div>
       </div>
+
+      {/* Forestry Permit & Mandatory Malim Gunung Requirements Modal */}
+      {isPermitInfoOpen && (
+        <div
+          className="fixed inset-0 z-[160] flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-5 animate-in fade-in duration-200"
+          onClick={() => setIsPermitInfoOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] rounded-3xl bg-stone-900 border border-amber-500/40 shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-white/10 bg-stone-950/90">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400">
+                    {language === 'bm' ? 'Jabatan Perhutanan Pahang (HSK)' : 'Pahang Forestry Department'}
+                  </span>
+                  <h3 className="text-sm sm:text-base font-heading font-black text-white">
+                    {language === 'bm'
+                      ? 'Syarat Permit HSK & Malim Gunung Perhutanan (MGP)'
+                      : 'Forestry Permit & Mandatory Malim Gunung Guide'}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPermitInfoOpen(false)}
+                className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 cursor-pointer"
+                aria-label="Close requirements"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs text-stone-300 leading-relaxed">
+              {/* General Policy Notice */}
+              <div className="p-3.5 rounded-2xl bg-amber-950/35 border border-amber-500/35 space-y-1.5">
+                <p className="text-amber-100 font-semibold">
+                  {language === 'bm'
+                    ? 'Di Cameron Highlands, mana-mana laluan mendaki atau gunung yang berada di dalam Hutan Simpanan Kekal (HSK) secara rasmi memerlukan permit perhutanan, dan pengambilan Malim Gunung Perhutanan (MGP) berdaftar adalah diwajibkan untuk puncak altitud tinggi dan laluan hutan tebal. Hanya beberapa laluan pendek berisiko rendah berhampiran pekan atau pelantar pelancong dikecualikan daripada mengambil jurupandu.'
+                    : 'In Cameron Highlands, any hiking trail or mountain located inside a Permanent Forest Reserve (Hutan Simpanan Kekal - HSK) officially requires a forestry permit, and hiring a registered Malim Gunung Perhutanan (MGP) is mandatory for high-altitude peaks and deep jungle routes. Only a few short, low-risk trails near town or tourist boardwalks are exempted from hiring a guide.'}
+                </p>
+              </div>
+
+              {/* Ratio & Quota Rules */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3 rounded-2xl bg-stone-950 border border-white/10">
+                  <div className="text-[10px] font-mono uppercase text-emerald-400 font-bold">
+                    {language === 'bm' ? 'Nisbah Jurupandu' : 'Guide-to-Hiker Ratio'}
+                  </div>
+                  <div className="text-base font-black text-white mt-0.5">1 : 7</div>
+                  <div className="text-[11px] text-stone-400">
+                    {language === 'bm'
+                      ? '1 Malim Gunung berlesen bagi setiap maksimum 7 pendaki.'
+                      : '1 licensed MGP guide for up to 7 hikers.'}
+                  </div>
+                </div>
+                <div className="p-3 rounded-2xl bg-stone-950 border border-white/10">
+                  <div className="text-[10px] font-mono uppercase text-amber-400 font-bold">
+                    {language === 'bm' ? 'Had Kuota Harian' : 'Daily Entry Quota'}
+                  </div>
+                  <div className="text-base font-black text-white mt-0.5">~60 Hikers / Day</div>
+                  <div className="text-[11px] text-stone-400">
+                    {language === 'bm'
+                      ? 'Dikuatkuasakan oleh Jabatan Perhutanan Negeri Pahang.'
+                      : 'Capped daily by the Pahang Forestry Department.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Mandatory Peaks & Trails */}
+              <div className="space-y-2.5">
+                <h4 className="text-xs sm:text-sm font-heading font-black text-white uppercase tracking-wide flex items-center gap-1.5">
+                  <Mountain className="w-4 h-4 text-emerald-400" />
+                  <span>
+                    {language === 'bm'
+                      ? 'Gunung & Laluan Yang Mewajibkan Malim Gunung'
+                      : 'Mountains & Trails Where a Malim Gunung is Mandatory'}
+                  </span>
+                </h4>
+                <p className="text-[11px] text-stone-400">
+                  {language === 'bm'
+                    ? 'Untuk laluan dalam Hutan Simpanan Kekal, jurupandu berlesen adalah wajib bagi:'
+                    : 'For routes within the Permanent Forest Reserve, a licensed guide is strictly required for:'}
+                </p>
+
+                <ul className="space-y-2">
+                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
+                    <span className="font-bold text-rose-300 block">• Gunung Irau (Trail 14 via Mossy Forest)</span>
+                    <span className="text-[11px] text-stone-300">
+                      Strict enforcement. You cannot enter past the tourist boardwalk without an approved forestry permit and a licensed MGP.
+                    </span>
+                  </li>
+                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
+                    <span className="font-bold text-amber-300 block">• Gunung Siku</span>
+                    <span className="text-[11px] text-stone-300">
+                      Requires both an advance permit and a registered guide.
+                    </span>
+                  </li>
+                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
+                    <span className="font-bold text-amber-300 block">• Gunung Yong Belar &amp; Gunung Pass</span>
+                    <span className="text-[11px] text-stone-300">
+                      High-altitude trans-border peaks (Pahang-Perak/Kelantan) that strictly require a permit and guide.
+                    </span>
+                  </li>
+                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
+                    <span className="font-bold text-emerald-300 block">• Gunung Brinchang (Jungle Trail 1)</span>
+                    <span className="text-[11px] text-stone-300">
+                      While driving up to the tower or walking the paid boardwalk does not require a guide, trekking the full jungle trail from Brinchang town requires a permit and guide.
+                    </span>
+                  </li>
+                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
+                    <span className="font-bold text-amber-300 block">• Gunung Suku, Gunung Swettenham &amp; Gunung Tangga</span>
+                    <span className="text-[11px] text-stone-300">
+                      All require advance forestry permits and registered guides.
+                    </span>
+                  </li>
+                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
+                    <span className="font-bold text-amber-300 block">• Coral Hill / Gunung Brinchang Barat</span>
+                    <span className="text-[11px] text-stone-300">
+                      Located within the forest reserve boundary and requires a permit and guide.
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* PMGCH Official Facebook Link */}
+              <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 space-y-2.5">
+                <div className="font-bold text-emerald-300 text-xs flex items-center gap-1.5">
+                  <Users className="w-4 h-4" />
+                  <span>
+                    {language === 'bm'
+                      ? 'Ingin Mendaki? Hubungi Persatuan Malim Gunung Rasmi'
+                      : 'Planning to Trek? Book a Registered Malim Gunung Guide'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-300">
+                  {language === 'bm'
+                    ? 'Untuk urusan permit HSK dan tempahan Malim Gunung berlesen di Cameron Highlands, sila hubungi Persatuan Malim Gunung Cameron Highlands (PMGCH):'
+                    : 'Any user wishing to trek inside HSK trails can arrange permits and certified guides through Persatuan Malim Gunung Cameron Highlands (PMGCH):'}
+                </p>
+                <a
+                  href="https://www.facebook.com/p/Persatuan-Malim-Gunung-Cameron-Highlands-PMGCH-100088179327815/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 transition-all"
+                >
+                  <span>Persatuan Malim Gunung Cameron Highlands (PMGCH)</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-white/10 bg-stone-950/80 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsPermitInfoOpen(false)}
+                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs cursor-pointer"
+              >
+                {language === 'bm' ? 'Tutup' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
