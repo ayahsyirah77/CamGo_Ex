@@ -256,9 +256,17 @@ test('Strict Voice Matcher: finds ms-MY voice while strictly rejecting id-ID Ind
   const idOnlyVoices = [
     { name: 'Indonesian Voice 1', lang: 'id-ID' } as SpeechSynthesisVoice,
     { name: 'Indonesian Voice 2', lang: 'id' } as SpeechSynthesisVoice,
+    { name: 'Google Bahasa Indonesia', lang: 'en-US' } as SpeechSynthesisVoice,
   ];
   const matchedId = findStrictMsMyVoice(idOnlyVoices);
   assert.equal(matchedId, null);
+
+  const androidUnderscoreVoices = [
+    { name: 'Android Bahasa Melayu', lang: 'ms_MY' } as SpeechSynthesisVoice,
+  ];
+  const matchedUnderscore = findStrictMsMyVoice(androidUnderscoreVoices);
+  assert.ok(matchedUnderscore);
+  assert.equal(matchedUnderscore?.lang, 'ms_MY');
 });
 
 

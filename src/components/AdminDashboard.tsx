@@ -25,8 +25,11 @@ import {
   MobileHomeCard,
   AccommodationListing,
   SiteVisitorStats,
+  CamgoHazard,
+  CamgoHazardType,
 } from '../types';
 import { firebaseService, UserProfile } from '../services/firebase';
+import { camgoHazardsService } from '../services/camgoHazardsService';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
 import { formatTimeTo12Hour } from '../utils/highlandLogic';
 import { CamLogo } from './CamLogo';
@@ -80,6 +83,9 @@ import {
   Monitor,
   TrendingUp,
   Key,
+  Filter,
+  Radio,
+  ExternalLink,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -626,7 +632,103 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Place Form States
+  // Community Hazards & Incident Broadcast Moderation State
+  const [communityHazards, setCommunityHazards] = useState<CamgoHazard[]>(() =>
+    camgoHazardsService.getCachedActiveHazards()
+  );
+  const [hazardStatusFilter, setHazardStatusFilter] = useState<'all' | 'pending' | 'active' | 'cleared'>('all');
+  const [hazardTypeFilter, setHazardTypeFilter] = useState<string>('all');
+  const [hazardSearchQuery, setHazardSearchQuery] = useState('');
+  const [moderationLoadingId, setModerationLoadingId] = useState<string | null>(null);
+  const [selectedHazardModal, setSelectedHazardModal] = useState<CamgoHazard | null>(null);
+
+  useEffect(() => {
+    const unsub = camgoHazardsService.subscribeAllHazards((list) => {
+      setCommunityHazards(list);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleApproveHazard = async (hazard: CamgoHazard) => {
+    setModerationLoadingId(hazard.id);
+    try {
+      await camgoHazardsService.updateHazardStatus(hazard.id, 'active');
+      setCommunityHazards((prev) =>
+        prev.map((h) => (h.id === hazard.id ? { ...h, status: 'active' } : h))
+      );
+      addActivity(`Approved and broadcasted community hazard "${hazard.title}" to live map & ticker`);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('camgo-broadcast-event', {
+            detail: {
+              id: hazard.id,
+              event: 'community_hazard_approved',
+              priority: 'high',
+              payload: {
+                title: hazard.title,
+                message: hazard.description,
+                location: hazard.location,
+              },
+              timestamp: new Date().toISOString(),
+            },
+          })
+        );
+      }
+    } catch (err) {
+      console.error('Failed to approve hazard:', err);
+    } finally {
+      setModerationLoadingId(null);
+    }
+  };
+
+  const handleRemoveHazardBroadcast = async (hazard: CamgoHazard) => {
+    setModerationLoadingId(hazard.id);
+    try {
+      await camgoHazardsService.updateHazardStatus(hazard.id, 'cleared');
+      setCommunityHazards((prev) =>
+        prev.map((h) => (h.id === hazard.id ? { ...h, status: 'cleared' } : h))
+      );
+      addActivity(`Took down broadcast for hazard "${hazard.title}" (status set to cleared)`);
+    } catch (err) {
+      console.error('Failed to clear hazard broadcast:', err);
+    } finally {
+      setModerationLoadingId(null);
+    }
+  };
+
+  const handleDeleteHazardRecord = async (hazardId: string, title: string) => {
+    if (!window.confirm(`Permanently delete incident report "${title}" from Firestore?`)) return;
+    setModerationLoadingId(hazardId);
+    try {
+      await camgoHazardsService.deleteHazard(hazardId);
+      setCommunityHazards((prev) => prev.filter((h) => h.id !== hazardId));
+      if (selectedHazardModal?.id === hazardId) setSelectedHazardModal(null);
+      addActivity(`Permanently deleted incident report "${title}"`);
+    } catch (err) {
+      console.error('Failed to delete hazard record:', err);
+    } finally {
+      setModerationLoadingId(null);
+    }
+  };
+
+  const filteredHazards = communityHazards.filter((h) => {
+    if (hazardStatusFilter !== 'all' && h.status !== hazardStatusFilter) return false;
+    if (hazardTypeFilter !== 'all' && h.type !== hazardTypeFilter) return false;
+    if (hazardSearchQuery.trim()) {
+      const q = hazardSearchQuery.toLowerCase();
+      const matchTitle = (h.title || '').toLowerCase().includes(q) || (h.titleBm || '').toLowerCase().includes(q);
+      const matchDesc = (h.description || '').toLowerCase().includes(q) || (h.descriptionBm || '').toLowerCase().includes(q);
+      const matchLoc = (h.location || '').toLowerCase().includes(q);
+      const matchSrc = (h.source || '').toLowerCase().includes(q) || (h.author || '').toLowerCase().includes(q);
+      if (!matchTitle && !matchDesc && !matchLoc && !matchSrc) return false;
+    }
+    return true;
+  });
+
+  const pendingHazardsCount = communityHazards.filter((h) => h.status === 'pending').length;
+  const activeHazardsCount = communityHazards.filter((h) => h.status === 'active').length;
+  const clearedHazardsCount = communityHazards.filter((h) => h.status === 'cleared').length;
+
   const [placeName, setPlaceName] = useState('');
   const [placeNameBm, setPlaceNameBm] = useState('');
   const [placeCategory, setPlaceCategory] = useState<MainCategory>('food');
@@ -2395,6 +2497,307 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Administrative Incident Reporting & Broadcast Moderation Control Panel */}
+          <div className="p-6 rounded-3xl bg-stone-900/95 border-2 border-emerald-500/40 shadow-2xl space-y-5">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
+                    <span>Incident Reporting &amp; Broadcast Management System</span>
+                    {pendingHazardsCount > 0 && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                        {pendingHazardsCount} Pending Review
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Filter, moderate, approve, or remove incoming peer hazard reports, precise GPS pins, and visual evidence before/after map and marquee broadcast.
+                  </p>
+                </div>
+              </div>
+
+              {/* Counts Quick Badges */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-3 py-1 rounded-xl bg-stone-950 border border-white/10 text-xs font-mono font-bold text-stone-300">
+                  Total: <strong className="text-white">{communityHazards.length}</strong>
+                </span>
+                <span className="px-3 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs font-mono font-bold text-emerald-300">
+                  Active Pins: <strong className="text-emerald-200">{activeHazardsCount}</strong>
+                </span>
+                <span className="px-3 py-1 rounded-xl bg-stone-900 border border-white/5 text-xs font-mono text-stone-400">
+                  Cleared: <strong className="text-stone-300">{clearedHazardsCount}</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+              {/* Status Segmented Tabs */}
+              <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-stone-950/80 border border-white/10 overflow-x-auto">
+                {(
+                  [
+                    { id: 'all', label: 'All Reports', count: communityHazards.length, highlight: false },
+                    { id: 'pending', label: 'Pending Review', count: pendingHazardsCount, highlight: pendingHazardsCount > 0 },
+                    { id: 'active', label: 'Live Broadcast', count: activeHazardsCount, highlight: false },
+                    { id: 'cleared', label: 'Cleared', count: clearedHazardsCount, highlight: false },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setHazardStatusFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                      hazardStatusFilter === tab.id
+                        ? 'bg-emerald-600 text-white shadow-md'
+                        : tab.highlight
+                        ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+                        : 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 font-mono">
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Type Filter & Search Bar */}
+              <div className="flex items-center gap-2 flex-1 max-w-md">
+                <select
+                  value={hazardTypeFilter}
+                  onChange={(e) => setHazardTypeFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-xs text-stone-200 outline-none focus:border-emerald-400"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="landslide">⛰️ Landslide</option>
+                  <option value="accident">💥 Accident</option>
+                  <option value="fallen_tree">🌳 Fallen Tree</option>
+                  <option value="roadblock">🚧 Roadblock</option>
+                  <option value="flood">🌊 Flood</option>
+                  <option value="hazard">⚠️ General Hazard</option>
+                </select>
+
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={hazardSearchQuery}
+                    onChange={(e) => setHazardSearchQuery(e.target.value)}
+                    placeholder="Search incident, road, or author..."
+                    className="w-full pl-8 pr-3 py-2 rounded-xl bg-stone-950 border border-white/10 text-xs text-white placeholder-stone-500 outline-none focus:border-emerald-400"
+                  />
+                  {hazardSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setHazardSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-white"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Incident Reports Table / Card List */}
+            <div className="space-y-3">
+              {filteredHazards.length === 0 ? (
+                <div className="py-12 text-center rounded-2xl bg-stone-950/40 border border-white/5 space-y-2">
+                  <ShieldAlert className="w-8 h-8 text-stone-600 mx-auto" />
+                  <p className="text-xs text-stone-400">
+                    No community hazard reports found matching &quot;{hazardStatusFilter}&quot;.
+                  </p>
+                </div>
+              ) : (
+                filteredHazards.map((item) => {
+                  const isPending = item.status === 'pending';
+                  const isActive = item.status === 'active';
+                  const isProcessing = moderationLoadingId === item.id;
+
+                  const severityColor =
+                    item.severity === 'critical'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      : item.severity === 'high'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : item.severity === 'moderate'
+                      ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+
+                  const typeEmoji: Record<string, string> = {
+                    landslide: '⛰️',
+                    accident: '💥',
+                    roadblock: '🚧',
+                    fallen_tree: '🌳',
+                    flood: '🌊',
+                    hazard: '⚠️',
+                  };
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        isPending
+                          ? 'bg-amber-950/20 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
+                          : isActive
+                          ? 'bg-stone-950/80 border-emerald-500/30'
+                          : 'bg-stone-950/40 border-white/5 opacity-75'
+                      }`}
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        {/* Left: Summary, Coordinates & Evidence */}
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          {/* Evidence Thumbnail or Type Avatar */}
+                          {item.imageUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedHazardModal(item)}
+                              className="relative w-16 h-16 rounded-xl overflow-hidden border border-white/20 shrink-0 group cursor-pointer"
+                              title="Click to view full photo evidence"
+                            >
+                              <img
+                                src={item.imageUrl}
+                                alt="Visual Evidence"
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                              />
+                              <div className="absolute inset-0 bg-black/30 group-hover:bg-transparent flex items-center justify-center">
+                                <Eye className="w-4 h-4 text-white drop-shadow" />
+                              </div>
+                            </button>
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-stone-900 border border-white/10 flex items-center justify-center text-xl shrink-0">
+                              {typeEmoji[item.type] || '⚠️'}
+                            </div>
+                          )}
+
+                          {/* Details */}
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase ${
+                                  isPending
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    : isActive
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                    : 'bg-stone-800 text-stone-400 border-stone-700'
+                                }`}
+                              >
+                                {isPending ? 'Pending Moderation' : isActive ? 'Live Broadcast' : 'Cleared / Inactive'}
+                              </span>
+
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${severityColor} uppercase`}>
+                                {item.severity}
+                              </span>
+
+                              <span className="text-[11px] font-bold text-stone-300 uppercase">
+                                {typeEmoji[item.type] || '⚠️'} {item.type.replace('_', ' ')}
+                              </span>
+                            </div>
+
+                            <h5 className="font-bold text-white text-sm line-clamp-1">
+                              {item.title}
+                            </h5>
+
+                            <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
+                              {item.description}
+                            </p>
+
+                            {/* Location & GPS Info */}
+                            <div className="flex items-center gap-3 text-[11px] text-stone-400 flex-wrap pt-0.5">
+                              <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                                <MapPin className="w-3.5 h-3.5" />
+                                <span>{item.location}</span>
+                              </span>
+
+                              <span className="font-mono text-stone-400">
+                                GPS: {Number(item.lat).toFixed(4)}, {Number(item.lng).toFixed(4)}
+                              </span>
+
+                              <span className="text-stone-500">
+                                {item.source || item.author || 'Community Driver'}
+                              </span>
+
+                              {item.timestamp && (
+                                <span className="text-stone-500 font-mono">
+                                  {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+
+                              <span className="text-stone-400 font-mono">
+                                Votes: 👍 +{item.stillThereVotes || 0} | ✅ {item.clearedVotes || 0}/3
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Moderation Actions */}
+                        <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                          {/* Review Details Modal Button */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedHazardModal(item)}
+                            className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold border border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer"
+                            title="Inspect full details and coordinates"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Details</span>
+                          </button>
+
+                          {/* Approve / Broadcast Button */}
+                          {!isActive ? (
+                            <button
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() => handleApproveHazard(item)}
+                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-950"
+                            >
+                              {isProcessing ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              )}
+                              <span>Approve &amp; Broadcast</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() => handleRemoveHazardBroadcast(item)}
+                              className="px-3.5 py-1.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Take down from live map and ticker"
+                            >
+                              {isProcessing ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <EyeOff className="w-3.5 h-3.5" />
+                              )}
+                              <span>Take Down</span>
+                            </button>
+                          )}
+
+                          {/* Delete Button */}
+                          <button
+                            type="button"
+                            disabled={isProcessing}
+                            onClick={() => handleDeleteHazardRecord(item.id, item.title)}
+                            className="p-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 hover:text-white border border-rose-500/30 transition-colors cursor-pointer"
+                            title="Permanently Delete Incident Record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           {/* Real-Time Registered Users Management Table */}
@@ -5991,6 +6394,165 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
         ) as any}
+
+      {/* Selected Hazard Detail / Review Modal */}
+      {selectedHazardModal &&
+        renderModal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
+            onClick={() => setSelectedHazardModal(null)}
+          >
+            <div
+              className="w-full max-w-xl rounded-3xl bg-stone-900 border-2 border-emerald-500/40 shadow-2xl text-stone-100 overflow-hidden relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 bg-stone-950">
+                <div className="flex items-center gap-2.5">
+                  <ShieldAlert className="w-5 h-5 text-emerald-400" />
+                  <h4 className="font-heading font-black text-white text-base">
+                    Incident Review &amp; Broadcast Details
+                  </h4>
+                </div>
+                <button
+                  onClick={() => setSelectedHazardModal(null)}
+                  className="p-1.5 rounded-xl bg-stone-800 text-stone-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* Title & Status */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase ${
+                        selectedHazardModal.status === 'pending'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : selectedHazardModal.status === 'active'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-stone-800 text-stone-400 border-stone-700'
+                      }`}
+                    >
+                      {selectedHazardModal.status.toUpperCase()}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border border-white/20 uppercase">
+                      {selectedHazardModal.severity} SEVERITY
+                    </span>
+                    <span className="text-xs text-stone-400">
+                      ID: <span className="font-mono text-stone-300">{selectedHazardModal.id}</span>
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-black text-white font-heading">
+                    {selectedHazardModal.title}
+                  </h3>
+                </div>
+
+                {/* Multimedia Photo Evidence Preview */}
+                {selectedHazardModal.imageUrl && (
+                  <div className="rounded-2xl overflow-hidden border border-white/15 bg-black/60 max-h-72 flex items-center justify-center">
+                    <img
+                      src={selectedHazardModal.imageUrl}
+                      alt="Incident Evidence"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                )}
+
+                {/* Description */}
+                <div className="p-3.5 rounded-2xl bg-stone-950 border border-white/10 space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400">
+                    Incident Description
+                  </span>
+                  <p className="text-xs text-stone-200 leading-relaxed whitespace-pre-line">
+                    {selectedHazardModal.description}
+                  </p>
+                </div>
+
+                {/* Coordinates & Location */}
+                <div className="p-3.5 rounded-2xl bg-stone-950 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400">
+                      Location &amp; Coordinates
+                    </span>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${selectedHazardModal.lat},${selectedHazardModal.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-emerald-400 hover:underline flex items-center gap-1 font-bold text-[11px]"
+                    >
+                      <span>Open in Google Maps</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="text-xs text-white font-semibold flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{selectedHazardModal.location}</span>
+                  </div>
+                  <div className="font-mono text-xs text-stone-400">
+                    Latitude: {selectedHazardModal.lat} | Longitude: {selectedHazardModal.lng}
+                  </div>
+                </div>
+
+                {/* Metadata */}
+                <div className="grid grid-cols-2 gap-2 text-xs text-stone-400">
+                  <div className="p-2.5 rounded-xl bg-stone-950/60 border border-white/5">
+                    <span className="text-[10px] block text-stone-500">Author / Source:</span>
+                    <span className="font-semibold text-stone-200">
+                      {selectedHazardModal.source || selectedHazardModal.author || 'Community Driver'}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-stone-950/60 border border-white/5">
+                    <span className="text-[10px] block text-stone-500">Submitted:</span>
+                    <span className="font-semibold text-stone-200">
+                      {selectedHazardModal.timestamp ? new Date(selectedHazardModal.timestamp).toLocaleString() : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Modal Action Buttons */}
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
+                  {selectedHazardModal.status !== 'active' ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleApproveHazard(selectedHazardModal);
+                        setSelectedHazardModal((prev) => (prev ? { ...prev, status: 'active' } : null));
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Approve &amp; Broadcast</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleRemoveHazardBroadcast(selectedHazardModal);
+                        setSelectedHazardModal((prev) => (prev ? { ...prev, status: 'cleared' } : null));
+                      }}
+                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <EyeOff className="w-3.5 h-3.5" />
+                      <span>Take Down Broadcast</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteHazardRecord(selectedHazardModal.id, selectedHazardModal.title)}
+                    className="px-4 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 text-xs font-bold border border-rose-500/30 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
     </>
   );
 };

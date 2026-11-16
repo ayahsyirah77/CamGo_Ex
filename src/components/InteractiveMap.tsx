@@ -17,6 +17,8 @@ import {
   getTodayDayName,
 } from '../utils/highlandLogic';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
+import { voiceLocalizationService } from '../services/voiceLocalizationService';
+import { normalizeNavigationText, navigationTtsService } from '../services/navigationTtsService';
 import {
   Layers,
   MapPin,
@@ -1072,20 +1074,24 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       : translateNavInstructionToEn(rawText);
   };
 
-  // Requirement 3: Async Voice Loading for Android & Mobile Browsers
+  // Requirement 3: Async Voice Loading for Android & Mobile Browsers (without clobbering service listeners)
   useEffect(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const handleVoicesChanged = () => {
-      const voices = window.speechSynthesis.getVoices();
+      const voices = voiceLocalizationService.loadVoices();
       if (voices.length > 0) {
         setVoicesLoaded(true);
       }
     };
-    window.speechSynthesis.onvoiceschanged = handleVoicesChanged;
+    const unsubscribe = voiceLocalizationService.subscribe(handleVoicesChanged);
+    if (typeof window.speechSynthesis.addEventListener === 'function') {
+      window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+    }
     handleVoicesChanged();
     return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null;
+      unsubscribe();
+      if (window.speechSynthesis && typeof window.speechSynthesis.removeEventListener === 'function') {
+        window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
       }
     };
   }, []);
@@ -1113,13 +1119,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       window.clearTimeout(speechTimeoutRef.current);
       speechTimeoutRef.current = null;
     }
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {
-        // ignore speech cancel errors
-      }
-    }
+    navigationTtsService.stopAudio();
   };
 
   const togglePwaAudioAlerts = (explicitNext?: boolean) => {
@@ -1148,9 +1148,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const synth = window.speechSynthesis;
     const activeVoiceLang = forcedVoiceLang || mapVoiceLangRef.current || 'en';
     const isBm = activeVoiceLang === 'bm';
-    const targetLang = isBm ? 'ms-MY' : 'en-US';
 
-    const processedText = getVoiceInstruction(text, activeVoiceLang);
+    const rawVoiceInstruction = getVoiceInstruction(text, activeVoiceLang);
+    const processedText = normalizeNavigationText(rawVoiceInstruction, activeVoiceLang);
 
     speechActiveTokenRef.current += 1;
     const currentToken = speechActiveTokenRef.current;
@@ -1166,45 +1166,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           synth.resume();
         }
         const utterance = new SpeechSynthesisUtterance(processedText);
-        utterance.lang = targetLang;
+        // Strictly bind ms-MY voice (rejecting id-ID Indonesian accents) or English voice
+        voiceLocalizationService.configureUtteranceVoice(utterance, activeVoiceLang);
         utterance.rate = isBm ? 0.95 : 1.0;
         utterance.pitch = 1.0;
-
-        const voices = synth.getVoices();
-        if (voices && voices.length > 0) {
-          let preferredVoice: SpeechSynthesisVoice | undefined;
-          if (isBm) {
-            // Priority 1: Exact ms-MY / ms_MY
-            preferredVoice = voices.find(
-              (v) =>
-                v.lang.toLowerCase() === 'ms-my' ||
-                v.lang.toLowerCase() === 'ms_my' ||
-                v.lang.toLowerCase().replace('_', '-') === 'ms-my'
-            );
-            // Priority 2: Any ms-* prefix (ms, ms-SG, ms-BN)
-            if (!preferredVoice) {
-              preferredVoice = voices.find((v) => v.lang.toLowerCase().startsWith('ms'));
-            }
-            // Priority 3: Indonesian id-ID / id (Google Indonesian / Android TTS)
-            if (!preferredVoice) {
-              preferredVoice = voices.find(
-                (v) =>
-                  v.lang.toLowerCase() === 'id-id' ||
-                  v.lang.toLowerCase() === 'id_id' ||
-                  v.lang.toLowerCase().startsWith('id')
-              );
-            }
-          } else {
-            preferredVoice =
-              voices.find(
-                (v) => v.lang.toLowerCase() === 'en-us' || v.lang.toLowerCase() === 'en-gb'
-              ) || voices.find((v) => v.lang.toLowerCase().startsWith('en'));
-          }
-
-          if (preferredVoice) {
-            utterance.voice = preferredVoice;
-          }
-        }
         synth.speak(utterance);
       } catch (err) {
         console.warn('[TTS] Mobile speech dispatch warning:', err);
@@ -3285,6 +3250,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             ${language === 'bm' ? hazard.descriptionBm || hazard.description : hazard.description}
           </p>
 
+          ${
+            hazard.imageUrl
+              ? `<div style="margin: 6px 0 8px 0; border-radius: 8px; overflow: hidden; max-height: 120px; border: 1px solid #cbd5e1;"><img src="${hazard.imageUrl}" alt="Visual Evidence" style="width: 100%; height: 110px; object-fit: cover; display: block;" /></div>`
+              : ''
+          }
+
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 8px; margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 700; color: #475569; margin-bottom: 4px;">
               <span>👍 Still There: <strong style="color: #b45309;">+${hazard.stillThereVotes || 0}</strong></span>
@@ -4783,6 +4754,22 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       </span>
                       <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300">
                         {combinedActiveHazards.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        window.dispatchEvent(new CustomEvent('open-community-report'));
+                      }}
+                      className="w-full mt-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between bg-emerald-600/25 hover:bg-emerald-600/35 text-emerald-200 border border-emerald-500/35 transition-colors cursor-pointer"
+                    >
+                      <span className="truncate pr-2">
+                        📢 {language === 'bm' ? 'Lapor Insiden Komuniti (GPS & Foto)' : 'Report Incident (GPS & Evidence)'}
+                      </span>
+                      <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300">
+                        NEW
                       </span>
                     </button>
                   </div>

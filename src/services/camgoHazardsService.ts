@@ -7,6 +7,7 @@ import {
   where,
   setDoc,
   updateDoc,
+  deleteDoc,
   increment,
 } from 'firebase/firestore';
 import { CamgoHazard } from '../types';
@@ -283,6 +284,91 @@ class CamgoHazardsService {
     }
 
     return { success: false, error: 'Invalid ingestion response' };
+  }
+
+  /**
+   * Administrative Moderation: Subscribe to all hazards regardless of status (pending, active, cleared).
+   */
+  public subscribeAllHazards(onUpdate: (hazards: CamgoHazard[]) => void): () => void {
+    let unsubFirestore: (() => void) | null = null;
+    if (db) {
+      try {
+        const q = collection(db, CAMGO_HAZARDS_COLLECTION);
+        unsubFirestore = onSnapshot(
+          q,
+          (snapshot) => {
+            const list: CamgoHazard[] = snapshot.docs.map((d) => ({
+              id: d.id,
+              ...(d.data() as any),
+            })) as CamgoHazard[];
+            list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            onUpdate(list);
+          },
+          (err) => {
+            handleFirestoreError(err, OperationType.LIST, CAMGO_HAZARDS_COLLECTION);
+          }
+        );
+      } catch (err) {
+        handleFirestoreError(err, OperationType.LIST, CAMGO_HAZARDS_COLLECTION);
+      }
+    }
+    return () => {
+      if (unsubFirestore) unsubFirestore();
+    };
+  }
+
+  /**
+   * Administrative Moderation: Update status ('active' | 'cleared' | 'pending').
+   */
+  public async updateHazardStatus(
+    hazardId: string,
+    status: 'active' | 'cleared' | 'pending'
+  ): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    const updateData: Partial<CamgoHazard> = {
+      status,
+      updatedAt,
+      ...(status === 'cleared' ? { clearedAt: updatedAt } : {}),
+    };
+
+    if (db) {
+      try {
+        await updateDoc(doc(db, CAMGO_HAZARDS_COLLECTION, hazardId), updateData);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `${CAMGO_HAZARDS_COLLECTION}/${hazardId}`);
+      }
+    }
+
+    // Update memory cache and local storage
+    if (status === 'active') {
+      const existing = this.memoryCache.find((h) => h.id === hazardId);
+      if (existing) {
+        const updated = { ...existing, ...updateData };
+        const next = [updated, ...this.memoryCache.filter((h) => h.id !== hazardId)];
+        this.memoryCache = next;
+        writeLocalHazards(next);
+      }
+    } else {
+      const next = this.memoryCache.filter((h) => h.id !== hazardId);
+      this.memoryCache = next;
+      writeLocalHazards(next);
+    }
+  }
+
+  /**
+   * Administrative Moderation: Delete hazard document completely from Firestore.
+   */
+  public async deleteHazard(hazardId: string): Promise<void> {
+    if (db) {
+      try {
+        await deleteDoc(doc(db, CAMGO_HAZARDS_COLLECTION, hazardId));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `${CAMGO_HAZARDS_COLLECTION}/${hazardId}`);
+      }
+    }
+    const next = this.memoryCache.filter((h) => h.id !== hazardId);
+    this.memoryCache = next;
+    writeLocalHazards(next);
   }
 }
 

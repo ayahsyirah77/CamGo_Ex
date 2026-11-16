@@ -331,9 +331,11 @@ export interface CamgoHazard {
   source: string;
   sourceChannel?: string;
   rawText?: string;
-  status: 'active' | 'cleared';
+  status: 'active' | 'cleared' | 'pending';
   stillThereVotes: number;
   clearedVotes: number;
+  imageUrl?: string;
+  author?: string;
   isProvisional?: boolean;
   baselineSpeedKmh?: number;
   liveSpeedKmh?: number;

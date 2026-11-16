@@ -2,11 +2,12 @@
  * CamGo Strict Voice Localization Service (ms-MY)
  * Inspects device speech synthesis voices to guarantee true Bahasa Malaysia (ms-MY)
  * pronunciation, strictly rejecting Indonesian (id-ID) accents, handling asynchronous
- * onvoiceschanged events, and binding isolated voice objects to SpeechSynthesisUtterance.
+ * voiceschanged events safely, and binding isolated voice objects to SpeechSynthesisUtterance.
  */
 
 export interface VoiceLocalizationStatus {
   available: boolean;
+  voicesLoaded: boolean;
   voices: SpeechSynthesisVoice[];
   selectedVoice: SpeechSynthesisVoice | null;
   localeMatch: 'ms-MY' | 'ms' | 'id-ID' | 'en' | 'none';
@@ -21,18 +22,21 @@ export interface VoiceLocalizationStatus {
 export function findStrictMsMyVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
   if (!Array.isArray(voices) || voices.length === 0) return null;
 
-  // Step 1: Explicit exact 'ms-MY' match
-  const exactMsMy = voices.find(
-    (v) => v && v.lang && v.lang.toLowerCase().replace('_', '-') === 'ms-my'
-  );
+  // Step 1: Explicit exact 'ms-MY' / 'ms_MY' match
+  const exactMsMy = voices.find((v) => {
+    if (!v || !v.lang) return false;
+    const normalizedLang = v.lang.toLowerCase().replace('_', '-');
+    return normalizedLang === 'ms-my';
+  });
   if (exactMsMy) return exactMsMy;
 
   // Step 2: Regional 'ms' prefix match strictly filtering out Indonesian ('id')
   const regionalMs = voices.find((v) => {
     if (!v || !v.lang) return false;
-    const l = v.lang.toLowerCase();
-    const isMalay = l.startsWith('ms');
-    const isIndonesian = l.startsWith('id') || l.includes('indonesian');
+    const l = v.lang.toLowerCase().replace('_', '-');
+    const name = (v.name || '').toLowerCase();
+    const isMalay = l === 'ms' || l.startsWith('ms-');
+    const isIndonesian = l === 'id' || l.startsWith('id-') || name.includes('indonesia');
     return isMalay && !isIndonesian;
   });
   if (regionalMs) return regionalMs;
@@ -41,9 +45,10 @@ export function findStrictMsMyVoice(voices: SpeechSynthesisVoice[]): SpeechSynth
   const namedMalay = voices.find((v) => {
     if (!v || !v.name) return false;
     const name = v.name.toLowerCase();
-    const lang = (v.lang || '').toLowerCase();
-    const isIndonesian = lang.startsWith('id') || name.includes('indonesia');
-    const isMalayName = name.includes('malay') || name.includes('malaysia') || name.includes('bahasa');
+    const lang = (v.lang || '').toLowerCase().replace('_', '-');
+    const isIndonesian = lang === 'id' || lang.startsWith('id-') || name.includes('indonesia');
+    const isMalayName =
+      name.includes('malay') || name.includes('malaysia') || name.includes('bahasa melayu');
     return isMalayName && !isIndonesian;
   });
   if (namedMalay) return namedMalay;
@@ -59,10 +64,15 @@ class VoiceLocalizationService {
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       this.loadVoices();
-      window.speechSynthesis.onvoiceschanged = () => {
+      const handleVoicesChanged = () => {
         this.loadVoices();
         this.notifyListeners();
       };
+      if (typeof window.speechSynthesis.addEventListener === 'function') {
+        window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+      } else {
+        window.speechSynthesis.onvoiceschanged = handleVoicesChanged;
+      }
     }
   }
 
@@ -78,7 +88,7 @@ class VoiceLocalizationService {
       try {
         listener();
       } catch {
-        // ignore
+        // ignore listener errors
       }
     }
   }
@@ -102,10 +112,16 @@ class VoiceLocalizationService {
 
     let localeMatch: VoiceLocalizationStatus['localeMatch'] = 'none';
     if (selected) {
-      localeMatch = selected.lang.toLowerCase().includes('ms-my') ? 'ms-MY' : 'ms';
+      localeMatch = selected.lang.toLowerCase().replace('_', '-').includes('ms-my')
+        ? 'ms-MY'
+        : 'ms';
     } else {
       const hasId = voices.some(
-        (v) => v && v.lang && (v.lang.toLowerCase().startsWith('id') || v.name.toLowerCase().includes('indonesia'))
+        (v) =>
+          v &&
+          v.lang &&
+          (v.lang.toLowerCase().startsWith('id') ||
+            (v.name || '').toLowerCase().includes('indonesia'))
       );
       if (hasId) localeMatch = 'id-ID';
     }
@@ -114,6 +130,7 @@ class VoiceLocalizationService {
 
     return {
       available: voices.length > 0,
+      voicesLoaded: voices.length > 0,
       voices,
       selectedVoice: selected,
       localeMatch,
@@ -131,13 +148,18 @@ class VoiceLocalizationService {
       const trueMs = this.selectedMsVoice || findStrictMsMyVoice(voices);
       if (trueMs) {
         utterance.voice = trueMs;
-        utterance.lang = trueMs.lang; // e.g. 'ms-MY'
+        utterance.lang = trueMs.lang;
       } else {
-        // Fallback to ms-MY default if voice object is not directly in list
+        // Explicitly pin ms-MY without binding an Indonesian (id-ID) voice object
         utterance.lang = 'ms-MY';
       }
     } else {
-      const enVoice = voices.find((v) => v && v.lang && v.lang.toLowerCase().startsWith('en')) || voices[0];
+      const enVoice =
+        voices.find(
+          (v) => v && v.lang && (v.lang.toLowerCase() === 'en-us' || v.lang.toLowerCase() === 'en-gb')
+        ) ||
+        voices.find((v) => v && v.lang && v.lang.toLowerCase().startsWith('en')) ||
+        voices[0];
       if (enVoice) {
         utterance.voice = enVoice;
         utterance.lang = enVoice.lang;

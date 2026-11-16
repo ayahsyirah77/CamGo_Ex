@@ -12,6 +12,9 @@ export const VoiceLanguageManager: React.FC<VoiceLanguageManagerProps> = ({ lang
   const [status, setStatus] = useState<VoiceLocalizationStatus>(() =>
     voiceLocalizationService.getStatus()
   );
+  const [hasSettledVoices, setHasSettledVoices] = useState<boolean>(
+    () => voiceLocalizationService.getStatus().voicesLoaded
+  );
   const [dismissed, setDismissed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('camgo_voice_manager_dismissed') === 'true';
@@ -20,14 +23,22 @@ export const VoiceLanguageManager: React.FC<VoiceLanguageManagerProps> = ({ lang
   const [testSuccess, setTestSuccess] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = voiceLocalizationService.subscribe(() => {
-      setStatus(voiceLocalizationService.getStatus());
-    });
+    const syncStatus = () => {
+      const next = voiceLocalizationService.getStatus();
+      setStatus(next);
+      if (next.voicesLoaded) {
+        setHasSettledVoices(true);
+      }
+    };
 
-    // Asynchronous re-check for voices loaded post-mount
+    syncStatus();
+    const unsubscribe = voiceLocalizationService.subscribe(syncStatus);
+
+    // Asynchronous re-check for voices loaded post-mount on mobile devices
     const timer = setTimeout(() => {
-      setStatus(voiceLocalizationService.getStatus());
-    }, 1000);
+      syncStatus();
+      setHasSettledVoices(true);
+    }, 1200);
 
     return () => {
       unsubscribe();
@@ -35,18 +46,21 @@ export const VoiceLanguageManager: React.FC<VoiceLanguageManagerProps> = ({ lang
     };
   }, []);
 
-  if (dismissed) return null;
+  // Only show the non-intrusive notification banner if voice discovery settled AND a true ms-MY system pack is missing
+  if (dismissed || !hasSettledVoices || !status.missingSystemPack) {
+    return null;
+  }
 
   const handleTestVoice = async () => {
     setTesting(true);
     const testText =
       language === 'bm'
-        ? 'Navigasi CamGo dikonfigurasi dalam Bahasa Malaysia asli.'
-        : 'CamGo navigation configured in true Bahasa Malaysia.';
+        ? 'Panduan suara Bahasa Malaysia CamGo sedang diuji.'
+        : 'Testing CamGo Bahasa Malaysia navigation voice.';
     await navigationTtsService.speakNavigationInstruction(testText, { language: 'bm' });
     setTesting(false);
     setTestSuccess(true);
-    setTimeout(() => setTestSuccess(false), 4000);
+    setTimeout(() => setTestSuccess(false), 3500);
   };
 
   const handleDismiss = () => {
@@ -59,43 +73,29 @@ export const VoiceLanguageManager: React.FC<VoiceLanguageManagerProps> = ({ lang
   };
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-[85] bg-gradient-to-r from-emerald-950/95 via-stone-950/95 to-teal-950/95 backdrop-blur-xl border-2 border-emerald-400/60 shadow-[0_0_35px_rgba(16,185,129,0.35)] rounded-2xl p-3.5 text-stone-100 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-4 duration-300">
+    <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-[85] bg-gradient-to-r from-amber-950/95 via-stone-950/95 to-stone-900/95 backdrop-blur-xl border-2 border-amber-400/60 shadow-[0_0_30px_rgba(245,158,11,0.28)] rounded-2xl p-3.5 text-stone-100 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-4 duration-300">
       <div className="flex items-center gap-3 min-w-0">
-        <div
-          className={`p-2.5 rounded-xl border shrink-0 ${
-            status.missingSystemPack
-              ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
-              : 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300'
-          }`}
-        >
-          {status.missingSystemPack ? (
-            <AlertCircle className="w-5 h-5 animate-pulse" />
-          ) : (
-            <Volume2 className="w-5 h-5" />
-          )}
+        <div className="p-2.5 rounded-xl border bg-amber-500/20 border-amber-400/40 text-amber-300 shrink-0">
+          <AlertCircle className="w-5 h-5" />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-xs font-black text-white tracking-wide">
-            <span>Suara Panduan BM (ms-MY)</span>
-            <span
-              className={`px-1.5 py-0.2 rounded text-[9px] font-mono ${
-                status.missingSystemPack
-                  ? 'bg-amber-500/30 text-amber-200'
-                  : 'bg-emerald-500/30 text-emerald-300'
-              }`}
-            >
-              {status.selectedVoice ? status.selectedVoice.lang : 'Fallback Active'}
+            <span>
+              {language === 'bm' ? 'Perlukan Suara Panduan BM?' : 'Malay Voice Pack (ms-MY) Missing'}
+            </span>
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-500/30 text-amber-200">
+              {status.localeMatch === 'id-ID' ? 'No ms-MY (id-ID blocked)' : 'ms-MY'}
             </span>
           </div>
-          <p className="text-[11px] text-stone-300 truncate mt-0.5">
-            {status.missingSystemPack
-              ? 'Pek suara ms-MY tiada pada peranti. Sila semak tetapan bahasa telefon.'
-              : 'Sebutan rasmi Bahasa Malaysia diaktifkan (tiada loghat Indonesia).'}
+          <p className="text-[11px] text-stone-300 mt-0.5 leading-snug">
+            {language === 'bm'
+              ? 'Pek suara ms-MY tiada pada peranti. Semak Tetapan Bahasa telefon & muat turun Bahasa Melayu (Malaysia).'
+              : 'No ms-MY voice detected on this device. Check phone Language & Speech settings to install Malay (Malaysia).'}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0">
         <button
           type="button"
           onClick={handleTestVoice}
@@ -105,12 +105,12 @@ export const VoiceLanguageManager: React.FC<VoiceLanguageManagerProps> = ({ lang
           {testSuccess ? (
             <>
               <Check className="w-3.5 h-3.5 text-white" />
-              <span>Jelas!</span>
+              <span>{language === 'bm' ? 'Diuji' : 'Tested'}</span>
             </>
           ) : (
             <>
-              <Sparkles className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
-              <span>{testing ? 'Uji...' : 'Uji Suara'}</span>
+              <Volume2 className={`w-3.5 h-3.5 ${testing ? 'animate-pulse' : ''}`} />
+              <span>{testing ? '...' : language === 'bm' ? 'Uji Suara' : 'Test Voice'}</span>
             </>
           )}
         </button>

@@ -44,6 +44,8 @@ import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
 import { EmergencySosWidget } from './components/EmergencySosWidget';
 import { VoiceLanguageManager } from './components/VoiceLanguageManager';
 import { MobileStickyFooter } from './components/MobileStickyFooter';
+import { CommunityTicker } from './components/CommunityTicker';
+import { CommunityReportModal } from './components/CommunityReportModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
 import { DirectorySection } from './components/DirectorySection';
@@ -156,6 +158,7 @@ export default function App() {
   const [selectedPlaceForMap, setSelectedPlaceForMap] = useState<Place | null>(null);
 
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isCommunityReportOpen, setIsCommunityReportOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
   const [isUserDashboardOpen, setIsUserDashboardOpen] = useState(false);
@@ -273,6 +276,9 @@ export default function App() {
     window.addEventListener('open-map', handleOpenMap);
     window.addEventListener('open-interactive-map', handleOpenMap);
 
+    const handleOpenCommunityReport = () => setIsCommunityReportOpen(true);
+    window.addEventListener('open-community-report', handleOpenCommunityReport);
+
     const handleLocationChange = () => {
       const isChatRoute = checkIsStandaloneChat();
       setIsStandaloneChatView(isChatRoute);
@@ -322,6 +328,7 @@ export default function App() {
       window.removeEventListener('open-map-modal', handleOpenMap);
       window.removeEventListener('open-map', handleOpenMap);
       window.removeEventListener('open-interactive-map', handleOpenMap);
+      window.removeEventListener('open-community-report', handleOpenCommunityReport);
       window.removeEventListener('popstate', handleLocationChange);
       window.removeEventListener('hashchange', handleLocationChange);
       window.removeEventListener('hazard-alerts-updated', handleHazardsUpdated);
@@ -1072,6 +1079,19 @@ export default function App() {
           onOpenAuth={() => setIsAuthOpen(true)}
         />
       )}
+
+      {/* Live Community Rolling Marquee Ticker */}
+      <CommunityTicker
+        language={language}
+        onOpenReportModal={() => setIsCommunityReportOpen(true)}
+      />
+
+      {/* Community Report Submission Modal / Drawer */}
+      <CommunityReportModal
+        language={language}
+        isOpen={isCommunityReportOpen}
+        onClose={() => setIsCommunityReportOpen(false)}
+      />
 
       {/* Bottom Sticky Footer for Mobile: Home, Trail, Directories, Chat, CamGo AI, SOS */}
       <MobileStickyFooter
