@@ -66,10 +66,7 @@ import { usePwaAutoUpdate } from './hooks/usePwaAutoUpdate';
 import { PreventExitToast } from './components/PreventExitToast';
 import { NotificationCenter } from './components/NotificationCenter';
 import {
-  Sparkles,
-  Compass,
   MapPin,
-  MessageSquare,
   ArrowRight,
   Navigation,
   Bike,
@@ -78,9 +75,6 @@ import {
   Camera,
   Smartphone,
   X,
-  Menu,
-  ShieldAlert,
-  Users,
   BedDouble,
 } from 'lucide-react';
 
@@ -180,7 +174,6 @@ export default function App() {
   const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState<boolean>(checkIsBeaconInvite);
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
   const [isAccommodationModalOpen, setIsAccommodationModalOpen] = useState(false);
-  const [isWidgetMenuOpen, setIsWidgetMenuOpen] = useState(false);
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
     null | 'microclimate' | 'traffic' | 'hazard' | 'events'
   >(null);
@@ -521,7 +514,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950 pb-20 sm:pb-0">
+    <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950 pb-24 sm:pb-14">
       {/* 1. Intro Loading Screen */}
       <LoadingScreen language={language} onFinish={() => {}} />
 
@@ -596,20 +589,25 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1">
         {/* 3. Hero Section */}
-        <section id="hero-section" className="relative min-h-0 sm:min-h-[75vh] flex items-center justify-center pt-52 sm:pt-28 pb-4 sm:pb-8 px-4 sm:px-6 lg:px-8 overflow-hidden">
+        <section id="hero-section" className="relative flex items-center justify-center pt-52 sm:pt-28 pb-4 sm:pb-7 px-4 sm:px-6 lg:px-8 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/60 to-stone-950/90 pointer-events-none" />
 
-          <div className="relative z-10 max-w-5xl mx-auto text-center space-y-4 sm:space-y-6">
-            <h1 className="text-3xl sm:text-6xl lg:text-7xl font-heading font-black tracking-tight text-stone-50 leading-[1.1]">
+          <div className="relative z-10 max-w-5xl mx-auto text-center space-y-3 sm:space-y-4">
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-heading font-black tracking-tight text-stone-50 leading-[1.1] [text-wrap:balance]">
               {getTranslation(language, 'hero_title')}{' '}
               <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-500 bg-clip-text text-transparent">
                 Cameron Highlands
               </span>
             </h1>
+            <p className="hidden sm:block text-sm lg:text-base text-stone-300 max-w-2xl mx-auto leading-relaxed">
+              {language === 'bm'
+                ? 'Cuaca mikro masa nyata, amaran trafik & bahaya jalan, navigasi laluan hutan luar talian dan penginapan disahkan.'
+                : 'Real-time highland microclimates, live road & hazard alerts, offline trail navigation, and verified direct homestay portals.'}
+            </p>
           </div>
         </section>
 
-        {/* Mobile Transparent Glass Cards matching screenshot (weather, hazard, map, itinerary, find my party, SOS) */}
+        {/* Unified Responsive Glass Bento Grid (Mobile Cards + PC Desktop Dashboard) */}
         <MobileHomeCards
           language={language}
           onOpenWeather={() => setActiveCapsuleModal('microclimate')}
@@ -620,138 +618,30 @@ export default function App() {
           onOpenMotorbike={() => setIsMotorbikeRentalOpen(true)}
           onOpenAccommodation={() => setIsAccommodationModalOpen(true)}
           onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
+          onOpenChat={(channelId) => {
+            setChatInitialChannelId(channelId || null);
+            setIsChatOpen(true);
+          }}
+          onOpenTrailEngine={() => setIsTrailEngineOpen(true)}
+          onOpenAi={() => setIsAiOpen(true)}
+          onOpenTraffic={() => setActiveCapsuleModal('traffic')}
+          onOpenMasjid={() => setIsMasjidModalOpen(true)}
+          onOpenParkingEv={() => setIsParkingEvOpen(true)}
+          onOpenCurrency={() => setIsCurrencyOpen(true)}
+          onOpenClassifieds={() => setIsClassifiedsModalOpen(true)}
+          onOpenPortals={() => setIsPortalsModalOpen(true)}
+          onSelectTownshipOnMap={(town) => {
+            const match = places.find((p) => p.township === town);
+            if (match) setSelectedPlaceForMap(match);
+            setIsMapModalOpen(true);
+          }}
           weatherList={weatherList}
           trafficAlerts={trafficAlerts}
           hazards={hazards}
         />
 
-        {/* Experience Cards (Desktop only) */}
-        <section className="hidden sm:block max-w-6xl mx-auto px-3 sm:px-6 mb-12">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4 max-w-6xl mx-auto">
-            {/* Card 1: Verified Homestays (Anti-Bypass Lock Engine) */}
-            <div
-              onClick={() => setIsAccommodationModalOpen(true)}
-              className="group rounded-2xl bg-stone-900/90 border border-emerald-500/30 hover:border-emerald-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
-            >
-              <div>
-                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
-                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 sm:mb-3">
-                    <BedDouble className="w-4 h-4 sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-emerald-300 leading-tight">
-                    Verified Stays
-                  </h3>
-                </div>
-                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
-                  Direct host homestays &amp; chalets. Lock dates with RM30 deposit; pay balance at check-in.
-                </p>
-              </div>
-              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-emerald-400 mt-2 sm:mt-4">
-                <span>Lock Room</span>
-                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-
-            {/* Card 2: Motorbike Rental */}
-            <div
-              onClick={() => setIsMotorbikeRentalOpen(true)}
-              className="group rounded-2xl bg-stone-900/90 border border-emerald-500/30 hover:border-emerald-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
-            >
-              <div>
-                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
-                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 sm:mb-3">
-                    <Bike className="w-4 h-4 sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-emerald-300 leading-tight">
-                    Motorbike Rental
-                  </h3>
-                </div>
-                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
-                  Explore winding mountain trails, farm bypasses &amp; tea valleys on two wheels with verified rental fleets.
-                </p>
-              </div>
-              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-emerald-400 mt-2 sm:mt-4">
-                <span>Rentals</span>
-                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-
-            {/* Card 2: GPS Map */}
-            <div
-              onClick={() => setIsMapModalOpen(true)}
-              className="group rounded-2xl bg-stone-900/90 border border-cyan-500/30 hover:border-cyan-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
-            >
-              <div>
-                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
-                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 sm:mb-3">
-                    <Navigation className="w-4 h-4 sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-cyan-300 leading-tight">
-                    GPS Map
-                  </h3>
-                </div>
-                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
-                  Interactive satellite navigation, live traffic hotspots, hazard markers &amp; elevation profiles.
-                </p>
-              </div>
-              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-cyan-400 mt-2 sm:mt-4">
-                <span>Open Map</span>
-                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-
-            {/* Card 3: Route Itinerary */}
-            <div
-              onClick={() => setIsItineraryOpen(true)}
-              className="group rounded-2xl bg-stone-900/90 border border-amber-500/30 hover:border-amber-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
-            >
-              <div>
-                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
-                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 sm:mb-3">
-                    <Route className="w-4 h-4 sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-amber-300 leading-tight">
-                    Itinerary
-                  </h3>
-                </div>
-                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
-                  Visual split-screen itinerary planner with real-time waypoint timing and distance estimates.
-                </p>
-              </div>
-              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-amber-400 mt-2 sm:mt-4">
-                <span>Planner</span>
-                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-
-            {/* Card 4: Chat Lounge */}
-            <div
-              onClick={() => setIsChatOpen(true)}
-              className="group rounded-2xl bg-stone-900/90 border border-indigo-500/30 hover:border-indigo-400 p-3 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col justify-between text-left min-w-0"
-            >
-              <div>
-                <div className="flex sm:block items-center gap-2 mb-1.5 sm:mb-3 min-w-0">
-                  <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 sm:mb-3">
-                    <MessageSquare className="w-4 h-4 sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-xs sm:text-base font-extrabold text-white group-hover:text-indigo-300 leading-tight">
-                    Chat Lounge
-                  </h3>
-                </div>
-                <p className="hidden sm:block text-xs text-stone-400 leading-relaxed line-clamp-2">
-                  Connect live with fellow highland travelers &amp; local community for instant road tips &amp; advice.
-                </p>
-              </div>
-              <div className="pt-2 sm:pt-4 border-t border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-bold text-indigo-400 mt-2 sm:mt-4">
-                <span>Open Lounge</span>
-                <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* Highland Photo Gallery Smart Transparent Capsule */}
-        <section className="max-w-6xl mx-auto px-3 sm:px-6 mb-12">
+        <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mb-12">
           <div
             onClick={() => setIsGalleryOpen(true)}
             className="group rounded-3xl bg-stone-900/80 backdrop-blur-xl border border-emerald-500/30 hover:border-emerald-400 p-5 sm:p-6 shadow-2xl transition-all cursor-pointer flex flex-wrap items-center justify-between gap-4 relative overflow-hidden text-left"
@@ -768,7 +658,7 @@ export default function App() {
                   <h3 className="text-base sm:text-lg font-heading font-black text-white group-hover:text-emerald-300 transition-colors">
                     Highland Photo Gallery
                   </h3>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tabular-nums">
                     {galleryItems.length} Photos
                   </span>
                 </div>
@@ -800,105 +690,6 @@ export default function App() {
           else setIsAdminLoginOpen(true);
         }}
       />
-
-      {/* Floating Circle Quick Links Widget at Bottom Right (PC only) */}
-      <div className="hidden sm:flex fixed bottom-6 right-6 z-50 flex-col items-end">
-        {isWidgetMenuOpen && (
-          <div className="mb-3 w-60 rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 p-3 shadow-2xl space-y-2 text-stone-100 animate-in fade-in slide-in-from-bottom-3 duration-200">
-            <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2 pt-1 pb-1 border-b border-white/10 flex items-center justify-between">
-              <span>Quick Links</span>
-              <Sparkles className="w-3 h-3 text-emerald-400" />
-            </div>
-
-            <button
-              onClick={() => {
-                setIsWidgetMenuOpen(false);
-                setIsChatOpen(true);
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 border border-white/5 transition-all text-left text-xs font-bold text-stone-200 hover:text-white cursor-pointer"
-            >
-              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                <MessageSquare className="w-4 h-4" />
-              </div>
-              <span>Community Chat</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setIsWidgetMenuOpen(false);
-                setIsAiOpen(true);
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-teal-600/20 border border-white/5 transition-all text-left text-xs font-bold text-stone-200 hover:text-white cursor-pointer"
-            >
-              <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-400">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <span>CamGo AI</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setIsWidgetMenuOpen(false);
-                setIsMasjidModalOpen(true);
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 border border-white/5 transition-all text-left text-xs font-bold text-emerald-300 hover:text-emerald-100 cursor-pointer"
-            >
-              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                <Compass className="w-4 h-4" />
-              </div>
-              <span>Masjid & Surau</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setIsWidgetMenuOpen(false);
-                setIsFindMyPartyOpen(true);
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-emerald-600/20 border border-white/5 transition-all text-left text-xs font-bold text-emerald-300 hover:text-emerald-100 cursor-pointer"
-            >
-              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                <Users className="w-4 h-4" />
-              </div>
-              <span>Find My Party</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setIsWidgetMenuOpen(false);
-                setIsTrailEngineOpen(true);
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-indigo-600/20 border border-white/5 transition-all text-left text-xs font-bold text-indigo-300 hover:text-indigo-100 cursor-pointer"
-            >
-              <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
-                <Compass className="w-4 h-4" />
-              </div>
-              <span>Offline Trail Engine</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setIsWidgetMenuOpen(false);
-                window.dispatchEvent(new CustomEvent('open-emergency-sos'));
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl bg-stone-800/80 hover:bg-rose-600/20 border border-white/5 transition-all text-left text-xs font-bold text-rose-300 hover:text-rose-100 cursor-pointer"
-            >
-              <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400">
-                <ShieldAlert className="w-4 h-4" />
-              </div>
-              <span>SOS Emergency</span>
-            </button>
-          </div>
-        )}
-
-        <button
-          onClick={() => setIsWidgetMenuOpen(!isWidgetMenuOpen)}
-          aria-label="Toggle Quick Navigation Menu"
-          className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl shadow-emerald-950/80 border border-emerald-400/40 flex items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95"
-          title="Quick Links"
-        >
-          {isWidgetMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-      </div>
 
       {/* Standalone Chat Lounge Modal */}
       <ChatLoungeModal

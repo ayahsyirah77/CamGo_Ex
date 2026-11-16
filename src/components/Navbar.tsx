@@ -1020,8 +1020,114 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           </motion.div>
 
-          {/* Right Action Container: User Profile (Aligned with Nav Links) */}
+          {/* Right Action Container: Language Toggle, Notification Bell & User Profile */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+
+            {/* Desktop Quick Language Switcher */}
+            <div className="hidden md:flex items-center p-0.5 rounded-full bg-stone-900/90 border border-white/10 text-[11px] font-bold shrink-0">
+              <button
+                type="button"
+                onClick={() => onLanguageChange('en')}
+                className={`px-2.5 py-1 rounded-full transition-colors cursor-pointer whitespace-nowrap ${
+                  language === 'en'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                onClick={() => onLanguageChange('bm')}
+                className={`px-2.5 py-1 rounded-full transition-colors cursor-pointer whitespace-nowrap ${
+                  language === 'bm'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                BM
+              </button>
+            </div>
+
+            {/* Notification Bell (Shared across PC & Mobile View) */}
+            <div className="relative" ref={notificationRef}>
+              <button
+                onClick={() => {
+                  setIsNotificationOpen(!isNotificationOpen);
+                  setHasUnreadNotifications(false);
+                }}
+                aria-label="Highland Notifications"
+                className="relative flex items-center justify-center w-9 h-9 rounded-full bg-stone-900/90 border border-white/15 text-stone-200 hover:text-white hover:border-emerald-500/40 transition-all cursor-pointer shadow-md active:scale-95"
+                title={language === 'bm' ? 'Pemberitahuan Tanah Tinggi' : 'Highland Live Updates'}
+              >
+                <Bell className="w-4 h-4 text-stone-200" />
+                {hasUnreadNotifications && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-stone-950 animate-pulse" />
+                )}
+              </button>
+
+              {/* Notification Dropdown Panel */}
+              <AnimatePresence>
+                {isNotificationOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-full right-0 mt-2 w-[88vw] max-w-sm rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-3 z-50 text-stone-100 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <div className="flex items-center gap-1.5">
+                        <BellRing className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-black text-white">
+                          {language === 'bm' ? 'Pemberitahuan & Amaran' : 'Highland Live Updates'}
+                        </span>
+                      </div>
+                      <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                        {notificationItems.length} Live
+                      </span>
+                    </div>
+
+                    <div
+                      onScroll={() => setHasUnreadNotifications(false)}
+                      className="max-h-72 overflow-y-auto space-y-1.5 pr-0.5 scrollbar-thin"
+                    >
+                      {notificationItems.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={item.action}
+                          className="w-full p-2 rounded-xl bg-stone-950/60 hover:bg-stone-800/80 border border-white/5 text-left transition-colors cursor-pointer group flex items-start gap-2.5"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                              <span className="font-bold text-xs text-stone-200 group-hover:text-emerald-300 truncate">
+                                {item.title}
+                              </span>
+                              <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase shrink-0 ${item.tagColor}`}>
+                                {item.tag}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-stone-400 leading-relaxed line-clamp-2">
+                              {item.desc}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-1 border-t border-white/10 flex items-center justify-between text-[10px] text-stone-400">
+                      <span>Tap item to view live status</span>
+                      <button
+                        onClick={() => setIsNotificationOpen(false)}
+                        className="text-emerald-400 font-bold hover:underline cursor-pointer"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* Desktop / PC View: User Profile / Sign In Button */}
             <div className="hidden sm:flex sm:items-center shrink-0 relative" ref={userMenuRef}>
@@ -1029,7 +1135,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="relative">
                   <button
                     onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                    className="flex items-center gap-2 h-8 px-3 rounded-full bg-stone-900 border border-white/10 text-stone-200 hover:border-emerald-500/50 transition-colors cursor-pointer shadow-sm shrink-0"
+                    className="flex items-center gap-2 h-9 px-3 rounded-full bg-stone-900 border border-white/10 text-stone-200 hover:border-emerald-500/50 transition-colors cursor-pointer shadow-sm shrink-0"
                     title={currentUser.displayName}
                   >
                     <div className="w-5 h-5 rounded-full overflow-hidden border border-emerald-400 shrink-0 bg-stone-950 flex items-center justify-center">
@@ -1114,7 +1220,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={onOpenAuth}
-                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-xs font-bold text-emerald-300 hover:text-white transition-colors cursor-pointer shadow-sm shrink-0"
+                    className="flex items-center gap-1.5 h-9 px-3.5 rounded-full bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-xs font-bold text-emerald-300 hover:text-white transition-colors cursor-pointer shadow-sm shrink-0"
                     title="Sign In"
                   >
                     <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -1124,89 +1230,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Mobile View: Notification Bell + Circular User Avatar (Replaces 3 horizontal lines) */}
-            <div className="flex sm:hidden items-center gap-2.5">
-              {/* Notification Bell */}
-              <div className="relative" ref={notificationRef}>
-                <button
-                  onClick={() => {
-                    setIsNotificationOpen(!isNotificationOpen);
-                    setHasUnreadNotifications(false);
-                  }}
-                  aria-label="Highland Notifications"
-                  className="relative flex items-center justify-center w-9 h-9 rounded-full bg-stone-900/90 border border-white/15 text-stone-200 hover:text-white hover:border-emerald-500/40 transition-all cursor-pointer shadow-md active:scale-95"
-                >
-                  <Bell className="w-4 h-4 text-stone-200" />
-                  {/* Alert Indicator Dot - ONLY when hasUnreadNotifications is true */}
-                  {hasUnreadNotifications && (
-                    <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-stone-950 animate-pulse" />
-                  )}
-                </button>
-
-                {/* Mobile Notification Dropdown Panel */}
-                <AnimatePresence>
-                  {isNotificationOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute top-full right-0 mt-2 w-[88vw] max-w-sm rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-3 z-50 text-stone-100 space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                        <div className="flex items-center gap-1.5">
-                          <BellRing className="w-4 h-4 text-emerald-400" />
-                          <span className="text-xs font-black text-white">
-                            {language === 'bm' ? 'Pemberitahuan & Amaran' : 'Highland Live Updates'}
-                          </span>
-                        </div>
-                        <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
-                          {notificationItems.length} Live
-                        </span>
-                      </div>
-
-                      <div
-                        onScroll={() => setHasUnreadNotifications(false)}
-                        className="max-h-72 overflow-y-auto space-y-1.5 pr-0.5 scrollbar-thin"
-                      >
-                        {notificationItems.map((item) => (
-                          <button
-                            key={item.id}
-                            onClick={item.action}
-                            className="w-full p-2 rounded-xl bg-stone-950/60 hover:bg-stone-800/80 border border-white/5 text-left transition-colors cursor-pointer group flex items-start gap-2.5"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1 mb-0.5">
-                                <span className="font-bold text-xs text-stone-200 group-hover:text-emerald-300 truncate">
-                                  {item.title}
-                                </span>
-                                <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase shrink-0 ${item.tagColor}`}>
-                                  {item.tag}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-stone-400 leading-relaxed line-clamp-2">
-                                {item.desc}
-                              </p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="pt-1 border-t border-white/10 flex items-center justify-between text-[10px] text-stone-400">
-                        <span>Tap item to view live status</span>
-                        <button
-                          onClick={() => setIsNotificationOpen(false)}
-                          className="text-emerald-400 font-bold hover:underline cursor-pointer"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* User Profile Avatar with Emerald Ring Border */}
+            {/* Mobile View: Circular User Avatar (Opens Explorer Drawer) */}
+            <div className="flex sm:hidden items-center">
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
                 aria-label="User Profile & Menu"
