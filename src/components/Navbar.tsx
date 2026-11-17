@@ -197,7 +197,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLDivElement>(null);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -235,8 +234,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
-        searchRef.current &&
-        !searchRef.current.contains(e.target as Node) &&
         mobileSearchRef.current &&
         !mobileSearchRef.current.contains(e.target as Node)
       ) {
@@ -529,159 +526,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <CamLogo size="md" />
             </div>
-          </div>
-
-          {/* Header Navigation Search Bar (Desktop only) */}
-          <div ref={searchRef} className="hidden sm:block relative flex-1 max-w-xs md:max-w-sm mx-2 sm:mx-4">
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 absolute left-2.5 sm:left-3 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setIsSearchOpen(true);
-                }}
-                onFocus={() => setIsSearchOpen(true)}
-                placeholder={language === 'bm' ? 'Cari tempat, acara...' : 'Search places, events...'}
-                className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-1.5 rounded-full bg-stone-900/90 border border-white/15 focus:border-emerald-400 text-[11px] sm:text-xs text-stone-100 placeholder-stone-400 outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setIsSearchOpen(false);
-                  }}
-                  className="absolute right-2 p-1 rounded-full text-stone-400 hover:text-white cursor-pointer"
-                  title="Clear search"
-                >
-                  <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Live Autocomplete Search Results Dropdown */}
-            {isSearchOpen && q.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 max-h-[75vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 z-50 text-stone-100 space-y-2.5 min-w-[280px] sm:min-w-[340px]">
-                {totalResults === 0 ? (
-                  <div className="p-4 text-center text-xs text-stone-400 space-y-1">
-                    <p className="font-medium text-stone-300">
-                      {language === 'bm' ? `Tiada hasil untuk "${searchQuery}"` : `No results found for "${searchQuery}"`}
-                    </p>
-                    <p className="text-[11px] text-stone-500">
-                      {language === 'bm'
-                        ? 'Cuba cari "Steamboat", "Mossy Forest", "Tanah Rata", atau "Pasar Malam".'
-                        : 'Try searching for "Steamboat", "Mossy Forest", "Tanah Rata", or "Night Market".'}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Matching Places */}
-                    {matchingPlaces.length > 0 && (
-                      <div className="space-y-1">
-                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 px-2 py-1 flex items-center justify-between border-b border-white/5">
-                          <span className="flex items-center gap-1">
-                            <Compass className="w-3 h-3" />
-                            <span>Places &amp; Listings ({matchingPlaces.length})</span>
-                          </span>
-                        </div>
-                        {matchingPlaces.map((place) => (
-                          <button
-                            key={place.id}
-                            onClick={() => handleSelectSearchResultPlace(place)}
-                            className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2.5 transition-colors cursor-pointer group"
-                          >
-                            <img
-                              src={safeSrc(place.imageUrl, DEFAULT_PLACE_IMAGE)}
-                              alt={place.name}
-                              className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg object-cover bg-stone-950 border border-white/10 shrink-0"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-xs text-stone-100 group-hover:text-emerald-300 truncate">
-                                {place.name}
-                              </div>
-                              <div className="text-[10px] text-stone-400 truncate flex items-center gap-1.5 mt-0.5">
-                                <span className="text-emerald-400 font-mono font-bold">{place.township}</span>
-                                <span>•</span>
-                                <span className="capitalize">{place.category}</span>
-                                {place.rating && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-amber-400 font-bold">★ {place.rating}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Matching Events */}
-                    {matchingEvents.length > 0 && (
-                      <div className="space-y-1">
-                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400 px-2 py-1 flex items-center justify-between border-b border-white/5">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            <span>Highland Events ({matchingEvents.length})</span>
-                          </span>
-                        </div>
-                        {matchingEvents.map((event) => (
-                          <button
-                            key={event.id}
-                            onClick={() => handleSelectSearchResultEvent(event)}
-                            className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2.5 transition-colors cursor-pointer group"
-                          >
-                            <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
-                              <Calendar className="w-4 h-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-xs text-stone-100 group-hover:text-amber-300 truncate">
-                                {event.title}
-                              </div>
-                              <div className="text-[10px] text-stone-400 truncate mt-0.5">
-                                {event.date} • <span className="text-amber-300">{event.township}</span>
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Matching Townships */}
-                    {matchingTownships.length > 0 && (
-                      <div className="space-y-1">
-                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-teal-400 px-2 py-1 flex items-center justify-between border-b border-white/5">
-                          <span className="flex items-center gap-1">
-                            <Building2 className="w-3 h-3" />
-                            <span>Highland Townships ({matchingTownships.length})</span>
-                          </span>
-                        </div>
-                        {matchingTownships.map((town) => (
-                          <button
-                            key={town}
-                            onClick={() => handleSelectSearchResultTownship(town)}
-                            className="w-full p-2 rounded-xl hover:bg-stone-800/90 text-left flex items-center gap-2.5 transition-colors cursor-pointer group"
-                          >
-                            <div className="p-2 rounded-lg bg-teal-500/20 text-teal-400 shrink-0">
-                              <MapPin className="w-4 h-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-xs text-stone-100 group-hover:text-teal-300 truncate">
-                                {town} Township Hub
-                              </div>
-                              <div className="text-[10px] text-stone-400 truncate">
-                                Highland Portal &amp; Emergency Hub
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Desktop Navigation Links */}

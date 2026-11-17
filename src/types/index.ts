@@ -542,9 +542,27 @@ export type SubscriptionTier = 'free_trial' | 'monthly_pro' | 'annual_pro' | 'pa
 
 export interface AccommodationSpecifics {
   parkingType?: 'private_available' | 'public_parking' | 'valet' | 'none';
-  roomTypes?: Array<{ id: string; name: string; quantity: number; pricePerNight: number }>;
+  roomTypes?: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    pricePerNight: number;
+    bedConfig?: string;
+    maxOccupancy?: number;
+  }>;
   roomAvailabilityStatus?: 'rooms_available' | 'limited_units' | 'fully_booked' | 'not_applicable';
   breakfastIncluded?: boolean;
+  bedConfig?: string;
+  checkInWindow?: string;
+  checkOutWindow?: string;
+  maxOccupancy?: number;
+  housekeepingStatus?: 'clean_ready' | 'turnover_in_progress' | 'inspection_needed' | 'deep_cleaning';
+  amenityAddons?: Array<{
+    id: string;
+    name: string;
+    priceRm: number;
+    enabled: boolean;
+  }>;
   apartment?: {
     totalUnits?: number;
     roomsPerUnit?: number;
@@ -560,6 +578,7 @@ export interface FoodBeverageSpecifics {
 }
 
 export interface VehicleRentalSpecifics {
+  rentalCategory?: 'vehicles' | 'tools' | 'gear' | 'machinery';
   vehicleTypes?: string[];
   totalFleetSize?: number;
   activeFleetCount?: number;
@@ -567,6 +586,18 @@ export interface VehicleRentalSpecifics {
   realTimeAvailability?: 'high' | 'medium' | 'limited' | 'low' | 'sold_out';
   maintenanceStatus?: 'operational' | 'scheduled_maintenance' | 'service_paused';
   maintenanceAlertNote?: string;
+  maintenanceSchedule?: {
+    intervalNote?: string;
+    nextInspectionDate?: string;
+    autoBlockOnService?: boolean;
+  };
+  bookingCalendar?: {
+    bookingSlotMode?: 'daily_and_hourly' | 'daily_only' | 'hourly_only';
+    minAdvanceHours?: number;
+    bufferMinutesBetweenRentals?: number;
+    peakWeekendSurchargePercent?: number;
+    blockedDates?: string[];
+  };
   baseDailyRateRm?: number;
   baseHourlyRateRm?: number;
   serviceOptions?: {
@@ -607,6 +638,15 @@ export interface VehicleRentalSpecifics {
     dailyRateRm: number;
     hourlyRateRm?: number;
   }>;
+  equipmentList?: Array<{
+    id: string;
+    name: string;
+    categoryOrSpec: string;
+    qtyAvailable: number;
+    condition: 'excellent' | 'good' | 'servicing';
+    dailyRateRm: number;
+    hourlyRateRm?: number;
+  }>;
 }
 
 export interface AgritourismFarmSpecifics {
@@ -644,6 +684,24 @@ export interface SurprisePlannerSpecifics {
   inclusionsCollaborations?: ('private_chef' | 'secret_photographer' | 'musician_bookings')[];
 }
 
+export interface RetailProductSpecifics {
+  fulfillmentModes?: ('in_store_pickup' | 'local_delivery' | 'courier_shipping')[];
+  stockStatus?: 'in_stock' | 'low_stock' | 'pre_order' | 'out_of_stock';
+  wholesaleAvailable?: boolean;
+  minOrderQty?: number;
+  warrantyOrFreshnessNote?: string;
+}
+
+export interface ProfessionalServiceSpecifics {
+  serviceRadius?: string;
+  onSiteVisitAvailable?: boolean;
+  emergencyCallout24h?: boolean;
+  baseCalloutFeeRm?: number;
+  leadTimeDays?: number;
+  warrantyMonths?: number;
+  bookingSlotMode?: 'scheduled_quote' | 'fixed_rate_booking';
+}
+
 export interface VendorSectorSpecifics {
   accommodation?: AccommodationSpecifics;
   foodBeverage?: FoodBeverageSpecifics;
@@ -651,6 +709,8 @@ export interface VendorSectorSpecifics {
   agritourismFarm?: AgritourismFarmSpecifics;
   surpriseDelivery?: SurpriseDeliverySpecifics;
   surprisePlanner?: SurprisePlannerSpecifics;
+  retailProducts?: RetailProductSpecifics;
+  professionalServices?: ProfessionalServiceSpecifics;
 }
 
 export interface VendorListing {

@@ -25,6 +25,7 @@ import { getTranslation } from './services/i18n';
 
 import { LoadingScreen } from './components/LoadingScreen';
 import { Navbar } from './components/Navbar';
+import { HeroSearchBar } from './components/HeroSearchBar';
 import { BackToTop } from './components/BackToTop';
 import { InteractiveMap } from './components/InteractiveMap';
 import { GalleryCarousel } from './components/GalleryCarousel';
@@ -603,7 +604,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1">
         {/* 3. Hero Section */}
-        <section id="hero-section" className="relative flex items-center justify-center pt-52 sm:pt-28 pb-4 sm:pb-7 px-4 sm:px-6 lg:px-8 overflow-hidden">
+        <section id="hero-section" className="relative flex items-center justify-center pt-52 sm:pt-28 pb-4 sm:pb-5 px-4 sm:px-6 lg:px-8 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/60 to-stone-950/90 pointer-events-none" />
 
           <div className="relative z-10 max-w-5xl mx-auto text-center space-y-3 sm:space-y-4">
@@ -620,6 +621,26 @@ export default function App() {
             </p>
           </div>
         </section>
+
+        {/* 3b. PC View Only Search Field under Hero Banner */}
+        <HeroSearchBar
+          language={language}
+          places={places}
+          events={events}
+          onSelectPlace={handleSelectPlaceForMap}
+          onSelectEvent={(evt) => {
+            const match = places.find((p) => p.township === evt.township);
+            if (match) handleSelectPlaceForMap(match);
+            else setIsMapModalOpen(true);
+          }}
+          onSelectTownship={(town) => {
+            const match = places.find((p) => p.township === town);
+            if (match) handleSelectPlaceForMap(match);
+            else setIsPortalsModalOpen(true);
+          }}
+          onOpenMap={() => setIsMapModalOpen(true)}
+          onOpenPortalsModal={() => setIsPortalsModalOpen(true)}
+        />
 
         {/* Unified Responsive Glass Bento Grid (Mobile Cards + PC Desktop Dashboard) */}
         <MobileHomeCards

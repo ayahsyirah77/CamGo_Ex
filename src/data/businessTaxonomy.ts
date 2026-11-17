@@ -605,7 +605,7 @@ export const BUSINESS_TAXONOMY: BusinessSector[] = [
 ];
 
 export function findBusinessSector(subCategoryOrId?: string): BusinessSector {
-  if (!subCategoryOrId) return BUSINESS_TAXONOMY[3]; // default vehicle_equipment_rental or food_beverage
+  if (!subCategoryOrId) return BUSINESS_TAXONOMY[4]; // neutral services fallback
   
   for (const sector of BUSINESS_TAXONOMY) {
     if (sector.id === subCategoryOrId) return sector;
@@ -614,28 +614,28 @@ export function findBusinessSector(subCategoryOrId?: string): BusinessSector {
     }
   }
 
-  // Fallback mappings from legacy subcategories
+  // Fallback mappings from legacy subcategories & main categories
   const id = subCategoryOrId.toLowerCase();
-  if (id.includes('food') || id.includes('steamboat') || id.includes('cafe') || id.includes('dining')) {
+  if (id === 'food' || id.startsWith('fb_') || id.includes('food') || id.includes('steamboat') || id.includes('cafe') || id.includes('dining') || id.includes('bar')) {
     return BUSINESS_TAXONOMY[0];
   }
-  if (id.includes('retail') || id.includes('market') || id.includes('shopping') || id.includes('produce')) {
+  if (id === 'shopping' || id.startsWith('retail_') || id.includes('retail') || id.includes('market') || id.includes('shopping') || id.includes('produce')) {
     return BUSINESS_TAXONOMY[1];
   }
-  if (id.includes('hotel') || id.includes('stay') || id.includes('room') || id.includes('chalet') || id.includes('homestay') || id.includes('camp')) {
+  if (id === 'accommodation' || id.startsWith('realestate_') || id.includes('hotel') || id.includes('stay') || id.includes('room') || id.includes('chalet') || id.includes('homestay') || id.includes('camp') || id.includes('guesthouse')) {
     return BUSINESS_TAXONOMY[2];
   }
-  if (id.includes('car') || id.includes('bike') || id.includes('motor') || id.includes('rental') || id.includes('scooter') || id.includes('fleet')) {
+  if (id === 'transport' || id.startsWith('rental_') || id.includes('car') || id.includes('bike') || id.includes('motor') || id.includes('rental') || id.includes('scooter') || id.includes('fleet') || id.includes('tyre')) {
     return BUSINESS_TAXONOMY[3];
   }
-  if (id.includes('tour') || id.includes('attraction') || id.includes('ticket') || id.includes('event')) {
+  if (id === 'travel_tourism' || id.startsWith('tourism_') || id.includes('tour') || id.includes('attraction') || id.includes('ticket') || id.includes('event') || id.includes('agro') || id.includes('agri') || id.includes('farm')) {
     return BUSINESS_TAXONOMY[5];
   }
-  if (id.includes('service') || id.includes('repair') || id.includes('clean') || id.includes('plumb') || id.includes('carpentry')) {
+  if (id === 'services_utilities' || id === 'local_services' || id.startsWith('services_') || id.includes('service') || id.includes('repair') || id.includes('clean') || id.includes('plumb') || id.includes('carpentry')) {
     return BUSINESS_TAXONOMY[4];
   }
 
-  return BUSINESS_TAXONOMY[3];
+  return BUSINESS_TAXONOMY[4];
 }
 
 export function findBusinessCategory(subCategoryOrId?: string): BusinessCategoryItem | null {

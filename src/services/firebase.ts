@@ -30,6 +30,7 @@ import { auth, db } from '../lib/firebase';
 import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot, updateDoc, increment } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
+import { pruneVendorForSector, resolveVendorSectorKey } from '../utils/sectorIsolation';
 
 export interface UserProfile {
   uid: string;
@@ -2263,11 +2264,11 @@ class FirebaseStorageService {
   }
 
   public async saveVendorListing(listingInput: VendorListing): Promise<VendorListing[]> {
-    const listing: VendorListing = {
+    const listing: VendorListing = pruneVendorForSector({
       ...listingInput,
       verificationStatus: listingInput.verificationStatus || 'verified',
       isBookingEnabled: listingInput.isBookingEnabled !== undefined ? listingInput.isBookingEnabled : true,
-    };
+    });
     const listings = this.getVendorListings();
     const normName = listing.businessName.toLowerCase().trim();
     const index = listings.findIndex(
@@ -2275,11 +2276,7 @@ class FirebaseStorageService {
     );
 
     if (index >= 0) {
-      listings[index] = {
-        ...listings[index],
-        ...listing,
-        id: listings[index].id,
-      };
+      listings[index] = { ...listing, id: listings[index].id };
     } else {
       listings.push(listing);
     }
@@ -2296,17 +2293,24 @@ class FirebaseStorageService {
 
     this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
 
-    // Auto-Sync to Motorbike Partners ONLY if genuinely a motorbike/scooter vendor with verified packages
+    // Auto-Sync to Motorbike Partners strictly for genuine Motorbike/Scooter vendors
+    const sKey = resolveVendorSectorKey(listing);
     const vName = (listing.businessName || '').toLowerCase();
     const isSpecificMotorbikeVendor =
-      !isMockVendorListing(listing) && (
-        (listing.category === 'transport' && listing.subCategory === 'car_bike_rentals' && listing.motorbikePackages && listing.motorbikePackages.length > 0) ||
-        vName.includes('motorbike') ||
-        vName.includes('motorcycle') ||
-        vName.includes('scooter') ||
-        vName.includes('sewa motor') ||
-        vName.includes('sewa skuter')
-      );
+      !isMockVendorListing(listing) &&
+      sKey === 'vehicle_rental' &&
+      (listing.subCategory === 'rental_motorcycle_scooter' ||
+        (listing.subCategory === 'car_bike_rentals' &&
+          !!listing.motorbikePackages &&
+          listing.motorbikePackages.length > 0) ||
+        ((vName.includes('motorbike') ||
+          vName.includes('motorcycle') ||
+          vName.includes('scooter') ||
+          vName.includes('sewa motor') ||
+          vName.includes('sewa skuter')) &&
+          !String(listing.subCategory || '').startsWith('rental_car') &&
+          !String(listing.subCategory || '').startsWith('rental_heavy') &&
+          !String(listing.subCategory || '').startsWith('rental_photo')));
 
     if (isSpecificMotorbikeVendor) {
       const partnerObj: MotorbikeRentalPartner = {
@@ -3224,7 +3228,10 @@ class FirebaseStorageService {
           roomAvailabilityStatus: v.roomAvailabilityStatus || existing?.roomAvailabilityStatus || 'rooms_available',
           bedrooms: existing?.bedrooms || v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3,
           bathrooms: existing?.bathrooms || 2,
-          maxGuests: existing?.maxGuests || (v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3) * 2,
+          maxGuests:
+            existing?.maxGuests ||
+            v.sectorSpecifics?.accommodation?.maxOccupancy ||
+            (v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3) * 2,
           rating: existing?.rating || (v.profileHealthScore ? 4.5 + (v.profileHealthScore / 200) : 4.9),
           reviewCount: existing?.reviewCount || 18,
           coverImage: existing?.coverImage || v.coverImage || v.galleryImages?.[0] || v.logoUrl || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',

@@ -31,6 +31,7 @@ import {
 import { firebaseService, UserProfile } from '../services/firebase';
 import { INITIAL_PLACES } from '../data/initialData';
 import { safeSrc, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
+import { pruneVendorForSector } from '../utils/sectorIsolation';
 
 interface VendorOnboardingModalProps {
   isOpen: boolean;
@@ -115,7 +116,7 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
   };
 
   const handleCompleteOnboarding = async () => {
-    const newVendorListing: VendorListing = {
+    const newVendorListing = pruneVendorForSector({
       id: `vendor-${Date.now()}`,
       ownerUid: currentUser?.uid || `vendor-user-${Date.now()}`,
       ownerEmail: currentUser?.email || emailInput || 'vendor@camgo.my',
@@ -147,9 +148,9 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
       galleryImages: [],
       coordinates: selectedClaimPlace ? selectedClaimPlace.coordinates : { lat: 4.49, lng: 101.39 },
       realTimeStatus: 'open',
-      diyHarvestStatus: category === 'attraction' ? 'picking_open' : undefined,
+      roomAvailabilityStatus: category === 'accommodation' ? 'rooms_available' : 'not_applicable',
       parkingStatus: 'private_available',
-      dietaryTags: ['halal_certified', 'muslim_owned'],
+      dietaryTags: [],
       tier: selectedTier,
       billingCadence,
       tierExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -157,7 +158,7 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
       profileHealthScore: verificationDocPreview ? 90 : 75,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
+    });
 
     await firebaseService.saveVendorListing(newVendorListing);
     onOnboardingComplete(newVendorListing);
@@ -509,7 +510,22 @@ export const VendorOnboardingModal: React.FC<VendorOnboardingModalProps> = ({
                   <label className="block text-xs font-medium text-stone-300 mb-1">Primary Category</label>
                   <select
                     value={category}
-                    onChange={(e) => setCategory(e.target.value as MainCategory)}
+                    onChange={(e) => {
+                      const nextCat = e.target.value as MainCategory;
+                      setCategory(nextCat);
+                      if (!selectedClaimPlace) {
+                        const subMap: Record<string, SubCategory> = {
+                          food: 'fb_restaurants_cafes',
+                          accommodation: 'homestay_apartment',
+                          transport: 'rental_motorcycle_scooter',
+                          shopping: 'retail_apparel',
+                          travel_tourism: 'agrotourism_farms',
+                          services_utilities: 'plumbing_electrical',
+                          local_services: 'clinic_hospital',
+                        };
+                        setSubCategory(subMap[nextCat] || 'plumbing_electrical');
+                      }
+                    }}
                     className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="services_utilities">Services & Utilities</option>

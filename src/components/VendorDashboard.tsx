@@ -100,6 +100,11 @@ import {
 } from '../types';
 import { firebaseService, UserProfile, isMockMotorbikePartner } from '../services/firebase';
 import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
+import {
+  resolveVendorSectorKey,
+  mapSubCategoryToMainCategory,
+  pruneVendorForSector,
+} from '../utils/sectorIsolation';
 
 interface VendorDashboardProps {
   isOpen: boolean;
@@ -164,18 +169,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [showAddListingModal, setShowAddListingModal] = useState(false);
 
   // Sector Evaluation Modal State
-  const [sectorModalType, setSectorModalType] = useState<'fnb' | 'hotel' | 'vehicle' | null>(null);
+  const [sectorModalType, setSectorModalType] = useState<'fnb' | 'hotel' | 'vehicle' | 'general' | null>(null);
 
   const triggerSectorModalForVendor = (sectorId?: string) => {
-    const targetSectorId = sectorId || activeSector.id;
-    if (targetSectorId === 'food_beverage') {
+    const resolvedKey = activeVendor ? resolveVendorSectorKey(activeVendor) : null;
+    if (sectorId === 'food_beverage' || (!sectorId && resolvedKey === 'food_beverage')) {
       setSectorModalType('fnb');
-    } else if (targetSectorId === 'real_estate_accommodation') {
+    } else if (sectorId === 'real_estate_accommodation' || (!sectorId && resolvedKey === 'accommodation')) {
       setSectorModalType('hotel');
-    } else if (targetSectorId === 'vehicle_equipment_rental') {
+    } else if (sectorId === 'vehicle_equipment_rental' || (!sectorId && resolvedKey === 'vehicle_rental')) {
       setSectorModalType('vehicle');
     } else {
-      setSectorModalType('fnb');
+      setSectorModalType('general');
     }
   };
 
@@ -190,13 +195,11 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [newBizAddress, setNewBizAddress] = useState('');
   const [createListingError, setCreateListingError] = useState<string | null>(null);
 
-  // Active Sector & Category derived dynamically from activeVendor
+  // Active Sector & Category derived strictly from activeVendor taxonomy (no cross-sector leaks)
+  const activeSectorKey = resolveVendorSectorKey(activeVendor);
   const activeSector: BusinessSector = findBusinessSector(activeVendor?.subCategory || activeVendor?.category);
   const activeCategoryConfig: BusinessCategoryItem = findBusinessCategory(activeVendor?.subCategory) || activeSector.categories[0];
-  const isFnBVendor =
-    activeSector.id === 'food_beverage' ||
-    activeVendor?.category === 'food' ||
-    (typeof activeVendor?.subCategory === 'string' && activeVendor.subCategory.startsWith('fb_'));
+  const isFnBVendor = activeSectorKey === 'food_beverage';
 
   const getSectorIcon = (sectorId: string) => {
     switch (sectorId) {
@@ -208,6 +211,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         return Home;
       case 'vehicle_equipment_rental':
         return Bike;
+      case 'professional_home_services':
       case 'professional_services':
         return Wrench;
       case 'tourism_leisure_events':
@@ -218,27 +222,23 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   };
   const SectorIcon = getSectorIcon(activeSector.id);
 
-  // Check if active vendor is in Accommodation sector (Homestay / Hotel / Chalet)
-  const isAccommodationVendor =
-    activeSector.id === 'real_estate_accommodation' ||
-    activeVendor?.category === 'accommodation' ||
-    (typeof activeVendor?.subCategory === 'string' &&
-      (activeVendor.subCategory.includes('homestay') ||
-       activeVendor.subCategory.includes('hotel') ||
-       activeVendor.subCategory.includes('chalet') ||
-       activeVendor.subCategory.startsWith('realestate_')));
+  // Strict Accommodation check anchored on canonical sector key
+  const isAccommodationVendor = activeSectorKey === 'accommodation';
 
-  // Check if active vendor is in Motorbike, Scooter & Micro-Mobility Rental sector
+  // Strict Motorbike/Scooter/Micro-Mobility check isolated from Cars, Machinery, and Lodging
   const isMotorbikeVendor =
-    !isAccommodationVendor &&
+    activeSectorKey === 'vehicle_rental' &&
     (activeVendor?.subCategory === 'rental_motorcycle_scooter' ||
       activeVendor?.subCategory === 'car_bike_rentals' ||
-      (activeSector.id === 'vehicle_equipment_rental' &&
-        typeof activeVendor?.businessName === 'string' &&
+      (typeof activeVendor?.businessName === 'string' &&
         (activeVendor.businessName.toLowerCase().includes('motor') ||
           activeVendor.businessName.toLowerCase().includes('scooter') ||
           activeVendor.businessName.toLowerCase().includes('skuter') ||
-          activeVendor.businessName.toLowerCase().includes('bike'))));
+          activeVendor.businessName.toLowerCase().includes('bike')) &&
+        !String(activeVendor?.subCategory || '').startsWith('rental_car') &&
+        !String(activeVendor?.subCategory || '').startsWith('rental_heavy') &&
+        !String(activeVendor?.subCategory || '').startsWith('rental_photo') &&
+        !String(activeVendor?.subCategory || '').startsWith('rental_powersports')));
 
   // Accommodation Anti-Bypass & Pay-To-Reveal Booking Engine State
   const [accommodationBookings, setAccommodationBookings] = useState<AccommodationBooking[]>([]);
@@ -411,7 +411,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   // Manual Motorbike Booking Form State
   const [manualBikeRenterName, setManualBikeRenterName] = useState('');
   const [manualBikeRenterPhone, setManualBikeRenterPhone] = useState('+601');
-  const [manualBikePackageName, setManualBikePackageName] = useState('Yamaha NMAX 155cc / Vario 160');
+  const [manualBikePackageName, setManualBikePackageName] = useState('');
   const [manualBikeUnitPlate, setManualBikeUnitPlate] = useState('CAM-01');
   const [manualBikeStartDate, setManualBikeStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [manualBikeEndDate, setManualBikeEndDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
@@ -499,7 +499,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       partnerId: activeVendor.id,
       partnerName: activeVendor.businessName,
       packageId: 'manual-pkg',
-      packageName: manualBikePackageName.trim() || 'Yamaha NMAX 155cc',
+      packageName: manualBikePackageName.trim() || activeVendor.motorbikePackages?.[0]?.name || 'Standard Fleet Unit',
       unitPlateOrCode: manualBikeUnitPlate.trim() || 'CAM-01',
       renterName: manualBikeRenterName.trim(),
       renterEmail: currentUser?.email || 'walkin@camgo.my',
@@ -581,6 +581,37 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     currentUser?.email === 'ayahsyirah77@gmail.com' ||
     currentUser?.email?.toLowerCase().includes('admin');
 
+  // Apply strict sector isolation whenever selecting or refreshing an active vendor
+  const applySelectedVendorState = (rawVendor: VendorListing) => {
+    const clean = pruneVendorForSector(rawVendor);
+    const sKey = resolveVendorSectorKey(clean);
+    setActiveVendor(clean);
+    setRealTimeStatus(clean.realTimeStatus || 'open');
+    setDiyHarvestStatus(clean.diyHarvestStatus || 'picking_open');
+    setParkingStatus(clean.parkingStatus || 'private_available');
+    setRoomAvailabilityStatus(
+      sKey === 'accommodation' ? (clean.roomAvailabilityStatus || 'rooms_available') : 'not_applicable'
+    );
+    setMotorbikeFleetStatus(clean.motorbikeFleetStatus || 'high');
+    setEnabledFlags({
+      operatingStatus: clean.enabledFlags ? !!clean.enabledFlags.operatingStatus : true,
+      diyHarvestStatus: clean.enabledFlags ? !!clean.enabledFlags.diyHarvestStatus : sKey === 'agritourism',
+      parkingStatus: clean.enabledFlags ? !!clean.enabledFlags.parkingStatus : sKey === 'accommodation' || sKey === 'food_beverage',
+      roomAvailabilityStatus: clean.enabledFlags ? !!clean.enabledFlags.roomAvailabilityStatus : sKey === 'accommodation',
+      motorbikeFleetStatus: clean.enabledFlags ? !!clean.enabledFlags.motorbikeFleetStatus : sKey === 'vehicle_rental',
+      dietaryTagsEnabled:
+        sKey === 'food_beverage' &&
+        (!!clean.enabledFlags?.dietaryTagsEnabled || !!clean.dietaryTagsEnabled),
+    });
+    setSectorModalType(null);
+    setVouchers(firebaseService.getVendorVouchers(clean.id));
+    setEvents(firebaseService.getVendorEvents(clean.id));
+    setStaffList(firebaseService.getVendorStaff(clean.id));
+    setAccommodationBookings(
+      sKey === 'accommodation' ? firebaseService.getAccommodationBookings(clean.id) : []
+    );
+  };
+
   // Load Vendor Data
   const refreshVendorData = () => {
     const allListings = firebaseService.getVendorListings();
@@ -611,44 +642,13 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           ? userListings.find((l) => l.id === activeVendor.id)!
           : userListings[0];
 
-      setActiveVendor(current);
-      setRealTimeStatus(current.realTimeStatus);
-      if (current.diyHarvestStatus) setDiyHarvestStatus(current.diyHarvestStatus);
-      setParkingStatus(current.parkingStatus);
-      if (current.roomAvailabilityStatus) setRoomAvailabilityStatus(current.roomAvailabilityStatus);
-      else setRoomAvailabilityStatus('rooms_available');
-
-      if (current.motorbikeFleetStatus) setMotorbikeFleetStatus(current.motorbikeFleetStatus);
-
-      if (current.enabledFlags) {
-        setEnabledFlags({
-          operatingStatus: !!current.enabledFlags.operatingStatus,
-          diyHarvestStatus: !!current.enabledFlags.diyHarvestStatus,
-          parkingStatus: !!current.enabledFlags.parkingStatus,
-          roomAvailabilityStatus: !!current.enabledFlags.roomAvailabilityStatus,
-          motorbikeFleetStatus: !!current.enabledFlags.motorbikeFleetStatus,
-          dietaryTagsEnabled: !!current.enabledFlags.dietaryTagsEnabled || !!current.dietaryTagsEnabled,
-        });
-      } else {
-        setEnabledFlags({
-          operatingStatus: true,
-          diyHarvestStatus: current.category === 'travel_tourism' || current.subCategory === 'agrotourism_farms',
-          parkingStatus: true,
-          roomAvailabilityStatus: current.category === 'accommodation',
-          motorbikeFleetStatus:
-            current.category === 'transport' ||
-            current.subCategory === 'rental_motorcycle_scooter' ||
-            current.subCategory === 'car_bike_rentals',
-          dietaryTagsEnabled: !!current.dietaryTagsEnabled,
-        });
-      }
-
-      setVouchers(firebaseService.getVendorVouchers(current.id));
-      setEvents(firebaseService.getVendorEvents(current.id));
-      setStaffList(firebaseService.getVendorStaff(current.id));
-      setAccommodationBookings(firebaseService.getAccommodationBookings(current.id));
+      applySelectedVendorState(current);
     } else {
       setActiveVendor(null);
+      setVouchers([]);
+      setEvents([]);
+      setStaffList([]);
+      setAccommodationBookings([]);
     }
   };
 
@@ -799,64 +799,59 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     if (!activeVendor) return;
     setIsSaving(true);
     try {
-      const updated = {
+      const updated = pruneVendorForSector({
         ...activeVendor,
         verificationStatus: 'verified' as const,
         isBookingEnabled: true,
         updatedAt: new Date().toISOString(),
-      };
+      });
       await firebaseService.saveVendorListing(updated);
 
       const currentBikePartners = firebaseService.getMotorbikePartners();
-      const existingPartner = currentBikePartners.find(p => p.id === activeVendor.id);
-      const vName = (activeVendor.businessName || '').toLowerCase();
+      const existingPartner = currentBikePartners.find((p) => p.id === updated.id);
+      const sKey = resolveVendorSectorKey(updated);
+      const vName = (updated.businessName || '').toLowerCase();
       const isBikeSubCategory =
-        activeVendor.subCategory === 'rental_motorcycle_scooter' ||
-        activeVendor.subCategory === 'car_bike_rentals';
+        updated.subCategory === 'rental_motorcycle_scooter' ||
+        updated.subCategory === 'car_bike_rentals';
       const isMotorbikeVendorCheck =
-        !isMockMotorbikePartner(activeVendor) &&
-        activeVendor.category !== 'accommodation' &&
-        !vName.includes('apartment') &&
-        !vName.includes('park view') &&
-        !vName.includes('cedar') &&
+        !isMockMotorbikePartner(updated) &&
+        sKey === 'vehicle_rental' &&
         (isBikeSubCategory ||
-          activeVendor.category === 'transport' ||
-          vName.includes('motorbike') ||
-          vName.includes('motorcycle') ||
-          vName.includes('scooter') ||
-          vName.includes('sewa motor') ||
-          vName.includes('sewa skuter')
-        );
+          ((vName.includes('motorbike') ||
+            vName.includes('motorcycle') ||
+            vName.includes('scooter') ||
+            vName.includes('sewa motor') ||
+            vName.includes('sewa skuter')) &&
+            !String(updated.subCategory || '').startsWith('rental_car') &&
+            !String(updated.subCategory || '').startsWith('rental_heavy') &&
+            !String(updated.subCategory || '').startsWith('rental_photo')));
 
       if (existingPartner && !isMotorbikeVendorCheck) {
-        firebaseService.deleteMotorbikePartner(activeVendor.id);
-        if (typeof setMotorbikePartners === 'function') {
-          setMotorbikePartners(firebaseService.getMotorbikePartners());
-        }
+        firebaseService.deleteMotorbikePartner(updated.id);
+        setMotorbikePartners(firebaseService.getMotorbikePartners());
       } else if (isMotorbikeVendorCheck) {
         const syncedAvailability =
-          activeVendor.sectorSpecifics?.vehicleRental?.realTimeAvailability ||
-          activeVendor.motorbikeFleetStatus ||
+          updated.sectorSpecifics?.vehicleRental?.realTimeAvailability ||
+          updated.motorbikeFleetStatus ||
           motorbikeFleetStatus;
         const partnerToSync: MotorbikeRentalPartner = {
-          id: activeVendor.id,
-          businessName: activeVendor.businessName,
-          township: activeVendor.township,
-          imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
-          operatingStatus: activeVendor.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
+          id: updated.id,
+          businessName: updated.businessName,
+          township: updated.township,
+          imageUrl: updated.coverImage || updated.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
+          operatingStatus: updated.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
           fleetAvailability: (syncedAvailability === 'not_applicable' ? 'high' : syncedAvailability) as any,
-          contactPhone: activeVendor.contactPhone || '+60123456789',
-          whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone || '+60123456789',
-          packages: activeVendor.motorbikePackages || existingPartner?.packages || [],
+          contactPhone: updated.contactPhone || '+60123456789',
+          whatsappNumber: updated.whatsappNumber || updated.contactPhone || '+60123456789',
+          packages: updated.motorbikePackages || existingPartner?.packages || [],
         };
         await firebaseService.saveMotorbikePartner(partnerToSync);
-        if (typeof setMotorbikePartners === 'function') {
-          setMotorbikePartners(firebaseService.getMotorbikePartners());
-        }
+        setMotorbikePartners(firebaseService.getMotorbikePartners());
       }
 
       refreshVendorData();
-      setSaveNotification(`Saved all changes for "${activeVendor.businessName}" to cloud & marketplace!`);
+      setSaveNotification(`Saved all changes for "${updated.businessName}" to cloud & marketplace!`);
       setTimeout(() => setSaveNotification(null), 3500);
     } catch (e: any) {
       setSaveNotification(`Error saving listing: ${e.message}`);
@@ -885,16 +880,9 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     setIsSaving(true);
     try {
       const newId = `vendor-${Date.now().toString(36)}`;
-      const sector = findBusinessSector(newBizSubCategory);
-      let mainCat: MainCategory = 'services_utilities';
-      if (sector.id === 'food_beverage') mainCat = 'food';
-      else if (sector.id === 'retail_products') mainCat = 'shopping';
-      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
-      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-      else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
-      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
+      const mainCat = mapSubCategoryToMainCategory(newBizSubCategory);
 
-      const newListing: VendorListing = {
+      const newListing = pruneVendorForSector({
         id: newId,
         ownerUid: currentUser?.uid || 'admin-ayahsyirah77',
         ownerEmail: currentUser?.email || 'ayahsyirah77@gmail.com',
@@ -917,8 +905,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         coordinates: { lat: 4.49, lng: 101.39 },
         realTimeStatus: 'open',
         parkingStatus: 'private_available',
-        roomAvailabilityStatus: 'not_applicable',
-        dietaryTags: ['halal_certified'],
+        roomAvailabilityStatus: mainCat === 'accommodation' ? 'rooms_available' : 'not_applicable',
+        dietaryTags: [],
         tier: 'annual_pro',
         billingCadence: 'annual',
         tierExpiresAt: '2027-12-31',
@@ -926,22 +914,26 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         profileHealthScore: 90,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      };
+      });
 
       await firebaseService.saveVendorListing(newListing);
 
-      // Sync to Motorbike Rental Marketplace if Motorbike/Scooter subcategory or bike/scooter operator
+      // Sync to Motorbike Rental Marketplace strictly if motorbike/scooter subcategory
+      const sKeyNew = resolveVendorSectorKey(newListing);
       const newNameLower = (newListing.businessName || '').toLowerCase();
       const isExplicitBikeVendor =
-        !isMockMotorbikePartner(newListing) && (
-          newListing.subCategory === 'rental_motorcycle_scooter' ||
+        !isMockMotorbikePartner(newListing) &&
+        sKeyNew === 'vehicle_rental' &&
+        (newListing.subCategory === 'rental_motorcycle_scooter' ||
           newListing.subCategory === 'car_bike_rentals' ||
-          newNameLower.includes('bike') ||
-          newNameLower.includes('motorcycle') ||
-          newNameLower.includes('scooter') ||
-          newNameLower.includes('sewa motor') ||
-          newNameLower.includes('sewa skuter')
-        );
+          ((newNameLower.includes('bike') ||
+            newNameLower.includes('motorcycle') ||
+            newNameLower.includes('scooter') ||
+            newNameLower.includes('sewa motor') ||
+            newNameLower.includes('sewa skuter')) &&
+            !String(newListing.subCategory || '').startsWith('rental_car') &&
+            !String(newListing.subCategory || '').startsWith('rental_heavy') &&
+            !String(newListing.subCategory || '').startsWith('rental_photo')));
 
       if (isExplicitBikeVendor) {
         const partnerToSync: MotorbikeRentalPartner = {
@@ -1149,14 +1141,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       const sector = BUSINESS_TAXONOMY.find((s) => s.id === sectorId) || BUSINESS_TAXONOMY[0];
                       const firstSubCat = sector.categories[0].id;
                       setNewBizSubCategory(firstSubCat);
-                      let mainCat: MainCategory = 'services_utilities';
-                      if (sector.id === 'food_beverage') mainCat = 'food';
-                      else if (sector.id === 'retail_products') mainCat = 'shopping';
-                      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
-                      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-                      else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
-                      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
-                      setNewBizCategory(mainCat);
+                      setNewBizCategory(mapSubCategoryToMainCategory(firstSubCat));
                     }}
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-emerald-400 font-bold text-xs focus:outline-none focus:border-emerald-500"
                   >
@@ -1197,14 +1182,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     setNewBizSubCategory(selectedSub);
                     const sector = findBusinessSector(selectedSub);
                     setSelectedNewBizSectorId(sector.id);
-                    let mainCat: MainCategory = 'services_utilities';
-                    if (sector.id === 'food_beverage') mainCat = 'food';
-                    else if (sector.id === 'retail_products') mainCat = 'shopping';
-                    else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
-                    else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-                    else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
-                    else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
-                    setNewBizCategory(mainCat);
+                    setNewBizCategory(mapSubCategoryToMainCategory(selectedSub));
                   }}
                   className="w-full px-3 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-medium"
                 >
@@ -1552,16 +1530,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     onChange={(e) => {
                       const sel = vendorListings.find((l) => l.id === e.target.value);
                       if (sel) {
-                        setActiveVendor(sel);
-                        setRealTimeStatus(sel.realTimeStatus);
-                        if (sel.diyHarvestStatus) setDiyHarvestStatus(sel.diyHarvestStatus);
-                        setParkingStatus(sel.parkingStatus);
-                        if (sel.roomAvailabilityStatus) setRoomAvailabilityStatus(sel.roomAvailabilityStatus);
-                        else setRoomAvailabilityStatus('rooms_available');
-                        setVouchers(firebaseService.getVendorVouchers(sel.id));
-                        setEvents(firebaseService.getVendorEvents(sel.id));
-                        setStaffList(firebaseService.getVendorStaff(sel.id));
-                        setAccommodationBookings(firebaseService.getAccommodationBookings(sel.id));
+                        applySelectedVendorState(sel);
                       }
                     }}
                     className="w-full px-2 py-1 rounded-lg bg-stone-900 border border-stone-700 text-xs font-bold text-white truncate focus:outline-none"
@@ -1710,18 +1679,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   onChange={(e) => {
                     const sel = vendorListings.find((l) => l.id === e.target.value);
                     if (sel) {
-                      setActiveVendor(sel);
-                      setRealTimeStatus(sel.realTimeStatus);
-                      if (sel.diyHarvestStatus) setDiyHarvestStatus(sel.diyHarvestStatus);
-                      setParkingStatus(sel.parkingStatus);
-                      if (sel.roomAvailabilityStatus) setRoomAvailabilityStatus(sel.roomAvailabilityStatus);
-                      else setRoomAvailabilityStatus('rooms_available');
-                      if (sel.motorbikeFleetStatus) setMotorbikeFleetStatus(sel.motorbikeFleetStatus);
-                      else setMotorbikeFleetStatus('high');
-                      setVouchers(firebaseService.getVendorVouchers(sel.id));
-                      setEvents(firebaseService.getVendorEvents(sel.id));
-                      setStaffList(firebaseService.getVendorStaff(sel.id));
-                      setAccommodationBookings(firebaseService.getAccommodationBookings(sel.id));
+                      applySelectedVendorState(sel);
                     }
                   }}
                   className="w-full mt-2 px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-xs text-stone-200"
@@ -1983,9 +1941,22 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       <Package className="w-4 h-4 text-cyan-400" />
                     </span>
                     <p className="text-2xl font-black text-white font-mono">
-                      {(activeVendor?.motorbikePackages || []).length || 1}
+                      {activeSectorKey === 'accommodation'
+                        ? (activeVendor?.sectorSpecifics?.accommodation?.roomTypes || []).length
+                        : activeSectorKey === 'vehicle_rental'
+                        ? Math.max(
+                            (activeVendor?.sectorSpecifics?.vehicleRental?.fleetUnits || []).length,
+                            (activeVendor?.motorbikePackages || []).length
+                          )
+                        : (activeVendor?.motorbikePackages || []).length}
                     </p>
-                    <p className="text-[10px] text-cyan-400">Live catalog items</p>
+                    <p className="text-[10px] text-cyan-400">
+                      {activeSectorKey === 'accommodation'
+                        ? 'Configured room types'
+                        : activeSectorKey === 'vehicle_rental'
+                        ? 'Active rental & equipment items'
+                        : `Live ${activeSector.itemNoun.toLowerCase()} catalog items`}
+                    </p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-1">
@@ -2159,15 +2130,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       onChange={(e) => {
                         e.stopPropagation();
                         const selectedSub = e.target.value;
-                        const sector = findBusinessSector(selectedSub);
-                        let mainCat: MainCategory = 'services_utilities';
-                        if (sector.id === 'food_beverage') mainCat = 'food';
-                        else if (sector.id === 'retail_products') mainCat = 'shopping';
-                        else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
-                        else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-                        else if (sector.id === 'professional_services') mainCat = 'services_utilities';
-                        else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
-                        setActiveVendor({ ...activeVendor, category: mainCat, subCategory: selectedSub as any });
+                        const mainCat = mapSubCategoryToMainCategory(selectedSub);
+                        applySelectedVendorState({
+                          ...activeVendor,
+                          category: mainCat,
+                          subCategory: selectedSub as any,
+                        });
                       }}
                       className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
                     >
@@ -5328,7 +5296,124 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 }}
                 className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-xs cursor-pointer shadow-lg transition-colors"
               >
-                Sync &amp; Update Motorbike Marketplace &amp; Live Map
+                {isMotorbikeVendor
+                  ? 'Sync & Update Motorbike Marketplace & Live Map'
+                  : 'Sync & Update Rental Directory & Live Map'}
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SECTOR EVALUATION MODAL: Retail / Services / Agritourism & Tours (Sector-Isolated) */}
+      <AnimatePresence>
+        {sectorModalType === 'general' && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-lg bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <SectorIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white">
+                      {activeSector.shortName} Live Status Controls
+                    </h3>
+                    <p className="text-[11px] text-stone-400">
+                      Context-aware status controls for {activeVendor?.businessName}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setSectorModalType(null)} className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Operating Status */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-emerald-300 block">Operating Status</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'open', label: 'Open Now' },
+                    { id: 'busy_peak_wait', label: 'Peak Queue / Busy' },
+                    { id: 'closed_roadworks', label: 'Temporarily Closed' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleRealTimeStatus(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        realTimeStatus === st.id
+                          ? 'bg-emerald-500 text-stone-950 font-black border-emerald-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* DIY Harvest (Strictly shown for Agritourism vendors only) */}
+              {activeSectorKey === 'agritourism' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-emerald-300 block">DIY Fruit Picking &amp; Farm Harvest Status</label>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    {[
+                      { id: 'picking_open', label: 'Picking Open' },
+                      { id: 'farm_open_no_picking', label: 'Farm Open (No DIY)' },
+                      { id: 'closed_season', label: 'Off-Season' },
+                    ].map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => handleToggleHarvestStatus(st.id as any)}
+                        className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                          diyHarvestStatus === st.id
+                            ? 'bg-emerald-500 text-stone-950 font-black border-emerald-400 shadow'
+                            : 'bg-stone-950 border-stone-800 text-stone-400'
+                        }`}
+                      >
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Customer Parking */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-emerald-300 block">Customer Parking Availability</label>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    { id: 'private_available', label: 'Private Parking' },
+                    { id: 'street_busy', label: 'Public / Street Parking' },
+                    { id: 'valet_only', label: 'Shuttle / Drop-off' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleToggleParkingStatus(st.id as any)}
+                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                        parkingStatus === st.id
+                          ? 'bg-emerald-500 text-stone-950 font-black border-emerald-400 shadow'
+                          : 'bg-stone-950 border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (activeVendor) await handleSaveActiveVendor();
+                  setSectorModalType(null);
+                }}
+                className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs cursor-pointer shadow-lg transition-colors"
+              >
+                Sync &amp; Update CamGo Directories &amp; Live Map
               </button>
             </div>
           </div>
@@ -5505,7 +5590,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     <h3 className="font-black text-sm text-white uppercase tracking-wider">CamGo Owner Express</h3>
                   </div>
                   <p className="text-[11px] font-mono text-emerald-400 mt-0.5 truncate">
-                    camgo.my/owner/{(activeVendor?.businessName || 'abah-homestay').toLowerCase().replace(/\s+/g, '-')}
+                    camgo.my/owner/{(activeVendor?.businessName || 'your-property').toLowerCase().replace(/\s+/g, '-')}
                   </p>
                 </div>
                 <button
@@ -5519,7 +5604,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               {/* Host welcome */}
               <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-4">
                 <p className="text-xs text-stone-400">Welcome Back,</p>
-                <h4 className="text-lg font-black text-white">{activeVendor?.businessName || 'Abah Homestay Kea Farm'}</h4>
+                <h4 className="text-lg font-black text-white">{activeVendor?.businessName || 'Your Property'}</h4>
                 <p className="text-[11px] text-stone-400 mt-1">
                   Cameron Highlands · Simplified Host Portal (Zero Clutter)
                 </p>
@@ -6003,7 +6088,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       type="text"
                       value={manualBikePackageName}
                       onChange={(e) => setManualBikePackageName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-cyan-500"
+                      placeholder="e.g. Scooter / Rental Unit Name"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-500 text-xs focus:outline-none focus:border-cyan-500"
                     />
                   </div>
                   <div>
