@@ -429,13 +429,23 @@ export interface LoungePost {
   repliesCount?: number;
 }
 
+export type ClassifiedCategoryType =
+  | 'Job Offer'
+  | 'Job Wanted'
+  | 'Interview'
+  | 'Service Offered'
+  | 'Service Wanted'
+  | 'Item For Sale'
+  | 'Item Wanted'
+  | string;
+
 export interface JobClassified {
   id: string;
   title: string;
   company: string;
   township: Township;
-  type: string;
-  category?: string;
+  type: ClassifiedCategoryType;
+  category?: ClassifiedCategoryType;
   salary: string;
   description: string;
   contact: string;

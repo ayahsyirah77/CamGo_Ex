@@ -58,6 +58,7 @@ import { AccommodationListModal } from './components/AccommodationListModal';
 import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
+import { ForeignerMedicalChargesModal } from './components/ForeignerMedicalChargesModal';
 import { WeatherWidget } from './components/WeatherWidget';
 import { TrafficWidget } from './components/TrafficWidget';
 import { HazardWidget } from './components/HazardWidget';
@@ -185,6 +186,7 @@ export default function App() {
   const [isVendorPortalOpen, setIsVendorPortalOpen] = useState(false);
   const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
+  const [isForeignerMedicalOpen, setIsForeignerMedicalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('food');
   const [selectedSubCategory, setSelectedSubCategory] = useState<SubCategory | undefined>(undefined);
 
@@ -286,6 +288,9 @@ export default function App() {
 
     const handleOpenCommunityReport = () => setIsCommunityReportOpen(true);
     window.addEventListener('open-community-report', handleOpenCommunityReport);
+
+    const handleOpenForeignerMedical = () => setIsForeignerMedicalOpen(true);
+    window.addEventListener('open-foreigner-medical-charges', handleOpenForeignerMedical);
 
     const handleLocationChange = () => {
       const isChatRoute = checkIsStandaloneChat();
@@ -1109,7 +1114,15 @@ export default function App() {
           onClose={() => setIsClassifiedsModalOpen(false)}
           language={language}
           currentUser={currentUser}
-          onOpenPostClassified={() => {}}
+          onOpenPostClassified={() => {
+            setIsClassifiedsModalOpen(false);
+            setUserDashboardInitialTab('classifieds');
+            if (currentUser) {
+              setIsUserDashboardOpen(true);
+            } else {
+              setIsAuthOpen(true);
+            }
+          }}
         />
       )}
       {isFindMyPartyOpen && (
@@ -1127,6 +1140,12 @@ export default function App() {
           onOpenVendorPortal={handleOpenVendorPortal}
         />
       )}
+
+      <ForeignerMedicalChargesModal
+        isOpen={isForeignerMedicalOpen}
+        onClose={() => setIsForeignerMedicalOpen(false)}
+        language={language}
+      />
 
       {/* Capsule Modal: Microclimate (WeatherWidget) */}
       {activeCapsuleModal === 'microclimate' && (

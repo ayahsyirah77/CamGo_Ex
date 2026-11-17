@@ -17,6 +17,7 @@ import { getTranslation } from '../services/i18n';
 import { UserProfile, firebaseService } from '../services/firebase';
 import { PWAInstallButton } from './PWAInstallButton';
 import { safeSrc, DEFAULT_PLACE_IMAGE, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
+import { WebSearchResultsBlock, useWebSearch } from './WebSearchResultsBlock';
 import {
   ChevronDown,
   Compass,
@@ -198,6 +199,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const mobileSearchRef = useRef<HTMLDivElement>(null);
+  const { webSearch, runWebSearch, clearWebSearch } = useWebSearch(language);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -298,6 +300,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const handleSelectSearchResultPlace = (place: Place) => {
     setIsSearchOpen(false);
     setSearchQuery('');
+    clearWebSearch();
     if (onSelectPlace) {
       onSelectPlace(place);
     } else if (onOpenMap) {
@@ -310,6 +313,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const handleSelectSearchResultEvent = (event: EventNotification) => {
     setIsSearchOpen(false);
     setSearchQuery('');
+    clearWebSearch();
     if (onSelectEvent) {
       onSelectEvent(event);
     }
@@ -318,6 +322,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const handleSelectSearchResultTownship = (township: Township) => {
     setIsSearchOpen(false);
     setSearchQuery('');
+    clearWebSearch();
     if (onSelectTownship) {
       onSelectTownship(township);
     } else {
@@ -1148,21 +1153,49 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setSearchQuery(e.target.value);
                   setIsSearchOpen(true);
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchQuery.trim()) {
+                    e.preventDefault();
+                    setIsSearchOpen(true);
+                    runWebSearch(searchQuery);
+                  }
+                }}
                 onFocus={() => setIsSearchOpen(true)}
-                placeholder="Find stays, activities & transport..."
+                placeholder={
+                  language === 'bm'
+                    ? 'Cari direktori atau tekan Enter untuk web...'
+                    : 'Search directories & live web (Enter)...'
+                }
                 className="w-full bg-transparent text-xs text-stone-100 placeholder-stone-400 outline-none"
               />
               {searchQuery ? (
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setIsSearchOpen(false);
-                  }}
-                  className="p-1 text-stone-400 hover:text-white cursor-pointer"
-                  title="Clear search"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-1 ml-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSearchOpen(true);
+                      runWebSearch(searchQuery);
+                    }}
+                    disabled={webSearch.isSearching}
+                    className="px-2 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-60 text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                    title={language === 'bm' ? 'Cari di Web' : 'Search Live Web'}
+                  >
+                    <Globe className="w-3 h-3" />
+                    <span>{language === 'bm' ? 'Web' : 'Web'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      clearWebSearch();
+                      setIsSearchOpen(false);
+                    }}
+                    className="p-1 text-stone-400 hover:text-white cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={() => setIsFilterToggled(!isFilterToggled)}
@@ -1176,13 +1209,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Mobile Autocomplete Search Dropdown */}
+            {/* Mobile Autocomplete + Web Search Dropdown */}
             {isSearchOpen && q.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 z-50 text-stone-100 space-y-2">
+              <div className="absolute top-full left-0 right-0 mt-2 max-h-[72vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2 z-50 text-stone-100 space-y-2">
                 {totalResults === 0 ? (
-                  <div className="p-3 text-center text-xs text-stone-400">
+                  <div className="px-2 py-1.5 text-center text-xs text-stone-400">
                     <p className="font-medium text-stone-300">
-                      {language === 'bm' ? `Tiada hasil untuk "${searchQuery}"` : `No results found for "${searchQuery}"`}
+                      {language === 'bm'
+                        ? `Tiada padanan direktori untuk "${searchQuery}"`
+                        : `No local directory matches for "${searchQuery}"`}
                     </p>
                   </div>
                 ) : (
@@ -1273,6 +1308,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                     )}
                   </>
                 )}
+
+                <WebSearchResultsBlock
+                  query={searchQuery}
+                  language={language}
+                  webSearch={webSearch}
+                  onRunWebSearch={runWebSearch}
+                  onClearWebSearch={clearWebSearch}
+                  hasLocalResults={totalResults > 0}
+                />
               </div>
             )}
           </div>

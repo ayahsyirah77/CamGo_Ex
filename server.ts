@@ -1550,6 +1550,93 @@ Only return valid JSON without markdown wrapping.`;
     }
   });
 
+  // Live Web Search Endpoint (Google Search Grounding beyond internal website directories)
+  app.post('/api/web-search', async (req, res) => {
+    try {
+      const { query, language = 'en' } = req.body || {};
+      const cleanQuery = typeof query === 'string' ? query.trim().slice(0, 300) : '';
+      if (!cleanQuery) {
+        return res.status(400).json({ error: 'Search query is required.' });
+      }
+
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({
+          error: 'Live web search is not configured on the server yet (missing GEMINI_API_KEY).',
+        });
+      }
+
+      const todayMy = new Date().toLocaleDateString('en-MY', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Today is ${todayMy} (Malaysia Time). A visitor on the CamGo Cameron Highlands platform typed this search query: "${cleanQuery}"
+
+Use Google Search grounding to find accurate, up-to-date answers from the live web (beyond the website's internal directory).
+- If the query is about Cameron Highlands (spots, restaurants, hotels, road conditions, weather, news, tickets, transport, events), include clear local details, prices/hours if available, and helpful context.
+- If the query is a general web question unrelated to Cameron Highlands, still answer it clearly and accurately from the web search results.
+- Respond in ${language === 'bm' ? 'Bahasa Malaysia' : 'English'} with concise, easy-to-scan paragraphs or short bullet points.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const answer = (response.text || '').trim();
+      const candidate = response.candidates?.[0];
+      const groundingMeta = (candidate as any)?.groundingMetadata;
+      const webQueries: string[] = Array.isArray(groundingMeta?.webSearchQueries)
+        ? groundingMeta.webSearchQueries
+        : [];
+
+      const rawChunks = Array.isArray(groundingMeta?.groundingChunks)
+        ? groundingMeta.groundingChunks
+        : [];
+      const seenUrls = new Set<string>();
+      const sources: Array<{ title: string; url: string }> = [];
+
+      for (const chunk of rawChunks) {
+        const uri = chunk?.web?.uri;
+        if (typeof uri === 'string' && uri.trim() && !seenUrls.has(uri)) {
+          seenUrls.add(uri);
+          sources.push({
+            title: String(chunk?.web?.title || 'Web Source'),
+            url: uri,
+          });
+        }
+      }
+
+      if (!answer) {
+        return res.status(502).json({
+          error: 'No answer could be generated from live web results. Please try rephrasing.',
+        });
+      }
+
+      return res.json({
+        query: cleanQuery,
+        answer,
+        sources,
+        webQueries,
+        model: 'gemini-4-hydrogen',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      if (isQuotaOrRateLimitError(err)) {
+        return res.status(429).json({
+          error: 'Live web search quota temporarily reached. Please try again shortly.',
+        });
+      }
+      console.error('[WEB SEARCH API ERROR]', err);
+      return res.status(500).json({
+        error: err?.message || 'Failed to complete live web search.',
+      });
+    }
+  });
+
 
   // Multi-Category Real-Time WebSocket Broadcaster & Connection Manager
   app.post('/api/notifications/broadcast', (req, res) => {

@@ -1715,22 +1715,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       routeLayerRef.current = L.layerGroup().addTo(map);
     }
 
-    // Origin Start Marker (Animated Pulsing GPS Icon)
+    // Origin Start Marker (Subtle Departure Pin — live zoomed-in Car marker sits on vehicle location)
     const originIcon = L.divIcon({
       className: 'route-origin-marker',
       html: `
-        <div style="position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">
-          <div style="position: absolute; inset: -4px; border-radius: 9999px; background: #0284c7; opacity: 0.5;" class="animate-ping"></div>
-          <div style="width: 26px; height: 26px; border-radius: 9999px; background: #0284c7; border: 2.5px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 2;">
-            <span style="font-size: 12px; line-height: 1;">🚗</span>
-          </div>
+        <div style="position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;">
+          <div style="width: 14px; height: 14px; border-radius: 9999px; background: #0ea5e9; border: 2.5px solid white; box-shadow: 0 3px 10px rgba(0,0,0,0.55);"></div>
         </div>
       `,
-      iconSize: [34, 34],
-      iconAnchor: [17, 17],
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
     });
 
-    const originMarker = L.marker(routeData.originCoords, { icon: originIcon, zIndexOffset: 900 });
+    const originMarker = L.marker(routeData.originCoords, { icon: originIcon, zIndexOffset: 880 });
     originMarker.bindTooltip(`Origin: ${routeData.originName}`, { direction: 'top', className: 'text-xs font-bold' });
     routeLayerRef.current.addLayer(originMarker);
 
@@ -1826,12 +1823,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     setIsAutoFollowEnabled(true);
     setIsNavCardMinimized(false);
 
+    updateVehicleMarkerOnMap(
+      initialOrigin[0],
+      initialOrigin[1],
+      initialBearing,
+      0,
+      initialMetrics.distToTurnM
+    );
+
     easeTo({
       center: [initialOrigin[0], initialOrigin[1]],
       zoom: initialZoom,
       bearing: initialBearing,
       pitch: initialPitch,
-      duration: 950,
+      duration: 900,
     });
   };
 
@@ -2002,7 +2007,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return Math.min(DRIVER_CAMERA_MAX_PITCH, Math.max(DRIVER_CAMERA_MIN_PITCH, targetPitch));
   };
 
-  // Dynamic Zoom Scaling based on Vehicle Speed & Upcoming Maneuver Distance
+  // Dynamic Zoom Scaling based on Vehicle Speed & Upcoming Maneuver Distance (zoomed-in around car marker)
   const computeDynamicDriverZoom = (
     speedKmh: number,
     distToNextTurnMeters: number | null,
@@ -2010,17 +2015,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   ): number => {
     let distZoom: number | null = null;
     if (distToNextTurnMeters !== null) {
-      if (distToNextTurnMeters <= 120) distZoom = 18.75;
-      else if (distToNextTurnMeters <= 280) distZoom = 18.0;
-      else if (distToNextTurnMeters <= 550) distZoom = 17.25;
+      if (distToNextTurnMeters <= 120) distZoom = 19.0;
+      else if (distToNextTurnMeters <= 280) distZoom = 18.5;
+      else if (distToNextTurnMeters <= 550) distZoom = 18.0;
     }
 
-    let speedZoom = 17.75;
-    if (speedKmh >= 75) speedZoom = 15.5;
-    else if (speedKmh >= 55) speedZoom = 16.25;
-    else if (speedKmh >= 35) speedZoom = 17.0;
-    else if (speedKmh >= 15) speedZoom = 17.75;
-    else speedZoom = 18.25;
+    let speedZoom = 18.25;
+    if (speedKmh >= 75) speedZoom = 16.75;
+    else if (speedKmh >= 55) speedZoom = 17.25;
+    else if (speedKmh >= 35) speedZoom = 17.75;
+    else if (speedKmh >= 15) speedZoom = 18.25;
+    else speedZoom = 18.75;
 
     const target = distZoom !== null ? Math.max(speedZoom, distZoom) : speedZoom;
     return Math.min(maxTileZoom, Number((Math.round(target * 4) / 4).toFixed(2)));
@@ -2034,7 +2039,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     pitch?: number;
     duration?: number;
   }) => {
-    const durationMs = Math.max(250, options.duration ?? 850);
+    const durationMs = Math.max(250, options.duration ?? 700);
     setCameraTransitionMs(durationMs);
 
     if (typeof options.bearing === 'number' && !isNaN(options.bearing)) {
@@ -2051,21 +2056,28 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     const targetCenter = options.center ?? [map.getCenter().lat, map.getCenter().lng];
     const currentZoom = map.getZoom();
-    const targetZoom =
-      typeof options.zoom === 'number' && !isNaN(options.zoom)
-        ? Math.abs(options.zoom - currentZoom) >= 0.25
-          ? options.zoom
-          : currentZoom
-        : currentZoom;
+    const shouldAdjustZoom =
+      typeof options.zoom === 'number' &&
+      !isNaN(options.zoom) &&
+      Math.abs(options.zoom - currentZoom) >= 0.15;
+    const targetZoom = shouldAdjustZoom ? (options.zoom as number) : currentZoom;
 
     lastAppliedZoomRef.current = targetZoom;
     setDynamicZoomLevel(targetZoom);
 
-    map.setView(targetCenter, targetZoom, {
-      animate: true,
-      duration: durationMs / 1000,
-      easeLinearity: 0.25,
-    });
+    if (!shouldAdjustZoom) {
+      map.panTo(targetCenter, {
+        animate: true,
+        duration: durationMs / 1000,
+        easeLinearity: 0.18,
+      });
+    } else {
+      map.setView(targetCenter, targetZoom, {
+        animate: true,
+        duration: durationMs / 1000,
+        easeLinearity: 0.18,
+      });
+    }
   };
 
   // Estimate upcoming turn/maneuver distance along route coordinates
@@ -2116,7 +2128,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return { distToTurnM: distToEndM <= 650 ? distToEndM : null, segmentBearing };
   };
 
-  // Requirement 2: Dynamic Vehicle Marker with smooth position updates, heading-up tracking & dynamic zoom scaling
+  // Zoomed-in Top-Down Car Vehicle Marker with smooth rotation, heading-up tracking & camera follow
   const updateVehicleMarkerOnMap = (
     lat: number,
     lng: number,
@@ -2134,12 +2146,37 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const rotationStyle = `transform: rotate(${heading}deg); transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);`;
 
     const vehicleHtml = `
-      <div style="position: relative; width: 46px; height: 46px; display: flex; align-items: center; justify-content: center;">
-        <div style="position: absolute; inset: -4px; border-radius: 9999px; background: rgba(14, 165, 233, 0.35);" class="animate-ping"></div>
-        <div style="position: absolute; width: 42px; height: 42px; border-radius: 9999px; background: radial-gradient(circle, rgba(14,165,233,0.35) 0%, rgba(14,165,233,0) 70%);"></div>
-        <div style="${rotationStyle} width: 38px; height: 38px; border-radius: 9999px; background: #0284c7; border: 3px solid #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,0.65); z-index: 10;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: translateY(-1px);">
-            <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="#ffffff" stroke="#0284c7" stroke-width="1.2" stroke-linejoin="round"/>
+      <div style="position: relative; width: 62px; height: 62px; display: flex; align-items: center; justify-content: center;">
+        <div style="position: absolute; inset: -2px; border-radius: 9999px; background: rgba(16, 185, 129, 0.28);" class="animate-ping"></div>
+        <div style="position: absolute; width: 54px; height: 54px; border-radius: 9999px; background: radial-gradient(circle, rgba(14,165,233,0.38) 0%, rgba(14,165,233,0) 72%);"></div>
+        <div style="${rotationStyle} width: 50px; height: 50px; border-radius: 9999px; background: rgba(15, 23, 42, 0.9); border: 2.5px solid #38bdf8; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(0,0,0,0.75); z-index: 10;">
+          <svg width="34" height="34" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Subtle forward headlight cone -->
+            <path d="M21 10L15 2H49L43 10H21Z" fill="rgba(253, 224, 71, 0.32)"/>
+            <!-- Wheels -->
+            <rect x="14" y="15" width="5" height="10" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+            <rect x="45" y="15" width="5" height="10" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+            <rect x="14" y="40" width="5" height="10" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+            <rect x="45" y="40" width="5" height="10" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+            <!-- Side Mirrors -->
+            <path d="M17 24L12.5 26V28.5L17 27.5V24Z" fill="#0284c7"/>
+            <path d="M47 24L51.5 26V28.5L47 27.5V24Z" fill="#0284c7"/>
+            <!-- Car Body Chassis -->
+            <rect x="17" y="9" width="30" height="46" rx="9" fill="#0ea5e9" stroke="#ffffff" stroke-width="2.2"/>
+            <!-- Hood lines -->
+            <path d="M23 12V20M41 12V20" stroke="#7dd3fc" stroke-width="1.4" stroke-linecap="round"/>
+            <!-- Front Windshield -->
+            <path d="M20.5 21.5C21.5 18.5 42.5 18.5 43.5 21.5L41.5 29H22.5L20.5 21.5Z" fill="#0f172a" stroke="#bae6fd" stroke-width="1.2"/>
+            <!-- Panoramic Roof -->
+            <rect x="22" y="29" width="20" height="14" rx="3" fill="#0284c7" stroke="#e0f2fe" stroke-width="1.2"/>
+            <!-- Rear Window -->
+            <path d="M22.5 43H41.5L43 49.5C41 51.5 23 51.5 21 49.5L22.5 43Z" fill="#0f172a"/>
+            <!-- Headlights -->
+            <rect x="20" y="9.5" width="5" height="2.6" rx="1" fill="#fef08a"/>
+            <rect x="39" y="9.5" width="5" height="2.6" rx="1" fill="#fef08a"/>
+            <!-- Tail Lights -->
+            <rect x="20" y="52.2" width="5.5" height="2.4" rx="1" fill="#f43f5e"/>
+            <rect x="38.5" y="52.2" width="5.5" height="2.4" rx="1" fill="#f43f5e"/>
           </svg>
         </div>
       </div>
@@ -2148,8 +2185,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const vehicleIcon = L.divIcon({
       className: 'live-vehicle-puck-marker',
       html: vehicleHtml,
-      iconSize: [46, 46],
-      iconAnchor: [23, 23],
+      iconSize: [62, 62],
+      iconAnchor: [31, 31],
     });
 
     if (vehicleMarkerRef.current) {
@@ -2158,11 +2195,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     } else {
       vehicleMarkerRef.current = L.marker([lat, lng], {
         icon: vehicleIcon,
-        zIndexOffset: 1200,
+        zIndexOffset: 1250,
       }).addTo(map);
 
       vehicleMarkerRef.current.bindTooltip(
-        language === 'bm' ? 'Kenderaan / GPS Anda' : 'Your Vehicle (Live Navigation)',
+        language === 'bm' ? 'Kereta Anda (Navigasi Langsung)' : 'Your Car (Live Navigation)',
         { direction: 'top', className: 'text-xs font-bold' }
       );
     }
@@ -2178,7 +2215,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         zoom: targetZoom,
         bearing: heading,
         pitch: is3dDriverModeRef.current ? targetPitch : DRIVER_CAMERA_DEFAULT_PITCH,
-        duration: 850,
+        duration: 620,
       });
     }
   };
@@ -2311,7 +2348,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     simProgressIdxRef.current = 0;
 
     const coords = activeRoute.coordinates;
-    const stepStride = Math.max(1, Math.floor(coords.length / 75));
+    const stepStride = Math.max(1, Math.floor(coords.length / 110));
 
     const advanceFrame = () => {
       const idx = simProgressIdxRef.current;
@@ -2348,7 +2385,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
 
     advanceFrame();
-    simIntervalRef.current = window.setInterval(advanceFrame, 900);
+    simIntervalRef.current = window.setInterval(advanceFrame, 650);
   };
 
   // Lifecycle Cleanup

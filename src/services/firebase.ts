@@ -75,6 +75,8 @@ const STORAGE_KEYS = {
   HOME_CARDS: 'camgo_home_cards',
   ACCOMMODATION_BOOKINGS: 'camgo_accommodation_bookings',
   ACCOMMODATION_LISTINGS: 'camgo_accommodation_listings',
+  DELETED_MOTORBIKE_PARTNERS: 'camgo_deleted_motorbike_partners',
+  MOTORBIKE_FRESH_START_FLAG: 'camgo_motorbike_fresh_start_v1',
 };
 
 export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
@@ -406,9 +408,52 @@ class FirebaseStorageService {
       // ignore
     }
 
+    this.ensureMotorbikeFreshStartLocal();
     this.syncCloudData();
     this.initLoungeRealtimeListener();
     this.initGsapImagesRealtimeListener();
+  }
+
+  private ensureMotorbikeFreshStartLocal(): void {
+    try {
+      if (typeof window === 'undefined') return;
+      if (localStorage.getItem(STORAGE_KEYS.MOTORBIKE_FRESH_START_FLAG)) return;
+
+      // One-time clean slate: remove any pre-existing motorbike & scooter entries so Verified Motorbike Rentals starts fresh at 0 Listed
+      const deletedSet = new Set<string>(this.getDeletedMotorbikePartnerIds());
+      try {
+        const cachedPartnersRaw = localStorage.getItem('camgo_motorbike_partners');
+        if (cachedPartnersRaw) {
+          const parsed = JSON.parse(cachedPartnersRaw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((p: any) => {
+              if (p?.id) deletedSet.add(p.id);
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const cachedVendorsRaw = localStorage.getItem(STORAGE_KEYS.VENDOR_LISTINGS);
+        if (cachedVendorsRaw) {
+          const parsedVendors = JSON.parse(cachedVendorsRaw);
+          if (Array.isArray(parsedVendors)) {
+            parsedVendors.forEach((v: any) => {
+              if (v?.id && this.isSpecificMotorbikeVendorListing(v)) {
+                deletedSet.add(v.id);
+              }
+            });
+          }
+        }
+      } catch {}
+
+      localStorage.setItem(STORAGE_KEYS.DELETED_MOTORBIKE_PARTNERS, JSON.stringify(Array.from(deletedSet)));
+      localStorage.removeItem('camgo_motorbike_partners');
+      localStorage.removeItem('camgo_motorbike_bookings');
+      localStorage.setItem(STORAGE_KEYS.MOTORBIKE_FRESH_START_FLAG, new Date().toISOString());
+    } catch {
+      // ignore storage errors
+    }
   }
 
  // Helper to safely set localStorage items with error handling
@@ -586,16 +631,76 @@ class FirebaseStorageService {
         this.notify();
       }, (err) => console.error('Realtime vendor listings listener error:', err));
 
+      // One-time cloud fresh-start purge for pre-existing Motorbike & Scooter Rentals entry
+      try {
+        const freshResetRef = doc(db, 'settings', 'motorbike_fresh_start_v1');
+        const freshResetSnap = await getDoc(freshResetRef);
+        if (!freshResetSnap.exists()) {
+          const [partnersSnap, bookingsSnap, vendorsSnap] = await Promise.all([
+            getDocs(collection(db, 'motorbike_partners')),
+            getDocs(collection(db, 'motorbike_rentals')),
+            getDocs(collection(db, 'vendor_listings')),
+          ]);
+
+          const suppressedIds = new Set<string>(this.getDeletedMotorbikePartnerIds());
+          const deleteOps: Promise<any>[] = [];
+
+          partnersSnap.docs.forEach((docSnap) => {
+            suppressedIds.add(docSnap.id);
+            deleteOps.push(deleteDoc(doc(db, 'motorbike_partners', docSnap.id)).catch(() => {}));
+          });
+          bookingsSnap.docs.forEach((docSnap) => {
+            deleteOps.push(deleteDoc(doc(db, 'motorbike_rentals', docSnap.id)).catch(() => {}));
+          });
+          vendorsSnap.docs.forEach((docSnap) => {
+            const v = docSnap.data() as VendorListing;
+            if (this.isSpecificMotorbikeVendorListing(v)) {
+              suppressedIds.add(docSnap.id);
+            }
+          });
+
+          const suppressedList = Array.from(suppressedIds);
+          this.setLocalStorageItem(STORAGE_KEYS.DELETED_MOTORBIKE_PARTNERS, JSON.stringify(suppressedList));
+          this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify([]));
+          this.setLocalStorageItem('camgo_motorbike_bookings', JSON.stringify([]));
+
+          await Promise.all([
+            ...deleteOps,
+            setDoc(freshResetRef, {
+              purgedAt: new Date().toISOString(),
+              suppressedVendorIds: suppressedList,
+            }).catch(() => {}),
+          ]);
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('motorbike-partners-updated', { detail: [] }));
+          }
+          this.notify();
+        } else {
+          const remoteSuppressed: string[] = Array.isArray(freshResetSnap.data()?.suppressedVendorIds)
+            ? freshResetSnap.data()!.suppressedVendorIds
+            : [];
+          if (remoteSuppressed.length > 0 && !localStorage.getItem('camgo_motorbike_cloud_synced_v1')) {
+            const merged = Array.from(new Set([...this.getDeletedMotorbikePartnerIds(), ...remoteSuppressed]));
+            this.setLocalStorageItem(STORAGE_KEYS.DELETED_MOTORBIKE_PARTNERS, JSON.stringify(merged));
+            localStorage.setItem('camgo_motorbike_cloud_synced_v1', '1');
+          }
+        }
+      } catch (err) {
+        console.warn('Motorbike fresh-start cloud check warning:', err);
+      }
+
       // 10. Real-time Motorbike Partners Listener
       onSnapshot(collection(db, 'motorbike_partners'), (snap) => {
+        const deletedIds = new Set(this.getDeletedMotorbikePartnerIds());
         const cloudPartners = snap.docs
           .map((d) => d.data() as MotorbikeRentalPartner)
-          .filter((p) => !isMockMotorbikePartner(p));
+          .filter((p) => !isMockMotorbikePartner(p) && !deletedIds.has(p.id));
 
-        // Purge mock motorbike partners from Firestore if detected
+        // Purge mock or explicitly removed motorbike partners from Firestore if detected
         snap.docs.forEach((docSnap) => {
           const p = docSnap.data() as MotorbikeRentalPartner;
-          if (isMockMotorbikePartner(p)) {
+          if (isMockMotorbikePartner(p) || deletedIds.has(docSnap.id)) {
             deleteDoc(doc(db, 'motorbike_partners', docSnap.id)).catch(() => {});
           }
         });
@@ -636,7 +741,7 @@ class FirebaseStorageService {
         }
       }, (err) => console.warn('Realtime home glass cards listener warning:', err));
 
-      // 13. Real-time Verified Homestays & Stays Listener (strictly admin/vendor only)
+      // Real-time Verified Homestays & Stays Listener (strictly admin/vendor only)
       onSnapshot(collection(db, 'accommodation_listings'), (snap) => {
         const cloudAccoms = snap.docs
           .map((d) => d.data() as AccommodationListing)
@@ -656,6 +761,28 @@ class FirebaseStorageService {
         }
         this.notify();
       }, (err) => console.warn('Realtime accommodation listings listener warning:', err));
+
+      // 13. Real-time Classifieds / Jobs Listener
+      onSnapshot(collection(db, 'jobs'), (snap) => {
+        if (!snap.empty) {
+          const cloudJobs = snap.docs.map((d) => d.data() as JobClassified);
+          const mergedMap = new Map<string, JobClassified>();
+          cloudJobs.forEach((j) => {
+            if (j && j.id) mergedMap.set(j.id, j);
+          });
+          INITIAL_JOBS.forEach((seed) => {
+            if (!mergedMap.has(seed.id)) {
+              mergedMap.set(seed.id, seed);
+            }
+          });
+          const merged = Array.from(mergedMap.values());
+          this.setLocalStorageItem(STORAGE_KEYS.JOBS, JSON.stringify(merged));
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('jobs-updated', { detail: merged }));
+          }
+          this.notify();
+        }
+      }, (err) => console.warn('Realtime jobs listener warning:', err));
 
     } catch (e) {
       console.warn("Cloud sync offline mode active, using local cache:", e);
@@ -1801,6 +1928,11 @@ class FirebaseStorageService {
       updated = [newJob, ...jobs];
     }
     localStorage.setItem(STORAGE_KEYS.JOBS, JSON.stringify(updated));
+    if (db) {
+      setDoc(doc(db, 'jobs', newJob.id), newJob, { merge: true }).catch((e) => {
+        console.warn('Error saving job classified to Firestore:', e);
+      });
+    }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('jobs-updated', { detail: updated }));
     }
@@ -1811,6 +1943,11 @@ class FirebaseStorageService {
   public deleteJob(id: string): JobClassified[] {
     const jobs = this.getJobs().filter((j) => j.id !== id);
     localStorage.setItem(STORAGE_KEYS.JOBS, JSON.stringify(jobs));
+    if (db) {
+      deleteDoc(doc(db, 'jobs', id)).catch((e) => {
+        console.warn('Error deleting job classified from Firestore:', e);
+      });
+    }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('jobs-updated', { detail: jobs }));
     }
@@ -2294,23 +2431,8 @@ class FirebaseStorageService {
     this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(finalUnique));
 
     // Auto-Sync to Motorbike Partners strictly for genuine Motorbike/Scooter vendors
-    const sKey = resolveVendorSectorKey(listing);
-    const vName = (listing.businessName || '').toLowerCase();
     const isSpecificMotorbikeVendor =
-      !isMockVendorListing(listing) &&
-      sKey === 'vehicle_rental' &&
-      (listing.subCategory === 'rental_motorcycle_scooter' ||
-        (listing.subCategory === 'car_bike_rentals' &&
-          !!listing.motorbikePackages &&
-          listing.motorbikePackages.length > 0) ||
-        ((vName.includes('motorbike') ||
-          vName.includes('motorcycle') ||
-          vName.includes('scooter') ||
-          vName.includes('sewa motor') ||
-          vName.includes('sewa skuter')) &&
-          !String(listing.subCategory || '').startsWith('rental_car') &&
-          !String(listing.subCategory || '').startsWith('rental_heavy') &&
-          !String(listing.subCategory || '').startsWith('rental_photo')));
+      !isMockVendorListing(listing) && this.isSpecificMotorbikeVendorListing(listing);
 
     if (isSpecificMotorbikeVendor) {
       const partnerObj: MotorbikeRentalPartner = {
@@ -2323,11 +2445,11 @@ class FirebaseStorageService {
         contactPhone: listing.contactPhone,
         whatsappNumber: listing.whatsappNumber || listing.contactPhone,
         packages: listing.motorbikePackages && listing.motorbikePackages.length > 0 ? listing.motorbikePackages : [],
-        isBookingEnabled: true,
-        verificationStatus: 'verified',
+        isBookingEnabled: listing.isBookingEnabled !== undefined ? listing.isBookingEnabled : true,
+        verificationStatus: listing.verificationStatus || 'verified',
         ownerEmail: listing.ownerEmail,
       };
-      await this.saveMotorbikePartner(partnerObj);
+      await this.saveMotorbikePartner(partnerObj, { skipVendorSync: true });
     }
 
     // Cross-Sync to Main Directory Places (Create or Update)
@@ -2428,12 +2550,17 @@ class FirebaseStorageService {
     this.places = updatedPlaces;
     this.setLocalStorageItem(STORAGE_KEYS.PLACES, JSON.stringify(updatedPlaces));
 
+    this.addDeletedMotorbikePartnerId(id);
+    const updatedMotorbikePartners = this.getMotorbikePartners().filter((p) => p.id !== id);
+    this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(updatedMotorbikePartners));
+
     if (db) {
       try {
         await Promise.all([
           deleteDoc(doc(db, 'vendor_listings', id)),
           deleteDoc(doc(db, 'places', id)),
           deleteDoc(doc(db, 'accommodation_listings', id)),
+          deleteDoc(doc(db, 'motorbike_partners', id)),
         ]);
       } catch (e) {
         console.error("Error deleting vendor listing/place from Firestore:", e);
@@ -2443,6 +2570,7 @@ class FirebaseStorageService {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: listings }));
       window.dispatchEvent(new CustomEvent('accommodation-listings-updated', { detail: updatedAccoms }));
+      window.dispatchEvent(new CustomEvent('motorbike-partners-updated', { detail: updatedMotorbikePartners }));
       window.dispatchEvent(new CustomEvent('places-updated', { detail: updatedPlaces }));
     }
 
@@ -2725,7 +2853,63 @@ class FirebaseStorageService {
     }
   }
 
+  public isMotorbikePartnerDeleted(id: string): boolean {
+    if (!id) return false;
+    return this.getDeletedMotorbikePartnerIds().includes(id);
+  }
+
+  private getDeletedMotorbikePartnerIds(): string[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DELETED_MOTORBIKE_PARTNERS);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private addDeletedMotorbikePartnerId(id: string): void {
+    if (!id) return;
+    const set = new Set(this.getDeletedMotorbikePartnerIds());
+    set.add(id);
+    const list = Array.from(set);
+    this.setLocalStorageItem(STORAGE_KEYS.DELETED_MOTORBIKE_PARTNERS, JSON.stringify(list));
+    if (db) {
+      setDoc(doc(db, 'settings', 'motorbike_fresh_start_v1'), { suppressedVendorIds: list }, { merge: true }).catch(() => {});
+    }
+  }
+
+  private removeDeletedMotorbikePartnerId(id: string): void {
+    if (!id) return;
+    const list = this.getDeletedMotorbikePartnerIds().filter((x) => x !== id);
+    this.setLocalStorageItem(STORAGE_KEYS.DELETED_MOTORBIKE_PARTNERS, JSON.stringify(list));
+    if (db) {
+      setDoc(doc(db, 'settings', 'motorbike_fresh_start_v1'), { suppressedVendorIds: list }, { merge: true }).catch(() => {});
+    }
+  }
+
+  private isSpecificMotorbikeVendorListing(v: Partial<VendorListing> | null | undefined): boolean {
+    if (!v) return false;
+    const sKey = resolveVendorSectorKey(v as VendorListing);
+    if (sKey !== 'vehicle_rental') return false;
+    const vName = (v.businessName || '').toLowerCase();
+    return (
+      v.subCategory === 'rental_motorcycle_scooter' ||
+      (v.subCategory === 'car_bike_rentals' && !!v.motorbikePackages && v.motorbikePackages.length > 0) ||
+      ((vName.includes('motorbike') ||
+        vName.includes('motorcycle') ||
+        vName.includes('scooter') ||
+        vName.includes('sewa motor') ||
+        vName.includes('sewa skuter')) &&
+        !String(v.subCategory || '').startsWith('rental_car') &&
+        !String(v.subCategory || '').startsWith('rental_heavy') &&
+        !String(v.subCategory || '').startsWith('rental_photo'))
+    );
+  }
+
   public getMotorbikePartners(): MotorbikeRentalPartner[] {
+    const deletedIds = new Set(this.getDeletedMotorbikePartnerIds());
     const data = localStorage.getItem('camgo_motorbike_partners');
     let cachedPartners: MotorbikeRentalPartner[] = [];
 
@@ -2733,50 +2917,51 @@ class FirebaseStorageService {
       try {
         const parsed = JSON.parse(data);
         if (Array.isArray(parsed)) {
-          cachedPartners = parsed.filter((p: any) => p && p.id && !isMockMotorbikePartner(p));
+          cachedPartners = parsed.filter(
+            (p: any) => p && p.id && !isMockMotorbikePartner(p) && !deletedIds.has(p.id)
+          );
         }
       } catch {}
     }
 
     const partnersMap = new Map<string, MotorbikeRentalPartner>();
     for (const p of cachedPartners) {
-      if (!isMockMotorbikePartner(p)) {
+      if (!isMockMotorbikePartner(p) && !deletedIds.has(p.id)) {
         partnersMap.set(p.id, p);
       }
     }
 
-    // Auto-populate ONLY genuine vendor listings registered specifically for motorbike/scooter rentals
+    // Auto-populate ONLY genuine vendor listings registered specifically for motorbike/scooter rentals (unless explicitly removed)
     const vendorListings = this.getVendorListings();
     for (const v of vendorListings) {
-      if (!v || isMockVendorListing(v)) continue;
-      
-      const vName = (v.businessName || '').toLowerCase();
-      const isSpecificMotorbikeVendor =
-        v.subCategory === 'rental_motorcycle_scooter' ||
-        (v.category === 'transport' && v.subCategory === 'car_bike_rentals' && v.motorbikePackages && v.motorbikePackages.length > 0) ||
-        vName.includes('motorbike') ||
-        vName.includes('motorcycle') ||
-        vName.includes('scooter') ||
-        vName.includes('sewa motor') ||
-        vName.includes('sewa skuter');
+      if (!v || isMockVendorListing(v) || deletedIds.has(v.id)) continue;
 
-      if (isSpecificMotorbikeVendor) {
+      if (this.isSpecificMotorbikeVendorListing(v)) {
         const existing = partnersMap.get(v.id);
-        const actualPackages: MotorbikePackage[] = (v.motorbikePackages && v.motorbikePackages.length > 0)
-          ? v.motorbikePackages
-          : (existing?.packages && existing.packages.length > 0 ? existing.packages : []);
+        const actualPackages: MotorbikePackage[] =
+          v.motorbikePackages && v.motorbikePackages.length > 0
+            ? v.motorbikePackages
+            : existing?.packages && existing.packages.length > 0
+            ? existing.packages
+            : [];
 
         const partnerObj: MotorbikeRentalPartner = {
           id: v.id,
           businessName: v.businessName,
           township: v.township,
-          imageUrl: v.coverImage || v.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
+          imageUrl:
+            v.coverImage ||
+            v.logoUrl ||
+            'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
           operatingStatus: v.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
-          fleetAvailability: (v.motorbikeFleetStatus === 'not_applicable' || !v.motorbikeFleetStatus ? 'high' : v.motorbikeFleetStatus) as any,
+          fleetAvailability: (v.motorbikeFleetStatus === 'not_applicable' || !v.motorbikeFleetStatus
+            ? 'high'
+            : v.motorbikeFleetStatus) as any,
           contactPhone: v.contactPhone,
           whatsappNumber: v.whatsappNumber || v.contactPhone,
           packages: actualPackages,
-          isBookingEnabled: v.isBookingEnabled !== undefined ? v.isBookingEnabled : (v.verificationStatus === 'verified'),
+          isBookingEnabled:
+            v.isBookingEnabled !== undefined ? v.isBookingEnabled : v.verificationStatus === 'verified',
           verificationStatus: v.verificationStatus,
           ownerEmail: v.ownerEmail,
         };
@@ -2785,36 +2970,88 @@ class FirebaseStorageService {
       }
     }
 
-    const finalPartners = Array.from(partnersMap.values()).filter((p) => !isMockMotorbikePartner(p));
+    const finalPartners = Array.from(partnersMap.values()).filter(
+      (p) => !isMockMotorbikePartner(p) && !deletedIds.has(p.id)
+    );
     this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(finalPartners));
     return finalPartners;
   }
 
-  public deleteMotorbikePartner(partnerId: string): void {
-    const data = localStorage.getItem('camgo_motorbike_partners');
-    let remaining: MotorbikeRentalPartner[] = [];
-    if (data) {
-      try {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) {
-          remaining = parsed.filter((p: any) => p && p.id !== partnerId && !isMockMotorbikePartner(p));
-          this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(remaining));
-        }
-      } catch {}
-    }
+  public async deleteMotorbikePartner(partnerId: string): Promise<MotorbikeRentalPartner[]> {
+    this.addDeletedMotorbikePartnerId(partnerId);
+    const remaining = this.getMotorbikePartners().filter(
+      (p) => p && p.id !== partnerId && !isMockMotorbikePartner(p)
+    );
+    this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(remaining));
+
     if (db) {
-      deleteDoc(doc(db, 'motorbike_partners', partnerId)).catch(() => {});
+      try {
+        await deleteDoc(doc(db, 'motorbike_partners', partnerId));
+      } catch (e) {
+        console.warn('Error deleting motorbike partner from Firestore:', e);
+      }
     }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('motorbike-partners-updated', { detail: remaining }));
     }
     this.notify();
+    return remaining;
   }
 
-  public async saveMotorbikePartner(partner: MotorbikeRentalPartner): Promise<MotorbikeRentalPartner[]> {
+  public async clearAllMotorbikePartners(): Promise<MotorbikeRentalPartner[]> {
+    const currentPartners = this.getMotorbikePartners();
+    const vendorListings = this.getVendorListings();
+    const deletedSet = new Set(this.getDeletedMotorbikePartnerIds());
+
+    currentPartners.forEach((p) => {
+      if (p?.id) deletedSet.add(p.id);
+    });
+    vendorListings.forEach((v) => {
+      if (v?.id && this.isSpecificMotorbikeVendorListing(v)) {
+        deletedSet.add(v.id);
+      }
+    });
+
+    const suppressedList = Array.from(deletedSet);
+    this.setLocalStorageItem(STORAGE_KEYS.DELETED_MOTORBIKE_PARTNERS, JSON.stringify(suppressedList));
+    this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify([]));
+
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'motorbike_partners'));
+        await Promise.all([
+          ...snap.docs.map((d) => deleteDoc(doc(db, 'motorbike_partners', d.id)).catch(() => {})),
+          ...currentPartners.map((p) => deleteDoc(doc(db, 'motorbike_partners', p.id)).catch(() => {})),
+          setDoc(
+            doc(db, 'settings', 'motorbike_fresh_start_v1'),
+            { purgedAt: new Date().toISOString(), suppressedVendorIds: suppressedList },
+            { merge: true }
+          ).catch(() => {}),
+        ]);
+      } catch (e) {
+        console.warn('Error clearing all motorbike partners from Firestore:', e);
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('motorbike-partners-updated', { detail: [] }));
+    }
+    this.notify();
+    return [];
+  }
+
+  public async saveMotorbikePartner(
+    partner: MotorbikeRentalPartner,
+    options?: { skipVendorSync?: boolean }
+  ): Promise<MotorbikeRentalPartner[]> {
     if (isMockMotorbikePartner(partner)) {
       return this.getMotorbikePartners();
     }
+
+    // Un-suppress this partner ID since admin or vendor explicitly saved it
+    this.removeDeletedMotorbikePartnerId(partner.id);
+
     const partners = this.getMotorbikePartners();
     const idx = partners.findIndex((p) => p.id === partner.id);
     if (idx >= 0) {
@@ -2823,6 +3060,7 @@ class FirebaseStorageService {
       partners.push(partner);
     }
     this.setLocalStorageItem('camgo_motorbike_partners', JSON.stringify(partners));
+
     if (db) {
       try {
         await setDoc(doc(db, 'motorbike_partners', partner.id), partner);
@@ -2830,6 +3068,68 @@ class FirebaseStorageService {
         console.error("Error saving motorbike partner:", e);
       }
     }
+
+    // Bidirectional sync back to matching vendor listing so Admin edits reflect in Vendor Dashboard & Manage Vendors
+    if (!options?.skipVendorSync) {
+      try {
+        const vendorListings = this.getVendorListings();
+        const vIdx = vendorListings.findIndex(
+          (v) =>
+            v.id === partner.id ||
+            (partner.ownerEmail &&
+              v.ownerEmail &&
+              v.ownerEmail.toLowerCase() === partner.ownerEmail.toLowerCase() &&
+              this.isSpecificMotorbikeVendorListing(v))
+        );
+
+        if (vIdx >= 0) {
+          const existingVendor = vendorListings[vIdx];
+          const syncedVendor = pruneVendorForSector({
+            ...existingVendor,
+            businessName: partner.businessName,
+            township: partner.township,
+            coverImage: partner.imageUrl || existingVendor.coverImage,
+            realTimeStatus: partner.operatingStatus === 'closed' ? 'closed_roadworks' : 'open',
+            motorbikeFleetStatus: partner.fleetAvailability,
+            contactPhone: partner.contactPhone,
+            whatsappNumber: partner.whatsappNumber || partner.contactPhone,
+            motorbikePackages: partner.packages,
+            ownerEmail: partner.ownerEmail || existingVendor.ownerEmail,
+            isBookingEnabled:
+              partner.isBookingEnabled !== undefined ? partner.isBookingEnabled : existingVendor.isBookingEnabled,
+            verificationStatus: partner.verificationStatus || existingVendor.verificationStatus,
+            sectorSpecifics: {
+              ...existingVendor.sectorSpecifics,
+              vehicleRental: {
+                ...existingVendor.sectorSpecifics?.vehicleRental,
+                realTimeAvailability:
+                  partner.fleetAvailability === 'limited' ? 'low' : (partner.fleetAvailability as any),
+                depositConfig: {
+                  ...existingVendor.sectorSpecifics?.vehicleRental?.depositConfig,
+                  depositAmountRm:
+                    partner.packages?.[0]?.depositRm ??
+                    existingVendor.sectorSpecifics?.vehicleRental?.depositConfig?.depositAmountRm ??
+                    100,
+                },
+              },
+            },
+            updatedAt: new Date().toISOString(),
+          });
+
+          vendorListings[vIdx] = syncedVendor;
+          this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(vendorListings));
+          if (db) {
+            await setDoc(doc(db, 'vendor_listings', syncedVendor.id), syncedVendor, { merge: true }).catch(() => {});
+          }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: vendorListings }));
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Could not bi-sync motorbike partner to vendor listing:', syncErr);
+      }
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('motorbike-partners-updated', { detail: partners }));
     }

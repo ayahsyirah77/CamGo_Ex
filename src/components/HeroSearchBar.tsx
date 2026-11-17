@@ -6,9 +6,11 @@ import {
   Calendar,
   Building2,
   MapPin,
+  Globe,
 } from 'lucide-react';
 import { Language, Place, EventNotification, Township } from '../types';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
+import { WebSearchResultsBlock, useWebSearch } from './WebSearchResultsBlock';
 
 interface HeroSearchBarProps {
   language: Language;
@@ -46,6 +48,7 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { webSearch, runWebSearch, clearWebSearch } = useWebSearch(language);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -101,6 +104,7 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
   const handleSelectPlace = (place: Place) => {
     setIsSearchOpen(false);
     setSearchQuery('');
+    clearWebSearch();
     if (onSelectPlace) {
       onSelectPlace(place);
     } else if (onOpenMap) {
@@ -111,6 +115,7 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
   const handleSelectEvent = (event: EventNotification) => {
     setIsSearchOpen(false);
     setSearchQuery('');
+    clearWebSearch();
     if (onSelectEvent) {
       onSelectEvent(event);
     } else if (onOpenMap) {
@@ -121,6 +126,7 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
   const handleSelectTownship = (township: Township) => {
     setIsSearchOpen(false);
     setSearchQuery('');
+    clearWebSearch();
     if (onSelectTownship) {
       onSelectTownship(township);
     } else if (onOpenPortalsModal) {
@@ -140,27 +146,50 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
               setSearchQuery(e.target.value);
               setIsSearchOpen(true);
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchQuery.trim()) {
+                e.preventDefault();
+                setIsSearchOpen(true);
+                runWebSearch(searchQuery);
+              }
+            }}
             onFocus={() => setIsSearchOpen(true)}
             placeholder={
               language === 'bm'
-                ? 'Cari penginapan, ladang strawberi, skuter sewa, acara atau pekan (cth. Tanah Rata, Brinchang)...'
-                : 'Search stays, attractions, motorbike rentals, events, or townships (e.g. Tanah Rata, Kea Farm)...'
+                ? 'Cari direktori CamGo atau tekan Enter untuk jawapan web langsung...'
+                : 'Search stays, rentals, events, or press Enter for live web answers...'
             }
-            aria-label={language === 'bm' ? 'Cari tempat dan acara' : 'Search places, stays, and events'}
+            aria-label={language === 'bm' ? 'Cari tempat dan web' : 'Search directories and live web'}
             className="w-full bg-transparent text-sm text-stone-100 placeholder-stone-400 outline-none"
           />
           {searchQuery ? (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setIsSearchOpen(false);
-              }}
-              className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer shrink-0"
-              title="Clear search"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5 ml-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSearchOpen(true);
+                  runWebSearch(searchQuery);
+                }}
+                disabled={webSearch.isSearching}
+                className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer shadow-md"
+                title={language === 'bm' ? 'Cari jawapan dari web' : 'Search live web for answers'}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>{language === 'bm' ? 'Cari Web' : 'Search Web'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  clearWebSearch();
+                  setIsSearchOpen(false);
+                }}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer shrink-0"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           ) : (
             <button
               type="button"
@@ -174,20 +203,15 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
           )}
         </div>
 
-        {/* Live Autocomplete Dropdown */}
+        {/* Live Autocomplete + Web Search Dropdown */}
         {isSearchOpen && q.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2.5 z-50 text-stone-100 space-y-2.5">
+          <div className="absolute top-full left-0 right-0 mt-2 max-h-[70vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl p-2.5 z-50 text-stone-100 space-y-2.5">
             {totalResults === 0 ? (
-              <div className="p-4 text-center text-xs text-stone-400 space-y-1">
+              <div className="px-3 py-2 text-center text-xs text-stone-400">
                 <p className="font-medium text-stone-300">
                   {language === 'bm'
-                    ? `Tiada hasil untuk "${searchQuery}"`
-                    : `No results found for "${searchQuery}"`}
-                </p>
-                <p className="text-[11px] text-stone-500">
-                  {language === 'bm'
-                    ? 'Cuba cari "Steamboat", "Mossy Forest", "Tanah Rata", atau "Pasar Malam".'
-                    : 'Try searching for "Steamboat", "Mossy Forest", "Tanah Rata", or "Night Market".'}
+                    ? `Tiada padanan direktori tempatan untuk "${searchQuery}"`
+                    : `No local directory matches for "${searchQuery}"`}
                 </p>
               </div>
             ) : (
@@ -296,6 +320,15 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
                 )}
               </>
             )}
+
+            <WebSearchResultsBlock
+              query={searchQuery}
+              language={language}
+              webSearch={webSearch}
+              onRunWebSearch={runWebSearch}
+              onClearWebSearch={clearWebSearch}
+              hasLocalResults={totalResults > 0}
+            />
           </div>
         )}
       </div>

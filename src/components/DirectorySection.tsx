@@ -39,6 +39,7 @@ import {
   BedDouble,
   ArrowRight,
   BatteryCharging,
+  FileText,
 } from 'lucide-react';
 import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
@@ -662,6 +663,40 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
           </div>
         )}
 
+        {/* Government Hospitals' Treatment Charges for Foreigners Banner (Local Services / Clinic & Hospital) */}
+        {currentCategory === 'local_services' && (
+          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950/75 via-stone-900 to-stone-900 border border-rose-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-xl">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-black uppercase tracking-wider border border-rose-500/30">
+                  Fees Act (Medical) 1951
+                </span>
+                <h4 className="text-xs sm:text-sm font-extrabold text-white">
+                  {language === 'bm'
+                    ? 'Caj Rawatan Bukan Warganegara (Hospital Kerajaan)'
+                    : "Caj Rawatan Bukan Warganegara • Government Hospitals' Charges for Foreigners"}
+                </h4>
+              </div>
+              <p className="text-[11px] sm:text-xs text-stone-300">
+                {language === 'bm'
+                  ? 'Semak jadual caj rasmi pesakit luar (FA), wad & pembedahan (FB), pergigian & T&CM (FC), serta kardiologi untuk bukan warganegara.'
+                  : 'View official non-citizen hospital rates: Outpatient (Schedule FA), Wards, Delivery & Radiotherapy (FB), Dental & T&CM (FC), and Cardiothoracic Surgery.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'))}
+              className="px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              <span>
+                {language === 'bm' ? 'Lihat Jadual Caj (RM)' : 'View Foreigner Fee Schedule'}
+              </span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Places Cards Grid */}
         {filteredPlaces.length === 0 ? (
           <div className="p-12 text-center rounded-3xl bg-stone-900/40 border border-white/5">
@@ -869,6 +904,30 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                         language={language}
                       />
                     </div>
+
+                    {(selectedPlacePopup.subCategory === 'clinic_hospital' ||
+                      selectedPlacePopup.subCategory === 'health_wellness') && (
+                      <div className="mt-3 p-3 rounded-2xl bg-rose-950/45 border border-rose-500/35 flex flex-wrap items-center justify-between gap-2.5">
+                        <div className="text-[11px] text-rose-200">
+                          <span className="font-bold block text-white">
+                            {language === 'bm'
+                              ? 'Caj Rawatan Bukan Warganegara'
+                              : "Government Hospitals' Charges for Foreigners"}
+                          </span>
+                          <span className="text-rose-200/80">
+                            Fees Act (Medical) 1951 • Schedule FA, FB, FC &amp; Cardiology
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'))}
+                          className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] flex items-center gap-1.5 cursor-pointer shrink-0 shadow"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>{language === 'bm' ? 'Jadual Caj' : 'View Fee Schedule'}</span>
+                        </button>
+                      </div>
+                    )}
 
                     {/* Tags */}
                     <div className="flex flex-wrap gap-1.5 mt-3">

@@ -1016,6 +1016,32 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
                   </div>
                 </section>
 
+                  {/* Foreigner Government Hospital Fee Reference */}
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'))}
+                    className="w-full p-3 rounded-2xl bg-rose-950/50 hover:bg-rose-950/75 border border-rose-500/35 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="p-2 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
+                        <Hospital className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
+                          {language === 'bm'
+                            ? 'Caj Rawatan Bukan Warganegara (Hospital Kerajaan)'
+                            : "Government Hospitals' Charges for Foreigners"}
+                        </div>
+                        <div className="text-[10px] text-rose-200/80 truncate">
+                          Fees Act (Medical) 1951 • Schedule FA, FB, FC &amp; Cardiology
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-bold shrink-0">
+                      {language === 'bm' ? 'Lihat Caj' : 'View Fees'}
+                    </span>
+                  </button>
+
                 {/* 3. Highlands Guidance Notice */}
                 <div className="p-3.5 rounded-2xl bg-stone-950/80 border border-white/5 text-[11px] text-stone-400 text-center leading-relaxed">
                   {language === 'bm'

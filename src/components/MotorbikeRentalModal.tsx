@@ -74,13 +74,13 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
         if (!snap.empty) {
           const fetched = snap.docs
             .map(d => d.data() as MotorbikeRentalPartner)
-            .filter(p => !isMockMotorbikePartner(p));
+            .filter(p => !isMockMotorbikePartner(p) && !firebaseService.isMotorbikePartnerDeleted(p.id));
           setPartners(fetched);
 
-          // Clean up legacy mock docs from Firestore if detected
+          // Clean up legacy mock or explicitly removed docs from Firestore if detected
           snap.docs.forEach((docSnap) => {
             const data = docSnap.data();
-            if (isMockMotorbikePartner(data)) {
+            if (isMockMotorbikePartner(data) || firebaseService.isMotorbikePartnerDeleted(docSnap.id)) {
               deleteDoc(doc(db, 'motorbike_partners', docSnap.id)).catch(() => {});
             }
           });

@@ -2170,6 +2170,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                         >
                           <option value="Job Offer">Job Offer</option>
                           <option value="Job Wanted">Job Wanted</option>
+                          <option value="Interview">Interview</option>
                           <option value="Service Offered">Service Offered</option>
                           <option value="Service Wanted">Service Wanted</option>
                           <option value="Item For Sale">Item For Sale</option>

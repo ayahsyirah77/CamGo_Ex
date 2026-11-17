@@ -27,14 +27,17 @@ import {
   SiteVisitorStats,
   CamgoHazard,
   CamgoHazardType,
+  MotorbikeRentalPartner,
+  MotorbikePackage,
 } from '../types';
 import { firebaseService, UserProfile } from '../services/firebase';
 import { camgoHazardsService } from '../services/camgoHazardsService';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
 import { formatTimeTo12Hour } from '../utils/highlandLogic';
 import { CamLogo } from './CamLogo';
-import { BUSINESS_TAXONOMY, findBusinessSector } from '../data/businessTaxonomy';
+import { BUSINESS_TAXONOMY } from '../data/businessTaxonomy';
 import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
+import { pruneVendorForSector, mapSubCategoryToMainCategory } from '../utils/sectorIsolation';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 import {
@@ -86,6 +89,7 @@ import {
   Filter,
   Radio,
   ExternalLink,
+  Bike,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -436,16 +440,282 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   });
 
+  // Verified Motorbike & Scooter Rentals Management State
+  const [motorbikePartners, setMotorbikePartners] = useState<MotorbikeRentalPartner[]>(() =>
+    firebaseService.getMotorbikePartners()
+  );
+  const [adminBikeSearchQuery, setAdminBikeSearchQuery] = useState('');
+  const [selectedBikePartnerForEdit, setSelectedBikePartnerForEdit] =
+    useState<MotorbikeRentalPartner | null>(null);
+  const [showBikePartnerModal, setShowBikePartnerModal] = useState(false);
+  const [isSavingBikePartner, setIsSavingBikePartner] = useState(false);
+
+  // Form State for Verified Motorbike & Scooter Rental Modal
+  const [bikeFormBusinessName, setBikeFormBusinessName] = useState('');
+  const [bikeFormTownship, setBikeFormTownship] = useState<Township>('Tanah Rata');
+  const [bikeFormPhone, setBikeFormPhone] = useState('');
+  const [bikeFormWhatsapp, setBikeFormWhatsapp] = useState('');
+  const [bikeFormOwnerEmail, setBikeFormOwnerEmail] = useState('');
+  const [bikeFormOperatingStatus, setBikeFormOperatingStatus] = useState<'open' | 'closed'>('open');
+  const [bikeFormFleetStatus, setBikeFormFleetStatus] = useState<'high' | 'medium' | 'limited' | 'sold_out'>('high');
+  const [bikeFormBookingEnabled, setBikeFormBookingEnabled] = useState(true);
+  const [bikeFormImageUrl, setBikeFormImageUrl] = useState('');
+  const [bikeFormPackages, setBikeFormPackages] = useState<MotorbikePackage[]>([]);
+
+  useEffect(() => {
+    const refreshBikes = () => {
+      setMotorbikePartners(firebaseService.getMotorbikePartners());
+    };
+    window.addEventListener('motorbike-partners-updated', refreshBikes);
+    window.addEventListener('vendor-listings-updated', refreshBikes);
+    return () => {
+      window.removeEventListener('motorbike-partners-updated', refreshBikes);
+      window.removeEventListener('vendor-listings-updated', refreshBikes);
+    };
+  }, []);
+
+  const createDefaultMotorbikePackage = (idx = 0): MotorbikePackage => ({
+    id: `moto-pkg-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+    name: idx === 0 ? 'Yamaha NMAX 155 ABS' : 'Honda Vario 160',
+    cc: idx === 0 ? '155cc Automatic' : '160cc Automatic',
+    dailyRateRm: idx === 0 ? 85 : 75,
+    hourlyRateRm: idx === 0 ? 20 : 18,
+    depositRm: 100,
+    imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
+    helmetsIncluded: 2,
+    packageDetails: '2 SIRIM helmets & raincoat included',
+    addonDetails: 'Phone mount +RM10',
+  });
+
+  const handleOpenAddBikePartnerModal = () => {
+    setSelectedBikePartnerForEdit(null);
+    setBikeFormBusinessName('');
+    setBikeFormTownship('Tanah Rata');
+    setBikeFormPhone('');
+    setBikeFormWhatsapp('');
+    setBikeFormOwnerEmail('');
+    setBikeFormOperatingStatus('open');
+    setBikeFormFleetStatus('high');
+    setBikeFormBookingEnabled(true);
+    setBikeFormImageUrl('https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80');
+    setBikeFormPackages([createDefaultMotorbikePackage(0)]);
+    setShowBikePartnerModal(true);
+  };
+
+  const handleOpenEditBikePartner = (partner: MotorbikeRentalPartner) => {
+    setSelectedBikePartnerForEdit(partner);
+    setBikeFormBusinessName(partner.businessName || '');
+    setBikeFormTownship(partner.township || 'Tanah Rata');
+    setBikeFormPhone(partner.contactPhone || '');
+    setBikeFormWhatsapp(partner.whatsappNumber || partner.contactPhone || '');
+    setBikeFormOwnerEmail(partner.ownerEmail || '');
+    setBikeFormOperatingStatus(partner.operatingStatus || 'open');
+    setBikeFormFleetStatus(
+      partner.fleetAvailability === 'low'
+        ? 'limited'
+        : ((partner.fleetAvailability || 'high') as 'high' | 'medium' | 'limited' | 'sold_out')
+    );
+    setBikeFormBookingEnabled(partner.isBookingEnabled ?? true);
+    setBikeFormImageUrl(
+      partner.imageUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80'
+    );
+    setBikeFormPackages(
+      Array.isArray(partner.packages) && partner.packages.length > 0
+        ? partner.packages.map((pkg) => ({ ...pkg }))
+        : [createDefaultMotorbikePackage(0)]
+    );
+    setShowBikePartnerModal(true);
+  };
+
+  const handleQuickUpdateBikePartner = async (
+    partner: MotorbikeRentalPartner,
+    patch: Partial<MotorbikeRentalPartner>
+  ) => {
+    const updatedPartner: MotorbikeRentalPartner = {
+      ...partner,
+      ...patch,
+    };
+    const updatedList = await firebaseService.saveMotorbikePartner(updatedPartner);
+    setMotorbikePartners(updatedList);
+    setVendorListingsState(firebaseService.getVendorListings());
+    addActivity(`Updated "${updatedPartner.businessName}" in Verified Motorbike Rentals`);
+  };
+
+  const handleSaveBikePartnerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bikeFormBusinessName.trim()) return;
+    setIsSavingBikePartner(true);
+
+    try {
+      const targetId = selectedBikePartnerForEdit ? selectedBikePartnerForEdit.id : `moto-admin-${Date.now()}`;
+      const cleanPackages: MotorbikePackage[] = bikeFormPackages
+        .filter((pkg) => pkg.name.trim())
+        .map((pkg, idx) => ({
+          ...pkg,
+          id: pkg.id || `moto-pkg-${Date.now()}-${idx}`,
+          name: pkg.name.trim(),
+          cc: pkg.cc?.trim() || '150cc Scooter',
+          dailyRateRm: Math.max(0, Number(pkg.dailyRateRm) || 0),
+          hourlyRateRm: pkg.hourlyRateRm !== undefined ? Math.max(0, Number(pkg.hourlyRateRm) || 0) : 20,
+          depositRm: Math.max(0, Number(pkg.depositRm) || 0),
+          helmetsIncluded: Math.max(0, Number(pkg.helmetsIncluded) || 2),
+          imageUrl: pkg.imageUrl || bikeFormImageUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
+        }));
+
+      const partnerToSave: MotorbikeRentalPartner = {
+        id: targetId,
+        businessName: bikeFormBusinessName.trim(),
+        township: bikeFormTownship,
+        imageUrl:
+          bikeFormImageUrl.trim() ||
+          'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
+        operatingStatus: bikeFormOperatingStatus,
+        fleetAvailability: bikeFormFleetStatus,
+        contactPhone: bikeFormPhone.trim() || '+60195484277',
+        whatsappNumber: bikeFormWhatsapp.trim() || bikeFormPhone.trim() || '+60195484277',
+        packages: cleanPackages,
+        isBookingEnabled: bikeFormBookingEnabled,
+        verificationStatus: 'verified',
+        ownerEmail: bikeFormOwnerEmail.trim() || selectedBikePartnerForEdit?.ownerEmail || 'vendor@camgo.my',
+      };
+
+      const updatedPartners = await firebaseService.saveMotorbikePartner(partnerToSave);
+      setMotorbikePartners(updatedPartners);
+
+      // Ensure new Admin-created rental partners also register as editable VendorListings
+      const existingVendor = firebaseService
+        .getVendorListings()
+        .find((v) => v.id === targetId);
+      if (!existingVendor) {
+        const coords = TOWNSHIP_DEFAULTS[bikeFormTownship] || { lat: 4.4715, lng: 101.3805 };
+        const nowIso = new Date().toISOString();
+        const syncedVendorListing: VendorListing = pruneVendorForSector({
+          id: targetId,
+          ownerUid: currentUser?.uid || 'admin',
+          ownerEmail: partnerToSave.ownerEmail || 'vendor@camgo.my',
+          businessName: partnerToSave.businessName,
+          verificationStatus: 'verified',
+          category: 'transport',
+          subCategory: 'rental_motorcycle_scooter',
+          township: partnerToSave.township,
+          address: `${partnerToSave.township}, Cameron Highlands`,
+          contactPhone: partnerToSave.contactPhone,
+          whatsappNumber: partnerToSave.whatsappNumber,
+          description: `Verified motorbike & scooter rental operator in ${partnerToSave.township}.`,
+          operatingHours: { from: '08:30', to: '20:00', isOpen: partnerToSave.operatingStatus === 'open' },
+          coverImage: partnerToSave.imageUrl,
+          galleryImages: [partnerToSave.imageUrl],
+          coordinates: { lat: coords.lat, lng: coords.lng },
+          isBookingEnabled: bikeFormBookingEnabled,
+          realTimeStatus: bikeFormOperatingStatus === 'closed' ? 'closed_roadworks' : 'open',
+          parkingStatus: 'private_available',
+          roomAvailabilityStatus: 'not_applicable',
+          motorbikeFleetStatus: bikeFormFleetStatus,
+          motorbikePackages: cleanPackages,
+          dietaryTags: [],
+          sectorSpecifics: {
+            vehicleRental: {
+              realTimeAvailability: bikeFormFleetStatus === 'limited' ? 'low' : bikeFormFleetStatus,
+              totalFleetSize: Math.max(cleanPackages.length * 3, 4),
+              activeFleetCount: bikeFormFleetStatus === 'sold_out' ? 0 : Math.max(cleanPackages.length * 2, 3),
+              maintenanceCount: 0,
+              maintenanceStatus: 'operational',
+              serviceOptions: { selfCollect: true, deliveredToRenter: true },
+              durationModels: { allowDays: true, allowHours: true },
+              depositConfig: { required: true, depositAmountRm: cleanPackages[0]?.depositRm ?? 100, lockInFeeRm: 20 },
+            },
+          },
+          tier: 'monthly_pro',
+          billingCadence: 'monthly',
+          tierExpiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
+          isSponsored: false,
+          profileHealthScore: 100,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+        await firebaseService.saveVendorListing(syncedVendorListing);
+      }
+
+      setVendorListingsState(firebaseService.getVendorListings());
+      setMotorbikePartners(firebaseService.getMotorbikePartners());
+      addActivity(
+        `${selectedBikePartnerForEdit ? 'Updated' : 'Added'} motorbike rental "${partnerToSave.businessName}" in Verified Motorbike Rentals`
+      );
+      setShowBikePartnerModal(false);
+      setSelectedBikePartnerForEdit(null);
+    } catch (err) {
+      console.error('Error saving motorbike rental partner:', err);
+    } finally {
+      setIsSavingBikePartner(false);
+    }
+  };
+
+  const handleDeleteBikePartner = async (id: string, name: string) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to remove "${name}" from Cameron Highlands Verified Motorbike & Scooter Rentals?`
+      )
+    ) {
+      return;
+    }
+    try {
+      const remaining = await firebaseService.deleteMotorbikePartner(id);
+      if (id.startsWith('moto-admin-')) {
+        await firebaseService.deleteVendorListing(id);
+      }
+      setMotorbikePartners(remaining);
+      setVendorListingsState(firebaseService.getVendorListings());
+      addActivity(`Removed motorbike rental "${name}" from Verified Motorbike Rentals`);
+    } catch (err) {
+      console.error('Error deleting motorbike partner:', err);
+    }
+  };
+
+  const handleClearAllBikePartners = async () => {
+    if (
+      !window.confirm(
+        'Remove all entries from Cameron Highlands Verified Motorbike & Scooter Rentals to start fresh at 0 Listed?'
+      )
+    ) {
+      return;
+    }
+    try {
+      await firebaseService.clearAllMotorbikePartners();
+      setMotorbikePartners([]);
+      addActivity('Cleared Verified Motorbike & Scooter Rentals directory (0 Listed — Fresh Start)');
+    } catch (err) {
+      console.error('Error clearing motorbike rentals:', err);
+    }
+  };
+
+  const filteredMotorbikePartners = motorbikePartners.filter((partner) => {
+    if (!adminBikeSearchQuery.trim()) return true;
+    const q = adminBikeSearchQuery.toLowerCase();
+    return (
+      (partner.businessName || '').toLowerCase().includes(q) ||
+      (partner.township || '').toLowerCase().includes(q) ||
+      (partner.contactPhone || '').toLowerCase().includes(q) ||
+      (partner.whatsappNumber || '').toLowerCase().includes(q) ||
+      (partner.ownerEmail || '').toLowerCase().includes(q) ||
+      (partner.packages || []).some(
+        (pkg) =>
+          (pkg.name || '').toLowerCase().includes(q) || (pkg.cc || '').toLowerCase().includes(q)
+      )
+    );
+  });
+
   const handleSaveSelectedAdminVendor = async (vendorToSave: VendorListing) => {
     setIsSavingAdminVendor(true);
     try {
-      const updated = {
+      const updated = pruneVendorForSector({
         ...vendorToSave,
         updatedAt: new Date().toISOString(),
-      };
+      });
       await firebaseService.saveVendorListing(updated);
       const newListings = firebaseService.getVendorListings();
       setVendorListingsState(newListings);
+      setMotorbikePartners(firebaseService.getMotorbikePartners());
+      setAccommodationListings(firebaseService.getAccommodationListings());
       setSelectedVendorForAdmin(newListings.find(v => v.id === vendorToSave.id) || updated);
       addActivity(`Admin updated vendor details & adjustments for "${updated.businessName}"`);
     } catch (err: any) {
@@ -2930,7 +3200,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           {/* Admin Portal: Centralized Vendor Management Control Panel (Requirement 2) */}
-          <div className="p-5 rounded-3xl bg-stone-900/90 border border-emerald-500/40 space-y-5 shadow-2xl">
+          <div id="admin-manage-vendors-section" className="p-5 rounded-3xl bg-stone-900/90 border border-emerald-500/40 space-y-5 shadow-2xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3">
               <div>
                 <h4 className="text-base font-black text-white flex items-center gap-2 font-heading">
@@ -3198,15 +3468,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     value={selectedVendorForAdmin.subCategory || 'fb_restaurants_cafes'}
                     onChange={(e) => {
                       const selectedSub = e.target.value;
-                      const sector = findBusinessSector(selectedSub);
-                      let mainCat: MainCategory = 'services_utilities';
-                      if (sector.id === 'food_beverage') mainCat = 'food';
-                      else if (sector.id === 'retail_products') mainCat = 'shopping';
-                      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
-                      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-                      else if (sector.id === 'professional_home_services') mainCat = 'services_utilities';
-                      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
-                      setSelectedVendorForAdmin({ ...selectedVendorForAdmin, category: mainCat, subCategory: selectedSub as any });
+                      const mainCat = mapSubCategoryToMainCategory(selectedSub);
+                      setSelectedVendorForAdmin(
+                        pruneVendorForSector({
+                          ...selectedVendorForAdmin,
+                          category: mainCat,
+                          subCategory: selectedSub as any,
+                        })
+                      );
                     }}
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs text-white cursor-pointer"
                   >
@@ -3532,6 +3801,243 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                       </tr>
                     ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Section: Cameron Highlands Verified Motorbike & Scooter Rentals Management */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-stone-900/80 border border-cyan-500/25 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-800">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Bike className="w-5 h-5 text-cyan-400" />
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Cameron Highlands Verified Motorbike &amp; Scooter Rentals
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[10px] font-black uppercase tabular-nums">
+                    {motorbikePartners.length} Listed
+                  </span>
+                </div>
+                <p className="text-xs text-stone-400 mt-1">
+                  Admin Control Panel: Edit prices, availability, titles, or remove motorbike &amp; scooter rentals from the Verified Motorbike Rentals directory.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {motorbikePartners.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllBikePartners}
+                    className="px-3 py-2 rounded-xl bg-rose-950/50 hover:bg-rose-900/70 text-rose-300 border border-rose-500/30 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Clear all current Motorbike & Scooter entries to start fresh"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Clear All</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleOpenAddBikePartnerModal}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg transition-all cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add New Motorbike Rental</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={adminBikeSearchQuery}
+                onChange={(e) => setAdminBikeSearchQuery(e.target.value)}
+                placeholder="Search by vendor/operator title, scooter model (e.g. NMAX, Vario), phone, or township..."
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-stone-950/80 border border-stone-800 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+
+            {/* Motorbike & Scooter Rentals Table */}
+            <div className="overflow-x-auto rounded-2xl border border-stone-800 bg-stone-950/60">
+              <table className="w-full text-left border-collapse min-w-[760px]">
+                <thead>
+                  <tr className="border-b border-stone-800 text-[11px] font-extrabold uppercase text-stone-400 bg-stone-900/50">
+                    <th className="p-3">Operator &amp; Fleet Models</th>
+                    <th className="p-3">Township &amp; Operating</th>
+                    <th className="p-3">Rates (RM / Day)</th>
+                    <th className="p-3">Fleet Availability</th>
+                    <th className="p-3">Vendor Contact</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-800 text-xs text-stone-200">
+                  {filteredMotorbikePartners.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-stone-500 italic">
+                        {adminBikeSearchQuery.trim()
+                          ? `No motorbike & scooter rental vendors found matching "${adminBikeSearchQuery}".`
+                          : '0 motorbike & scooter rentals currently listed. Click "Add New Motorbike Rental" or verify a vendor to publish one.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredMotorbikePartners.map((partner) => {
+                      const pkgs = partner.packages || [];
+                      const lowestRate =
+                        pkgs.length > 0
+                          ? Math.min(...pkgs.map((p) => Number(p.dailyRateRm) || 0))
+                          : null;
+                      const linkedVendor = vendorListingsState.find(
+                        (v) =>
+                          v.id === partner.id ||
+                          (partner.ownerEmail &&
+                            v.ownerEmail &&
+                            v.ownerEmail.toLowerCase() === partner.ownerEmail.toLowerCase())
+                      );
+                      const availValue =
+                        partner.fleetAvailability === 'low'
+                          ? 'limited'
+                          : partner.fleetAvailability || 'high';
+
+                      return (
+                        <tr key={partner.id} className="hover:bg-stone-900/40 transition-colors">
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={safeSrc(partner.imageUrl, DEFAULT_PLACE_IMAGE)}
+                                alt={partner.businessName}
+                                className="w-11 h-11 rounded-xl object-cover border border-stone-800 shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="font-bold text-white flex items-center gap-1.5">
+                                  <span className="truncate max-w-[200px]">{partner.businessName}</span>
+                                  {partner.isBookingEnabled !== false && (
+                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-stone-400 truncate max-w-[220px]">
+                                  {pkgs.length > 0
+                                    ? `${pkgs.length} model${pkgs.length > 1 ? 's' : ''}: ${pkgs
+                                        .slice(0, 2)
+                                        .map((p) => p.name)
+                                        .join(', ')}${pkgs.length > 2 ? '…' : ''}`
+                                    : 'No fleet packages configured yet'}
+                                </div>
+                                {partner.ownerEmail && (
+                                  <div className="text-[10px] text-stone-500 font-mono truncate max-w-[220px]">
+                                    {partner.ownerEmail}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 space-y-1">
+                            <div className="font-medium text-stone-300">{partner.township}</div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleQuickUpdateBikePartner(partner, {
+                                  operatingStatus: partner.operatingStatus === 'open' ? 'closed' : 'open',
+                                })
+                              }
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase cursor-pointer transition-colors border ${
+                                partner.operatingStatus === 'open'
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300 hover:bg-rose-500/20'
+                              }`}
+                              title="Click to toggle Open / Closed status"
+                            >
+                              {partner.operatingStatus === 'open' ? '● Open Now' : '● Closed'}
+                            </button>
+                          </td>
+                          <td className="p-3 tabular-nums">
+                            {lowestRate !== null ? (
+                              <div>
+                                <div className="font-bold text-cyan-300 font-mono">
+                                  From RM {lowestRate}{' '}
+                                  <span className="text-[10px] text-stone-500 font-normal">/ day</span>
+                                </div>
+                                {pkgs[0]?.depositRm !== undefined && (
+                                  <div className="text-[10px] text-stone-400 font-mono">
+                                    Deposit: RM {pkgs[0].depositRm}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-stone-500 italic">Direct Inquiry</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={availValue}
+                              onChange={(e) =>
+                                handleQuickUpdateBikePartner(partner, {
+                                  fleetAvailability: e.target.value as any,
+                                })
+                              }
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase cursor-pointer border bg-stone-950 focus:outline-none ${
+                                availValue === 'high'
+                                  ? 'border-emerald-500/40 text-emerald-400'
+                                  : availValue === 'medium'
+                                  ? 'border-cyan-500/40 text-cyan-300'
+                                  : availValue === 'limited'
+                                  ? 'border-amber-500/40 text-amber-300'
+                                  : 'border-rose-500/40 text-rose-300'
+                              }`}
+                              title="Quick change fleet availability"
+                            >
+                              <option value="high">Many Available</option>
+                              <option value="medium">Moderate Units</option>
+                              <option value="limited">Less Units Left</option>
+                              <option value="sold_out">Zero Units</option>
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-medium text-white font-mono">{partner.contactPhone}</div>
+                            <div className="text-[11px] text-emerald-400 font-mono">
+                              WA: {partner.whatsappNumber || partner.contactPhone}
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {linkedVendor && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedVendorForAdmin(linkedVendor);
+                                    document
+                                      .getElementById('admin-manage-vendors-section')
+                                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold transition-colors cursor-pointer"
+                                  title="Edit full vendor profile, commission & sector rules"
+                                >
+                                  Vendor
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditBikePartner(partner)}
+                                className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 transition-colors cursor-pointer"
+                                title="Edit Title, Prices, Packages & Availability"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBikePartner(partner.id, partner.businessName)}
+                                className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-500/30 transition-colors cursor-pointer"
+                                title="Remove from Verified Motorbike Rentals"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -6410,6 +6916,413 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
         ) as any}
+
+        {/* Add / Edit Verified Motorbike & Scooter Rental Modal */}
+        {showBikePartnerModal &&
+          renderModal(
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+              <div className="w-full max-w-3xl bg-stone-900 border border-cyan-500/40 rounded-3xl p-6 text-stone-100 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar">
+                <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                      <Bike className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-base text-white">
+                        {selectedBikePartnerForEdit
+                          ? 'Edit Motorbike & Scooter Rental Vendor'
+                          : 'Add New Motorbike & Scooter Rental'}
+                      </h3>
+                      <p className="text-xs text-stone-400">
+                        {selectedBikePartnerForEdit
+                          ? `Editing "${selectedBikePartnerForEdit.businessName}" — updates directory & vendor controls`
+                          : 'Create a verified operator in Cameron Highlands Verified Motorbike & Scooter Rentals'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBikePartnerModal(false);
+                      setSelectedBikePartnerForEdit(null);
+                    }}
+                    className="p-2 rounded-xl bg-stone-800 text-stone-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveBikePartnerSubmit} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-stone-300 font-bold mb-1">
+                        Operator / Business Title *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={bikeFormBusinessName}
+                        onChange={(e) => setBikeFormBusinessName(e.target.value)}
+                        placeholder="e.g. Cameron Ridge Scooter Rentals"
+                        className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-stone-300 font-bold mb-1">Township</label>
+                      <select
+                        value={bikeFormTownship}
+                        onChange={(e) => setBikeFormTownship(e.target.value as Township)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-cyan-500"
+                      >
+                        {ALL_9_TOWNSHIPS.map((town) => (
+                          <option key={town} value={town}>
+                            {town}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-stone-300 font-bold mb-1">Fleet Availability</label>
+                      <select
+                        value={bikeFormFleetStatus}
+                        onChange={(e) => setBikeFormFleetStatus(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-cyan-500"
+                      >
+                        <option value="high">Many Units Available</option>
+                        <option value="medium">Moderate Units Available</option>
+                        <option value="limited">Less Units Left</option>
+                        <option value="sold_out">Zero Units Available</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-stone-300 font-bold mb-1">Operating Status</label>
+                      <select
+                        value={bikeFormOperatingStatus}
+                        onChange={(e) => setBikeFormOperatingStatus(e.target.value as 'open' | 'closed')}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-cyan-500"
+                      >
+                        <option value="open">Open Now</option>
+                        <option value="closed">Closed / Temporarily Paused</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setBikeFormBookingEnabled((prev) => !prev)}
+                        className={`w-full px-3 py-2 rounded-xl border font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                          bikeFormBookingEnabled
+                            ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                            : 'bg-stone-950 border-stone-800 text-stone-400'
+                        }`}
+                      >
+                        {bikeFormBookingEnabled ? (
+                          <>
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Booking Enabled</span>
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Booking Disabled</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-stone-300 font-bold mb-1">Contact Phone</label>
+                      <input
+                        type="text"
+                        value={bikeFormPhone}
+                        onChange={(e) => setBikeFormPhone(e.target.value)}
+                        placeholder="+60195484277"
+                        className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono placeholder-stone-600 focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-stone-300 font-bold mb-1">WhatsApp Number</label>
+                      <input
+                        type="text"
+                        value={bikeFormWhatsapp}
+                        onChange={(e) => setBikeFormWhatsapp(e.target.value)}
+                        placeholder="+60195484277"
+                        className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono placeholder-stone-600 focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-stone-300 font-bold mb-1">Vendor Owner Email</label>
+                      <input
+                        type="email"
+                        value={bikeFormOwnerEmail}
+                        onChange={(e) => setBikeFormOwnerEmail(e.target.value)}
+                        placeholder="vendor@camgo.my"
+                        className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 font-bold mb-1">Cover Image URL</label>
+                    <input
+                      type="text"
+                      value={bikeFormImageUrl}
+                      onChange={(e) => setBikeFormImageUrl(e.target.value)}
+                      placeholder="https://images.unsplash.com/..."
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-600 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+
+                  {/* Bike Models & Package Pricing Editor */}
+                  <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-cyan-300 text-xs uppercase tracking-wider">
+                          Rental Packages &amp; Prices
+                        </h4>
+                        <p className="text-[11px] text-stone-400">
+                          Edit scooter/motorbike model titles, daily/hourly RM rates, deposits, and helmet inclusions.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBikeFormPackages((prev) => [
+                            ...prev,
+                            createDefaultMotorbikePackage(prev.length),
+                          ])
+                        }
+                        className="px-3 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/35 text-cyan-300 border border-cyan-500/30 font-bold text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Bike Model</span>
+                      </button>
+                    </div>
+
+                    {bikeFormPackages.length === 0 ? (
+                      <div className="p-4 text-center text-stone-500 italic rounded-xl border border-dashed border-stone-800">
+                        No rental packages added. Travelers will see a WhatsApp inquiry button, or click &quot;Add Bike Model&quot;.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {bikeFormPackages.map((pkg, idx) => (
+                          <div
+                            key={pkg.id || idx}
+                            className="p-3 rounded-xl bg-stone-900 border border-stone-800 space-y-2.5"
+                          >
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                              <div className="sm:col-span-5">
+                                <label className="block text-[10px] text-stone-400 font-bold mb-1">
+                                  Model / Package Title *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={pkg.name}
+                                  onChange={(e) =>
+                                    setBikeFormPackages((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, name: e.target.value } : item
+                                      )
+                                    )
+                                  }
+                                  placeholder="e.g. Yamaha NMAX 155cc"
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-3">
+                                <label className="block text-[10px] text-stone-400 font-bold mb-1">
+                                  CC / Engine Spec
+                                </label>
+                                <input
+                                  type="text"
+                                  value={pkg.cc || ''}
+                                  onChange={(e) =>
+                                    setBikeFormPackages((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, cc: e.target.value } : item
+                                      )
+                                    )
+                                  }
+                                  placeholder="e.g. 155cc ABS"
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-stone-200"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-3">
+                                <label className="block text-[10px] text-cyan-300 font-bold mb-1">
+                                  Daily Price (RM)
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={pkg.dailyRateRm}
+                                  onChange={(e) =>
+                                    setBikeFormPackages((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? { ...item, dailyRateRm: Number(e.target.value) }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-stone-950 border border-cyan-500/40 text-cyan-300 font-mono tabular-nums font-bold"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-1 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setBikeFormPackages((prev) => prev.filter((_, i) => i !== idx))
+                                  }
+                                  className="p-2 rounded-lg bg-rose-950/50 hover:bg-rose-900 text-rose-300 border border-rose-500/30 cursor-pointer"
+                                  title="Remove Model"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                              <div>
+                                <label className="block text-[10px] text-stone-400 mb-1">
+                                  Hourly Rate (RM)
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={pkg.hourlyRateRm ?? 20}
+                                  onChange={(e) =>
+                                    setBikeFormPackages((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? { ...item, hourlyRateRm: Number(e.target.value) }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-stone-400 mb-1">
+                                  Deposit (RM)
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={pkg.depositRm ?? 100}
+                                  onChange={(e) =>
+                                    setBikeFormPackages((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? { ...item, depositRm: Number(e.target.value) }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-amber-300 font-mono tabular-nums font-bold"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-stone-400 mb-1">
+                                  Helmets Included
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={pkg.helmetsIncluded ?? 2}
+                                  onChange={(e) =>
+                                    setBikeFormPackages((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? { ...item, helmetsIncluded: Number(e.target.value) }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-stone-400 mb-1">
+                                  Package Details
+                                </label>
+                                <input
+                                  type="text"
+                                  value={pkg.packageDetails || ''}
+                                  onChange={(e) =>
+                                    setBikeFormPackages((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? { ...item, packageDetails: e.target.value }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  placeholder="e.g. Raincoat + Lock"
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-stone-200"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-stone-800 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBikePartnerModal(false);
+                        setSelectedBikePartnerForEdit(null);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={isSavingBikePartner}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold flex items-center gap-2 shadow-lg cursor-pointer"
+                    >
+                      {isSavingBikePartner ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          <span>
+                            {selectedBikePartnerForEdit
+                              ? 'Save Motorbike Changes'
+                              : 'Create Motorbike Rental'}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ) as any}
 
       {/* Selected Hazard Detail / Review Modal */}
       {selectedHazardModal &&
