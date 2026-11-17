@@ -852,7 +852,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{getTranslation(language, 'nav_map')}</span>
             </motion.button>
 
-
             {/* Itinerary */}
             <motion.button
               variants={itemVariants}
@@ -867,6 +866,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Route className="w-3.5 h-3.5 text-emerald-400" />
               <span>Itinerary</span>
+            </motion.button>
+
+            {/* Non-Citizen Hospital Fee */}
+            <motion.button
+              variants={itemVariants}
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'));
+              }}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
+              title={language === 'bm' ? 'Fi Hospital Bukan Warganegara' : 'Non-Citizen Hospital Fee Schedule'}
+            >
+              <FileText className="w-3.5 h-3.5 text-rose-400" />
+              <span>{language === 'bm' ? 'Fi Hospital' : 'Non-Citizen Hospital Fee'}</span>
             </motion.button>
 
             {/* Gallery - Hidden in PC view as requested */}
@@ -1621,6 +1633,30 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+
+                  {/* Non-Citizen Hospital Fee */}
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'));
+                    }}
+                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-rose-500/40 transition-all cursor-pointer text-left group shadow-md"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileText className="w-4 h-4 text-rose-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-rose-400 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">
+                          FEES ACT 1951
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-stone-100 block group-hover:text-rose-300 transition-colors leading-tight">
+                        {language === 'bm' ? 'Fi Hospital Bukan Warganegara' : 'Non-Citizen Hospital Fee'}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-rose-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
                   {/* Business Vendor Portal (Only visible to admin and registered vendors) */}
