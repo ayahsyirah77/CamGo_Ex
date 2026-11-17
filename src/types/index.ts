@@ -757,6 +757,7 @@ export interface VendorListing {
   roomAvailabilityStatus?: RoomAvailabilityStatus;
   motorbikeFleetStatus?: MotorbikeFleetStatus;
   motorbikePackages?: MotorbikePackage[];
+  vendorTerms?: string;
   enabledFlags?: {
     operatingStatus?: boolean;
     diyHarvestStatus?: boolean;
@@ -903,6 +904,12 @@ export interface MotorbikePackage {
   depositRm?: number;
   imageUrl: string;
   helmetsIncluded: number;
+  childrenHelmet?: boolean;
+  disposableRaincoat?: boolean;
+  fuelPolicy?: {
+    included: boolean;
+    type: 'full_tank' | 'half_tank';
+  };
   packageDetails?: string;
   addonDetails?: string;
 }
@@ -917,6 +924,7 @@ export interface MotorbikeRentalPartner {
   contactPhone: string;
   whatsappNumber: string;
   packages: MotorbikePackage[];
+  vendorTerms?: string;
   isBookingEnabled?: boolean;
   verificationStatus?: VendorVerificationStatus;
   ownerEmail?: string;

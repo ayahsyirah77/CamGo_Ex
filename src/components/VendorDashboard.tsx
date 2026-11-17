@@ -572,6 +572,10 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [bikePrice, setBikePrice] = useState('80');
   const [bikeImage, setBikeImage] = useState('https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=600&q=80');
   const [bikeHelmets, setBikeHelmets] = useState('2');
+  const [bikeChildrenHelmet, setBikeChildrenHelmet] = useState(false);
+  const [bikeDisposableRaincoat, setBikeDisposableRaincoat] = useState(true);
+  const [bikeFuelIncluded, setBikeFuelIncluded] = useState(true);
+  const [bikeFuelType, setBikeFuelType] = useState<'full_tank' | 'half_tank'>('full_tank');
   const [bikePkgDetails, setBikePkgDetails] = useState('');
   const [bikeAddonDetails, setBikeAddonDetails] = useState('');
 
@@ -688,6 +692,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       dailyRateRm: Number(bikePrice) || 80,
       imageUrl: bikeImage || 'https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=600&q=80',
       helmetsIncluded: Number(bikeHelmets) || 2,
+      childrenHelmet: bikeChildrenHelmet,
+      disposableRaincoat: bikeDisposableRaincoat,
+      fuelPolicy: {
+        included: bikeFuelIncluded,
+        type: bikeFuelType,
+      },
       packageDetails: bikePkgDetails,
       addonDetails: bikeAddonDetails,
     };
@@ -715,12 +725,13 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       id: activeVendor.id,
       businessName: activeVendor.businessName,
       township: activeVendor.township,
-      imageUrl: activeVendor.coverImage,
+      imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
       operatingStatus: activeVendor.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
       fleetAvailability: (motorbikeFleetStatus === 'not_applicable' ? 'high' : motorbikeFleetStatus) as any,
       contactPhone: activeVendor.contactPhone,
-      whatsappNumber: activeVendor.whatsappNumber,
+      whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone,
       packages: updatedPkgs,
+      vendorTerms: updatedVendor.vendorTerms || '',
     };
     await firebaseService.saveMotorbikePartner(partnerToSync);
     setMotorbikePartners(firebaseService.getMotorbikePartners());
@@ -852,6 +863,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           contactPhone: updated.contactPhone || '+60123456789',
           whatsappNumber: updated.whatsappNumber || updated.contactPhone || '+60123456789',
           packages: updated.motorbikePackages || existingPartner?.packages || [],
+          vendorTerms: updated.vendorTerms || '',
         };
         await firebaseService.saveMotorbikePartner(partnerToSync);
         setMotorbikePartners(firebaseService.getMotorbikePartners());
