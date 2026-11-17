@@ -140,6 +140,12 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members' | 'chat' | 'walkie'>('map');
+  const [liveRadioSpeakerBanner, setLiveRadioSpeakerBanner] = useState<{
+    id: string;
+    name: string;
+    color: string;
+    isSpeaking: boolean;
+  } | null>(null);
   const [chatInputText, setChatInputText] = useState<string>('');
   const [sendingChat, setSendingChat] = useState<boolean>(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
@@ -2055,6 +2061,26 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                 </div>
               </div>
 
+              {/* Floating Live Radio Speaker Banner when a companion speaks and user is on Map/Compass/Chat tab */}
+              {activeTab !== 'walkie' && liveRadioSpeakerBanner && liveRadioSpeakerBanner.isSpeaking && (
+                <div
+                  onClick={() => setActiveTab('walkie')}
+                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-500 to-emerald-600 text-stone-950 font-bold text-xs shadow-xl cursor-pointer flex items-center justify-between gap-3 animate-pulse border border-amber-300 transition-all hover:scale-[1.01]"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Radio className="w-4 h-4 animate-bounce text-stone-950 shrink-0" />
+                    <span className="truncate">
+                      {language === 'bm'
+                        ? `📻 ${liveRadioSpeakerBanner.name} sedang bersiaran di Radio PTT...`
+                        : `📻 ${liveRadioSpeakerBanner.name} is speaking on PTT Radio...`}
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-lg bg-stone-950/80 text-amber-300 font-mono text-[10px] uppercase font-black shrink-0">
+                    {language === 'bm' ? 'Buka PTT' : 'Open Radio'}
+                  </span>
+                </div>
+              )}
+
               {/* Live Member Count & New Member Joined Banner */}
               <div className="px-3.5 py-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between gap-2 text-xs">
                 <div className="flex items-center gap-2 min-w-0">
@@ -2462,18 +2488,18 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                 </div>
               )}
 
-              {/* TAB 5: PUSH-TO-TALK (PTT) LIVE WALKIE-TALKIE */}
-              {activeTab === 'walkie' && (
-                <div className="space-y-3">
-                  <WalkieTalkieLive
-                    session={session}
-                    memberId={memberId}
-                    memberName={memberName || (language === 'bm' ? 'Pengembara Cameron' : 'Highland Companion')}
-                    avatarColor={avatarColor}
-                    language={language}
-                  />
-                </div>
-              )}
+              {/* TAB 5: PUSH-TO-TALK (PTT) LIVE WALKIE-TALKIE (Kept mounted for active background voice reception) */}
+              <div className={activeTab === 'walkie' ? 'space-y-3 block' : 'hidden'}>
+                <WalkieTalkieLive
+                  session={session}
+                  memberId={memberId}
+                  memberName={memberName || (language === 'bm' ? 'Pengembara Cameron' : 'Highland Companion')}
+                  avatarColor={avatarColor}
+                  language={language}
+                  onTabSwitchRequested={() => setActiveTab('walkie')}
+                  onLiveSpeakerStateChange={setLiveRadioSpeakerBanner}
+                />
+              </div>
             </div>
           )}
         </div>

@@ -256,6 +256,77 @@ class BeaconService {
     }
   }
 
+  /**
+   * Broadcasts who is currently keying/speaking on the party PTT radio
+   */
+  async updateRadioSpeakingState(
+    rawCode: string,
+    speaker: {
+      id: string;
+      name: string;
+      color?: string;
+      isSpeaking: boolean;
+    }
+  ): Promise<void> {
+    const code = rawCode.trim().toUpperCase().replace(/\s+/g, '');
+    if (!code) return;
+    try {
+      const sessionRef = doc(db, 'beacon_sessions', code);
+      await updateDoc(sessionRef, {
+        liveRadioSpeaker: {
+          id: speaker.id,
+          name: speaker.name,
+          color: speaker.color || '#10b981',
+          isSpeaking: speaker.isSpeaking,
+          timestamp: Date.now(),
+        },
+      });
+    } catch (e) {
+      console.warn('[BeaconService] updateRadioSpeakingState notice:', e);
+    }
+  }
+
+  /**
+   * Dispatches a completed PTT voice transmission to the party session
+   */
+  async sendPartyVoiceDispatch(
+    rawCode: string,
+    dispatch: {
+      id: string;
+      senderId: string;
+      senderName: string;
+      senderColor?: string;
+      audioData: string;
+      durationSec: number;
+    }
+  ): Promise<void> {
+    const code = rawCode.trim().toUpperCase().replace(/\s+/g, '');
+    if (!code || !dispatch.audioData) return;
+    try {
+      const sessionRef = doc(db, 'beacon_sessions', code);
+      await updateDoc(sessionRef, {
+        latestVoiceDispatch: {
+          id: dispatch.id,
+          senderId: dispatch.senderId,
+          senderName: dispatch.senderName,
+          senderColor: dispatch.senderColor || '#10b981',
+          audioData: dispatch.audioData,
+          durationSec: dispatch.durationSec,
+          timestamp: Date.now(),
+        },
+        liveRadioSpeaker: {
+          id: dispatch.senderId,
+          name: dispatch.senderName,
+          color: dispatch.senderColor || '#10b981',
+          isSpeaking: false,
+          timestamp: Date.now(),
+        },
+      });
+    } catch (e) {
+      console.warn('[BeaconService] sendPartyVoiceDispatch notice:', e);
+    }
+  }
+
   private cacheLocalSession(session: BeaconSession) {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, session.code);

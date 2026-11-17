@@ -879,6 +879,24 @@ export interface BeaconChatMessage {
   };
 }
 
+export interface BeaconVoiceDispatch {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderColor?: string;
+  audioData: string;
+  durationSec: number;
+  timestamp: number;
+}
+
+export interface BeaconRadioSpeaker {
+  id: string;
+  name: string;
+  color?: string;
+  isSpeaking: boolean;
+  timestamp: number;
+}
+
 export interface BeaconSession {
   id: string;
   code: string;
@@ -891,6 +909,8 @@ export interface BeaconSession {
   status: 'active' | 'ended';
   members?: Record<string, BeaconMember>;
   messages?: BeaconChatMessage[];
+  latestVoiceDispatch?: BeaconVoiceDispatch;
+  liveRadioSpeaker?: BeaconRadioSpeaker;
 }
 
 export type MotorbikeFleetStatus = 'high' | 'medium' | 'limited' | 'low' | 'sold_out' | 'not_applicable';
