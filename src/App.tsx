@@ -189,7 +189,7 @@ export default function App() {
 
   // Lock body scroll when capsule modal is open
   useEffect(() => {
-    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isAccommodationModalOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen;
+    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isAccommodationModalOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen || isVendorPortalOpen;
     if (isAnyModalOpen) {
       const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
       document.body.style.overflow = 'hidden';
@@ -202,7 +202,19 @@ export default function App() {
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
     };
-  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen]);
+  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen, isVendorPortalOpen]);
+
+  // Strict RBAC guard: Standard travelers ('user') cannot access Vendor Dashboard under any circumstances
+  const handleOpenVendorPortal = useCallback(() => {
+    const activeUser = firebaseService.getCurrentUser();
+    if (activeUser && activeUser.role === 'user') {
+      return;
+    }
+    setIsUserDashboardOpen(false);
+    setIsAccommodationModalOpen(false);
+    setIsPortalsModalOpen(false);
+    setIsVendorPortalOpen(true);
+  }, []);
 
   const refreshStorageData = () => {
     setPlaces(firebaseService.getPlaces());
@@ -549,7 +561,7 @@ export default function App() {
         onOpenChat={() => setIsChatOpen(true)}
         onOpenGalleryModal={() => setIsGalleryOpen(true)}
         onOpenCurrencyConverter={() => setIsCurrencyOpen(true)}
-        onOpenVendorPortal={() => setIsVendorPortalOpen(true)}
+        onOpenVendorPortal={handleOpenVendorPortal}
         onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
         onOpenParkingEvModal={() => setIsParkingEvOpen(true)}
         onOpenMasjidModal={() => setIsMasjidModalOpen(true)}
@@ -770,7 +782,9 @@ export default function App() {
         onSuccess={(accountType) => {
           const user = firebaseService.getCurrentUser();
           setCurrentUser(user);
-          if (accountType === 'business') {
+          if ((accountType === 'business' || user?.role === 'vendor') && user?.role !== 'user') {
+            setIsUserDashboardOpen(false);
+            setIsAdminOpen(false);
             setIsVendorPortalOpen(true);
           } else {
             setIsVendorPortalOpen(false);
@@ -786,6 +800,11 @@ export default function App() {
           currentUser={currentUser}
           onOpenAuth={() => setIsAuthOpen(true)}
           onOpenOnboarding={() => {}}
+          onOpenAdmin={() => {
+            if (currentUser?.role === 'admin') {
+              setIsAdminOpen(true);
+            }
+          }}
         />
       )}
       
@@ -1056,10 +1075,7 @@ export default function App() {
                   setIsPortalsModalOpen(false);
                   setIsFarmMatrixOpen(true);
                 }}
-                onOpenVendorPortal={() => {
-                  setIsPortalsModalOpen(false);
-                  setIsVendorPortalOpen(true);
-                }}
+                onOpenVendorPortal={handleOpenVendorPortal}
               />
             </div>
           </div>
@@ -1087,10 +1103,7 @@ export default function App() {
           isOpen={isAccommodationModalOpen}
           onClose={() => setIsAccommodationModalOpen(false)}
           language={language}
-          onOpenVendorPortal={() => {
-            setIsAccommodationModalOpen(false);
-            setIsVendorPortalOpen(true);
-          }}
+          onOpenVendorPortal={handleOpenVendorPortal}
         />
       )}
 

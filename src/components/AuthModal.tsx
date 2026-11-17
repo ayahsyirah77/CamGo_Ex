@@ -46,8 +46,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg(null);
     setLoading(true);
     try {
-      await firebaseService.signInWithGoogle(accountType === 'admin');
-      onSuccess(accountType);
+      const preferredRole =
+        accountType === 'admin' ? 'admin' : accountType === 'business' ? 'vendor' : 'user';
+      const user = await firebaseService.signInWithGoogle(accountType === 'admin', preferredRole);
+      const effectiveType =
+        user.role === 'vendor' || accountType === 'business'
+          ? 'business'
+          : user.role === 'admin'
+          ? 'admin'
+          : 'individual';
+      onSuccess(effectiveType);
       onClose();
     } catch (err: any) {
       setErrorMsg(err.message || 'Google Sign-In failed');
@@ -72,8 +80,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setLoading(true);
     try {
-      await firebaseService.signInWithEmail(cleanEmail, name);
-      onSuccess(accountType);
+      const preferredRole = accountType === 'business' ? 'vendor' : 'user';
+      const user = await firebaseService.signInWithEmail(cleanEmail, name, preferredRole);
+      const effectiveType =
+        user.role === 'vendor' || accountType === 'business'
+          ? 'business'
+          : user.role === 'admin'
+          ? 'admin'
+          : 'individual';
+      onSuccess(effectiveType);
       onClose();
     } catch (err: any) {
       setErrorMsg(err.message || 'Authentication failed');
@@ -121,7 +136,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Account Type Selector: Individual vs Business */}
-        <div className="mb-5 grid grid-cols-3 gap-2 p-1 rounded-2xl bg-stone-950/90 border border-white/10">
+        <div className="mb-5 grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-stone-950/90 border border-white/10">
           {/* Individual Option */}
           <button
             type="button"

@@ -134,8 +134,11 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
     setIsSubmitting(true);
     try {
       const bookingId = 'moto-bk-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+      const depositRm = selectedPackage.depositRm || 100;
+      const lockInFeeRm = 20;
       const newBooking: MotorbikeBookingRecord = {
         id: bookingId,
+        bookingCode: 'MOTO-' + Math.floor(1000 + Math.random() * 9000),
         partnerId: selectedPartner.id,
         partnerName: selectedPartner.businessName,
         packageId: selectedPackage.id,
@@ -144,12 +147,23 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
         renterEmail: renterEmail || 'traveler@camgo.my',
         renterPhone: renterPhone || '+60123456789',
         pickupTownship,
+        pickupLocation: `${selectedPartner.businessName} (${pickupTownship})`,
+        dropoffLocation: `${selectedPartner.businessName} (${pickupTownship})`,
         pickupTime,
+        dropoffTime: '18:00',
         startDate,
         endDate,
         days: daysCount,
+        rentalDurationType: 'days',
+        fulfillmentMethod: 'self_collect',
         helmetsAddon,
         includePhoneMount,
+        depositRm,
+        lockInFeeRm,
+        balanceToCollectRm: Math.max(0, totalRm - lockInFeeRm),
+        depositStatus: 'pending',
+        isUnlocked: true,
+        qrVoucherCode: 'FLTV-' + Math.random().toString(36).substring(2, 8).toUpperCase(),
         totalRm,
         status: 'pending',
         createdAt: new Date().toISOString(),
@@ -301,7 +315,14 @@ Please confirm availability!`;
                   </span>
                 </div>
                 <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-black/70 backdrop-blur-md text-emerald-300 border border-emerald-500/30">
-                  Inventory: {partner.fleetAvailability.toUpperCase()}
+                  Fleet:{' '}
+                  {partner.fleetAvailability === 'high'
+                    ? 'MANY'
+                    : partner.fleetAvailability === 'medium'
+                    ? 'MODERATE'
+                    : partner.fleetAvailability === 'limited' || partner.fleetAvailability === 'low'
+                    ? 'LESS'
+                    : 'ZERO'}
                 </div>
               </div>
 

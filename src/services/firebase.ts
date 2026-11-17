@@ -1,4 +1,4 @@
-import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MobileHomeCard, AccommodationBooking, AccommodationListing, RoomAvailabilityStatus, SiteVisitorStats, VisitorLogEntry } from '../types';
+import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MotorbikeBookingStatus, MobileHomeCard, AccommodationBooking, AccommodationListing, RoomAvailabilityStatus, SiteVisitorStats, VisitorLogEntry } from '../types';
 import {
   INITIAL_PLACES,
   INITIAL_GALLERY,
@@ -752,13 +752,19 @@ class FirebaseStorageService {
                 this.setLocalStorageItem(STORAGE_KEYS.EMERGENCY_CARD, JSON.stringify(emergencyCard));
               }
 
+              const resolvedRole: 'admin' | 'user' | 'vendor' = isAdmin
+                ? 'admin'
+                : existingProfile?.uid === fbUser.uid && existingProfile?.role === 'vendor'
+                ? 'vendor'
+                : (userData?.role === 'vendor' || userData?.role === 'admin' ? userData.role : 'user');
+
               const profile: UserProfile = {
                 uid: fbUser.uid,
                 email: fbUser.email || 'user@camgo.my',
                 displayName: userData?.displayName || fbUser.displayName || 'Highland Explorer',
                 fullName: userData?.fullName || existingProfile?.fullName || fbUser.displayName || '',
                 photoURL: fbUser.photoURL || userData?.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
-                role: isAdmin ? 'admin' : (userData?.role || 'user'),
+                role: resolvedRole,
                 bookmarks: userData?.bookmarks || existingProfile?.bookmarks || [],
                 createdAt: userData?.createdAt || existingProfile?.createdAt || new Date().toISOString(),
                 emergencyCard: emergencyCard || existingProfile?.emergencyCard,
@@ -783,7 +789,7 @@ class FirebaseStorageService {
             displayName: fbUser.displayName || 'Highland Explorer',
             fullName: existingProfile?.fullName || fbUser.displayName || '',
             photoURL: fbUser.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
-            role: isAdmin ? 'admin' : 'user',
+            role: isAdmin ? 'admin' : (existingProfile?.uid === fbUser.uid && existingProfile?.role === 'vendor' ? 'vendor' : 'user'),
             bookmarks: existingProfile?.bookmarks || [],
             createdAt: existingProfile?.createdAt || new Date().toISOString(),
             emergencyCard: emergencyCard || existingProfile?.emergencyCard,
@@ -856,10 +862,15 @@ class FirebaseStorageService {
     this.listeners.forEach((cb) => cb());
   }
 
-  public async signInWithGoogle(asAdmin = false): Promise<UserProfile> {
-    const isAIStudioPreview = 
-      window.location.hostname.includes('googleusercontent.com') || 
+  public async signInWithGoogle(
+    asAdmin = false,
+    preferredRole: 'user' | 'vendor' | 'admin' = asAdmin ? 'admin' : 'user'
+  ): Promise<UserProfile> {
+    const isAIStudioPreview =
+      window.location.hostname.includes('googleusercontent.com') ||
       window.location.hostname.includes('aistudio');
+
+    const effectivePreferredRole: 'user' | 'vendor' | 'admin' = asAdmin ? 'admin' : preferredRole;
 
     if (!isAIStudioPreview && auth) {
       try {
@@ -867,15 +878,26 @@ class FirebaseStorageService {
         const result = await signInWithPopup(auth, provider);
         const fbUser = result.user;
         const targetEmail = (fbUser.email || '').toLowerCase();
-        const isAdminUser = asAdmin || targetEmail === 'ayahsyirah77@gmail.com' || targetEmail === 'asuypower7984@gmail.com' || targetEmail.includes('admin') || targetEmail === 'admin@camgo.my';
+        const isAdminUser =
+          asAdmin ||
+          targetEmail === 'ayahsyirah77@gmail.com' ||
+          targetEmail === 'asuypower7984@gmail.com' ||
+          targetEmail.includes('admin') ||
+          targetEmail === 'admin@camgo.my';
+
+        const assignedRole: 'admin' | 'vendor' | 'user' = isAdminUser
+          ? 'admin'
+          : effectivePreferredRole === 'vendor'
+          ? 'vendor'
+          : 'user';
 
         const profile: UserProfile = {
           uid: fbUser.uid,
-          email: fbUser.email || (asAdmin ? 'ayahsyirah77@gmail.com' : 'traveler@gmail.com'),
-          displayName: fbUser.displayName || (isAdminUser ? 'Admin' : 'Highland Explorer'),
-          fullName: fbUser.displayName || (isAdminUser ? 'Admin' : 'Highland Explorer'),
+          email: fbUser.email || (isAdminUser ? 'ayahsyirah77@gmail.com' : assignedRole === 'vendor' ? 'vendor@gmail.com' : 'traveler@gmail.com'),
+          displayName: fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
+          fullName: fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
           photoURL: fbUser.photoURL || undefined,
-          role: isAdminUser ? 'admin' : 'user',
+          role: assignedRole,
           isBlocked: false,
           bookmarks: [],
           createdAt: new Date().toISOString(),
@@ -888,24 +910,48 @@ class FirebaseStorageService {
         return user;
       } catch (error: any) {
         if (error.message?.includes('ACCOUNT_BLOCKED')) throw error;
-        console.warn("Firebase Auth error, executing fallback session:", error);
+        console.warn("Firebase Auth error, executing role-scoped fallback session:", error);
       }
     }
 
-    const mockEmail = asAdmin ? 'ayahsyirah77@gmail.com' : 'ayahsyirah77@gmail.com';
-    const mockUser: UserProfile = {
-      uid: asAdmin ? 'admin-ayahsyirah77' : 'admin-ayahsyirah77',
-      email: mockEmail,
-      displayName: 'Ayah Syirah (Master Admin)',
-      fullName: 'Ayah Syirah (Master Admin)',
-      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
-      role: 'admin',
-      isBlocked: false,
-      bookmarks: [],
-      createdAt: new Date().toISOString(),
-    };
+    const fallbackProfile: UserProfile =
+      effectivePreferredRole === 'admin'
+        ? {
+            uid: 'admin-ayahsyirah77',
+            email: 'ayahsyirah77@gmail.com',
+            displayName: 'Ayah Syirah (Master Admin)',
+            fullName: 'Ayah Syirah (Master Admin)',
+            photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
+            role: 'admin',
+            isBlocked: false,
+            bookmarks: [],
+            createdAt: new Date().toISOString(),
+          }
+        : effectivePreferredRole === 'vendor'
+        ? {
+            uid: 'vendor-cameron-operator',
+            email: 'vendor.cameron@gmail.com',
+            displayName: 'Highland Business Partner',
+            fullName: 'Highland Business Partner',
+            photoURL: 'https://api.dicebear.com/7.x/adventurer/svg?seed=vendor-cameron',
+            role: 'vendor',
+            isBlocked: false,
+            bookmarks: [],
+            createdAt: new Date().toISOString(),
+          }
+        : {
+            uid: 'traveler-cameron-explorer',
+            email: 'traveler.cameron@gmail.com',
+            displayName: 'Highland Explorer',
+            fullName: 'Highland Explorer',
+            photoURL: 'https://api.dicebear.com/7.x/adventurer/svg?seed=traveler-cameron',
+            role: 'user',
+            isBlocked: false,
+            bookmarks: [],
+            createdAt: new Date().toISOString(),
+          };
 
-    const user = await this.syncUserToFirestore(mockUser);
+    const user = await this.syncUserToFirestore(fallbackProfile);
     this.currentUser = user;
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     this.notify();
@@ -931,19 +977,31 @@ class FirebaseStorageService {
     return user;
   }
 
-  public async signInWithEmail(email: string, name: string): Promise<UserProfile> {
+  public async signInWithEmail(
+    email: string,
+    name: string,
+    preferredRole: 'user' | 'vendor' = 'user'
+  ): Promise<UserProfile> {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail.endsWith('@gmail.com')) {
       throw new Error('Registration and sign-in require a valid @gmail.com email address.');
     }
     const isAdmin = cleanEmail.includes('admin') || cleanEmail === 'ayahsyirah77@gmail.com' || cleanEmail === 'asuypower7984@gmail.com';
+    const assignedRole: 'admin' | 'vendor' | 'user' = isAdmin
+      ? 'admin'
+      : preferredRole === 'vendor'
+      ? 'vendor'
+      : 'user';
+
+    const deterministicUid = (isAdmin ? 'admin-' : assignedRole === 'vendor' ? 'vendor-' : 'user-') + cleanEmail.replace(/[^a-z0-9]/g, '_');
+
     const rawUser: UserProfile = {
-      uid: 'user-' + Date.now().toString(36),
+      uid: deterministicUid,
       email: cleanEmail,
-      displayName: name || cleanEmail.split('@')[0],
-      fullName: name || cleanEmail.split('@')[0],
+      displayName: name?.trim() || cleanEmail.split('@')[0],
+      fullName: name?.trim() || cleanEmail.split('@')[0],
       photoURL: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(cleanEmail)}`,
-      role: isAdmin ? 'admin' : 'user',
+      role: assignedRole,
       isBlocked: false,
       bookmarks: [],
       createdAt: new Date().toISOString(),
@@ -2690,6 +2748,7 @@ class FirebaseStorageService {
       
       const vName = (v.businessName || '').toLowerCase();
       const isSpecificMotorbikeVendor =
+        v.subCategory === 'rental_motorcycle_scooter' ||
         (v.category === 'transport' && v.subCategory === 'car_bike_rentals' && v.motorbikePackages && v.motorbikePackages.length > 0) ||
         vName.includes('motorbike') ||
         vName.includes('motorcycle') ||
@@ -2796,6 +2855,48 @@ class FirebaseStorageService {
         console.error("Error saving motorbike booking to Firestore:", e);
       }
     }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('motorbike-bookings-updated', { detail: updated }));
+    }
+    this.notify();
+    return updated;
+  }
+
+  public async updateMotorbikeBookingStatus(
+    id: string,
+    status: MotorbikeBookingStatus,
+    extraUpdates?: Partial<MotorbikeBookingRecord>
+  ): Promise<MotorbikeBookingRecord[]> {
+    const bookings = this.getMotorbikeBookings();
+    const updated = bookings.map((b) =>
+      b.id === id
+        ? {
+            ...b,
+            ...extraUpdates,
+            status,
+            isUnlocked:
+              extraUpdates?.isUnlocked !== undefined
+                ? extraUpdates.isUnlocked
+                : status === 'confirmed' || status === 'active_rental' || status === 'returned' || status === 'completed'
+                ? true
+                : b.isUnlocked,
+          }
+        : b
+    );
+    this.setLocalStorageItem('camgo_motorbike_bookings', JSON.stringify(updated));
+    if (db) {
+      try {
+        const target = updated.find((b) => b.id === id);
+        if (target) {
+          await setDoc(doc(db, 'motorbike_rentals', id), target, { merge: true });
+        }
+      } catch (e) {
+        console.error("Error updating motorbike booking status in Firestore:", e);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('motorbike-bookings-updated', { detail: updated }));
+    }
     this.notify();
     return updated;
   }
@@ -2809,6 +2910,9 @@ class FirebaseStorageService {
       } catch (e) {
         console.error("Error deleting motorbike booking from Firestore:", e);
       }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('motorbike-bookings-updated', { detail: bookings }));
     }
     this.notify();
     return bookings;

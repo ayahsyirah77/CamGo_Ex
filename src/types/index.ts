@@ -562,12 +562,51 @@ export interface FoodBeverageSpecifics {
 export interface VehicleRentalSpecifics {
   vehicleTypes?: string[];
   totalFleetSize?: number;
-  realTimeAvailability?: 'high' | 'medium' | 'low' | 'sold_out';
+  activeFleetCount?: number;
+  maintenanceCount?: number;
+  realTimeAvailability?: 'high' | 'medium' | 'limited' | 'low' | 'sold_out';
+  maintenanceStatus?: 'operational' | 'scheduled_maintenance' | 'service_paused';
+  maintenanceAlertNote?: string;
+  baseDailyRateRm?: number;
+  baseHourlyRateRm?: number;
   serviceOptions?: {
     deliveryIncluded?: boolean;
     selfPickup?: boolean;
+    selfCollect?: boolean;
+    deliveredToRenter?: boolean;
+    deliveryFeeRm?: number;
+    pickupHubAddress?: string;
+    dropoffLocations?: string[];
     packagesOffered?: string[];
   };
+  durationModels?: {
+    allowDays?: boolean;
+    allowHours?: boolean;
+    minHours?: number;
+    defaultHourlyRateRm?: number;
+    defaultDailyRateRm?: number;
+  };
+  depositConfig?: {
+    required?: boolean;
+    depositAmountRm?: number;
+    lockInFeeRm?: number;
+    depositNotes?: string;
+  };
+  addOnPackages?: Array<{
+    id: string;
+    name: string;
+    priceRm: number;
+    enabled: boolean;
+    category?: 'helmet' | 'mount' | 'insurance' | 'gear' | 'other';
+  }>;
+  fleetUnits?: Array<{
+    id: string;
+    model: string;
+    plateOrCode?: string;
+    status: 'available' | 'rented' | 'maintenance';
+    dailyRateRm: number;
+    hourlyRateRm?: number;
+  }>;
 }
 
 export interface AgritourismFarmSpecifics {
@@ -783,13 +822,15 @@ export interface BeaconSession {
   messages?: BeaconChatMessage[];
 }
 
-export type MotorbikeFleetStatus = 'high' | 'limited' | 'sold_out' | 'not_applicable';
+export type MotorbikeFleetStatus = 'high' | 'medium' | 'limited' | 'low' | 'sold_out' | 'not_applicable';
 
 export interface MotorbikePackage {
   id: string;
   name: string;
   cc: string;
   dailyRateRm: number;
+  hourlyRateRm?: number;
+  depositRm?: number;
   imageUrl: string;
   helmetsIncluded: number;
   packageDetails?: string;
@@ -802,7 +843,7 @@ export interface MotorbikeRentalPartner {
   township: Township;
   imageUrl: string;
   operatingStatus: 'open' | 'closed';
-  fleetAvailability: 'high' | 'limited' | 'sold_out';
+  fleetAvailability: 'high' | 'medium' | 'limited' | 'low' | 'sold_out';
   contactPhone: string;
   whatsappNumber: string;
   packages: MotorbikePackage[];
@@ -811,24 +852,51 @@ export interface MotorbikeRentalPartner {
   ownerEmail?: string;
 }
 
+export type MotorbikeBookingStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'active_rental'
+  | 'returned'
+  | 'maintenance_required'
+  | 'completed'
+  | 'cancelled';
+
 export interface MotorbikeBookingRecord {
   id: string;
+  bookingCode?: string;
   partnerId: string;
   partnerName: string;
   packageId: string;
   packageName: string;
+  unitPlateOrCode?: string;
   renterName: string;
   renterEmail: string;
   renterPhone: string;
   pickupTownship: Township;
+  pickupLocation?: string;
+  dropoffLocation?: string;
   pickupTime: string;
+  dropoffTime?: string;
   startDate: string;
   endDate: string;
   days: number;
+  hours?: number;
+  rentalDurationType?: 'days' | 'hours';
+  fulfillmentMethod?: 'self_collect' | 'delivered';
+  deliveryAddressOrHotel?: string;
   helmetsAddon: number;
   includePhoneMount: boolean;
+  insuranceTier?: string;
+  gearAddons?: string[];
+  depositRm?: number;
+  lockInFeeRm?: number;
+  balanceToCollectRm?: number;
+  depositStatus?: 'paid' | 'pending' | 'refunded';
+  isUnlocked?: boolean;
+  qrVoucherCode?: string;
   totalRm: number;
-  status: 'pending' | 'confirmed' | 'completed';
+  status: MotorbikeBookingStatus;
+  notes?: string;
   createdAt: string;
 }
 

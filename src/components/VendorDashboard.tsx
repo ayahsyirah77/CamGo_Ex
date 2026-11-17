@@ -62,6 +62,7 @@ import {
   DollarSign,
   AlertTriangle,
   BedDouble,
+  Truck,
 } from 'lucide-react';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import QRCode from 'qrcode';
@@ -91,6 +92,7 @@ import {
   SubscriptionTier,
   VendorVerificationStatus,
   MotorbikeBookingRecord,
+  MotorbikeBookingStatus,
   MotorbikeRentalPartner,
   MotorbikeFleetStatus,
   MotorbikePackage,
@@ -225,6 +227,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
        activeVendor.subCategory.includes('hotel') ||
        activeVendor.subCategory.includes('chalet') ||
        activeVendor.subCategory.startsWith('realestate_')));
+
+  // Check if active vendor is in Motorbike, Scooter & Micro-Mobility Rental sector
+  const isMotorbikeVendor =
+    !isAccommodationVendor &&
+    (activeVendor?.subCategory === 'rental_motorcycle_scooter' ||
+      activeVendor?.subCategory === 'car_bike_rentals' ||
+      (activeSector.id === 'vehicle_equipment_rental' &&
+        typeof activeVendor?.businessName === 'string' &&
+        (activeVendor.businessName.toLowerCase().includes('motor') ||
+          activeVendor.businessName.toLowerCase().includes('scooter') ||
+          activeVendor.businessName.toLowerCase().includes('skuter') ||
+          activeVendor.businessName.toLowerCase().includes('bike'))));
 
   // Accommodation Anti-Bypass & Pay-To-Reveal Booking Engine State
   const [accommodationBookings, setAccommodationBookings] = useState<AccommodationBooking[]>([]);
@@ -384,6 +398,154 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [motorbikeBookings, setMotorbikeBookings] = useState<MotorbikeBookingRecord[]>([]);
   const [motorbikePartners, setMotorbikePartners] = useState<MotorbikeRentalPartner[]>([]);
   const [motorbikeFleetStatus, setMotorbikeFleetStatus] = useState<MotorbikeFleetStatus>('high');
+  const [motorbikeFilterStatus, setMotorbikeFilterStatus] = useState<
+    'all' | 'pending' | 'confirmed' | 'active_rental' | 'returned' | 'maintenance_required'
+  >('all');
+  const [selectedBikeBookingForVoucher, setSelectedBikeBookingForVoucher] = useState<MotorbikeBookingRecord | null>(null);
+  const [bikeVoucherQrDataUrl, setBikeVoucherQrDataUrl] = useState<string | null>(null);
+  const [showManualBikeBookingModal, setShowManualBikeBookingModal] = useState(false);
+  const [showMinimalBikeOperatorView, setShowMinimalBikeOperatorView] = useState(false);
+  const [copiedBikeSlug, setCopiedBikeSlug] = useState(false);
+  const [bikeBookingMode, setBikeBookingMode] = useState<'instant' | 'request'>('instant');
+
+  // Manual Motorbike Booking Form State
+  const [manualBikeRenterName, setManualBikeRenterName] = useState('');
+  const [manualBikeRenterPhone, setManualBikeRenterPhone] = useState('+601');
+  const [manualBikePackageName, setManualBikePackageName] = useState('Yamaha NMAX 155cc / Vario 160');
+  const [manualBikeUnitPlate, setManualBikeUnitPlate] = useState('CAM-01');
+  const [manualBikeStartDate, setManualBikeStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [manualBikeEndDate, setManualBikeEndDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+  const [manualBikePickupTime, setManualBikePickupTime] = useState('09:30');
+  const [manualBikeDurationType, setManualBikeDurationType] = useState<'days' | 'hours'>('days');
+  const [manualBikeHours, setManualBikeHours] = useState('4');
+  const [manualBikeFulfillment, setManualBikeFulfillment] = useState<'self_collect' | 'delivered'>('self_collect');
+  const [manualBikeDeliveryAddress, setManualBikeDeliveryAddress] = useState('');
+  const [manualBikeTotalRm, setManualBikeTotalRm] = useState('80');
+  const [manualBikeDepositRm, setManualBikeDepositRm] = useState('100');
+  const [manualBikeStatus, setManualBikeStatus] = useState<MotorbikeBookingStatus>('confirmed');
+
+  // Generate QR Code for Motorbike Pay-to-Reveal Handover Voucher
+  useEffect(() => {
+    if (selectedBikeBookingForVoucher) {
+      const code = selectedBikeBookingForVoucher.qrVoucherCode || selectedBikeBookingForVoucher.bookingCode || selectedBikeBookingForVoucher.id;
+      QRCode.toDataURL(
+        `https://camgo.my/fleet-voucher/${code}?partner=${encodeURIComponent(
+          selectedBikeBookingForVoucher.partnerName
+        )}&unit=${encodeURIComponent(selectedBikeBookingForVoucher.packageName)}&deposit=RM${selectedBikeBookingForVoucher.depositRm || 100}`,
+        {
+          width: 240,
+          margin: 2,
+          color: { dark: '#0e7490', light: '#ffffff' },
+        }
+      )
+        .then((url) => setBikeVoucherQrDataUrl(url))
+        .catch(() => setBikeVoucherQrDataUrl(null));
+    } else {
+      setBikeVoucherQrDataUrl(null);
+    }
+  }, [selectedBikeBookingForVoucher]);
+
+  useEffect(() => {
+    const syncBikeBookings = () => {
+      setMotorbikeBookings(firebaseService.getMotorbikeBookings());
+    };
+    window.addEventListener('motorbike-bookings-updated', syncBikeBookings);
+    return () => window.removeEventListener('motorbike-bookings-updated', syncBikeBookings);
+  }, []);
+
+  const handleUpdateMotorbikeBookingStatus = async (
+    booking: MotorbikeBookingRecord,
+    newStatus: MotorbikeBookingStatus,
+    extraUpdates?: Partial<MotorbikeBookingRecord>
+  ) => {
+    const updated = await firebaseService.updateMotorbikeBookingStatus(booking.id, newStatus, extraUpdates);
+    setMotorbikeBookings(updated);
+    const labelMap: Record<string, string> = {
+      confirmed: 'Confirmed',
+      active_rental: 'Active Rental',
+      returned: 'Returned',
+      maintenance_required: 'Maintenance Required',
+      pending: 'Pending',
+      completed: 'Completed',
+      cancelled: 'Cancelled',
+    };
+    setSaveNotification(
+      `Rental #${booking.bookingCode || booking.id.slice(-6).toUpperCase()} updated to ${labelMap[newStatus] || newStatus}!`
+    );
+    setTimeout(() => setSaveNotification(null), 3500);
+  };
+
+  const handleCreateManualMotorbikeBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualBikeRenterName.trim() || !activeVendor) return;
+
+    const daysCount =
+      manualBikeDurationType === 'days'
+        ? Math.max(
+            1,
+            Math.round(
+              (new Date(manualBikeEndDate).getTime() - new Date(manualBikeStartDate).getTime()) / (1000 * 3600 * 24)
+            ) || 1
+          )
+        : 1;
+    const totalRm = Number(manualBikeTotalRm) || 80;
+    const depositRm = Number(manualBikeDepositRm) || 100;
+    const lockInFeeRm = 20;
+    const balanceToCollectRm = Math.max(0, totalRm - lockInFeeRm);
+
+    const newBooking: MotorbikeBookingRecord = {
+      id: 'moto-bk-' + Date.now().toString(36),
+      bookingCode: 'MOTO-' + Math.floor(1000 + Math.random() * 9000),
+      partnerId: activeVendor.id,
+      partnerName: activeVendor.businessName,
+      packageId: 'manual-pkg',
+      packageName: manualBikePackageName.trim() || 'Yamaha NMAX 155cc',
+      unitPlateOrCode: manualBikeUnitPlate.trim() || 'CAM-01',
+      renterName: manualBikeRenterName.trim(),
+      renterEmail: currentUser?.email || 'walkin@camgo.my',
+      renterPhone: manualBikeRenterPhone.trim() || '+60123456789',
+      pickupTownship: activeVendor.township,
+      pickupLocation:
+        activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.pickupHubAddress || activeVendor.address,
+      dropoffLocation:
+        manualBikeFulfillment === 'delivered'
+          ? manualBikeDeliveryAddress.trim() || `${activeVendor.township} Hotel / Homestay`
+          : activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.pickupHubAddress || activeVendor.address,
+      pickupTime: manualBikePickupTime || '09:30',
+      dropoffTime: '18:00',
+      startDate: manualBikeStartDate,
+      endDate: manualBikeDurationType === 'hours' ? manualBikeStartDate : manualBikeEndDate,
+      days: daysCount,
+      hours: manualBikeDurationType === 'hours' ? Number(manualBikeHours) || 4 : undefined,
+      rentalDurationType: manualBikeDurationType,
+      fulfillmentMethod: manualBikeFulfillment,
+      deliveryAddressOrHotel:
+        manualBikeFulfillment === 'delivered' ? manualBikeDeliveryAddress.trim() || activeVendor.township : undefined,
+      helmetsAddon: 2,
+      includePhoneMount: true,
+      insuranceTier: 'Standard Rider Coverage',
+      gearAddons: ['2x SIRIM Helmets', 'Handlebar Phone Mount'],
+      depositRm,
+      lockInFeeRm,
+      balanceToCollectRm,
+      depositStatus: 'paid',
+      isUnlocked: true,
+      qrVoucherCode: 'FLTV-' + Math.random().toString(36).substring(2, 8).toUpperCase(),
+      totalRm,
+      status: manualBikeStatus,
+      notes: 'Walk-in / direct reservation recorded in Motorbike & Scooter Vendor Dashboard.',
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = await firebaseService.saveMotorbikeBooking(newBooking);
+    setMotorbikeBookings(updated);
+    setShowManualBikeBookingModal(false);
+    setManualBikeRenterName('');
+    setManualBikeRenterPhone('+601');
+    setManualBikeDeliveryAddress('');
+    setSaveNotification(`Motorbike rental #${newBooking.bookingCode} recorded & live!`);
+    setTimeout(() => setSaveNotification(null), 3500);
+  };
 
   // Enabled Operational Flags & Features State (greyed out by default)
   const [enabledFlags, setEnabledFlags] = useState<{
@@ -426,15 +588,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       currentUser?.role === 'admin' ||
       currentUser?.email === 'ayahsyirah77@gmail.com' ||
       currentUser?.email?.toLowerCase().includes('admin');
+    const isTravelerOnly = currentUser?.role === 'user' && !isAdmin;
 
-    // Filter listings: admin sees all, vendor sees owned, fallback to all for viewing
+    // Strict RBAC: admins see all, vendors see only their own listings, standard travelers get zero access
     const userListings = isAdmin
       ? allListings
+      : isTravelerOnly
+      ? []
       : currentUser
       ? allListings.filter(
           (l) => l.ownerUid === currentUser.uid || l.ownerEmail === currentUser.email
         )
-      : allListings;
+      : [];
 
     setVendorListings(userListings);
     setMotorbikeBookings(firebaseService.getMotorbikeBookings());
@@ -470,7 +635,10 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           diyHarvestStatus: current.category === 'travel_tourism' || current.subCategory === 'agrotourism_farms',
           parkingStatus: true,
           roomAvailabilityStatus: current.category === 'accommodation',
-          motorbikeFleetStatus: current.category === 'transport' || current.subCategory === 'car_bike_rentals',
+          motorbikeFleetStatus:
+            current.category === 'transport' ||
+            current.subCategory === 'rental_motorcycle_scooter' ||
+            current.subCategory === 'car_bike_rentals',
           dietaryTagsEnabled: !!current.dietaryTagsEnabled,
         });
       }
@@ -642,13 +810,17 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       const currentBikePartners = firebaseService.getMotorbikePartners();
       const existingPartner = currentBikePartners.find(p => p.id === activeVendor.id);
       const vName = (activeVendor.businessName || '').toLowerCase();
-      const isMotorbikeVendor =
+      const isBikeSubCategory =
+        activeVendor.subCategory === 'rental_motorcycle_scooter' ||
+        activeVendor.subCategory === 'car_bike_rentals';
+      const isMotorbikeVendorCheck =
         !isMockMotorbikePartner(activeVendor) &&
         activeVendor.category !== 'accommodation' &&
         !vName.includes('apartment') &&
         !vName.includes('park view') &&
         !vName.includes('cedar') &&
-        (activeVendor.category === 'transport' || activeVendor.subCategory === 'car_bike_rentals' ||
+        (isBikeSubCategory ||
+          activeVendor.category === 'transport' ||
           vName.includes('motorbike') ||
           vName.includes('motorcycle') ||
           vName.includes('scooter') ||
@@ -656,19 +828,23 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           vName.includes('sewa skuter')
         );
 
-      if (existingPartner && !isMotorbikeVendor) {
+      if (existingPartner && !isMotorbikeVendorCheck) {
         firebaseService.deleteMotorbikePartner(activeVendor.id);
         if (typeof setMotorbikePartners === 'function') {
           setMotorbikePartners(firebaseService.getMotorbikePartners());
         }
-      } else if (isMotorbikeVendor) {
+      } else if (isMotorbikeVendorCheck) {
+        const syncedAvailability =
+          activeVendor.sectorSpecifics?.vehicleRental?.realTimeAvailability ||
+          activeVendor.motorbikeFleetStatus ||
+          motorbikeFleetStatus;
         const partnerToSync: MotorbikeRentalPartner = {
           id: activeVendor.id,
           businessName: activeVendor.businessName,
           township: activeVendor.township,
           imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
           operatingStatus: activeVendor.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
-          fleetAvailability: (motorbikeFleetStatus === 'not_applicable' ? 'high' : motorbikeFleetStatus) as any,
+          fleetAvailability: (syncedAvailability === 'not_applicable' ? 'high' : syncedAvailability) as any,
           contactPhone: activeVendor.contactPhone || '+60123456789',
           whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone || '+60123456789',
           packages: activeVendor.motorbikePackages || existingPartner?.packages || [],
@@ -754,10 +930,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
       await firebaseService.saveVendorListing(newListing);
 
-      // Sync to Motorbike Rental Marketplace if explicitly a bike/scooter operator
+      // Sync to Motorbike Rental Marketplace if Motorbike/Scooter subcategory or bike/scooter operator
       const newNameLower = (newListing.businessName || '').toLowerCase();
       const isExplicitBikeVendor =
         !isMockMotorbikePartner(newListing) && (
+          newListing.subCategory === 'rental_motorcycle_scooter' ||
+          newListing.subCategory === 'car_bike_rentals' ||
           newNameLower.includes('bike') ||
           newNameLower.includes('motorcycle') ||
           newNameLower.includes('scooter') ||
@@ -919,6 +1097,189 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     );
   });
 
+  // Reusable Add Listing Modal Element (accessible both in empty vendor onboarding Screen 2 and full dashboard)
+  const addListingModalElement = (
+    <AnimatePresence>
+      {showAddListingModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="w-full max-w-lg bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Plus className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-bold text-base text-white">Add New Business / Attraction</h3>
+              </div>
+              <button
+                onClick={() => setShowAddListingModal(false)}
+                className="p-1 rounded-lg text-stone-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              {createListingError && (
+                <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{createListingError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-stone-300 mb-1 font-semibold">Business / Attraction Name *</label>
+                <input
+                  type="text"
+                  value={newBizName}
+                  onChange={(e) => {
+                    setNewBizName(e.target.value);
+                    if (createListingError) setCreateListingError(null);
+                  }}
+                  placeholder="e.g. Tanah Rata Scooter Rentals"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-stone-300 mb-1 font-semibold">1. Business Sector *</label>
+                  <select
+                    value={selectedNewBizSectorId}
+                    onChange={(e) => {
+                      const sectorId = e.target.value;
+                      setSelectedNewBizSectorId(sectorId);
+                      const sector = BUSINESS_TAXONOMY.find((s) => s.id === sectorId) || BUSINESS_TAXONOMY[0];
+                      const firstSubCat = sector.categories[0].id;
+                      setNewBizSubCategory(firstSubCat);
+                      let mainCat: MainCategory = 'services_utilities';
+                      if (sector.id === 'food_beverage') mainCat = 'food';
+                      else if (sector.id === 'retail_products') mainCat = 'shopping';
+                      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
+                      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
+                      else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
+                      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
+                      setNewBizCategory(mainCat);
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-emerald-400 font-bold text-xs focus:outline-none focus:border-emerald-500"
+                  >
+                    {BUSINESS_TAXONOMY.map((sector) => (
+                      <option key={sector.id} value={sector.id}>
+                        {sector.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-stone-300 mb-1 font-semibold">Township *</label>
+                  <select
+                    value={newBizTownship}
+                    onChange={(e) => setNewBizTownship(e.target.value as Township)}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Brinchang">Brinchang</option>
+                    <option value="Kea Farm">Kea Farm</option>
+                    <option value="Tanah Rata">Tanah Rata</option>
+                    <option value="Ringlet">Ringlet</option>
+                    <option value="Kampung Raja">Kampung Raja</option>
+                    <option value="Tringkap">Tringkap</option>
+                    <option value="Kuala Terla">Kuala Terla</option>
+                    <option value="Bertam Valley">Bertam Valley</option>
+                    <option value="Blue Valley">Blue Valley</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-stone-300 mb-1 font-semibold">2. Category &amp; Business Nature (Taxonomy Synchronized) *</label>
+                <select
+                  value={newBizSubCategory}
+                  onChange={(e) => {
+                    const selectedSub = e.target.value;
+                    setNewBizSubCategory(selectedSub);
+                    const sector = findBusinessSector(selectedSub);
+                    setSelectedNewBizSectorId(sector.id);
+                    let mainCat: MainCategory = 'services_utilities';
+                    if (sector.id === 'food_beverage') mainCat = 'food';
+                    else if (sector.id === 'retail_products') mainCat = 'shopping';
+                    else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
+                    else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
+                    else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
+                    else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
+                    setNewBizCategory(mainCat);
+                  }}
+                  className="w-full px-3 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-medium"
+                >
+                  {BUSINESS_TAXONOMY.map((sector) => (
+                    <optgroup key={sector.id} label={sector.name}>
+                      {sector.categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <p className="text-[10px] text-stone-400 mt-1">
+                  Synchronized with the main platform directory taxonomy. Catalogs and operational controls dynamically adapt to this selection.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-stone-300 mb-1">Contact Phone / WhatsApp</label>
+                <input
+                  type="text"
+                  value={newBizPhone}
+                  onChange={(e) => setNewBizPhone(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-300 mb-1">Business Logo URL</label>
+                <input
+                  type="text"
+                  value={newBizLogo}
+                  onChange={(e) => setNewBizLogo(e.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-300 mb-1">Street Address</label>
+                <input
+                  type="text"
+                  value={newBizAddress}
+                  onChange={(e) => setNewBizAddress(e.target.value)}
+                  placeholder="e.g. Main Street, Tanah Rata, Cameron Highlands"
+                  className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-stone-800">
+              <button
+                type="button"
+                onClick={() => setShowAddListingModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={handleCreateNewVendorListing}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-lg shadow-emerald-950/80 cursor-pointer flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                <span>{isSaving ? 'Creating Listing...' : 'Create Listing'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+
   // SCREEN 1: Gateway if user is not logged in
   if (!currentUser) {
     return (
@@ -940,82 +1301,58 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             <Store className="w-8 h-8" />
           </div>
 
-          <div className="space-y-1">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400">
-              Highland Business &amp; Vendor Portal
+          <div className="space-y-1.5">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-widest bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              Verified Business Vendor Portal
             </span>
             <h2 className="text-2xl font-black text-white font-heading">
-              Vendor Management &amp; Admin Access
+              Sign In to Your Vendor Dashboard
             </h2>
             <p className="text-xs text-stone-400 max-w-md mx-auto">
-              Control verified local listings, real-time strawberry harvest alerts, live parking status, vouchers, and customer traffic analytics.
+              Manage live fleet &amp; room inventory, Pay-to-Reveal reservations, operating status, promotional vouchers, and CamGo directory listings.
             </p>
           </div>
 
-          {/* Master Admin 1-Click Login Card */}
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-red-950/70 via-stone-950 to-stone-950 border border-red-500/40 text-left space-y-3 shadow-xl">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 font-bold text-xs text-red-300">
-                <ShieldCheck className="w-4 h-4 text-red-400" />
-                <span>Master Admin Full Access</span>
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 uppercase">
-                Super Admin
-              </span>
-            </div>
-            <p className="text-[11px] text-stone-300">
-              Grant immediate full admin access for <strong className="text-white">ayahsyirah77@gmail.com</strong> to view, edit, modify, and manage all listings across all 9 Cameron Highlands townships.
-            </p>
-            <button
-              onClick={handleAdminQuickLogin}
-              disabled={isSaving}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs shadow-lg shadow-red-950/60 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-50"
-            >
-              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-              <span>Login as Master Admin (ayahsyirah77@gmail.com)</span>
-            </button>
-          </div>
-
-          {/* Standard Sign In Options */}
-          <div className="space-y-2 pt-1">
+          <div className="space-y-2.5 pt-2">
             <button
               onClick={async () => {
                 try {
-                  await firebaseService.signInWithGoogle(false);
+                  await firebaseService.signInWithGoogle(false, 'vendor');
                   refreshVendorData();
                 } catch {
                   onOpenAuth();
                 }
               }}
-              className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 text-stone-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg cursor-pointer"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 bg-white rounded-full p-0.5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
               </svg>
-              <span>Continue with Google Account</span>
+              <span>Continue with Google (Business Vendor)</span>
             </button>
 
             <button
               onClick={() => {
                 onClose();
-                onOpenOnboarding();
+                onOpenAuth();
               }}
-              className="w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 text-stone-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 text-emerald-400" />
-              <span>Register New Business / Claim Listing</span>
+              <span>Sign In / Sign Up as Business Vendor</span>
             </button>
           </div>
 
           <div className="pt-2 border-t border-white/5">
             <button
               onClick={onClose}
-              className="text-xs text-stone-400 hover:text-stone-200 cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-stone-300 hover:text-white cursor-pointer"
             >
-              Return to Website
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Return to Main Page</span>
             </button>
           </div>
         </motion.div>
@@ -1023,7 +1360,62 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     );
   }
 
-  // SCREEN 2: If logged in, but no vendor listings found and user is not admin
+  // STRICT RBAC GUARD: Standard Travelers (role === 'user') cannot access Vendor Dashboard
+  if (currentUser && currentUser.role === 'user' && !isUserAdmin) {
+    return (
+      <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-stone-950/90 backdrop-blur-lg overflow-y-auto">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="relative w-full max-w-md bg-stone-900 border border-rose-500/40 rounded-3xl p-6 sm:p-8 text-center text-stone-100 shadow-2xl space-y-5 my-auto"
+        >
+          <button
+            onClick={onClose}
+            className="absolute top-5 right-5 p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          <div className="w-16 h-16 rounded-3xl bg-rose-500/15 border border-rose-500/40 text-rose-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-sky-500/15 text-sky-300 border border-sky-500/30">
+              Current Role: TRAVELER ({currentUser.email})
+            </span>
+            <h2 className="text-xl font-black text-white font-heading">
+              Vendor Dashboard Access Restricted
+            </h2>
+            <p className="text-xs text-stone-400 leading-relaxed">
+              Your account is registered as a standard <strong className="text-sky-300">Traveler</strong>. Only verified <strong className="text-amber-300">Business Vendors</strong> or administrators can access the Vendor Management Dashboard.
+            </p>
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <button
+              onClick={onClose}
+              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-lg"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Return to Main Page</span>
+            </button>
+
+            <button
+              onClick={handleSignOut}
+              className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 text-stone-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span>Sign Out &amp; Switch to Vendor Account</span>
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // SCREEN 2: If logged in as vendor, but no vendor listings found yet
   if (!activeVendor && !isUserAdmin) {
     return (
       <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-stone-950/90 backdrop-blur-lg overflow-y-auto">
@@ -1040,55 +1432,37 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             <X className="w-5 h-5" />
           </button>
 
-          <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
+          <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
             <Store className="w-8 h-8" />
           </div>
 
-          <div className="space-y-1">
-            <h2 className="text-2xl font-black text-white font-heading">No Registered Business Found</h2>
-            <p className="text-xs text-stone-400 max-w-md mx-auto">
-              Welcome to the CamGo Vendor Self-Service Management Portal. You haven't registered or claimed a business listing for{' '}
-              <strong className="text-emerald-400">{currentUser?.email || 'your account'}</strong> yet.
-            </p>
-          </div>
-
-          {/* Quick Admin bypass option if user is ayahsyirah77 */}
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-red-950/60 via-stone-950 to-stone-950 border border-red-500/40 text-left space-y-2">
-            <span className="text-xs font-bold text-red-300 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-red-400" />
-              <span>Are you the administrator?</span>
+          <div className="space-y-1.5">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              Verified Vendor Account
             </span>
-            <p className="text-[11px] text-stone-300">
-              Log in with full master admin privileges to view, edit, and control all Cameron Highlands businesses.
+            <h2 className="text-2xl font-black text-white font-heading">Set Up Your Business Listing</h2>
+            <p className="text-xs text-stone-400 max-w-md mx-auto">
+              Welcome to the CamGo Vendor Management Portal. You haven&apos;t added a business listing for{' '}
+              <strong className="text-emerald-400">{currentUser?.email || 'your vendor account'}</strong> yet.
             </p>
-            <button
-              onClick={handleAdminQuickLogin}
-              className="w-full py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Switch to Admin Account (ayahsyirah77@gmail.com)</span>
-            </button>
           </div>
 
-          <div className="pt-2 space-y-2">
+          <div className="pt-2 space-y-2.5">
             <button
-              onClick={() => {
-                onClose();
-                onOpenOnboarding();
-              }}
+              onClick={() => setShowAddListingModal(true)}
               className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-xs shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Register &amp; Verify My Local Business Now</span>
+              <span>Register &amp; Add My Business Listing Now</span>
             </button>
 
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
                 onClick={onClose}
-                className="w-full py-2.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-2.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Exit to Website</span>
+                <span>Main Page</span>
               </button>
 
               <button
@@ -1101,6 +1475,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             </div>
           </div>
         </motion.div>
+        {addListingModalElement}
       </div>
     );
   }
@@ -1212,8 +1587,16 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
             <div className="flex items-center gap-1.5 shrink-0">
               <button
-                onClick={() => setShowAddListingModal(true)}
+                onClick={onClose}
                 className="px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                title="Return to Main Page"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Main Page</span>
+              </button>
+              <button
+                onClick={() => setShowAddListingModal(true)}
+                className="px-2 py-1 rounded-lg bg-stone-800 text-stone-200 border border-white/10 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                 title="Add Listing"
               >
                 <Plus className="w-3.5 h-3.5 text-emerald-400" />
@@ -1236,7 +1619,15 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               { id: 'promotions', label: 'Deals', icon: Ticket },
               { id: 'analytics', label: 'Analytics', icon: BarChart3 },
               { id: 'billing', label: 'Team', icon: Settings },
-              { id: 'reservations', label: isAccommodationVendor ? 'Homestay (Pay-to-Reveal)' : 'Orders & Reservations', icon: isAccommodationVendor ? BedDouble : Calendar },
+              {
+                id: 'reservations',
+                label: isAccommodationVendor
+                  ? 'Homestay (Pay-to-Reveal)'
+                  : isMotorbikeVendor
+                  ? 'Motorbike / Scooter (Pay to Reveal)'
+                  : 'Orders & Reservations',
+                icon: isAccommodationVendor ? BedDouble : isMotorbikeVendor ? Bike : Calendar,
+              },
               { id: 'overview', label: 'Overview', icon: LayoutDashboard },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -1264,9 +1655,24 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           <div>
             {/* Vendor Profile Switcher Header */}
             <div className="pb-4 border-b border-stone-800 mb-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider border ${
+                    isUserAdmin
+                      ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                      : 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                  }`}
+                >
+                  {isUserAdmin ? 'MASTER ADMIN' : 'VERIFIED VENDOR'}
+                </span>
+                <span className="text-[10px] font-mono text-stone-400 truncate max-w-[135px]">
+                  {currentUser?.email}
+                </span>
+              </div>
+
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30">
-                  <Store className="w-5 h-5" />
+                  {isMotorbikeVendor ? <Bike className="w-5 h-5" /> : <Store className="w-5 h-5" />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="font-heading font-black text-sm text-white block truncate">
@@ -1310,6 +1716,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       setParkingStatus(sel.parkingStatus);
                       if (sel.roomAvailabilityStatus) setRoomAvailabilityStatus(sel.roomAvailabilityStatus);
                       else setRoomAvailabilityStatus('rooms_available');
+                      if (sel.motorbikeFleetStatus) setMotorbikeFleetStatus(sel.motorbikeFleetStatus);
+                      else setMotorbikeFleetStatus('high');
                       setVouchers(firebaseService.getVendorVouchers(sel.id));
                       setEvents(firebaseService.getVendorEvents(sel.id));
                       setStaffList(firebaseService.getVendorStaff(sel.id));
@@ -1336,7 +1744,15 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 { id: 'promotions', label: 'Deals & Marketing', icon: Ticket },
                 { id: 'analytics', label: 'Customer Analytics', icon: BarChart3 },
                 { id: 'billing', label: 'Team & Billing', icon: Settings },
-                { id: 'reservations', label: isAccommodationVendor ? 'Homestay (Pay-to-Reveal)' : 'Orders & Reservations', icon: isAccommodationVendor ? BedDouble : Calendar },
+                {
+                  id: 'reservations',
+                  label: isAccommodationVendor
+                    ? 'Homestay (Pay-to-Reveal)'
+                    : isMotorbikeVendor
+                    ? 'Motorbike / Scooter (Pay to Reveal)'
+                    : 'Orders & Reservations',
+                  icon: isAccommodationVendor ? BedDouble : isMotorbikeVendor ? Bike : Calendar,
+                },
                 { id: 'overview', label: 'Overview & Performance', icon: LayoutDashboard },
               ].map((tab) => {
                 const Icon = tab.icon;
@@ -1351,8 +1767,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         : 'text-stone-400 hover:text-white hover:bg-stone-800/60'
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{tab.label}</span>
                   </button>
                 );
               })}
@@ -1388,15 +1804,15 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               <span>Add Another Listing</span>
             </button>
 
-            {/* Exit to Website and Sign Out Controls */}
+            {/* Return to Main Page and Sign Out Controls */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
                 onClick={onClose}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-500/30"
-                title="Return to main CamGo website while remaining signed in as Vendor"
+                title="Return to main CamGo public website while staying signed in"
               >
                 <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                <span>View Website</span>
+                <span>Main Page</span>
               </button>
 
               <button
@@ -1463,12 +1879,20 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             <div>
               <h1 className="text-xl sm:text-2xl font-black text-white font-heading">
                 {activeTab === 'overview' && 'Listing Performance & Real-Time Actions'}
-                {activeTab === 'directory' && 'Vendor Directory Profile & Operational Flags'}
+                {activeTab === 'directory' &&
+                  (isMotorbikeVendor
+                    ? 'Motorbike & Scooter Fleet Profile & Controls'
+                    : 'Vendor Directory Profile & Operational Flags')}
                 {activeTab === 'motorbikes' && activeSector.moduleTitle}
                 {activeTab === 'promotions' && 'Promotional Deals & Event Publisher'}
                 {activeTab === 'analytics' && 'Customer Intelligence & Visitor Traffic'}
                 {activeTab === 'billing' && 'Team Access & Subscription Management'}
-                {activeTab === 'reservations' && (isAccommodationVendor ? 'Homestay Anti-Bypass Bookings & Lock-In Engine' : 'Incoming Orders & Reservations')}
+                {activeTab === 'reservations' &&
+                  (isAccommodationVendor
+                    ? 'Homestay Anti-Bypass Bookings & Lock-In Engine'
+                    : isMotorbikeVendor
+                    ? 'Motorbike / Scooter (Pay to Reveal) & Fleet Reservations'
+                    : 'Incoming Orders & Reservations')}
               </h1>
               <p className="text-xs text-stone-400 mt-0.5">
                 {activeVendor?.businessName} · {activeVendor?.township}
@@ -1501,11 +1925,11 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
               <button
                 onClick={onClose}
-                className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-white/5"
-                title="Exit to CamGo website"
+                className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-emerald-500/30"
+                title="Return to main CamGo public website"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Exit</span>
+                <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Main Page</span>
               </button>
 
               <button
@@ -1772,7 +2196,13 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer transition-all active:scale-95"
                       >
                         <Zap className="w-3.5 h-3.5 text-amber-300" />
-                        <span>Trigger {activeSector.shortName} Controls &amp; Live Modal</span>
+                        <span>
+                          Trigger{' '}
+                          {activeVendor.subCategory === 'rental_motorcycle_scooter' || isMotorbikeVendor
+                            ? 'Motorbikes & Scooter'
+                            : activeSector.shortName}{' '}
+                          Controls &amp; Live Modal
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -3538,9 +3968,600 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     })()}
                   </div>
                 </div>
+              ) : isMotorbikeVendor ? (
+                /* ========================================================================= */
+                /* CAMGO MOTORBIKE & SCOOTER RENTALS (PAY TO REVEAL) & FLEET ENGINE          */
+                /* ========================================================================= */
+                (() => {
+                  const relevantBikeBookings = motorbikeBookings.filter(
+                    (b) =>
+                      b.partnerId === activeVendor?.id ||
+                      (activeVendor &&
+                        b.partnerName.toLowerCase().includes(activeVendor.businessName.toLowerCase()))
+                  );
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  const todaysPickups = relevantBikeBookings.filter(
+                    (b) =>
+                      (b.startDate === todayStr || b.status === 'active_rental') &&
+                      (b.status === 'confirmed' || b.status === 'active_rental' || b.status === 'pending')
+                  );
+                  const balanceToCollectTotal = relevantBikeBookings
+                    .filter((b) => b.status === 'confirmed' || b.status === 'pending' || b.status === 'active_rental')
+                    .reduce((acc, b) => acc + (b.balanceToCollectRm ?? Math.max(0, b.totalRm - (b.lockInFeeRm ?? 20))), 0);
+                  const depositsHeldTotal = relevantBikeBookings
+                    .filter((b) => b.depositStatus !== 'refunded' && b.status !== 'cancelled')
+                    .reduce((acc, b) => acc + (b.depositRm ?? 100), 0);
+
+                  const vrSpecs = activeVendor?.sectorSpecifics?.vehicleRental;
+                  const fleetUnits = vrSpecs?.fleetUnits || [];
+                  const activeRentalCount = relevantBikeBookings.filter((b) => b.status === 'active_rental').length;
+                  const maintenanceBookingCount = relevantBikeBookings.filter((b) => b.status === 'maintenance_required').length;
+                  const unitReadyCount =
+                    fleetUnits.length > 0
+                      ? fleetUnits.filter((u) => u.status === 'available').length
+                      : Math.max(0, (vrSpecs?.activeFleetCount ?? vrSpecs?.totalFleetSize ?? 8) - activeRentalCount);
+                  const unitMaintCount =
+                    fleetUnits.length > 0
+                      ? fleetUnits.filter((u) => u.status === 'maintenance').length
+                      : vrSpecs?.maintenanceCount ?? maintenanceBookingCount;
+
+                  const liveAvail = vrSpecs?.realTimeAvailability || motorbikeFleetStatus || 'high';
+                  const liveAvailLabel =
+                    liveAvail === 'high'
+                      ? 'Many Units Available'
+                      : liveAvail === 'medium'
+                      ? 'Moderate Availability'
+                      : liveAvail === 'limited' || liveAvail === 'low'
+                      ? 'Less Units Left'
+                      : 'Zero Units Available';
+
+                  const filteredBikeList = relevantBikeBookings.filter((b) => {
+                    if (motorbikeFilterStatus === 'all') return true;
+                    return b.status === motorbikeFilterStatus;
+                  });
+
+                  const slug = activeVendor
+                    ? activeVendor.businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+                    : 'scooter-hub';
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Hero Engine Banner */}
+                      <div className="p-5 rounded-2xl bg-gradient-to-r from-cyan-950/70 via-stone-900 to-emerald-950/70 border border-cyan-500/40 space-y-3.5 shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
+                                <Lock className="w-3 h-3 text-cyan-400" />
+                                Motorbike / Scooter (Pay to Reveal)
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                <DollarSign className="w-3 h-3 text-amber-400" />
+                                RM20 Lock-in + RM{vrSpecs?.depositConfig?.depositAmountRm ?? 100} Security Deposit
+                              </span>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${
+                                  liveAvail === 'high'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                    : liveAvail === 'medium'
+                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                    : liveAvail === 'limited' || liveAvail === 'low'
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                }`}
+                              >
+                                {liveAvailLabel}
+                              </span>
+                            </div>
+                            <h2 className="text-base sm:text-lg font-heading font-black text-white flex items-center gap-2">
+                              <Bike className="w-5 h-5 text-cyan-400" />
+                              <span>{activeVendor?.businessName} — Motorbike &amp; Scooter Rental Engine</span>
+                            </h2>
+                            <p className="text-xs text-stone-300 max-w-2xl mt-0.5">
+                              Manage live motorbike, scooter, and micro-mobility reservations. Shop bay address and direct rider WhatsApp unlock upon RM20 CamGo lock-in confirmation, with handover balance and security deposit tracked at pick-up.
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setShowMinimalBikeOperatorView(true)}
+                              className="px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-200 border border-white/10 hover:border-cyan-500/50 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                              <span>Fleet Mobile View</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowManualBikeBookingModal(true)}
+                              className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-950/60"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>Record Walk-in / Manual Rental</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMotorbikeBookings(firebaseService.getMotorbikeBookings())}
+                              className="p-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white border border-stone-800 cursor-pointer"
+                              title="Refresh fleet bookings"
+                            >
+                              <Clock className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Operator Public Fleet Link Bar */}
+                        <div className="p-2.5 rounded-xl bg-stone-950/90 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs relative z-10">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] font-mono font-bold uppercase text-stone-400 shrink-0">Fleet Portal Link:</span>
+                            <code className="text-[11px] font-mono text-cyan-300 truncate">
+                              https://camgo.my/fleet/{slug}
+                            </code>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard?.writeText(`https://camgo.my/fleet/${slug}`);
+                                setCopiedBikeSlug(true);
+                                setTimeout(() => setCopiedBikeSlug(false), 2500);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedBikeSlug ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedBikeSlug ? 'Copied!' : 'Copy Link'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowMinimalBikeOperatorView(true)}
+                              className="px-2.5 py-1 rounded-lg bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-600/50 text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>Preview Fleet Screen</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 1. FLEET & RENTAL TRANSPARENCY KPI CARDS */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-cyan-500/30 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">Today&apos;s Pick-ups &amp; Active</span>
+                            <Bike className="w-4 h-4 text-cyan-400" />
+                          </div>
+                          <div className="text-2xl font-black text-white font-mono">
+                            {todaysPickups.length} Rentals
+                          </div>
+                          <p className="text-[10px] text-stone-400">
+                            {activeRentalCount} currently out on Cameron roads
+                          </p>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-amber-500/30 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">Balance to Collect at Handover</span>
+                            <DollarSign className="w-4 h-4 text-amber-400" />
+                          </div>
+                          <div className="text-2xl font-black text-amber-400 font-mono">
+                            RM {balanceToCollectTotal}
+                          </div>
+                          <p className="text-[10px] text-stone-400">
+                            Collected directly at key handover (Cash / DuitNow QR)
+                          </p>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-emerald-500/30 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">Security Deposits Tracked</span>
+                            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div className="text-2xl font-black text-emerald-400 font-mono">
+                            RM {depositsHeldTotal}
+                          </div>
+                          <p className="text-[10px] text-stone-400">
+                            Refundable rider security deposits + anti-bypass escrow
+                          </p>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-stone-900 border border-stone-800 space-y-1">
+                          <div className="flex items-center justify-between text-stone-400 text-xs">
+                            <span className="font-bold">Fleet Readiness &amp; Service</span>
+                            <Wrench className="w-4 h-4 text-teal-400" />
+                          </div>
+                          <div className="text-2xl font-black text-teal-300 font-mono">
+                            {unitReadyCount} Ready / {unitMaintCount} Maint
+                          </div>
+                          <p className="text-[10px] text-stone-400">
+                            {vrSpecs?.serviceOptions?.deliveredToRenter !== false
+                              ? 'Self-Collect & Hotel Delivery Active'
+                              : 'Self-Collect at Shop Hub Only'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* 2. FULFILLMENT, DURATION MODELS & CONFIRMATION MODE */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-stone-900 border border-stone-800 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                              <Zap className="w-4 h-4 text-cyan-400" />
+                              <span>Motorbike Dispatch Mode &amp; Rental Workflow</span>
+                            </h3>
+                            <p className="text-[11px] text-stone-400">
+                              Fulfillment ({vrSpecs?.serviceOptions?.selfCollect !== false ? 'Self-Collect' : ''}{vrSpecs?.serviceOptions?.selfCollect !== false && vrSpecs?.serviceOptions?.deliveredToRenter !== false ? ' & ' : ''}{vrSpecs?.serviceOptions?.deliveredToRenter !== false ? 'Delivered to Renter' : ''}) · Duration ({vrSpecs?.durationModels?.allowDays !== false ? 'Days' : ''}{vrSpecs?.durationModels?.allowDays !== false && vrSpecs?.durationModels?.allowHours !== false ? ' & ' : ''}{vrSpecs?.durationModels?.allowHours !== false ? 'Hours' : ''})
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => triggerSectorModalForVendor('vehicle_equipment_rental')}
+                            className="px-3 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/35 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                          >
+                            <Wrench className="w-3.5 h-3.5" />
+                            <span>Trigger Motorbikes &amp; Scooter Controls &amp; Live Modal</span>
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                          <div
+                            onClick={() => setBikeBookingMode('instant')}
+                            className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                              bikeBookingMode === 'instant'
+                                ? 'bg-cyan-950/40 border-cyan-500/60 ring-1 ring-cyan-500/30'
+                                : 'bg-stone-950/60 border-stone-800 hover:border-stone-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+                                <span className="font-bold text-xs text-white">Instant Fleet Dispatch (Confirmed Immediately)</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                                Recommended
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-stone-300 leading-relaxed">
+                              Riders lock in a scooter slot via Pay-to-Reveal, receive digital Handover QR Voucher, and see your pickup hub or delivery ETA immediately.
+                            </p>
+                          </div>
+
+                          <div
+                            onClick={() => setBikeBookingMode('request')}
+                            className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                              bikeBookingMode === 'request'
+                                ? 'bg-amber-950/40 border-amber-500/60 ring-1 ring-amber-500/30'
+                                : 'bg-stone-950/60 border-stone-800 hover:border-stone-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                                <span className="font-bold text-xs text-white">Operator Approval + Licence Check SLA</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                B2 / Full Licence
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-stone-300 leading-relaxed">
+                              Verify rider B2/Full motorcycle licence and delivery hotel address via WhatsApp before marking booking as Confirmed &amp; Active Rental.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. PAY-TO-REVEAL & RIDER ADD-ONS PREVIEW */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-stone-900 border border-stone-800 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                              <Lock className="w-4 h-4 text-cyan-400" />
+                              <span>Motorbike / Scooter Pay-to-Reveal &amp; Rider Bundle Preview</span>
+                            </h3>
+                            <p className="text-[11px] text-stone-400">
+                              Exact shop bay address and fleet dispatch WhatsApp are masked until rider lock-in payment is confirmed.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="p-4 rounded-xl bg-stone-950 border border-amber-500/30 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                                1. Public Fleet Listing (Before Lock-in)
+                              </span>
+                              <span className="text-[10px] text-rose-400 font-mono font-bold flex items-center gap-1">
+                                <Lock className="w-3 h-3" /> Hub Locked
+                              </span>
+                            </div>
+                            <div className="text-xs space-y-1.5 text-stone-300">
+                              <div>
+                                <span className="text-[10px] text-stone-500 block">Public Zone &amp; Fleet Status:</span>
+                                <span className="font-mono font-bold text-white">
+                                  Verified Scooter Fleet · {activeVendor?.township} ({liveAvailLabel})
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-stone-500 block">Pickup Bay &amp; Direct Phone:</span>
+                                <span className="font-mono text-stone-400 italic bg-stone-900 px-2 py-0.5 rounded block">
+                                  🔒 Hidden · Unlocks instantly with QR Handover Pass
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 rounded-xl bg-stone-950 border border-cyan-500/40 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 uppercase">
+                                2. Unlocked Rider Handover Pass
+                              </span>
+                              <span className="text-[10px] text-emerald-400 font-mono font-bold flex items-center gap-1">
+                                <Unlock className="w-3 h-3" /> Revealed
+                              </span>
+                            </div>
+                            <div className="text-xs space-y-1.5 text-stone-300">
+                              <div>
+                                <span className="text-[10px] text-stone-500 block">Rental Operator &amp; Pickup Hub:</span>
+                                <span className="font-bold text-white">{activeVendor?.businessName}</span>
+                                <span className="font-mono text-cyan-300 text-[11px] block">
+                                  {vrSpecs?.serviceOptions?.pickupHubAddress || activeVendor?.address}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-stone-500 block">Included Standard Gear &amp; Packages:</span>
+                                <span className="font-mono text-emerald-300 text-[10px] block">
+                                  🪖 2x SIRIM Helmets · 📱 Phone Mount · 🛡️ Deposit Tracked
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 4. LIVE MOTORBIKE & SCOOTER BOOKINGS & RESERVATIONS FEED */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                              <Clock className="w-4 h-4 text-cyan-400" />
+                              <span>Incoming Motorbike &amp; Scooter Reservations</span>
+                            </h3>
+                            <p className="text-xs text-stone-400">
+                              Track pick-up/drop-off schedules, rider details, deposits, and live unit status for {activeVendor?.businessName}.
+                            </p>
+                          </div>
+
+                          {/* Rental Status Filter Pills */}
+                          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+                            {[
+                              { id: 'all', label: `All (${relevantBikeBookings.length})` },
+                              { id: 'confirmed', label: 'Confirmed' },
+                              { id: 'active_rental', label: 'Active Rental' },
+                              { id: 'returned', label: 'Returned' },
+                              { id: 'maintenance_required', label: 'Maintenance Required' },
+                              { id: 'pending', label: 'Pending' },
+                            ].map((flt) => (
+                              <button
+                                key={flt.id}
+                                type="button"
+                                onClick={() => setMotorbikeFilterStatus(flt.id as any)}
+                                className={`shrink-0 px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                                  motorbikeFilterStatus === flt.id
+                                    ? 'bg-cyan-600 text-white shadow'
+                                    : 'bg-stone-900 text-stone-400 hover:text-white'
+                                }`}
+                              >
+                                {flt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {filteredBikeList.length === 0 ? (
+                          <div className="p-8 rounded-2xl bg-stone-900/50 border border-dashed border-stone-800 text-center text-xs text-stone-400 space-y-2.5">
+                            <p>
+                              No motorbike or scooter reservations found under &ldquo;{motorbikeFilterStatus.replace(/_/g, ' ')}&rdquo;.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setShowManualBikeBookingModal(true)}
+                              className="px-3.5 py-2 rounded-xl bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 font-bold hover:bg-cyan-600/50 cursor-pointer"
+                            >
+                              Record First Motorbike / Scooter Rental
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {filteredBikeList.map((booking) => {
+                              const statusBadgeStyle =
+                                booking.status === 'active_rental'
+                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                  : booking.status === 'confirmed'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : booking.status === 'returned' || booking.status === 'completed'
+                                  ? 'bg-teal-500/20 text-teal-300 border-teal-500/40'
+                                  : booking.status === 'maintenance_required'
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse';
+
+                              const depositRmVal = booking.depositRm ?? vrSpecs?.depositConfig?.depositAmountRm ?? 100;
+                              const lockInRmVal = booking.lockInFeeRm ?? 20;
+                              const collectRmVal = booking.balanceToCollectRm ?? Math.max(0, booking.totalRm - lockInRmVal);
+
+                              return (
+                                <div
+                                  key={booking.id}
+                                  className="p-4 rounded-2xl border bg-stone-900/90 border-stone-800 hover:border-cyan-500/40 transition-all space-y-3"
+                                >
+                                  {/* Top Header: Rider, Bike Model, Booking Code & Status */}
+                                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-white/5 pb-3">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-heading font-black text-white text-sm">
+                                          {booking.renterName}
+                                        </span>
+                                        <span className="text-[11px] font-mono text-stone-400">
+                                          ({booking.renterPhone})
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-stone-800 text-cyan-300 border border-white/10">
+                                          {booking.bookingCode || `#${booking.id.slice(-6).toUpperCase()}`}
+                                        </span>
+                                        {booking.unitPlateOrCode && (
+                                          <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-stone-950 text-stone-300 border border-stone-700">
+                                            Plate: {booking.unitPlateOrCode}
+                                          </span>
+                                        )}
+                                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${statusBadgeStyle}`}>
+                                          {booking.status.replace(/_/g, ' ')}
+                                        </span>
+                                      </div>
+
+                                      <div className="text-xs text-stone-300 flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold text-cyan-300 flex items-center gap-1">
+                                          <Bike className="w-3.5 h-3.5" />
+                                          {booking.packageName}
+                                        </span>
+                                        <span>•</span>
+                                        <span className="text-stone-300">
+                                          📅 {booking.startDate} ({booking.pickupTime}) → {booking.endDate}{' '}
+                                          {booking.dropoffTime ? `(${booking.dropoffTime})` : ''}
+                                        </span>
+                                        <span>•</span>
+                                        <span className="px-2 py-0.5 rounded bg-stone-950 border border-stone-800 text-[10px] font-mono text-emerald-300">
+                                          {booking.rentalDurationType === 'hours'
+                                            ? `${booking.hours || 4} Hours Rental`
+                                            : `${booking.days} Day(s) Rental`}
+                                        </span>
+                                      </div>
+
+                                      <div className="text-[11px] text-stone-400 flex items-center gap-2 flex-wrap">
+                                        <span className="inline-flex items-center gap-1 text-teal-300 font-semibold">
+                                          <Truck className="w-3 h-3" />
+                                          {booking.fulfillmentMethod === 'delivered'
+                                            ? `Delivered to Renter (${booking.deliveryAddressOrHotel || booking.pickupTownship})`
+                                            : `Self-Collect (${booking.pickupLocation || booking.pickupTownship})`}
+                                        </span>
+                                        {booking.dropoffLocation && (
+                                          <>
+                                            <span>•</span>
+                                            <span>Drop-off: {booking.dropoffLocation}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Financials & Security Deposit Tracking */}
+                                    <div className="text-left sm:text-right shrink-0 space-y-0.5">
+                                      <div className="text-xs font-mono font-bold text-white">
+                                        Rental Total: RM {booking.totalRm}
+                                      </div>
+                                      <div className="text-[11px] font-mono text-amber-300 font-bold">
+                                        Balance at Handover: RM {collectRmVal}
+                                      </div>
+                                      <div className="flex items-center sm:justify-end gap-1.5 pt-1">
+                                        <span className="text-[10px] font-mono text-stone-400">
+                                          Deposit RM{depositRmVal}:
+                                        </span>
+                                        <select
+                                          value={booking.depositStatus || 'pending'}
+                                          onChange={(e) =>
+                                            handleUpdateMotorbikeBookingStatus(booking, booking.status, {
+                                              depositStatus: e.target.value as 'paid' | 'pending' | 'refunded',
+                                              isUnlocked: e.target.value === 'paid',
+                                            })
+                                          }
+                                          className="px-2 py-0.5 rounded bg-stone-950 border border-stone-700 text-[10px] font-bold text-emerald-300 cursor-pointer"
+                                        >
+                                          <option value="paid">Deposit Paid</option>
+                                          <option value="pending">Deposit Pending</option>
+                                          <option value="refunded">Deposit Refunded</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Add-ons / Helmets / Gear */}
+                                  <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                                    <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-800 text-stone-300">
+                                      🪖 {booking.helmetsAddon} Helmet(s)
+                                    </span>
+                                    {booking.includePhoneMount && (
+                                      <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-800 text-stone-300">
+                                        📱 Phone Mount Included
+                                      </span>
+                                    )}
+                                    {booking.insuranceTier && (
+                                      <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-800 text-cyan-300">
+                                        🛡️ {booking.insuranceTier}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Rental Status Lifecycle Controls */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {(
+                                        [
+                                          { id: 'confirmed', label: 'Confirmed' },
+                                          { id: 'active_rental', label: 'Active Rental' },
+                                          { id: 'returned', label: 'Returned' },
+                                          { id: 'maintenance_required', label: 'Maintenance Required' },
+                                        ] as Array<{ id: MotorbikeBookingStatus; label: string }>
+                                      ).map((st) => (
+                                        <button
+                                          key={st.id}
+                                          type="button"
+                                          onClick={() => handleUpdateMotorbikeBookingStatus(booking, st.id)}
+                                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                                            booking.status === st.id
+                                              ? st.id === 'maintenance_required'
+                                                ? 'bg-rose-600 text-white border-rose-400 shadow'
+                                                : st.id === 'active_rental'
+                                                ? 'bg-cyan-600 text-white border-cyan-400 shadow'
+                                                : 'bg-emerald-600 text-white border-emerald-400 shadow'
+                                              : 'bg-stone-950 text-stone-400 border-stone-800 hover:text-white'
+                                          }`}
+                                        >
+                                          {st.label}
+                                        </button>
+                                      ))}
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedBikeBookingForVoucher(booking)}
+                                        className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border border-white/5"
+                                      >
+                                        <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                                        <span>Handover QR</span>
+                                      </button>
+
+                                      <a
+                                        href={`https://wa.me/${booking.renterPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                          `Salam ${booking.renterName}! This is ${booking.partnerName} regarding your CamGo Motorbike Rental (${booking.packageName}) for ${booking.startDate} @ ${booking.pickupTime}. Status: ${booking.status.replace(/_/g, ' ').toUpperCase()}.`
+                                        )}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all"
+                                      >
+                                        <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                                        <span>WhatsApp Rider</span>
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()
               ) : (
                 /* ========================================================================= */
-                /* DEFAULT NON-ACCOMMODATION ORDERS & RESERVATIONS (e.g. MOTORBIKE / CAFE)   */
+                /* DEFAULT NON-ACCOMMODATION / NON-MOTORBIKE ORDERS & RESERVATIONS           */
                 /* ========================================================================= */
                 <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
                   <div className="flex items-center justify-between">
@@ -3603,186 +4624,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         </main>
       </motion.div>
 
-      {/* ADMIN ADD LISTING MODAL */}
-      <AnimatePresence>
-        {showAddListingModal && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <div className="w-full max-w-lg bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 space-y-4 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-emerald-400" />
-                  <h3 className="font-bold text-base text-white">Add New Business / Attraction</h3>
-                </div>
-                <button
-                  onClick={() => setShowAddListingModal(false)}
-                  className="p-1 rounded-lg text-stone-400 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3.5 text-xs">
-                {createListingError && (
-                  <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                    <span>{createListingError}</span>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-stone-300 mb-1 font-semibold">Business / Attraction Name *</label>
-                  <input
-                    type="text"
-                    value={newBizName}
-                    onChange={(e) => {
-                      setNewBizName(e.target.value);
-                      if (createListingError) setCreateListingError(null);
-                    }}
-                    placeholder="e.g. Cameron Highlands Strawberry & Bee Farm"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-stone-300 mb-1 font-semibold">1. Business Sector *</label>
-                    <select
-                      value={selectedNewBizSectorId}
-                      onChange={(e) => {
-                        const sectorId = e.target.value;
-                        setSelectedNewBizSectorId(sectorId);
-                        const sector = BUSINESS_TAXONOMY.find((s) => s.id === sectorId) || BUSINESS_TAXONOMY[0];
-                        const firstSubCat = sector.categories[0].id;
-                        setNewBizSubCategory(firstSubCat);
-                        let mainCat: MainCategory = 'services_utilities';
-                        if (sector.id === 'food_beverage') mainCat = 'food';
-                        else if (sector.id === 'retail_products') mainCat = 'shopping';
-                        else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
-                        else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-                        else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
-                        else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
-                        setNewBizCategory(mainCat);
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-emerald-400 font-bold text-xs focus:outline-none focus:border-emerald-500"
-                    >
-                      {BUSINESS_TAXONOMY.map((sector) => (
-                        <option key={sector.id} value={sector.id}>
-                          {sector.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-stone-300 mb-1 font-semibold">Township *</label>
-                    <select
-                      value={newBizTownship}
-                      onChange={(e) => setNewBizTownship(e.target.value as Township)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value="Brinchang">Brinchang</option>
-                      <option value="Kea Farm">Kea Farm</option>
-                      <option value="Tanah Rata">Tanah Rata</option>
-                      <option value="Ringlet">Ringlet</option>
-                      <option value="Kampung Raja">Kampung Raja</option>
-                      <option value="Tringkap">Tringkap</option>
-                      <option value="Kuala Terla">Kuala Terla</option>
-                      <option value="Bertam Valley">Bertam Valley</option>
-                      <option value="Blue Valley">Blue Valley</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-stone-300 mb-1 font-semibold">2. Category &amp; Business Nature (Taxonomy Synchronized) *</label>
-                  <select
-                    value={newBizSubCategory}
-                    onChange={(e) => {
-                      const selectedSub = e.target.value;
-                      setNewBizSubCategory(selectedSub);
-                      const sector = findBusinessSector(selectedSub);
-                      setSelectedNewBizSectorId(sector.id);
-                      let mainCat: MainCategory = 'services_utilities';
-                      if (sector.id === 'food_beverage') mainCat = 'food';
-                      else if (sector.id === 'retail_products') mainCat = 'shopping';
-                      else if (sector.id === 'real_estate_accommodation') mainCat = 'accommodation';
-                      else if (sector.id === 'vehicle_equipment_rental') mainCat = 'transport';
-                      else if (sector.id === 'professional_home_services' || sector.id === 'professional_services') mainCat = 'services_utilities';
-                      else if (sector.id === 'tourism_leisure_events') mainCat = 'travel_tourism';
-                      setNewBizCategory(mainCat);
-                    }}
-                    className="w-full px-3 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-medium"
-                  >
-                    {BUSINESS_TAXONOMY.map((sector) => (
-                      <optgroup key={sector.id} label={sector.name}>
-                        {sector.categories.map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-stone-400 mt-1">
-                    Synchronized with the main platform directory taxonomy. Catalogs and operational controls dynamically adapt to this selection.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-stone-300 mb-1">Contact Phone / WhatsApp</label>
-                  <input
-                    type="text"
-                    value={newBizPhone}
-                    onChange={(e) => setNewBizPhone(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-stone-300 mb-1">Business Logo URL</label>
-                  <input
-                    type="text"
-                    value={newBizLogo}
-                    onChange={(e) => setNewBizLogo(e.target.value)}
-                    placeholder="https://example.com/logo.png"
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-stone-300 mb-1">Street Address</label>
-                  <input
-                    type="text"
-                    value={newBizAddress}
-                    onChange={(e) => setNewBizAddress(e.target.value)}
-                    placeholder="e.g. Main Street, Tanah Rata, Cameron Highlands"
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-3 border-t border-stone-800">
-                <button
-                  type="button"
-                  onClick={() => setShowAddListingModal(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold cursor-pointer transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={handleCreateNewVendorListing}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-lg shadow-emerald-950/80 cursor-pointer flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                >
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  <span>{isSaving ? 'Creating Listing...' : 'Create Listing'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* ADD LISTING MODAL */}
+      {addListingModalElement}
 
       {/* CREATE VOUCHER MODAL */}
       <AnimatePresence>
@@ -4255,19 +5098,23 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* SECTOR EVALUATION MODAL: Rental & Equipment */}
+      {/* SECTOR EVALUATION MODAL: Motorbikes, Scooters & Rental Equipment */}
       <AnimatePresence>
         {sectorModalType === 'vehicle' && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-            <div className="w-full max-w-lg bg-stone-900 border border-cyan-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative">
+            <div className="w-full max-w-lg bg-stone-900 border border-cyan-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-stone-800 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
                     <Bike className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-base text-white">Rental &amp; Equipment Inventory Controls</h3>
-                    <p className="text-[11px] text-stone-400">Inventory Status &amp; Rates for {activeVendor?.businessName}</p>
+                    <h3 className="font-extrabold text-base text-white">
+                      {isMotorbikeVendor ? 'Motorbikes & Scooter Controls & Live Modal' : 'Rental & Equipment Inventory Controls'}
+                    </h3>
+                    <p className="text-[11px] text-stone-400">
+                      Live Fleet Status, Fulfillment &amp; Duration Controls for {activeVendor?.businessName}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setSectorModalType(null)} className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer">
@@ -4299,37 +5146,180 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 </div>
               </div>
 
-              {/* 2. Inventory Availability */}
+              {/* 2. Live Fleet Availability Status (Many / Moderate / Less / Zero) */}
               <div className="space-y-2">
-                <label className="text-xs font-bold text-cyan-300 block">Rental Inventory Availability</label>
-                <div className="grid grid-cols-3 gap-2 text-xs">
+                <label className="text-xs font-bold text-cyan-300 block">Live Availability Status</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   {[
-                    { id: 'high', label: 'High Availability' },
-                    { id: 'limited', label: 'Limited Stock (1-3 Left)' },
-                    { id: 'sold_out', label: 'All Items Rented / Out of Stock' },
-                  ].map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      onClick={async () => {
-                        setMotorbikeFleetStatus(st.id as any);
-                        if (activeVendor) {
-                          const updated = { ...activeVendor, motorbikeFleetStatus: st.id as any, updatedAt: new Date().toISOString() };
-                          setActiveVendor(updated);
-                          await firebaseService.saveVendorListing(updated);
-                        }
-                      }}
-                      className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
-                        motorbikeFleetStatus === st.id
-                          ? 'bg-cyan-500 text-stone-950 font-black border-cyan-400 shadow'
-                          : 'bg-stone-950 border-stone-800 text-stone-400'
-                      }`}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
+                    { id: 'high', label: 'Many Units' },
+                    { id: 'medium', label: 'Moderate' },
+                    { id: 'limited', label: 'Less Units Left' },
+                    { id: 'sold_out', label: 'Zero Units' },
+                  ].map((st) => {
+                    const currentAvail =
+                      activeVendor?.sectorSpecifics?.vehicleRental?.realTimeAvailability || motorbikeFleetStatus;
+                    const isMatched =
+                      currentAvail === st.id || (st.id === 'limited' && currentAvail === 'low');
+                    return (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={async () => {
+                          setMotorbikeFleetStatus(st.id as any);
+                          if (activeVendor) {
+                            const updated = {
+                              ...activeVendor,
+                              motorbikeFleetStatus: st.id as any,
+                              sectorSpecifics: {
+                                ...activeVendor.sectorSpecifics,
+                                vehicleRental: {
+                                  ...activeVendor.sectorSpecifics?.vehicleRental,
+                                  realTimeAvailability: st.id as any,
+                                },
+                              },
+                              updatedAt: new Date().toISOString(),
+                            };
+                            setActiveVendor(updated);
+                            await firebaseService.saveVendorListing(updated);
+                          }
+                        }}
+                        className={`p-2 rounded-xl font-bold text-[11px] text-center border transition-all cursor-pointer ${
+                          isMatched
+                            ? 'bg-cyan-500 text-stone-950 font-black border-cyan-400 shadow'
+                            : 'bg-stone-950 border-stone-800 text-stone-400'
+                        }`}
+                      >
+                        {st.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* 3. Fulfillment Options & Rental Duration Quick Toggles */}
+              {activeVendor && (
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-stone-950 border border-stone-800 space-y-2">
+                    <span className="text-[11px] font-bold text-cyan-300 block">Fulfillment Options</span>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.selfCollect !== false;
+                          setActiveVendor({
+                            ...activeVendor,
+                            sectorSpecifics: {
+                              ...activeVendor.sectorSpecifics,
+                              vehicleRental: {
+                                ...activeVendor.sectorSpecifics?.vehicleRental,
+                                serviceOptions: {
+                                  ...activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions,
+                                  selfCollect: !cur,
+                                },
+                              },
+                            },
+                          });
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border text-left cursor-pointer ${
+                          activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.selfCollect !== false
+                            ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-stone-900 text-stone-500 border-stone-800'
+                        }`}
+                      >
+                        {activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.selfCollect !== false ? '✓ ' : ''}
+                        Self-Collect at Shop
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.deliveredToRenter !== false;
+                          setActiveVendor({
+                            ...activeVendor,
+                            sectorSpecifics: {
+                              ...activeVendor.sectorSpecifics,
+                              vehicleRental: {
+                                ...activeVendor.sectorSpecifics?.vehicleRental,
+                                serviceOptions: {
+                                  ...activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions,
+                                  deliveredToRenter: !cur,
+                                },
+                              },
+                            },
+                          });
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border text-left cursor-pointer ${
+                          activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.deliveredToRenter !== false
+                            ? 'bg-cyan-600/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-stone-900 text-stone-500 border-stone-800'
+                        }`}
+                      >
+                        {activeVendor.sectorSpecifics?.vehicleRental?.serviceOptions?.deliveredToRenter !== false ? '✓ ' : ''}
+                        Delivered to Renter
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-stone-950 border border-stone-800 space-y-2">
+                    <span className="text-[11px] font-bold text-cyan-300 block">Duration Models</span>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = activeVendor.sectorSpecifics?.vehicleRental?.durationModels?.allowDays !== false;
+                          setActiveVendor({
+                            ...activeVendor,
+                            sectorSpecifics: {
+                              ...activeVendor.sectorSpecifics,
+                              vehicleRental: {
+                                ...activeVendor.sectorSpecifics?.vehicleRental,
+                                durationModels: {
+                                  ...activeVendor.sectorSpecifics?.vehicleRental?.durationModels,
+                                  allowDays: !cur,
+                                },
+                              },
+                            },
+                          });
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border text-left cursor-pointer ${
+                          activeVendor.sectorSpecifics?.vehicleRental?.durationModels?.allowDays !== false
+                            ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-stone-900 text-stone-500 border-stone-800'
+                        }`}
+                      >
+                        {activeVendor.sectorSpecifics?.vehicleRental?.durationModels?.allowDays !== false ? '✓ ' : ''}
+                        Rental by Days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = activeVendor.sectorSpecifics?.vehicleRental?.durationModels?.allowHours !== false;
+                          setActiveVendor({
+                            ...activeVendor,
+                            sectorSpecifics: {
+                              ...activeVendor.sectorSpecifics,
+                              vehicleRental: {
+                                ...activeVendor.sectorSpecifics?.vehicleRental,
+                                durationModels: {
+                                  ...activeVendor.sectorSpecifics?.vehicleRental?.durationModels,
+                                  allowHours: !cur,
+                                },
+                              },
+                            },
+                          });
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border text-left cursor-pointer ${
+                          activeVendor.sectorSpecifics?.vehicleRental?.durationModels?.allowHours !== false
+                            ? 'bg-cyan-600/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-stone-900 text-stone-500 border-stone-800'
+                        }`}
+                      >
+                        {activeVendor.sectorSpecifics?.vehicleRental?.durationModels?.allowHours !== false ? '✓ ' : ''}
+                        Rental by Hours
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <button
                 onClick={async () => {
@@ -4338,7 +5328,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 }}
                 className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-xs cursor-pointer shadow-lg transition-colors"
               >
-                Sync &amp; Update Rental Marketplace &amp; Live Map
+                Sync &amp; Update Motorbike Marketplace &amp; Live Map
               </button>
             </div>
           </div>
@@ -4760,6 +5750,404 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MOTORBIKE MODAL 1: PAY-TO-REVEAL HANDOVER QR VOUCHER */}
+      <AnimatePresence>
+        {selectedBikeBookingForVoucher && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-lg bg-stone-900 border border-cyan-500/40 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                    <QrCode className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-base text-white">Motorbike Handover QR Voucher</h3>
+                      <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-black text-cyan-300 uppercase">
+                        {selectedBikeBookingForVoucher.status.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-400">
+                      Booking Code:{' '}
+                      <span className="font-mono text-cyan-400 font-bold">
+                        {selectedBikeBookingForVoucher.bookingCode || selectedBikeBookingForVoucher.id}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedBikeBookingForVoucher(null)}
+                  className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="bg-stone-950 border border-cyan-500/30 rounded-2xl p-5 text-center space-y-3">
+                <p className="text-xs text-stone-400 font-medium">Scan at Key Handover &amp; Helmet Inspection</p>
+                {safeSrc(bikeVoucherQrDataUrl) ? (
+                  <div className="inline-block p-3 bg-white rounded-2xl shadow-xl">
+                    <img src={safeSrc(bikeVoucherQrDataUrl)} alt="Motorbike Handover QR" className="w-44 h-44 object-contain" />
+                  </div>
+                ) : (
+                  <div className="w-44 h-44 mx-auto bg-stone-800 rounded-2xl flex items-center justify-center text-xs text-stone-500">
+                    Generating QR...
+                  </div>
+                )}
+                <div className="font-mono text-xs font-bold text-cyan-400 tracking-wider">
+                  VOUCHER ID: {selectedBikeBookingForVoucher.qrVoucherCode || selectedBikeBookingForVoucher.bookingCode || selectedBikeBookingForVoucher.id}
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[11px] font-semibold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Security Deposit: RM {selectedBikeBookingForVoucher.depositRm ?? 100} ({selectedBikeBookingForVoucher.depositStatus || 'pending'})
+                </div>
+              </div>
+
+              <div className="bg-stone-950/70 border border-stone-800 rounded-2xl p-4 space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold block">Rider</span>
+                    <p className="font-bold text-white truncate">{selectedBikeBookingForVoucher.renterName}</p>
+                    <p className="text-stone-300 text-[11px]">{selectedBikeBookingForVoucher.renterPhone}</p>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold block">Vehicle &amp; Plate</span>
+                    <p className="font-bold text-cyan-300 truncate">{selectedBikeBookingForVoucher.packageName}</p>
+                    <p className="text-stone-300 text-[11px] font-mono">{selectedBikeBookingForVoucher.unitPlateOrCode || 'Fleet Assigned'}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2 rounded-xl bg-stone-900 border border-stone-800">
+                    <span className="text-[10px] text-stone-400 uppercase block font-semibold">Pick-up</span>
+                    <span className="text-xs font-bold text-white">
+                      {selectedBikeBookingForVoucher.startDate} ({selectedBikeBookingForVoucher.pickupTime})
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-stone-900 border border-stone-800">
+                    <span className="text-[10px] text-stone-400 uppercase block font-semibold">Fulfillment</span>
+                    <span className="text-xs font-bold text-teal-300">
+                      {selectedBikeBookingForVoucher.fulfillmentMethod === 'delivered' ? 'Delivered' : 'Self-Collect'}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                    <span className="text-[10px] text-amber-400 uppercase block font-bold">Rental Balance</span>
+                    <span className="text-xs font-black text-amber-300">
+                      RM {selectedBikeBookingForVoucher.balanceToCollectRm ?? Math.max(0, selectedBikeBookingForVoucher.totalRm - 20)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                {selectedBikeBookingForVoucher.status !== 'active_rental' && (
+                  <button
+                    onClick={async () => {
+                      await handleUpdateMotorbikeBookingStatus(selectedBikeBookingForVoucher, 'active_rental');
+                      setSelectedBikeBookingForVoucher(null);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    <Bike className="w-4 h-4" />
+                    <span>Mark Active Rental (Handover Keys)</span>
+                  </button>
+                )}
+                {selectedBikeBookingForVoucher.status === 'active_rental' && (
+                  <button
+                    onClick={async () => {
+                      await handleUpdateMotorbikeBookingStatus(selectedBikeBookingForVoucher, 'returned');
+                      setSelectedBikeBookingForVoucher(null);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Mark Returned</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedBikeBookingForVoucher(null)}
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MOTORBIKE MODAL 2: FLEET OPERATOR MOBILE EXPRESS VIEW */}
+      <AnimatePresence>
+        {showMinimalBikeOperatorView && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <div className="w-full max-w-md bg-stone-950 border border-cyan-500/40 rounded-3xl p-6 text-stone-100 space-y-6 shadow-2xl relative max-h-[92vh] overflow-y-auto no-scrollbar">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <h3 className="font-black text-sm text-white uppercase tracking-wider">CamGo Fleet Express</h3>
+                  </div>
+                  <p className="text-[11px] font-mono text-cyan-400 mt-0.5 truncate">
+                    camgo.my/fleet/{(activeVendor?.businessName || 'scooter-hub').toLowerCase().replace(/\s+/g, '-')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowMinimalBikeOperatorView(false)}
+                  className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-4">
+                <p className="text-xs text-stone-400">Operator Fleet Portal,</p>
+                <h4 className="text-lg font-black text-white">{activeVendor?.businessName}</h4>
+                <p className="text-[11px] text-stone-400 mt-1">
+                  Cameron Highlands · Motorbike &amp; Scooter Handover Express
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-cyan-950/60 to-stone-900 border border-cyan-500/30 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-cyan-400 tracking-wider">Active &amp; Confirmed</span>
+                    <Bike className="w-4 h-4 text-cyan-400" />
+                  </div>
+                  <div className="text-3xl font-black text-white">
+                    {motorbikeBookings.filter((b) => (b.partnerId === activeVendor?.id || b.partnerName === activeVendor?.businessName) && (b.status === 'confirmed' || b.status === 'active_rental')).length}
+                  </div>
+                  <p className="text-[10px] text-stone-400">Units scheduled or out</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/60 to-stone-900 border border-amber-500/30 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider">Cash to Collect</span>
+                    <DollarSign className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="text-3xl font-black text-amber-300">
+                    RM {motorbikeBookings
+                      .filter((b) => (b.partnerId === activeVendor?.id || b.partnerName === activeVendor?.businessName) && (b.status === 'confirmed' || b.status === 'pending'))
+                      .reduce((acc, curr) => acc + (curr.balanceToCollectRm ?? Math.max(0, curr.totalRm - 20)), 0)}
+                  </div>
+                  <p className="text-[10px] text-stone-400">Direct at key handover</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowMinimalBikeOperatorView(false)}
+                className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
+              >
+                Return to Motorbike &amp; Scooter Dashboard
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MOTORBIKE MODAL 3: RECORD MANUAL / WALK-IN RENTAL */}
+      <AnimatePresence>
+        {showManualBikeBookingModal && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-md bg-stone-900 border border-cyan-500/40 rounded-3xl p-6 text-stone-100 space-y-4 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                    <Bike className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white">Record Manual / Walk-in Rental</h3>
+                    <p className="text-[11px] text-stone-400">Syncs unit availability &amp; deposit tracking live</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowManualBikeBookingModal(false)}
+                  className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateManualMotorbikeBooking} className="space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Rider Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={manualBikeRenterName}
+                      onChange={(e) => setManualBikeRenterName(e.target.value)}
+                      placeholder="e.g. Aiman Farhan"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-500 text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Rider WhatsApp Phone</label>
+                    <input
+                      type="text"
+                      value={manualBikeRenterPhone}
+                      onChange={(e) => setManualBikeRenterPhone(e.target.value)}
+                      placeholder="+6012-3456789"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white placeholder-stone-500 text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Motorbike / Scooter Model</label>
+                    <input
+                      type="text"
+                      value={manualBikePackageName}
+                      onChange={(e) => setManualBikePackageName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Plate / Fleet Code</label>
+                    <input
+                      type="text"
+                      value={manualBikeUnitPlate}
+                      onChange={(e) => setManualBikeUnitPlate(e.target.value)}
+                      placeholder="CAM-01"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Duration Model</label>
+                    <select
+                      value={manualBikeDurationType}
+                      onChange={(e) => setManualBikeDurationType(e.target.value as 'days' | 'hours')}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs"
+                    >
+                      <option value="days">By Days</option>
+                      <option value="hours">By Hours</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Fulfillment Method</label>
+                    <select
+                      value={manualBikeFulfillment}
+                      onChange={(e) => setManualBikeFulfillment(e.target.value as 'self_collect' | 'delivered')}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs"
+                    >
+                      <option value="self_collect">Self-Collect at Hub</option>
+                      <option value="delivered">Delivered to Renter</option>
+                    </select>
+                  </div>
+                </div>
+
+                {manualBikeFulfillment === 'delivered' && (
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Delivery Address / Hotel</label>
+                    <input
+                      type="text"
+                      value={manualBikeDeliveryAddress}
+                      onChange={(e) => setManualBikeDeliveryAddress(e.target.value)}
+                      placeholder="e.g. Copthorne Hotel Lobby, Brinchang"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Pick-up Date</label>
+                    <input
+                      type="date"
+                      value={manualBikeStartDate}
+                      onChange={(e) => setManualBikeStartDate(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs"
+                    />
+                  </div>
+                  {manualBikeDurationType === 'days' ? (
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">Drop-off Date</label>
+                      <input
+                        type="date"
+                        value={manualBikeEndDate}
+                        onChange={(e) => setManualBikeEndDate(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-[11px] font-bold text-stone-300 block mb-1">Hours</label>
+                      <input
+                        type="number"
+                        value={manualBikeHours}
+                        onChange={(e) => setManualBikeHours(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono text-xs"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Pick-up Time</label>
+                    <input
+                      type="time"
+                      value={manualBikePickupTime}
+                      onChange={(e) => setManualBikePickupTime(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Total (RM)</label>
+                    <input
+                      type="number"
+                      value={manualBikeTotalRm}
+                      onChange={(e) => setManualBikeTotalRm(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Deposit (RM)</label>
+                    <input
+                      type="number"
+                      value={manualBikeDepositRm}
+                      onChange={(e) => setManualBikeDepositRm(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-300 block mb-1">Initial Status</label>
+                    <select
+                      value={manualBikeStatus}
+                      onChange={(e) => setManualBikeStatus(e.target.value as MotorbikeBookingStatus)}
+                      className="w-full px-2 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs"
+                    >
+                      <option value="confirmed">Confirmed</option>
+                      <option value="active_rental">Active Rental</option>
+                      <option value="pending">Pending</option>
+                      <option value="maintenance_required">Maintenance Req.</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs cursor-pointer shadow-lg transition-colors"
+                  >
+                    Save &amp; Record Motorbike Rental
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualBikeBookingModal(false)}
+                    className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

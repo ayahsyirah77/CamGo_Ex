@@ -167,19 +167,33 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isUserAdmin =
     currentUser?.role === 'admin' ||
     currentUser?.email === 'ayahsyirah77@gmail.com' ||
+    currentUser?.email === 'asuypower7984@gmail.com' ||
     currentUser?.email?.toLowerCase().includes('admin');
 
+  // Strict RBAC: Only verified vendor role or admin can access Vendor Dashboard. Standard travelers ('user') are blocked.
   const isRegisteredVendor =
-    isUserAdmin ||
-    (currentUser as any)?.role === 'vendor' ||
-    Boolean(
-      currentUser &&
-      firebaseService.getVendorListings().some(
-        (l) =>
-          (l.ownerEmail && currentUser.email && l.ownerEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
-          (l.ownerUid && currentUser.uid && l.ownerUid === currentUser.uid)
-      )
-    );
+    isUserAdmin || currentUser?.role === 'vendor';
+
+  const roleBadgeConfig = isUserAdmin
+    ? {
+        label: 'MASTER ADMIN',
+        shortLabel: 'ADMIN',
+        classes: 'bg-red-500/20 text-red-300 border-red-500/40',
+        permissionsDesc: 'System & Marketplace Super Admin',
+      }
+    : currentUser?.role === 'vendor'
+    ? {
+        label: 'VERIFIED VENDOR',
+        shortLabel: 'VENDOR',
+        classes: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        permissionsDesc: 'Business Operator & Fleet Control',
+      }
+    : {
+        label: 'TRAVELER',
+        shortLabel: 'TRAVELER',
+        classes: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        permissionsDesc: 'Standard Explorer & Booking Profile',
+      };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -1133,6 +1147,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               </AnimatePresence>
             </div>
 
+            {/* Dedicated Main Page -> Vendor Dashboard Quick Jump Button (Strictly for Logged-In Vendors & Admins) */}
+            {currentUser && isRegisteredVendor && onOpenVendorPortal && (
+              <button
+                type="button"
+                onClick={onOpenVendorPortal}
+                className="flex items-center gap-1.5 h-9 px-2.5 sm:px-3.5 rounded-full bg-gradient-to-r from-amber-500/25 via-amber-600/20 to-orange-500/20 hover:from-amber-500/40 hover:to-orange-500/35 border border-amber-400/60 text-amber-200 hover:text-white text-[11px] sm:text-xs font-extrabold shadow-lg shadow-amber-950/40 transition-all active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+                title={language === 'bm' ? 'Buka Papan Pemuka Peniaga' : 'Jump to Vendor Dashboard'}
+              >
+                <Store className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span className="hidden sm:inline">{language === 'bm' ? 'Papan Pemuka Vendor' : 'Vendor Dashboard'}</span>
+                <span className="sm:hidden">Vendor</span>
+              </button>
+            )}
+
             {/* Desktop / PC View: User Profile / Sign In Button */}
             <div className="hidden sm:flex sm:items-center shrink-0 relative" ref={userMenuRef}>
               {currentUser ? (
@@ -1140,7 +1168,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                     className="flex items-center gap-2 h-9 px-3 rounded-full bg-stone-900 border border-white/10 text-stone-200 hover:border-emerald-500/50 transition-colors cursor-pointer shadow-sm shrink-0"
-                    title={currentUser.displayName}
+                    title={`${currentUser.displayName} (${roleBadgeConfig.label})`}
                   >
                     <div className="w-5 h-5 rounded-full overflow-hidden border border-emerald-400 shrink-0 bg-stone-950 flex items-center justify-center">
                       <img
@@ -1152,15 +1180,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className="max-w-[80px] sm:max-w-[100px] truncate font-bold text-xs leading-none text-stone-100">
                       {currentUser.displayName}
                     </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black border uppercase shrink-0 ${roleBadgeConfig.classes}`}>
+                      {roleBadgeConfig.shortLabel}
+                    </span>
                     <ChevronDown className={`w-3 h-3 text-stone-400 transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`} />
                   </button>
 
                   {/* Logged in User Menu Dropdown */}
                   {userDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-stone-900/98 border border-emerald-500/30 shadow-2xl p-2 z-50 text-xs backdrop-blur-xl space-y-1">
-                      <div className="p-2 border-b border-white/10 mb-1">
-                        <p className="font-bold text-white truncate">{currentUser.displayName}</p>
+                    <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-stone-900/98 border border-emerald-500/30 shadow-2xl p-2.5 z-50 text-xs backdrop-blur-xl space-y-1">
+                      <div className="p-2 border-b border-white/10 mb-1 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-bold text-white truncate">{currentUser.displayName}</p>
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black border uppercase shrink-0 ${roleBadgeConfig.classes}`}>
+                            {roleBadgeConfig.label}
+                          </span>
+                        </div>
                         <p className="text-[10px] text-stone-400 truncate">{currentUser.email}</p>
+                        <p className="text-[9px] text-stone-500 font-mono">{roleBadgeConfig.permissionsDesc}</p>
                       </div>
 
                       {(!isRegisteredVendor || isUserAdmin) && (
@@ -1176,16 +1213,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                         </button>
                       )}
 
-                      {(isRegisteredVendor || isUserAdmin) && (
+                      {isRegisteredVendor && (
                         <button
                           onClick={() => {
                             setUserDropdownOpen(false);
                             if (onOpenVendorPortal) onOpenVendorPortal();
                           }}
-                          className="w-full p-2 rounded-xl text-left hover:bg-stone-800 text-stone-200 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+                          className="w-full p-2 rounded-xl text-left bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 hover:text-white border border-amber-500/30 flex items-center justify-between gap-2 transition-colors cursor-pointer font-bold"
                         >
-                          <Briefcase className="w-4 h-4 text-emerald-400" />
-                          <span>Business Vendor Portal</span>
+                          <div className="flex items-center gap-2">
+                            <Store className="w-4 h-4 text-amber-400" />
+                            <span>Vendor Dashboard</span>
+                          </div>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono uppercase">Vendor</span>
                         </button>
                       )}
 
@@ -1539,15 +1579,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div
                   onClick={() => {
                     setIsMobileMenuOpen(false);
-                    if (currentUser) {
-                      onOpenUserDashboard();
-                    } else {
+                    if (!currentUser) {
                       onOpenAuth();
+                    } else if (isRegisteredVendor && !isUserAdmin && onOpenVendorPortal) {
+                      onOpenVendorPortal();
+                    } else {
+                      onOpenUserDashboard();
                     }
                   }}
                   className="p-4 rounded-2xl bg-stone-900/90 border border-emerald-500/35 hover:border-emerald-400 flex flex-col items-center justify-center text-center shadow-xl relative overflow-hidden select-none cursor-pointer group transition-all"
                   aria-label="User Profile Info"
-                  title={currentUser ? 'Open Traveler & Local Dashboard' : 'Sign In / Register'}
+                  title={currentUser ? 'Open Account Dashboard' : 'Sign In / Register'}
                 >
                   {/* Small Circle Avatar Container with Ring */}
                   <div className="relative shrink-0">
@@ -1562,12 +1604,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
 
                   {/* Username & Info Placed Below Icon */}
-                  <div className="mt-2.5 space-y-0.5 w-full">
-                    <div className="flex items-center justify-center gap-1.5">
+                  <div className="mt-2.5 space-y-1 w-full">
+                    <div className="flex items-center justify-center gap-1.5 flex-wrap">
                       <p className="font-bold text-sm text-stone-100 group-hover:text-emerald-300 transition-colors truncate">
                         {currentUser?.displayName || (language === 'bm' ? 'Pelawat (Log Masuk)' : 'Guest (Tap to Sign In)')}
                       </p>
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      {currentUser && (
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black border uppercase shrink-0 ${roleBadgeConfig.classes}`}>
+                          {roleBadgeConfig.label}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-stone-400 truncate">
                       {currentUser?.email || (language === 'bm' ? 'Klik untuk akses akaun' : 'Tap for account settings')}

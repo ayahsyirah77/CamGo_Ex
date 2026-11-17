@@ -693,26 +693,26 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-[9px] sm:text-xs font-bold uppercase tracking-wider">
                   MASTER ADMIN
                 </span>
-              ) : currentUser?.role === 'vendor' || firebaseService.getVendorListings().some((l) => l.ownerEmail?.toLowerCase() === currentUser?.email?.toLowerCase() || l.ownerUid === currentUser?.uid) ? (
+              ) : currentUser?.role === 'vendor' ? (
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] sm:text-xs font-bold uppercase tracking-wider">
-                  Vendor
+                  VERIFIED VENDOR
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] sm:text-xs font-bold uppercase tracking-wider">
-                  Traveller
+                  TRAVELER
                 </span>
               )}
               <span className="px-2 py-0.5 rounded-full bg-stone-800 text-stone-300 border border-white/10 text-[9px] sm:text-xs font-semibold">
-                Highland Explorer Level 2
+                {currentUser?.role === 'vendor' ? 'Business Operator Access' : currentUser?.role === 'admin' ? 'System Privileges' : 'Explorer Permissions'}
               </span>
             </div>
             <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 font-mono truncate">
               {currentUser?.email || 'guest@camgo.my'} • {
                 currentUser?.email === 'ayahsyirah77@gmail.com' || currentUser?.email === 'asuypower7984@gmail.com' || currentUser?.role === 'admin'
-                  ? 'Master Admin Profile'
-                  : currentUser?.role === 'vendor' || firebaseService.getVendorListings().some((l) => l.ownerEmail?.toLowerCase() === currentUser?.email?.toLowerCase() || l.ownerUid === currentUser?.uid)
-                  ? 'Registered Business Vendor Portal'
-                  : 'Highland Traveller Profile'
+                  ? 'Master Admin Credentials'
+                  : currentUser?.role === 'vendor'
+                  ? 'Verified Business Vendor Credentials'
+                  : 'Standard Traveler Account (Public Access Only)'
               }
             </p>
             <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[10px] sm:text-xs text-stone-300">
