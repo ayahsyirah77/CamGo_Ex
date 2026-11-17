@@ -637,12 +637,19 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     setMotorbikePartners(firebaseService.getMotorbikePartners());
 
     if (userListings.length > 0) {
-      const current =
-        activeVendor && userListings.some((l) => l.id === activeVendor.id)
-          ? userListings.find((l) => l.id === activeVendor.id)!
-          : userListings[0];
+      const current = isAdmin
+        ? (activeVendor && userListings.some((l) => l.id === activeVendor.id) ? userListings.find((l) => l.id === activeVendor.id)! : null)
+        : (activeVendor && userListings.some((l) => l.id === activeVendor.id) ? userListings.find((l) => l.id === activeVendor.id)! : userListings[0]);
 
-      applySelectedVendorState(current);
+      if (current) {
+        applySelectedVendorState(current);
+      } else {
+        setActiveVendor(null);
+        setVouchers([]);
+        setEvents([]);
+        setStaffList([]);
+        setAccommodationBookings([]);
+      }
     } else {
       setActiveVendor(null);
       setVouchers([]);
