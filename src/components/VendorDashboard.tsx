@@ -101,6 +101,7 @@ import {
 } from '../types';
 import { firebaseService, UserProfile, isMockMotorbikePartner } from '../services/firebase';
 import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
+import { UnitRevenueChart } from './UnitRevenueChart';
 import {
   resolveVendorSectorKey,
   mapSubCategoryToMainCategory,
@@ -2606,6 +2607,26 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   isSaving={isSaving}
                 />
 
+                {activeSectorKey === 'accommodation' && (
+                  <UnitRevenueChart
+                    vendor={activeVendor}
+                    accommodationBookings={accommodationBookings}
+                    motorbikeBookings={motorbikeBookings}
+                    onSelectUnit={(unitId) =>
+                      setActiveVendor({
+                        ...activeVendor,
+                        sectorSpecifics: {
+                          ...activeVendor.sectorSpecifics,
+                          accommodation: {
+                            ...activeVendor.sectorSpecifics?.accommodation,
+                            selectedUnitId: unitId,
+                          },
+                        },
+                      })
+                    }
+                  />
+                )}
+
                 {/* Save Button Action (shown for non-accommodation sectors; accommodation renders its own step-9 button) */}
                 {activeSectorKey !== 'accommodation' && (
                   <div className="pt-3 border-t border-stone-800 flex items-center justify-between">
@@ -3123,6 +3144,26 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           {/* TAB 4: CUSTOMER ANALYTICS & INSIGHTS */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
+              {activeVendor && (
+                <UnitRevenueChart
+                  vendor={activeVendor}
+                  accommodationBookings={accommodationBookings}
+                  motorbikeBookings={motorbikeBookings}
+                  onSelectUnit={(unitId) =>
+                    setActiveVendor({
+                      ...activeVendor,
+                      sectorSpecifics: {
+                        ...activeVendor.sectorSpecifics,
+                        accommodation: {
+                          ...activeVendor.sectorSpecifics?.accommodation,
+                          selectedUnitId: unitId,
+                        },
+                      },
+                    })
+                  }
+                />
+              )}
+
               <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-emerald-400" />

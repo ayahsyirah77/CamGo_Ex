@@ -728,6 +728,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                           { key: 'souvenirs_handicrafts', label: 'Souvenirs & Handicrafts' },
                           { key: 'convenience_groceries', label: 'Convenience & Groceries' },
                           { key: 'retail_apparel', label: 'Retail & Apparel' },
+                          { key: 'telecommunication', label: 'Telecommunication' },
+                          { key: 'gadgets', label: 'Gadgets' },
                         ].map((sub) => (
                           <li key={sub.key}>
                             <button
@@ -1432,7 +1434,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </button>
 
-            {/* 5. Jobs (Classified & Job Postings) */}
+            {/* 5. Classifieds & Job Postings */}
             <button
               onClick={() => {
                 if (onOpenClassifiedsModal) {
@@ -1444,8 +1446,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="p-0.5">
                 <Briefcase className="w-5 h-5 text-rose-400" />
               </div>
-              <span className="text-[8.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tight truncate w-full px-0.5">
-                Jobs
+              <span className="text-[7.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tighter truncate w-full px-0">
+                Classifieds
               </span>
             </button>
           </div>

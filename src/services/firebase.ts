@@ -82,6 +82,7 @@ const STORAGE_KEYS = {
   ACCOMMODATION_LISTINGS: 'camgo_accommodation_listings',
   DELETED_MOTORBIKE_PARTNERS: 'camgo_deleted_motorbike_partners',
   MOTORBIKE_FRESH_START_FLAG: 'camgo_motorbike_fresh_start_v1',
+  MAIN_PAGE_BG: 'camgo_main_page_bg_v1',
 };
 
 export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
@@ -4534,6 +4535,58 @@ class FirebaseStorageService {
     }
 
     return updatedLocal;
+  }
+
+  public getMainPageBackground(): string {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.MAIN_PAGE_BG) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  public async saveMainPageBackground(url: string): Promise<string> {
+    const clean = url || '';
+    this.setLocalStorageItem(STORAGE_KEYS.MAIN_PAGE_BG, clean);
+    if (db) {
+      try {
+        await setDoc(doc(db, 'settings', 'main_page_background'), { url: clean, updatedAt: Date.now() });
+      } catch (err) {
+        console.warn('Failed saving main page background to Firestore:', err);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('main-page-bg-updated', { detail: clean }));
+    }
+    this.notify();
+    return clean;
+  }
+
+  public subscribeMainPageBackground(callback: (url: string) => void): () => void {
+    callback(this.getMainPageBackground());
+    const handler = (e: any) => callback(e?.detail || '');
+    if (typeof window !== 'undefined') {
+      window.addEventListener('main-page-bg-updated', handler);
+    }
+    let unsubFirestore: (() => void) | null = null;
+    if (db) {
+      try {
+        unsubFirestore = onSnapshot(doc(db, 'settings', 'main_page_background'), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            const url = data?.url || '';
+            this.setLocalStorageItem(STORAGE_KEYS.MAIN_PAGE_BG, url);
+            callback(url);
+          }
+        });
+      } catch {}
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('main-page-bg-updated', handler);
+      }
+      if (unsubFirestore) unsubFirestore();
+    };
   }
 }
 

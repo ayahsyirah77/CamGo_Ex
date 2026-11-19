@@ -4429,6 +4429,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       case 'shopping':
         if (subCat === 'fresh_markets_produce') return { pinColor: '#d97706', iconEmoji: '🥬', label: 'Fresh Market' };
         if (subCat === 'souvenirs_handicrafts') return { pinColor: '#b45309', iconEmoji: '🎁', label: 'Souvenirs & Crafts' };
+        if (subCat === 'telecommunication') return { pinColor: '#0284c7', iconEmoji: '📶', label: 'Telecommunication' };
+        if (subCat === 'gadgets') return { pinColor: '#7c3aed', iconEmoji: '📱', label: 'Gadgets' };
         return { pinColor: '#d97706', iconEmoji: '🛍️', label: 'Shopping' };
 
       case 'masjid_surau':

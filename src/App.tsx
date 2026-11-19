@@ -155,6 +155,14 @@ export default function App() {
   const [hazards, setHazards] = useState<HazardAlert[]>([]);
   const [events, setEvents] = useState<EventNotification[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(firebaseService.getCurrentUser());
+  const [mainBgUrl, setMainBgUrl] = useState<string>(() => firebaseService.getMainPageBackground());
+
+  useEffect(() => {
+    const unsub = firebaseService.subscribeMainPageBackground((url) => {
+      setMainBgUrl(url);
+    });
+    return () => unsub();
+  }, []);
 
   const [selectedPlaceForMap, setSelectedPlaceForMap] = useState<Place | null>(null);
   const [selectedHazardForMap, setSelectedHazardForMap] = useState<CamgoHazard | null>(null);
@@ -629,7 +637,12 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950 pb-24 sm:pb-14">
+    <div 
+      className="min-h-screen text-stone-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white relative bg-stone-950 bg-cover bg-center bg-fixed"
+      style={mainBgUrl ? { backgroundImage: `url(${mainBgUrl})` } : undefined}
+    >
+      {mainBgUrl && <div className="absolute inset-0 bg-stone-950/85 backdrop-blur-[1px] pointer-events-none z-0" />}
+      <div className="relative z-10 flex flex-col min-h-screen pb-24 sm:pb-14">
       {/* 1. Intro Loading Screen */}
       <LoadingScreen language={language} onFinish={() => {}} />
 
@@ -839,7 +852,7 @@ export default function App() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-base sm:text-lg font-heading font-black text-white group-hover:text-emerald-300 transition-colors">
-                    Highland Photo Gallery
+                    Highland Events/Photo Gallery
                   </h3>
                   <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tabular-nums">
                     {galleryItems.length} Photos
@@ -1164,7 +1177,7 @@ export default function App() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-base sm:text-xl font-heading font-black text-stone-100 truncate">
-                    Highland Photo Gallery
+                    Highland Events/Photo Gallery
                   </h3>
                   <p className="text-[11px] sm:text-xs text-stone-400 truncate">
                     High-elevation photography, tea valley horizons, &amp; cultural spotlights
@@ -1401,6 +1414,7 @@ export default function App() {
         language={language}
         onOpenChat={() => setIsChatOpen(true)}
       />
+      </div>
     </div>
   );
 }

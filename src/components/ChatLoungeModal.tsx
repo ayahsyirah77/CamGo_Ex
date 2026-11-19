@@ -906,6 +906,13 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
 
             {/* MESSAGES FEED */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 sm:space-y-4">
+              {/* 24-Hour Auto-Clear Policy Notice */}
+              <div className="flex items-center justify-center">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-950/80 border border-white/10 text-[10px] text-stone-400">
+                  <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span>Chat messages automatically clear after 24 hours.</span>
+                </div>
+              </div>
 
               {displayedMessages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center p-6 text-center space-y-3 text-stone-400">

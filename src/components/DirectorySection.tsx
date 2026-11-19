@@ -40,6 +40,8 @@ import {
   ArrowRight,
   BatteryCharging,
   FileText,
+  Smartphone,
+  Cpu,
 } from 'lucide-react';
 import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
@@ -88,6 +90,8 @@ export const SUB_CATEGORY_LABELS: Record<string, string> = {
   hardware_store: 'Hardware Store',
   lighting_store: 'Lighting Store',
   furniture: 'Furniture',
+  telecommunication: 'Telecommunication',
+  gadgets: 'Gadgets',
   // Services & Utilities
   plumbing_electrical: 'Plumbing & Electrical',
   locksmith_access: 'Locksmith & Access Services',
@@ -262,6 +266,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
       { key: 'hardware_store', label: 'Hardware Store', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'lighting_store', label: 'Lighting Store', icon: <Sparkles className="w-3.5 h-3.5 inline mr-1" /> },
       { key: 'furniture', label: 'Furniture', icon: <ShoppingBag className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'telecommunication', label: 'Telecommunication', icon: <Smartphone className="w-3.5 h-3.5 inline mr-1" /> },
+      { key: 'gadgets', label: 'Gadgets', icon: <Cpu className="w-3.5 h-3.5 inline mr-1" /> },
     ],
     services_utilities: [
       { key: 'plumbing_electrical', label: 'Plumbing & Electrical', icon: <Wrench className="w-3.5 h-3.5 inline mr-1" /> },

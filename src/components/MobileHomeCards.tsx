@@ -250,7 +250,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
     },
     {
       id: 'jobs',
-      label: language === 'bm' ? 'Kerja' : 'Jobs',
+      label: language === 'bm' ? 'Kerja' : 'Classifieds',
       icon: <Briefcase className="w-5 h-5 text-rose-400" />,
       onClick: () => onOpenClassifieds && onOpenClassifieds(),
     },

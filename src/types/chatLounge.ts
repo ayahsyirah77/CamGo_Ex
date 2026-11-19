@@ -101,3 +101,19 @@ export interface PushNotificationPayload {
   senderId?: string;
   senderName?: string;
 }
+
+export interface ArchivedChatMessage extends ChatMessage {
+  dateKey: string; // Local YYYY-MM-DD folder key
+  channelLabel?: string;
+  archivedAt: number;
+}
+
+export interface ChatHistoryDateFolder {
+  dateKey: string; // "YYYY-MM-DD"
+  displayDate: string; // e.g., "Thu, 19 Nov 2026"
+  messages: ArchivedChatMessage[];
+  channelCount: number;
+  dmCount: number;
+  activeCount: number; // < 24h old (still visible in live user chat)
+  expiredCount: number; // >= 24h old (removed from user chat, kept in Admin archive)
+}

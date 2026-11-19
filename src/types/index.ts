@@ -62,6 +62,8 @@ export type SubCategory =
   | 'hardware_store'
   | 'lighting_store'
   | 'furniture'
+  | 'telecommunication'
+  | 'gadgets'
   // Services & Utilities
   | 'plumbing_electrical'
   | 'locksmith_access'

@@ -10,16 +10,20 @@ import {
   DirectMessageThread,
   ChatMessage,
   TypingIndicatorEvent,
+  ArchivedChatMessage,
+  ChatHistoryDateFolder,
 } from '../types/chatLounge';
 import { pushNotificationService } from './pushNotificationService';
 import { audioService } from './audioService';
 import { UserProfile } from './firebase';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, setDoc, doc, deleteDoc, getDocs } from 'firebase/firestore';
 
+export const CHAT_MESSAGE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const STORAGE_CHANNELS_KEY = 'camgo_chat_channels_v2';
 const STORAGE_MESSAGES_KEY = 'camgo_chat_messages_v2';
 const STORAGE_DMS_KEY = 'camgo_chat_dms_v2';
+const STORAGE_ARCHIVE_KEY = 'camgo_chat_history_archive_v1';
 const STORAGE_CURRENT_USER_KEY = 'camgo_chat_my_user_v2';
 
 export const INITIAL_COMMUNITY_USERS: ChatUser[] = [];
@@ -90,6 +94,7 @@ export const INITIAL_MESSAGES: ChatMessage[] = [];
 class ChatLoungeService {
   private channels: ChatChannel[] = [];
   private messages: ChatMessage[] = [];
+  private archivedMessages: ArchivedChatMessage[] = [];
   private dmThreads: DirectMessageThread[] = [];
   private users: ChatUser[] = [];
   private currentChatUser: ChatUser;
@@ -98,6 +103,7 @@ class ChatLoungeService {
   private subscribers: Set<() => void> = new Set();
   private typingMap: Map<string, string[]> = new Map(); // id -> userNames[]
   private isInitialFirestoreSnapshotDone = false;
+  private expiryTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.currentChatUser = this.loadCurrentUser();
@@ -108,6 +114,7 @@ class ChatLoungeService {
     this.initFirestore();
     this.initPresence();
     this.initTypingListener();
+    this.startExpirySweep();
   }
 
   private loadCurrentUser(): ChatUser {
@@ -207,6 +214,7 @@ class ChatLoungeService {
     if (typeof window === 'undefined') {
       this.channels = INITIAL_CHANNELS;
       this.messages = INITIAL_MESSAGES;
+      this.archivedMessages = [];
       this.dmThreads = [];
       return;
     }
@@ -221,14 +229,25 @@ class ChatLoungeService {
       const storedChannels = localStorage.getItem(STORAGE_CHANNELS_KEY);
       this.channels = storedChannels ? JSON.parse(storedChannels) : INITIAL_CHANNELS;
 
+      const storedArchive = localStorage.getItem(STORAGE_ARCHIVE_KEY);
+      this.archivedMessages = storedArchive ? JSON.parse(storedArchive) : [];
+      if (!Array.isArray(this.archivedMessages)) this.archivedMessages = [];
+
       const storedMessages = localStorage.getItem(STORAGE_MESSAGES_KEY);
       this.messages = storedMessages ? JSON.parse(storedMessages) : INITIAL_MESSAGES;
+      if (!Array.isArray(this.messages)) this.messages = [];
 
       const storedDms = localStorage.getItem(STORAGE_DMS_KEY);
       this.dmThreads = storedDms ? JSON.parse(storedDms) : [];
+      if (!Array.isArray(this.dmThreads)) this.dmThreads = [];
+
+      // Ensure any locally cached active messages are archived, then prune >24h messages
+      this.messages.forEach((m) => this.upsertArchivedMessage(m, false));
+      this.pruneExpiredMessages(false);
     } catch {
       this.channels = INITIAL_CHANNELS;
       this.messages = INITIAL_MESSAGES;
+      this.archivedMessages = [];
       this.dmThreads = [];
     }
   }
@@ -239,6 +258,7 @@ class ChatLoungeService {
       localStorage.setItem(STORAGE_CHANNELS_KEY, JSON.stringify(this.channels));
       localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(this.messages));
       localStorage.setItem(STORAGE_DMS_KEY, JSON.stringify(this.dmThreads));
+      localStorage.setItem(STORAGE_ARCHIVE_KEY, JSON.stringify(this.archivedMessages));
     } catch (err) {
       console.warn('[CHAT SERVICE] LocalStorage save warning:', err);
     }
@@ -287,6 +307,20 @@ class ChatLoungeService {
             console.log('[ChatLoungeService] Firestore message change:', change.type, 'Message ID:', data.id, 'Sender:', data.senderName);
 
             if (change.type === 'added') {
+              // Always preserve in permanent Admin archive before checking 24h TTL
+              const archivedEntry = this.upsertArchivedMessage(data, false);
+
+              // If already past 24 hours, archive to Firestore first and remove from active user chat
+              if (this.isMessageExpired(data)) {
+                this.archiveAndDeleteActiveDoc(archivedEntry);
+                const prevLen = this.messages.length;
+                this.messages = this.messages.filter((m) => m.id !== data.id);
+                if (this.messages.length !== prevLen) {
+                  updated = true;
+                }
+                return;
+              }
+
               const exists = this.messages.some((m) => m.id === data.id);
               if (!exists) {
                 console.log('[ChatLoungeService] Adding new message:', data.id);
@@ -413,20 +447,35 @@ class ChatLoungeService {
                 }
               }
             } else if (change.type === 'modified') {
-              const idx = this.messages.findIndex((m) => m.id === data.id);
-              if (idx >= 0) {
-                console.log('[ChatLoungeService] Updating message:', data.id);
-                this.messages[idx] = { ...this.messages[idx], ...data };
+              this.upsertArchivedMessage(data, false);
+              if (this.isMessageExpired(data)) {
+                this.messages = this.messages.filter((m) => m.id !== data.id);
+                updated = true;
+              } else {
+                const idx = this.messages.findIndex((m) => m.id === data.id);
+                if (idx >= 0) {
+                  console.log('[ChatLoungeService] Updating message:', data.id);
+                  this.messages[idx] = { ...this.messages[idx], ...data };
+                  updated = true;
+                }
+              }
+            } else if (change.type === 'removed') {
+              // Message expired or deleted from active chat; archived copy remains in Admin folders
+              const prevLen = this.messages.length;
+              this.messages = this.messages.filter((m) => m.id !== data.id);
+              if (this.messages.length !== prevLen) {
                 updated = true;
               }
             }
           });
 
           this.isInitialFirestoreSnapshotDone = true;
+          const pruned = this.pruneExpiredMessages(false);
 
-          if (updated) {
+          if (updated || pruned) {
             // Sort messages chronologically
             this.messages.sort((a, b) => a.createdAt - b.createdAt);
+            this.recalculateThreadPreviews();
             this.saveState();
             this.notifySubscribers();
           }
@@ -587,13 +636,15 @@ class ChatLoungeService {
   }
 
   public getMessagesForChannel(channelId: string): ChatMessage[] {
-    return this.messages.filter((m) => m.channelId === channelId);
+    const now = Date.now();
+    return this.messages.filter((m) => m.channelId === channelId && !this.isMessageExpired(m, now));
   }
 
   public getMessagesForDm(dmThreadId: string): ChatMessage[] {
+    const now = Date.now();
     const targetPair = ChatLoungeService.parseDmUserIds(dmThreadId);
     return this.messages.filter((m) => {
-      if (!m.dmThreadId) return false;
+      if (!m.dmThreadId || this.isMessageExpired(m, now)) return false;
       if (m.dmThreadId === dmThreadId) return true;
       if (targetPair) {
         const msgPair = ChatLoungeService.parseDmUserIds(m.dmThreadId);
@@ -644,6 +695,7 @@ class ChatLoungeService {
     };
 
     this.messages.push(newMsg);
+    const archivedEntry = this.upsertArchivedMessage(newMsg, false);
 
     // Update last message in channel or DM
     if (params.channelId) {
@@ -675,12 +727,13 @@ class ChatLoungeService {
     this.saveState();
     pushNotificationService.playChime('sent');
 
-    // Persist to Cloud Firestore for real-time multi-device sync
+    // Persist to Cloud Firestore for real-time multi-device sync + permanent Admin date-folder archive
     if (db) {
       try {
         const sanitized = this.sanitizeObject(newMsg);
         console.log('[ChatLoungeService] Persisting message to Firestore:', newMsg.id, sanitized);
         setDoc(doc(db, 'chat_lounge_messages', newMsg.id), sanitized);
+        setDoc(doc(db, 'chat_lounge_archive', newMsg.id), this.sanitizeObject(archivedEntry)).catch(() => {});
 
         // Also broadcast notification to Firestore so all clients get banner popup even when lounge is closed
         const ch = this.channels.find((c) => c.id === params.channelId);
@@ -738,12 +791,18 @@ class ChatLoungeService {
       msg.reactions[emoji] = [...uids, myId];
     }
 
+    const archivedCopy = this.archivedMessages.find((m) => m.id === messageId);
+    if (archivedCopy) {
+      archivedCopy.reactions = { ...msg.reactions };
+    }
+
     this.saveState();
     this.notifySubscribers();
 
     if (db) {
       try {
         setDoc(doc(db, 'chat_lounge_messages', messageId), this.sanitizeObject({ reactions: msg.reactions }), { merge: true }).catch(() => {});
+        setDoc(doc(db, 'chat_lounge_archive', messageId), this.sanitizeObject({ reactions: msg.reactions }), { merge: true }).catch(() => {});
       } catch {
         // ignore
       }
@@ -903,6 +962,12 @@ class ChatLoungeService {
   }
 
   private handleIncomingMessage(msg: ChatMessage, isBroadcast: boolean): void {
+    this.upsertArchivedMessage(msg, false);
+    if (this.isMessageExpired(msg)) {
+      this.saveState();
+      return;
+    }
+
     // Avoid duplicates
     if (this.messages.some((m) => m.id === msg.id)) return;
 
@@ -1006,6 +1071,332 @@ class ChatLoungeService {
     this.notifySubscribers();
   }
 
+
+  // --- 24h Expiration & Admin Date-Folder Archiving ---
+
+  public static getDateKey(timestampMs?: number): string {
+    const d = new Date(typeof timestampMs === 'number' && timestampMs > 0 ? timestampMs : Date.now());
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  public static formatDisplayDate(dateKey: string): string {
+    const parts = dateKey.split('-').map(Number);
+    if (parts.length !== 3 || parts.some(isNaN)) return dateKey;
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    return d.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  public isMessageExpired(msg: Pick<ChatMessage, 'createdAt'>, now = Date.now()): boolean {
+    if (typeof msg.createdAt !== 'number' || msg.createdAt <= 0) return false;
+    return now - msg.createdAt >= CHAT_MESSAGE_TTL_MS;
+  }
+
+  private getChannelLabelForMsg(msg: ChatMessage): string {
+    if (msg.dmThreadId) return 'Direct Message';
+    if (!msg.channelId) return 'Chat Lounge';
+    const ch = this.channels.find((c) => c.id === msg.channelId);
+    return ch ? ch.label : `#${msg.channelId}`;
+  }
+
+  private upsertArchivedMessage(msg: ChatMessage, syncToCloud: boolean): ArchivedChatMessage {
+    const createdAt = typeof msg.createdAt === 'number' && msg.createdAt > 0 ? msg.createdAt : Date.now();
+    const dateKey = ChatLoungeService.getDateKey(createdAt);
+    const channelLabel = this.getChannelLabelForMsg(msg);
+
+    const existingIdx = this.archivedMessages.findIndex((a) => a.id === msg.id);
+    const archivedEntry: ArchivedChatMessage = {
+      ...msg,
+      createdAt,
+      dateKey,
+      channelLabel,
+      archivedAt: existingIdx >= 0 ? this.archivedMessages[existingIdx].archivedAt : Date.now(),
+    };
+
+    if (existingIdx >= 0) {
+      this.archivedMessages[existingIdx] = archivedEntry;
+    } else {
+      this.archivedMessages.push(archivedEntry);
+    }
+
+    if (syncToCloud && db) {
+      try {
+        setDoc(doc(db, 'chat_lounge_archive', msg.id), this.sanitizeObject(archivedEntry)).catch(() => {});
+      } catch {
+        // ignore
+      }
+    }
+
+    return archivedEntry;
+  }
+
+  private async archiveAndDeleteActiveDoc(archivedEntry: ArchivedChatMessage): Promise<void> {
+    if (!db || !archivedEntry?.id) return;
+    try {
+      await setDoc(doc(db, 'chat_lounge_archive', archivedEntry.id), this.sanitizeObject(archivedEntry));
+      await deleteDoc(doc(db, 'chat_lounge_messages', archivedEntry.id));
+    } catch {
+      // ignore permission/network errors cleanly
+    }
+  }
+
+  private recalculateThreadPreviews(): void {
+    const now = Date.now();
+    const activeMsgs = this.messages.filter((m) => !this.isMessageExpired(m, now));
+
+    this.channels.forEach((ch) => {
+      const chMsgs = activeMsgs
+        .filter((m) => m.channelId === ch.id)
+        .sort((a, b) => a.createdAt - b.createdAt);
+      if (chMsgs.length === 0) {
+        ch.lastMessage = undefined;
+        ch.unreadCount = 0;
+      } else {
+        const last = chMsgs[chMsgs.length - 1];
+        ch.lastMessage = {
+          text: last.text || 'Shared an attachment',
+          senderName: last.senderName,
+          timestamp: last.timestamp,
+        };
+      }
+    });
+
+    this.dmThreads.forEach((dm) => {
+      const targetPair = ChatLoungeService.parseDmUserIds(dm.id);
+      const dmMsgs = activeMsgs
+        .filter((m) => {
+          if (!m.dmThreadId) return false;
+          if (m.dmThreadId === dm.id) return true;
+          if (targetPair) {
+            const msgPair = ChatLoungeService.parseDmUserIds(m.dmThreadId);
+            if (msgPair) {
+              return (
+                (msgPair[0] === targetPair[0] && msgPair[1] === targetPair[1]) ||
+                (msgPair[0] === targetPair[1] && msgPair[1] === targetPair[0])
+              );
+            }
+          }
+          return false;
+        })
+        .sort((a, b) => a.createdAt - b.createdAt);
+
+      if (dmMsgs.length === 0) {
+        dm.lastMessage = undefined;
+        dm.unreadCount = 0;
+      } else {
+        const last = dmMsgs[dmMsgs.length - 1];
+        dm.lastMessage = {
+          text: last.text || 'Shared an attachment',
+          timestamp: last.timestamp,
+          senderId: last.senderId,
+          isRead: dm.lastMessage?.isRead ?? last.senderId === this.currentChatUser.id,
+        };
+      }
+    });
+  }
+
+  public pruneExpiredMessages(notify = true): boolean {
+    const now = Date.now();
+    const expired = this.messages.filter((m) => this.isMessageExpired(m, now));
+    if (expired.length === 0) return false;
+
+    // 1. Archive before removing from active user chat
+    expired.forEach((msg) => {
+      const archived = this.upsertArchivedMessage(msg, false);
+      this.archiveAndDeleteActiveDoc(archived);
+    });
+
+    // 2. Remove from user-facing active list
+    this.messages = this.messages.filter((m) => !this.isMessageExpired(m, now));
+    this.recalculateThreadPreviews();
+
+    if (notify) {
+      this.saveState();
+      this.notifySubscribers();
+    }
+    return true;
+  }
+
+  private startExpirySweep(): void {
+    if (typeof window === 'undefined' || this.expiryTimer) return;
+    this.expiryTimer = setInterval(() => {
+      this.pruneExpiredMessages(true);
+    }, 60 * 1000);
+  }
+
+  /**
+   * Returns all preserved chat messages (archived + live) grouped into date folders (newest date first) for Admin view
+   */
+  public getChatHistoryFolders(): ChatHistoryDateFolder[] {
+    const now = Date.now();
+    const combinedMap = new Map<string, ArchivedChatMessage>();
+
+    this.archivedMessages.forEach((a) => {
+      if (!a?.id) return;
+      const dateKey = a.dateKey || ChatLoungeService.getDateKey(a.createdAt);
+      combinedMap.set(a.id, {
+        ...a,
+        dateKey,
+        channelLabel: a.channelLabel || this.getChannelLabelForMsg(a),
+      });
+    });
+
+    this.messages.forEach((m) => {
+      if (!m?.id) return;
+      const existing = combinedMap.get(m.id);
+      combinedMap.set(m.id, {
+        ...m,
+        dateKey: existing?.dateKey || ChatLoungeService.getDateKey(m.createdAt),
+        channelLabel: existing?.channelLabel || this.getChannelLabelForMsg(m),
+        archivedAt: existing?.archivedAt || m.createdAt || Date.now(),
+      });
+    });
+
+    const foldersMap = new Map<string, ArchivedChatMessage[]>();
+    combinedMap.forEach((msg) => {
+      const key = msg.dateKey || ChatLoungeService.getDateKey(msg.createdAt);
+      const list = foldersMap.get(key) || [];
+      list.push(msg);
+      foldersMap.set(key, list);
+    });
+
+    const folders: ChatHistoryDateFolder[] = [];
+    foldersMap.forEach((msgs, dateKey) => {
+      msgs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      const uniqueChannels = new Set(msgs.filter((m) => m.channelId).map((m) => m.channelId));
+      const uniqueDms = new Set(msgs.filter((m) => m.dmThreadId).map((m) => m.dmThreadId));
+      let activeCount = 0;
+      let expiredCount = 0;
+      msgs.forEach((m) => {
+        if (this.isMessageExpired(m, now)) {
+          expiredCount += 1;
+        } else {
+          activeCount += 1;
+        }
+      });
+
+      folders.push({
+        dateKey,
+        displayDate: ChatLoungeService.formatDisplayDate(dateKey),
+        messages: msgs,
+        channelCount: uniqueChannels.size,
+        dmCount: uniqueDms.size,
+        activeCount,
+        expiredCount,
+      });
+    });
+
+    folders.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+    return folders;
+  }
+
+  public async loadFirestoreArchive(): Promise<ChatHistoryDateFolder[]> {
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'chat_lounge_archive'));
+        let changed = false;
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as ArchivedChatMessage;
+          if (!data || !data.id) return;
+          const dateKey = data.dateKey || ChatLoungeService.getDateKey(data.createdAt);
+          const entry: ArchivedChatMessage = {
+            ...data,
+            dateKey,
+            channelLabel: data.channelLabel || this.getChannelLabelForMsg(data),
+            archivedAt: data.archivedAt || data.createdAt || Date.now(),
+          };
+          const idx = this.archivedMessages.findIndex((a) => a.id === entry.id);
+          if (idx >= 0) {
+            this.archivedMessages[idx] = entry;
+          } else {
+            this.archivedMessages.push(entry);
+            changed = true;
+          }
+        });
+        if (changed) {
+          this.saveState();
+          this.notifySubscribers();
+        }
+      } catch (err) {
+        console.warn('[ChatLoungeService] Could not fetch chat_lounge_archive:', err);
+      }
+    }
+    return this.getChatHistoryFolders();
+  }
+
+  public subscribeArchiveFirestore(onUpdate?: () => void): () => void {
+    if (!db) return () => {};
+    try {
+      return onSnapshot(
+        collection(db, 'chat_lounge_archive'),
+        (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            const data = change.doc.data() as ArchivedChatMessage;
+            if (change.type === 'removed') {
+              const docId = data?.id || change.doc.id;
+              this.archivedMessages = this.archivedMessages.filter((a) => a.id !== docId);
+              return;
+            }
+            if (!data || !data.id) return;
+            const entry: ArchivedChatMessage = {
+              ...data,
+              dateKey: data.dateKey || ChatLoungeService.getDateKey(data.createdAt),
+              channelLabel: data.channelLabel || this.getChannelLabelForMsg(data),
+              archivedAt: data.archivedAt || data.createdAt || Date.now(),
+            };
+            const idx = this.archivedMessages.findIndex((a) => a.id === entry.id);
+            if (idx >= 0) {
+              this.archivedMessages[idx] = entry;
+            } else {
+              this.archivedMessages.push(entry);
+            }
+          });
+          this.saveState();
+          this.notifySubscribers();
+          if (onUpdate) onUpdate();
+        },
+        () => {}
+      );
+    } catch {
+      return () => {};
+    }
+  }
+
+  public async deleteChatHistoryFolder(dateKey: string): Promise<void> {
+    const toDelete = this.archivedMessages.filter((m) => m.dateKey === dateKey);
+    const activeToDelete = this.messages.filter((m) => ChatLoungeService.getDateKey(m.createdAt) === dateKey);
+    const allIds = Array.from(new Set([...toDelete.map((m) => m.id), ...activeToDelete.map((m) => m.id)]));
+
+    this.archivedMessages = this.archivedMessages.filter((m) => m.dateKey !== dateKey);
+    this.messages = this.messages.filter((m) => ChatLoungeService.getDateKey(m.createdAt) !== dateKey);
+    this.recalculateThreadPreviews();
+    this.saveState();
+    this.notifySubscribers();
+
+    if (db) {
+      await Promise.all(
+        allIds.map(async (id) => {
+          try {
+            await deleteDoc(doc(db, 'chat_lounge_archive', id));
+          } catch {
+            // ignore
+          }
+          try {
+            await deleteDoc(doc(db, 'chat_lounge_messages', id));
+          } catch {
+            // ignore
+          }
+        })
+      );
+    }
+  }
 
   // --- Subscriptions ---
 
