@@ -8,9 +8,7 @@ import {
   Lock,
   ShieldCheck,
   CheckCircle2,
-  Users,
   BedDouble,
-  Bath,
   Sparkles,
   ExternalLink,
   Clock,
@@ -25,6 +23,10 @@ import {
   Upload,
   FileCheck2,
   AlertTriangle,
+  Info,
+  Coffee,
+  ParkingCircle,
+  Utensils,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { AccommodationListing, AccommodationBooking, Township, Language } from '../types';
@@ -70,6 +72,8 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [bookingFormError, setBookingFormError] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [selectedRoomOptionId, setSelectedRoomOptionId] = useState<string>('');
+  const [showMoreInfo, setShowMoreInfo] = useState(false);
 
   // Confirmed Booking Voucher Modal
   const [unlockedBooking, setUnlockedBooking] = useState<AccommodationBooking | null>(null);
@@ -112,6 +116,140 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
     }
   }, [unlockedBooking]);
 
+  // Build selectable unit / room options for active listing
+  const availableRoomOptions = useMemo(() => {
+    if (!activeListingForBooking) return [];
+    const options: Array<{
+      id: string;
+      label: string;
+      unitCode: string;
+      pricePerNight: number;
+      bedConfig?: string;
+      checkInWindow?: string;
+      checkOutWindow?: string;
+      parkingType?: string;
+      parkingDetails?: string;
+      breakfastIncluded?: boolean;
+      cookingPermitted?: boolean;
+      kitchenNotes?: string;
+      houseRules?: string;
+    }> = [];
+
+    const units = (activeListingForBooking.units || []).filter((u) => u.isAvailable !== false);
+    if (units.length > 0) {
+      units.forEach((u, uIdx) => {
+        const uCode = u.unitCode || u.unitLabel || activeListingForBooking.code || `Unit ${uIdx + 1}`;
+        if (u.roomTypes && u.roomTypes.length > 0) {
+          u.roomTypes.forEach((rt, rtIdx) => {
+            if ((rt.quantity ?? 1) <= 0) return;
+            const rate = Number(rt.pricePerNight ?? activeListingForBooking.pricePerNight ?? 0);
+            options.push({
+              id: `${u.id}__${rt.id || rtIdx}`,
+              label: `${uCode} — ${rt.name}${rt.bedConfig ? ` (${rt.bedConfig})` : ''}${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+              unitCode: uCode,
+              pricePerNight: rate,
+              bedConfig: rt.bedConfig,
+              checkInWindow: u.checkInTime || activeListingForBooking.checkInWindow,
+              checkOutWindow: u.checkOutTime || activeListingForBooking.checkOutWindow,
+              parkingType: u.parkingType || activeListingForBooking.parkingType,
+              parkingDetails: u.parkingDetails || activeListingForBooking.parkingDetails,
+              breakfastIncluded:
+                u.breakfastIncluded !== undefined
+                  ? u.breakfastIncluded
+                  : activeListingForBooking.breakfastIncluded,
+              cookingPermitted:
+                u.cookingPermitted !== undefined
+                  ? u.cookingPermitted
+                  : activeListingForBooking.cookingPermitted,
+              kitchenNotes: u.kitchenNotes || activeListingForBooking.kitchenNotes,
+              houseRules: u.houseRules || activeListingForBooking.houseRules,
+            });
+          });
+        } else {
+          const rate = Number(activeListingForBooking.pricePerNight ?? 0);
+          options.push({
+            id: u.id,
+            label: `${uCode} (${u.roomsPerUnit || activeListingForBooking.bedrooms} Rooms)${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+            unitCode: uCode,
+            pricePerNight: rate,
+            checkInWindow: u.checkInTime || activeListingForBooking.checkInWindow,
+            checkOutWindow: u.checkOutTime || activeListingForBooking.checkOutWindow,
+            parkingType: u.parkingType || activeListingForBooking.parkingType,
+            parkingDetails: u.parkingDetails || activeListingForBooking.parkingDetails,
+            breakfastIncluded:
+              u.breakfastIncluded !== undefined
+                ? u.breakfastIncluded
+                : activeListingForBooking.breakfastIncluded,
+            cookingPermitted:
+              u.cookingPermitted !== undefined
+                ? u.cookingPermitted
+                : activeListingForBooking.cookingPermitted,
+            kitchenNotes: u.kitchenNotes || activeListingForBooking.kitchenNotes,
+            houseRules: u.houseRules || activeListingForBooking.houseRules,
+          });
+        }
+      });
+    } else if (activeListingForBooking.roomTypes && activeListingForBooking.roomTypes.length > 0) {
+      activeListingForBooking.roomTypes.forEach((rt, idx) => {
+        if ((rt.quantity ?? 1) <= 0) return;
+        const rate = Number(rt.pricePerNight ?? activeListingForBooking.pricePerNight ?? 0);
+        options.push({
+          id: rt.id || `rt-${idx}`,
+          label: `${activeListingForBooking.code} — ${rt.name}${rt.bedConfig ? ` (${rt.bedConfig})` : ''}${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+          unitCode: activeListingForBooking.code,
+          pricePerNight: rate,
+          bedConfig: rt.bedConfig,
+          checkInWindow: activeListingForBooking.checkInWindow,
+          checkOutWindow: activeListingForBooking.checkOutWindow,
+          parkingType: activeListingForBooking.parkingType,
+          parkingDetails: activeListingForBooking.parkingDetails,
+          breakfastIncluded: activeListingForBooking.breakfastIncluded,
+          cookingPermitted: activeListingForBooking.cookingPermitted,
+          kitchenNotes: activeListingForBooking.kitchenNotes,
+          houseRules: activeListingForBooking.houseRules,
+        });
+      });
+    }
+
+    if (options.length === 0) {
+      const rate = Number(activeListingForBooking.pricePerNight ?? 0);
+      options.push({
+        id: 'default-unit',
+        label: `${activeListingForBooking.code} — Standard Unit${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+        unitCode: activeListingForBooking.code,
+        pricePerNight: rate,
+        checkInWindow: activeListingForBooking.checkInWindow,
+        checkOutWindow: activeListingForBooking.checkOutWindow,
+        parkingType: activeListingForBooking.parkingType,
+        parkingDetails: activeListingForBooking.parkingDetails,
+        breakfastIncluded: activeListingForBooking.breakfastIncluded,
+        cookingPermitted: activeListingForBooking.cookingPermitted,
+        kitchenNotes: activeListingForBooking.kitchenNotes,
+        houseRules: activeListingForBooking.houseRules,
+      });
+    }
+
+    return options;
+  }, [activeListingForBooking]);
+
+  useEffect(() => {
+    if (activeListingForBooking) {
+      setSelectedRoomOptionId(availableRoomOptions[0]?.id || '');
+      setShowMoreInfo(false);
+    }
+  }, [activeListingForBooking, availableRoomOptions]);
+
+  const selectedRoomOption = useMemo(() => {
+    return (
+      availableRoomOptions.find((o) => o.id === selectedRoomOptionId) ||
+      availableRoomOptions[0] ||
+      null
+    );
+  }, [availableRoomOptions, selectedRoomOptionId]);
+
+  const activeNightlyRate =
+    selectedRoomOption?.pricePerNight ?? activeListingForBooking?.pricePerNight ?? 0;
+
   // Nights and pricing calculation
   const nights = useMemo(() => {
     if (!checkInDate || !checkOutDate) return 1;
@@ -121,8 +259,8 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
   const totalPrice = useMemo(() => {
     if (!activeListingForBooking) return 0;
-    return activeListingForBooking.pricePerNight * nights;
-  }, [activeListingForBooking, nights]);
+    return activeNightlyRate * nights;
+  }, [activeListingForBooking, activeNightlyRate, nights]);
 
   const balanceToCollect = useMemo(() => {
     return Math.max(0, totalPrice - 30);
@@ -210,12 +348,17 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
       const hostWaRaw = activeListingForBooking.whatsappNumber || activeListingForBooking.ownerPhone || '+60123456789';
       const hostWaDigits = hostWaRaw.replace(/\D/g, '');
 
+      const chosenUnitRoomLabel =
+        selectedRoomOption?.label ||
+        `${activeListingForBooking.code} Standard Room`;
+      const chosenUnitCode = selectedRoomOption?.unitCode || activeListingForBooking.code;
+
       const newBooking: AccommodationBooking = {
         id: `cg_bk_${Date.now()}`,
         bookingCode,
         homestayId: activeListingForBooking.id,
         homestayName: activeListingForBooking.realBusinessName,
-        maskedTitle: activeListingForBooking.maskedTitle,
+        maskedTitle: chosenUnitCode,
         township: activeListingForBooking.township,
         ownerPhone: hostWaRaw,
         ownerName: activeListingForBooking.ownerName,
@@ -227,7 +370,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         checkInDate,
         checkOutDate,
         nights,
-        roomTypeName: `${activeListingForBooking.bedrooms}BR ${activeListingForBooking.maskedTitle.split('-')[0]}`,
+        roomTypeName: chosenUnitRoomLabel,
         totalRoomPrice: totalPrice,
         depositAmount: 30,
         balanceToCollect,
@@ -264,7 +407,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         guestName: newBooking.customerName,
         guestPhone: newBooking.customerPhone,
         guestEmail: newBooking.customerEmail,
-        itemSummary: `${activeListingForBooking.maskedTitle} (${nights} night${nights > 1 ? 's' : ''})`,
+        itemSummary: `${chosenUnitRoomLabel} (${nights} night${nights > 1 ? 's' : ''})`,
         checkInOrStart: checkInDate,
         checkOutOrEnd: checkOutDate,
         totalAmountRm: totalPrice,
@@ -285,6 +428,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
       const hostWaText = [
         `CamGo New Paid Booking (${bookingCode})`,
+        `Unit / Room: ${chosenUnitRoomLabel}`,
         `Homestay: ${activeListingForBooking.realBusinessName} (${activeListingForBooking.township})`,
         `Guest Name: ${newBooking.customerName}`,
         `Guest Phone: ${newBooking.customerPhone}`,
@@ -485,12 +629,12 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                   <div className="relative aspect-[16/10] overflow-hidden bg-stone-950">
                     <img
                       src={safeSrc(stay.coverImage, DEFAULT_PLACE_IMAGE)}
-                      alt={stay.maskedTitle}
+                      alt={stay.code}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/40" />
 
-                    {/* Masked Code Badge */}
+                    {/* Unit Code Badge */}
                     <div className="absolute top-3 left-3 flex items-center gap-1.5">
                       <span className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/20 text-white font-mono font-black text-xs shadow-md">
                         {stay.code}
@@ -541,36 +685,27 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Body Content */}
+                  {/* Body Content (Unit Code Only — No Property Name & No Capacity Specs) */}
                   <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
                     <div className="space-y-2">
-                      {/* Masked Anti-Bypass Title */}
-                      <h4 className="font-extrabold text-sm sm:text-base text-white leading-tight group-hover:text-emerald-300 transition-colors">
-                        {stay.maskedTitle}
-                      </h4>
+                      {/* Unit Code Title Only */}
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-black font-mono text-base sm:text-lg text-white leading-tight group-hover:text-emerald-300 transition-colors">
+                          Unit {stay.code}
+                        </h4>
+                        {stay.breakfastIncluded && (
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                            Breakfast Included
+                          </span>
+                        )}
+                      </div>
 
                       <p className="text-[11px] text-stone-400 line-clamp-1">
                         📍 {stay.proximityDesc}
                       </p>
 
-                      {/* Specs */}
-                      <div className="flex items-center gap-3 text-stone-300 text-xs py-1 border-y border-stone-800/80">
-                        <span className="flex items-center gap-1 font-medium">
-                          <Users className="w-3.5 h-3.5 text-emerald-400" />
-                          {stay.maxGuests} Guests
-                        </span>
-                        <span className="flex items-center gap-1 font-medium">
-                          <BedDouble className="w-3.5 h-3.5 text-emerald-400" />
-                          {stay.bedrooms} Beds
-                        </span>
-                        <span className="flex items-center gap-1 font-medium">
-                          <Bath className="w-3.5 h-3.5 text-emerald-400" />
-                          {stay.bathrooms} Baths
-                        </span>
-                      </div>
-
                       {/* Bundled Perks Highlight */}
-                      <div className="space-y-1">
+                      <div className="space-y-1 pt-1">
                         <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">
                           CamGo Exclusive Perks
                         </span>
@@ -603,8 +738,14 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
                         <div className="text-right">
                           <span className="text-[10px] text-stone-500 block">Total Room Rate</span>
-                          <span className="text-base font-black text-white">RM {stay.pricePerNight}</span>
-                          <span className="text-[10px] text-stone-400">/night</span>
+                          {stay.pricePerNight > 0 ? (
+                            <>
+                              <span className="text-base font-black text-white">RM {stay.pricePerNight}</span>
+                              <span className="text-[10px] text-stone-400">/night</span>
+                            </>
+                          ) : (
+                            <span className="text-xs font-bold text-stone-400">Rate Set by Vendor</span>
+                          )}
                         </div>
                       </div>
 
@@ -619,7 +760,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                         }`}
                       >
                         <Lock className="w-3.5 h-3.5" />
-                        <span>{isSoldOut ? 'Sold Out Today' : 'Lock Room (RM30 Deposit)'}</span>
+                        <span>{isSoldOut ? 'Sold Out Today' : 'Lock Room'}</span>
                       </button>
                     </div>
                   </div>
@@ -656,16 +797,16 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               </button>
             </div>
 
-            {/* Selected Homestay Summary */}
+            {/* Selected Unit Summary (Code Only) */}
             <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 flex items-center gap-3">
               <img
                 src={safeSrc(activeListingForBooking.coverImage, DEFAULT_PLACE_IMAGE)}
-                alt=""
+                alt={activeListingForBooking.code}
                 className="w-16 h-16 rounded-xl object-cover shrink-0"
               />
               <div className="min-w-0 flex-1">
-                <span className="font-bold text-xs text-white truncate block">
-                  {activeListingForBooking.maskedTitle}
+                <span className="font-black font-mono text-sm text-white truncate block">
+                  Unit {selectedRoomOption?.unitCode || activeListingForBooking.code}
                 </span>
                 <p className="text-[11px] text-stone-400 truncate">📍 {activeListingForBooking.proximityDesc}</p>
                 <div className="flex items-center gap-2 text-[10px] text-emerald-400 font-bold mt-1">
@@ -678,6 +819,25 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
             {/* Form */}
             <form onSubmit={handleLockHomestay} className="space-y-4 text-xs">
+              {/* Select Property / Available Room */}
+              <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2">
+                <label className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
+                  Select Property / Available Room
+                </label>
+                <select
+                  value={selectedRoomOption?.id || ''}
+                  onChange={(e) => setSelectedRoomOptionId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2.5 rounded-xl bg-stone-900 border border-stone-700 text-white text-xs font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  {availableRoomOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Mandatory Date Picker */}
               <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2">
                 <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
@@ -709,7 +869,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1">
                   <span>Duration: <strong>{nights} night{nights > 1 ? 's' : ''}</strong></span>
-                  <span>Rate: RM {activeListingForBooking.pricePerNight} / night</span>
+                  <span>Rate: RM {activeNightlyRate} / night</span>
                 </div>
               </div>
 
@@ -866,8 +1026,90 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 pt-2">
+              {/* More Information Expandable Panel (shown when guest clicks More Information before Pay) */}
+              {showMoreInfo && (
+                <div className="p-3.5 rounded-2xl bg-stone-950 border border-teal-500/40 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between border-b border-stone-800 pb-2">
+                    <span className="font-black text-teal-300 flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5" />
+                      <span>Stay Description, House Rules &amp; Reminders</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowMoreInfo(false)}
+                      className="text-stone-400 hover:text-white text-[11px] font-bold cursor-pointer"
+                    >
+                      Hide
+                    </button>
+                  </div>
+
+                  {activeListingForBooking.description && (
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-stone-400 block">About This Unit</span>
+                      <p className="text-stone-200 leading-relaxed mt-0.5 whitespace-pre-line">
+                        {activeListingForBooking.description}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2 rounded-xl bg-stone-900 border border-stone-800">
+                      <span className="text-stone-400 block">Check-In / Check-Out</span>
+                      <strong className="text-white font-mono">
+                        {selectedRoomOption?.checkInWindow || activeListingForBooking.checkInWindow || '15:00'} /{' '}
+                        {selectedRoomOption?.checkOutWindow || activeListingForBooking.checkOutWindow || '12:00'}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded-xl bg-stone-900 border border-stone-800">
+                      <span className="text-stone-400 block">Breakfast &amp; Cooking</span>
+                      <strong className="text-white">
+                        {selectedRoomOption?.breakfastIncluded ? 'Breakfast Included' : 'No Breakfast'} ·{' '}
+                        {selectedRoomOption?.cookingPermitted ? 'Cooking OK' : 'No Cooking'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {(selectedRoomOption?.parkingType || selectedRoomOption?.parkingDetails) && (
+                    <div className="flex items-start gap-2 text-[11px] text-stone-300">
+                      <ParkingCircle className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Parking:</strong>{' '}
+                        {(selectedRoomOption.parkingType || 'private_available').replace(/_/g, ' ')}
+                        {selectedRoomOption.parkingDetails ? ` — ${selectedRoomOption.parkingDetails}` : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedRoomOption?.kitchenNotes && (
+                    <div className="flex items-start gap-2 text-[11px] text-stone-300">
+                      <Utensils className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Kitchen &amp; Facilities:</strong> {selectedRoomOption.kitchenNotes}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-[11px]">
+                    <strong className="block text-amber-300 mb-0.5">House Rules &amp; Important Reminders:</strong>
+                    <span className="whitespace-pre-line">
+                      {selectedRoomOption?.houseRules ||
+                        activeListingForBooking.houseRules ||
+                        'Please observe quiet hours after 11:00 PM, no smoking indoors, and present your CamGo booking voucher upon check-in.'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons (More Information button placed right before Pay button) */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMoreInfo((prev) => !prev)}
+                  className="px-4 py-3 rounded-2xl bg-stone-800 hover:bg-stone-700 border border-teal-500/40 text-teal-300 font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Info className="w-4 h-4 shrink-0" />
+                  <span>{showMoreInfo ? 'Hide Information' : 'More Information'}</span>
+                </button>
                 <button
                   type="submit"
                   disabled={isProcessingPayment || isUploadingProof}
@@ -887,6 +1129,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                   onClick={() => {
                     setActiveListingForBooking(null);
                     setBookingFormError(null);
+                    setShowMoreInfo(false);
                   }}
                   className="px-4 py-3 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
                 >

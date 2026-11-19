@@ -260,7 +260,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [manualGuestPhone, setManualGuestPhone] = useState('+601');
   const [manualCheckInDate, setManualCheckInDate] = useState('');
   const [manualCheckOutDate, setManualCheckOutDate] = useState('');
-  const [manualTotalRate, setManualTotalRate] = useState('200');
+  const [manualTotalRate, setManualTotalRate] = useState('');
   const [manualRoomType, setManualRoomType] = useState('Standard Family Homestay');
   const [manualBookingType, setManualBookingType] = useState<'instant' | 'request'>('instant');
 
@@ -345,7 +345,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         (new Date(manualCheckOutDate).getTime() - new Date(manualCheckInDate).getTime()) / (1000 * 3600 * 24)
       ) || 1
     );
-    const totalRate = Number(manualTotalRate) || 200;
+    const totalRate = Number(manualTotalRate) || 0;
     const balance = Math.max(0, totalRate - 30);
 
     const newBooking: AccommodationBooking = {
@@ -692,12 +692,14 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
   const handleSaveBikePackage = async () => {
     if (!activeVendor || !bikeName || !bikePrice) return;
-    const pkgId = editingBike || `bike-${Date.now()}`;
+    const isAccom = resolveVendorSectorKey(activeVendor) === 'accommodation';
+    const pkgId = editingBike || `${isAccom ? 'unit' : 'bike'}-${Date.now()}`;
+    const enteredRate = Number(bikePrice) || 0;
     const newPkg: MotorbikePackage = {
       id: pkgId,
       name: bikeName,
       cc: bikeCc,
-      dailyRateRm: Number(bikePrice) || 80,
+      dailyRateRm: enteredRate,
       imageUrl: bikeImage || 'https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=600&q=80',
       helmetsIncluded: Number(bikeHelmets) || 2,
       childrenHelmet: bikeChildrenHelmet,
@@ -718,10 +720,70 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       updatedPkgs = [...existingPkgs, newPkg];
     }
 
-    const updatedVendor = {
+    let nextSpecifics = activeVendor.sectorSpecifics;
+    if (isAccom) {
+      const curAccom = activeVendor.sectorSpecifics?.accommodation || {};
+      const existingUnits = curAccom.units || [];
+      const existingMatchedUnit = existingUnits.find((u) => u.id === pkgId);
+      const nextUnitCode =
+        existingMatchedUnit?.unitCode ||
+        `CH-${existingUnits.length + 1}`;
+      const newRoomEntry = {
+        id: `room-${pkgId}`,
+        name: bikeName,
+        quantity: Number(bikeHelmets) || 1,
+        pricePerNight: enteredRate,
+        bedConfig: bikeCc || 'Standard Bed',
+        maxOccupancy: (Number(bikeHelmets) || 1) * 2,
+      };
+      const syncedUnit = {
+        id: pkgId,
+        unitLabel: bikeName,
+        unitCode: nextUnitCode,
+        isAvailable: existingMatchedUnit?.isAvailable ?? true,
+        checkInTime: existingMatchedUnit?.checkInTime || curAccom.checkInWindow || '15:00',
+        checkOutTime: existingMatchedUnit?.checkOutTime || curAccom.checkOutWindow || '12:00',
+        parkingType: existingMatchedUnit?.parkingType || curAccom.parkingType || 'private_available',
+        parkingDetails: existingMatchedUnit?.parkingDetails || curAccom.parkingDetails || '',
+        roomTypes: [newRoomEntry],
+        amenityAddons: existingMatchedUnit?.amenityAddons || curAccom.amenityAddons || [
+          { id: 'am-mattress', name: 'Extra Single Mattress & Blanket Set', priceRm: 35, enabled: true },
+          { id: 'am-steamboat', name: 'Portable Steamboat Pot & Butane Gas', priceRm: 25, enabled: true },
+          { id: 'am-bbq', name: 'Outdoor BBQ Charcoal & Pit Setup', priceRm: 40, enabled: false },
+          { id: 'am-lateout', name: 'Late Check-Out Extension (Until 2:00 PM)', priceRm: 50, enabled: false },
+        ],
+        breakfastIncluded: existingMatchedUnit?.breakfastIncluded ?? !!curAccom.breakfastIncluded,
+        roomsPerUnit: Number(bikeHelmets) || existingMatchedUnit?.roomsPerUnit || curAccom.apartment?.roomsPerUnit || 2,
+        bathrooms: existingMatchedUnit?.bathrooms ?? curAccom.apartment?.bathrooms ?? 2,
+        cookingPermitted: existingMatchedUnit?.cookingPermitted ?? !!curAccom.apartment?.cookingPermitted,
+        kitchenNotes: existingMatchedUnit?.kitchenNotes || curAccom.apartment?.kitchenNotes || '',
+        houseRules: bikePkgDetails || existingMatchedUnit?.houseRules || curAccom.houseRules || activeVendor.vendorTerms || '',
+      };
+
+      const nextUnits = existingMatchedUnit
+        ? existingUnits.map((u) => (u.id === pkgId ? syncedUnit : u))
+        : [...existingUnits, syncedUnit];
+
+      nextSpecifics = {
+        ...activeVendor.sectorSpecifics,
+        accommodation: {
+          ...curAccom,
+          units: nextUnits,
+          selectedUnitId: syncedUnit.id,
+          roomTypes: syncedUnit.roomTypes,
+          apartment: {
+            ...curAccom.apartment,
+            totalUnits: nextUnits.length,
+          },
+        },
+      };
+    }
+
+    const updatedVendor: VendorListing = {
       ...activeVendor,
       motorbikePackages: updatedPkgs,
       motorbikeFleetStatus: motorbikeFleetStatus,
+      sectorSpecifics: nextSpecifics,
       updatedAt: new Date().toISOString(),
     };
 
@@ -731,43 +793,50 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     const vr = updatedVendor.sectorSpecifics?.vehicleRental;
     const depReq = vr?.depositConfig?.required ?? true;
 
-    // Also update motorbike partner in firebaseService so public marketplace reflects it immediately
-    const partnerToSync: MotorbikeRentalPartner = {
-      id: activeVendor.id,
-      businessName: activeVendor.businessName,
-      township: activeVendor.township,
-      imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
-      operatingStatus: activeVendor.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
-      fleetAvailability: (motorbikeFleetStatus === 'not_applicable' ? 'high' : motorbikeFleetStatus) as any,
-      contactPhone: activeVendor.contactPhone,
-      whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone,
-      packages: updatedPkgs,
-      vendorTerms: updatedVendor.vendorTerms || vr?.vendorRulesNotice || '',
-      vendorRulesNotice: vr?.vendorRulesNotice || updatedVendor.vendorTerms || '',
-      fuelPolicy: vr?.fuelPolicy || 'none',
-      freeRaincoat: vr?.freeRaincoat ?? false,
-      childrenHelmet: vr?.childrenHelmet ?? false,
-      hourlyRateRm: vr?.durationModels?.defaultHourlyRateRm ?? vr?.baseHourlyRateRm ?? updatedPkgs[0]?.hourlyRateRm ?? 18,
-      dailyRateRm: vr?.durationModels?.defaultDailyRateRm ?? vr?.baseDailyRateRm ?? updatedPkgs[0]?.dailyRateRm ?? 75,
-      allowDays: vr?.durationModels?.allowDays ?? true,
-      allowHours: vr?.durationModels?.allowHours ?? true,
-      depositRequired: depReq,
-      depositAmountRm: depReq ? (vr?.depositConfig?.depositAmountRm ?? updatedPkgs[0]?.depositRm ?? 100) : 0,
-      lockInFeeRm: vr?.depositConfig?.lockInFeeRm ?? 20,
-      pickupHubAddress: vr?.serviceOptions?.pickupHubAddress || updatedVendor.address || '',
-      customHourPackages: vr?.customHourPackages || [],
-      fleetUnits: vr?.fleetUnits || [],
-      isBookingEnabled: updatedVendor.isBookingEnabled ?? true,
-      verificationStatus: updatedVendor.verificationStatus || 'verified',
-      ownerEmail: updatedVendor.ownerEmail,
-      ownerUid: updatedVendor.ownerUid,
-    };
-    await firebaseService.saveMotorbikePartner(partnerToSync);
-    setMotorbikePartners(firebaseService.getMotorbikePartners());
+    // Also update motorbike partner in firebaseService ONLY for motorbike/vehicle rental vendors
+    if (!isAccom && isMotorbikeVendor) {
+      const partnerToSync: MotorbikeRentalPartner = {
+        id: activeVendor.id,
+        businessName: activeVendor.businessName,
+        township: activeVendor.township,
+        imageUrl: activeVendor.coverImage || activeVendor.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
+        operatingStatus: activeVendor.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
+        fleetAvailability: (motorbikeFleetStatus === 'not_applicable' ? 'high' : motorbikeFleetStatus) as any,
+        contactPhone: activeVendor.contactPhone,
+        whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone,
+        packages: updatedPkgs,
+        vendorTerms: updatedVendor.vendorTerms || vr?.vendorRulesNotice || '',
+        vendorRulesNotice: vr?.vendorRulesNotice || updatedVendor.vendorTerms || '',
+        fuelPolicy: vr?.fuelPolicy || 'none',
+        freeRaincoat: vr?.freeRaincoat ?? false,
+        childrenHelmet: vr?.childrenHelmet ?? false,
+        hourlyRateRm: vr?.durationModels?.defaultHourlyRateRm ?? vr?.baseHourlyRateRm ?? updatedPkgs[0]?.hourlyRateRm ?? 18,
+        dailyRateRm: vr?.durationModels?.defaultDailyRateRm ?? vr?.baseDailyRateRm ?? updatedPkgs[0]?.dailyRateRm ?? 75,
+        allowDays: vr?.durationModels?.allowDays ?? true,
+        allowHours: vr?.durationModels?.allowHours ?? true,
+        depositRequired: depReq,
+        depositAmountRm: depReq ? (vr?.depositConfig?.depositAmountRm ?? updatedPkgs[0]?.depositRm ?? 100) : 0,
+        lockInFeeRm: vr?.depositConfig?.lockInFeeRm ?? 20,
+        pickupHubAddress: vr?.serviceOptions?.pickupHubAddress || updatedVendor.address || '',
+        customHourPackages: vr?.customHourPackages || [],
+        fleetUnits: vr?.fleetUnits || [],
+        isBookingEnabled: updatedVendor.isBookingEnabled ?? true,
+        verificationStatus: updatedVendor.verificationStatus || 'verified',
+        ownerEmail: updatedVendor.ownerEmail,
+        ownerUid: updatedVendor.ownerUid,
+      };
+      await firebaseService.saveMotorbikePartner(partnerToSync);
+      setMotorbikePartners(firebaseService.getMotorbikePartners());
+    }
 
+    refreshVendorData();
     setShowBikeForm(false);
     setEditingBike(null);
     setBikeName('');
+    if (isAccom) {
+      setSaveNotification(`Added "${newPkg.name}" to Unit Selection dropdown so you can edit individual unit settings above!`);
+      setTimeout(() => setSaveNotification(null), 4000);
+    }
     setBikePkgDetails('');
     setBikeAddonDetails('');
     setSaveNotification(`Saved "${newPkg.name}" to inventory!`);
@@ -842,12 +911,16 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     }
   };
 
-  const handleSaveActiveVendor = async () => {
-    if (!activeVendor) return;
+  const handleSaveActiveVendor = async (vendorOverride?: VendorListing) => {
+    const sourceVendor =
+      vendorOverride && typeof vendorOverride === 'object' && 'id' in vendorOverride
+        ? vendorOverride
+        : activeVendor;
+    if (!sourceVendor) return;
     setIsSaving(true);
     try {
       const updated = pruneVendorForSector({
-        ...activeVendor,
+        ...sourceVendor,
         verificationStatus: 'verified' as const,
         isBookingEnabled: true,
         updatedAt: new Date().toISOString(),
@@ -1603,16 +1676,23 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     }}
                     className="w-full px-2 py-1 rounded-lg bg-stone-900 border border-stone-700 text-xs font-bold text-white truncate focus:outline-none"
                   >
-                    {filteredListings.map((listing) => (
-                      <option key={listing.id} value={listing.id}>
-                        {listing.businessName} ({listing.township})
-                      </option>
-                    ))}
+                    {filteredListings.map((listing) => {
+                      const uCode = listing.sectorSpecifics?.accommodation?.units?.[0]?.unitCode;
+                      return (
+                        <option key={listing.id} value={listing.id}>
+                          {uCode ? `Unit ${uCode} — ${listing.businessName}` : listing.businessName} ({listing.township})
+                        </option>
+                      );
+                    })}
                   </select>
                 ) : (
                   <div>
                     <span className="font-heading font-black text-xs text-white block truncate">
-                      {activeVendor ? activeVendor.businessName : 'Vendor Dashboard'}
+                      {activeVendor
+                        ? isAccommodationVendor
+                          ? `Unit ${activeVendor.sectorSpecifics?.accommodation?.units?.[0]?.unitCode || 'CH-1'} — ${activeVendor.businessName}`
+                          : activeVendor.businessName
+                        : 'Vendor Dashboard'}
                     </span>
                     <span className="text-[9px] text-emerald-400 font-mono block">
                       {activeVendor?.township} · {activeVendor?.verificationStatus}
@@ -1728,7 +1808,11 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="font-heading font-black text-sm text-white block truncate">
-                    {activeVendor ? activeVendor.businessName : 'Vendor Dashboard'}
+                    {activeVendor
+                      ? isAccommodationVendor
+                        ? `Unit ${activeVendor.sectorSpecifics?.accommodation?.units?.[0]?.unitCode || 'CH-1'} — ${activeVendor.businessName}`
+                        : activeVendor.businessName
+                      : 'Vendor Dashboard'}
                   </span>
                   <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3 text-emerald-400" />
@@ -1958,7 +2042,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               )}
               {activeTab === 'directory' && (
                 <button
-                  onClick={handleSaveActiveVendor}
+                  onClick={() => handleSaveActiveVendor()}
                   disabled={isSaving}
                   className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50 transition-colors"
                 >
@@ -2100,7 +2184,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   </h3>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={handleSaveActiveVendor}
+                      onClick={() => handleSaveActiveVendor()}
                       disabled={isSaving}
                       className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
                     >
@@ -2513,22 +2597,26 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 <DynamicBusinessNatureFields
                   vendor={activeVendor}
                   onChange={(updated) => setActiveVendor(updated)}
+                  onSave={(updated) => handleSaveActiveVendor(updated)}
+                  isSaving={isSaving}
                 />
 
-                {/* Save Button Action */}
-                <div className="pt-3 border-t border-stone-800 flex items-center justify-between">
-                  <span className="text-[11px] text-stone-400">
-                    Changes take effect across the live CamGo interactive maps, directories, and search immediately.
-                  </span>
-                  <button
-                    onClick={handleSaveActiveVendor}
-                    disabled={isSaving}
-                    className="py-2.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-xs shadow-xl shadow-emerald-950/60 flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-all"
-                  >
-                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    <span>Save All Changes</span>
-                  </button>
-                </div>
+                {/* Save Button Action (shown for non-accommodation sectors; accommodation renders its own step-9 button) */}
+                {activeSectorKey !== 'accommodation' && (
+                  <div className="pt-3 border-t border-stone-800 flex items-center justify-between">
+                    <span className="text-[11px] text-stone-400">
+                      Changes take effect across the live CamGo interactive maps, directories, and search immediately.
+                    </span>
+                    <button
+                      onClick={() => handleSaveActiveVendor()}
+                      disabled={isSaving}
+                      className="py-2.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-xs shadow-xl shadow-emerald-950/60 flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-all"
+                    >
+                      {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span>Save All Changes</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* COMPREHENSIVE BUSINESS SECTOR CATALOG & RESERVATION MANAGEMENT */}
@@ -2555,7 +2643,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       setEditingBike(null);
                       setBikeName('');
                       setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
-                      setBikePrice('80');
+                      setBikePrice(isAccommodationVendor ? '' : '80');
                       setBikeImage(activeCategoryConfig?.defaultImage || '');
                       setBikeHelmets('2');
                       setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
@@ -2725,7 +2813,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                           setEditingBike(null);
                           setBikeName(activeCategoryConfig?.sampleItemName || '');
                           setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
-                          setBikePrice('80');
+                          setBikePrice(isAccommodationVendor ? '' : '80');
                           setBikeImage(activeCategoryConfig?.defaultImage || '');
                           setBikeHelmets('2');
                           setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
@@ -2739,7 +2827,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {activeVendor.motorbikePackages.map((pkg) => (
+                      {activeVendor.motorbikePackages.map((pkg, pkgIdx) => {
+                        const matchedUnit = (activeVendor.sectorSpecifics?.accommodation?.units || []).find(
+                          (u) => u.id === pkg.id || u.unitLabel === pkg.name
+                        );
+                        const unitCodeLabel = matchedUnit?.unitCode || `CH-${pkgIdx + 1}`;
+                        return (
                         <div key={pkg.id} className="p-3.5 rounded-xl bg-stone-900 border border-white/10 flex flex-col justify-between space-y-2">
                           <div className="flex items-start gap-3">
                             <img
@@ -2748,6 +2841,11 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                               className="w-14 h-14 rounded-xl object-cover shrink-0 border border-stone-800"
                             />
                             <div className="min-w-0 flex-1">
+                              {isAccommodationVendor && (
+                                <div className="text-[10px] font-mono font-bold text-teal-300 truncate">
+                                  Unit {unitCodeLabel} — {activeVendor.businessName}
+                                </div>
+                              )}
                               <div className="text-xs font-bold text-white truncate">{pkg.name}</div>
                               <div className="text-[11px] text-emerald-400 font-mono font-bold mt-0.5">
                                 RM {pkg.dailyRateRm} <span className="text-[9px] text-stone-400 font-sans font-normal">/ {activeCategoryConfig?.unitLabel || 'unit'}</span>
@@ -2765,6 +2863,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                           <div className="flex justify-end gap-2 border-t border-white/5 pt-2">
                             <button
                               onClick={() => {
+                                if (isAccommodationVendor && matchedUnit) {
+                                  setActiveVendor({
+                                    ...activeVendor,
+                                    sectorSpecifics: {
+                                      ...activeVendor.sectorSpecifics,
+                                      accommodation: {
+                                        ...activeVendor.sectorSpecifics?.accommodation,
+                                        selectedUnitId: matchedUnit.id,
+                                      },
+                                    },
+                                  });
+                                }
                                 setEditingBike(pkg.id);
                                 setBikeName(pkg.name);
                                 setBikeCc(pkg.cc);
@@ -2782,7 +2892,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                             <button
                               onClick={async () => {
                                 const updatedPackages = (activeVendor.motorbikePackages || []).filter((p) => p.id !== pkg.id);
-                                const updatedVendor = { ...activeVendor, motorbikePackages: updatedPackages };
+                                const nextSpecifics = isAccommodationVendor && activeVendor.sectorSpecifics?.accommodation?.units
+                                  ? {
+                                      ...activeVendor.sectorSpecifics,
+                                      accommodation: {
+                                        ...activeVendor.sectorSpecifics.accommodation,
+                                        units: activeVendor.sectorSpecifics.accommodation.units.filter(
+                                          (u) => u.id !== pkg.id && u.unitLabel !== pkg.name
+                                        ),
+                                      },
+                                    }
+                                  : activeVendor.sectorSpecifics;
+                                const updatedVendor = { ...activeVendor, motorbikePackages: updatedPackages, sectorSpecifics: nextSpecifics };
                                 setActiveVendor(updatedVendor);
                                 await firebaseService.saveVendorListing(updatedVendor);
                                 setSaveNotification(`Removed ${pkg.name}!`);
@@ -2794,7 +2915,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                             </button>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -3195,7 +3317,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         setEditingBike(null);
                         setBikeName('');
                         setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
-                        setBikePrice('80');
+                        setBikePrice(isAccommodationVendor ? '' : '80');
                         setBikeImage(activeCategoryConfig?.defaultImage || '');
                         setBikeHelmets('2');
                         setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
@@ -3365,7 +3487,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                             setEditingBike(null);
                             setBikeName(activeCategoryConfig?.sampleItemName || '');
                             setBikeCc(activeCategoryConfig?.defaultSpecPlaceholder?.split('/')[0]?.trim() || 'Standard');
-                            setBikePrice('80');
+                            setBikePrice(isAccommodationVendor ? '' : '80');
                             setBikeImage(activeCategoryConfig?.defaultImage || '');
                             setBikeHelmets('2');
                             setBikePkgDetails(activeCategoryConfig?.defaultFeaturesPlaceholder || '');
@@ -3379,7 +3501,12 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {activeVendor.motorbikePackages.map((pkg) => (
+                        {activeVendor.motorbikePackages.map((pkg, pkgIdx) => {
+                          const matchedUnit = (activeVendor.sectorSpecifics?.accommodation?.units || []).find(
+                            (u) => u.id === pkg.id || u.unitLabel === pkg.name
+                          );
+                          const unitCodeLabel = matchedUnit?.unitCode || `CH-${pkgIdx + 1}`;
+                          return (
                           <div key={pkg.id} className="p-3.5 rounded-xl bg-stone-900 border border-white/10 flex flex-col justify-between space-y-2">
                             <div className="flex items-start gap-3">
                               <img
@@ -3388,6 +3515,11 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                                 className="w-14 h-14 rounded-xl object-cover shrink-0 border border-stone-800"
                               />
                               <div className="min-w-0 flex-1">
+                                {isAccommodationVendor && (
+                                  <div className="text-[10px] font-mono font-bold text-teal-300 truncate">
+                                    Unit {unitCodeLabel} — {activeVendor.businessName}
+                                  </div>
+                                )}
                                 <div className="text-xs font-bold text-white truncate">{pkg.name}</div>
                                 <div className="text-[11px] text-emerald-400 font-mono font-bold mt-0.5">
                                   RM {pkg.dailyRateRm} <span className="text-[9px] text-stone-400 font-sans font-normal">/ {activeCategoryConfig?.unitLabel || 'unit'}</span>
@@ -3405,6 +3537,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                             <div className="flex justify-end gap-2 border-t border-white/5 pt-2">
                               <button
                                 onClick={() => {
+                                  if (isAccommodationVendor && matchedUnit) {
+                                    setActiveVendor({
+                                      ...activeVendor,
+                                      sectorSpecifics: {
+                                        ...activeVendor.sectorSpecifics,
+                                        accommodation: {
+                                          ...activeVendor.sectorSpecifics?.accommodation,
+                                          selectedUnitId: matchedUnit.id,
+                                        },
+                                      },
+                                    });
+                                  }
                                   setEditingBike(pkg.id);
                                   setBikeName(pkg.name);
                                   setBikeCc(pkg.cc);
@@ -3422,7 +3566,18 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                               <button
                                 onClick={async () => {
                                   const updatedPackages = (activeVendor.motorbikePackages || []).filter((p) => p.id !== pkg.id);
-                                  const updatedVendor = { ...activeVendor, motorbikePackages: updatedPackages };
+                                  const nextSpecifics = isAccommodationVendor && activeVendor.sectorSpecifics?.accommodation?.units
+                                    ? {
+                                        ...activeVendor.sectorSpecifics,
+                                        accommodation: {
+                                          ...activeVendor.sectorSpecifics.accommodation,
+                                          units: activeVendor.sectorSpecifics.accommodation.units.filter(
+                                            (u) => u.id !== pkg.id && u.unitLabel !== pkg.name
+                                          ),
+                                        },
+                                      }
+                                    : activeVendor.sectorSpecifics;
+                                  const updatedVendor = { ...activeVendor, motorbikePackages: updatedPackages, sectorSpecifics: nextSpecifics };
                                   setActiveVendor(updatedVendor);
                                   await firebaseService.saveVendorListing(updatedVendor);
                                   setSaveNotification(`Removed ${pkg.name}!`);
@@ -3434,7 +3589,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                               </button>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -3702,9 +3858,9 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                         </div>
                         <div className="text-xs space-y-1.5 text-stone-300">
                           <div>
-                            <span className="text-[10px] text-stone-500 block">Public Title (Masked):</span>
+                            <span className="text-[10px] text-stone-500 block">Public Title (Unit Code &amp; Business Name):</span>
                             <span className="font-mono font-bold text-white">
-                              Cozy Stay near {activeVendor?.township || 'Cameron Highlands'} (CH-07)
+                              Unit {activeVendor?.sectorSpecifics?.accommodation?.units?.[0]?.unitCode || 'CH-1'} — {activeVendor?.businessName || 'Homestay'}
                             </span>
                           </div>
                           <div>
@@ -5935,7 +6091,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                       type="number"
                       value={manualTotalRate}
                       onChange={(e) => setManualTotalRate(e.target.value)}
-                      placeholder="200"
+                      placeholder="Enter RM rate"
                       className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-white text-xs focus:outline-none focus:border-emerald-500"
                     />
                   </div>

@@ -3529,6 +3529,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <DynamicBusinessNatureFields
                   vendor={selectedVendorForAdmin}
                   onChange={(updated) => setSelectedVendorForAdmin(updated)}
+                  onSave={(updated) => handleSaveSelectedAdminVendor(updated)}
+                  isSaving={isSavingAdminVendor}
                 />
               </div>
             ) : (

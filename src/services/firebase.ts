@@ -2766,6 +2766,178 @@ class FirebaseStorageService {
       await this.saveMotorbikePartner(partnerObj, { skipVendorSync: true });
     }
 
+    // Auto-Sync Accommodation Vendor changes directly to Verified Homestays & Stays (accommodation_listings)
+    const isAccomVendor =
+      !isMockVendorListing(listing) &&
+      (listing.category === 'accommodation' ||
+        listing.subCategory === 'homestay' ||
+        listing.subCategory === 'homestay_apartment' ||
+        listing.subCategory === 'homestay_landed' ||
+        listing.subCategory === 'chalets' ||
+        listing.subCategory === 'hostels_roomstay' ||
+        listing.subCategory === 'hotels_resorts' ||
+        (listing.subCategory as string) === 'realestate_vacation_homestay' ||
+        (listing.subCategory as string) === 'realestate_agritourism_farm');
+
+    if (isAccomVendor) {
+      const accom = listing.sectorSpecifics?.accommodation;
+      const units = accom?.units || [];
+      const primaryUnit =
+        units.find((u) => u.id === accom?.selectedUnitId) ||
+        units.find((u) => u.isAvailable !== false) ||
+        units[0];
+      const activeRooms = primaryUnit?.roomTypes?.length
+        ? primaryUnit.roomTypes
+        : accom?.roomTypes || [];
+      const validRates = [
+        ...(primaryUnit?.roomTypes || []).map((r) => Number(r.pricePerNight) || 0),
+        ...units.flatMap((u) => (u.roomTypes || []).map((r) => Number(r.pricePerNight) || 0)),
+        ...(accom?.roomTypes || []).map((r) => Number(r.pricePerNight) || 0),
+        ...(listing.motorbikePackages || []).map((p) => Number(p.dailyRateRm) || 0),
+      ].filter((n) => n > 0);
+      const computedPrice = validRates[0] ?? 0;
+      const codeNumber =
+        listing.id.slice(-4).replace(/\D/g, '') ||
+        Math.floor(10 + Math.random() * 89).toString();
+      const existingAccom = this.getAccommodationListings().find(
+        (a) => a.id === listing.id || a.vendorId === listing.id
+      );
+      const unitCode =
+        primaryUnit?.unitCode?.trim() ||
+        existingAccom?.code ||
+        `CH-${codeNumber}`;
+      const anyUnitAvailable =
+        units.length > 0 ? units.some((u) => u.isAvailable !== false) : true;
+      const resolvedAvailStatus: RoomAvailabilityStatus =
+        units.length > 0 && !anyUnitAvailable
+          ? 'fully_booked'
+          : listing.roomAvailabilityStatus ||
+            existingAccom?.roomAvailabilityStatus ||
+            'rooms_available';
+
+      const mappedAccom: AccommodationListing = {
+        id: listing.id,
+        vendorId: listing.id,
+        ownerUid: listing.ownerUid,
+        ownerEmail: listing.ownerEmail,
+        code: unitCode,
+        maskedTitle: `${unitCode}`,
+        realBusinessName: listing.businessName,
+        township: listing.township || 'Kea Farm',
+        proximityDesc: `Verified Highland Stay · ${listing.township || 'Cameron Highlands'}`,
+        ownerName: existingAccom?.ownerName || `${listing.businessName} Host`,
+        ownerPhone:
+          listing.contactPhone ||
+          listing.whatsappNumber ||
+          existingAccom?.ownerPhone ||
+          '+60123456789',
+        whatsappNumber:
+          listing.whatsappNumber ||
+          listing.contactPhone ||
+          existingAccom?.whatsappNumber ||
+          '+60123456789',
+        pricePerNight: computedPrice,
+        depositAmount: 30,
+        balanceToCollect: computedPrice > 0 ? Math.max(0, computedPrice - 30) : 0,
+        bookingType: existingAccom?.bookingType || 'instant',
+        roomAvailabilityStatus: resolvedAvailStatus,
+        bedrooms:
+          primaryUnit?.roomsPerUnit ||
+          accom?.apartment?.roomsPerUnit ||
+          existingAccom?.bedrooms ||
+          3,
+        bathrooms:
+          primaryUnit?.bathrooms ||
+          accom?.apartment?.bathrooms ||
+          existingAccom?.bathrooms ||
+          2,
+        maxGuests:
+          accom?.maxOccupancy ||
+          (accom?.apartment?.roomsPerUnit || 3) * 2 ||
+          existingAccom?.maxGuests ||
+          6,
+        rating:
+          existingAccom?.rating ||
+          (listing.profileHealthScore ? 4.5 + listing.profileHealthScore / 200 : 4.9),
+        reviewCount: existingAccom?.reviewCount || 18,
+        coverImage:
+          listing.coverImage ||
+          listing.galleryImages?.[0] ||
+          listing.logoUrl ||
+          existingAccom?.coverImage ||
+          'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+        galleryImages:
+          listing.galleryImages && listing.galleryImages.length > 0
+            ? listing.galleryImages
+            : existingAccom?.galleryImages || [
+                listing.coverImage ||
+                  'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+              ],
+        features:
+          existingAccom?.features || [
+            'Highland Mountain Air',
+            'Fast Wi-Fi',
+            'Balcony View',
+            'Free Parking',
+          ],
+        bundledPerks:
+          existingAccom?.bundledPerks || [
+            '🍓 Free Strawberry Farm Passes (Kea Farm)',
+            '🅿️ Guaranteed Kea Farm Dedicated Parking Bay',
+            '🗺️ CamGo Live Traffic Jam Avoidance Map',
+          ],
+        verifiedHost: listing.verificationStatus === 'verified',
+        ownerPortalSlug: (listing.businessName || 'host')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '-'),
+        units,
+        roomTypes: activeRooms,
+        amenityAddons:
+          primaryUnit?.amenityAddons ||
+          accom?.amenityAddons ||
+          existingAccom?.amenityAddons,
+        breakfastIncluded:
+          primaryUnit?.breakfastIncluded ??
+          accom?.breakfastIncluded ??
+          existingAccom?.breakfastIncluded,
+        checkInWindow:
+          primaryUnit?.checkInTime ||
+          accom?.checkInWindow ||
+          existingAccom?.checkInWindow ||
+          '15:00',
+        checkOutWindow:
+          primaryUnit?.checkOutTime ||
+          accom?.checkOutWindow ||
+          existingAccom?.checkOutWindow ||
+          '12:00',
+        parkingType:
+          primaryUnit?.parkingType ||
+          accom?.parkingType ||
+          existingAccom?.parkingType ||
+          'private_available',
+        parkingDetails:
+          primaryUnit?.parkingDetails ||
+          accom?.parkingDetails ||
+          existingAccom?.parkingDetails,
+        cookingPermitted:
+          primaryUnit?.cookingPermitted ??
+          accom?.apartment?.cookingPermitted ??
+          existingAccom?.cookingPermitted,
+        kitchenNotes:
+          primaryUnit?.kitchenNotes ||
+          accom?.apartment?.kitchenNotes ||
+          existingAccom?.kitchenNotes,
+        description: listing.description || existingAccom?.description || '',
+        houseRules:
+          primaryUnit?.houseRules ||
+          accom?.houseRules ||
+          listing.vendorTerms ||
+          existingAccom?.houseRules ||
+          '',
+      };
+      await this.saveAccommodationListing(mappedAccom);
+    }
+
     // Cross-Sync to Main Directory Places (Create or Update)
     const mainPlaces = this.getPlaces();
     const matchIndex = mainPlaces.findIndex(
@@ -3899,37 +4071,71 @@ class FirebaseStorageService {
 
       if (isAccomVendor) {
         const existing = accommodationMap.get(v.id);
-        const codeNumber = v.id.slice(-4).replace(/\D/g, '') || Math.floor(10 + Math.random() * 89).toString();
-        const price = v.sectorSpecifics?.accommodation?.roomTypes?.[0]?.pricePerNight || 200;
+        const accom = v.sectorSpecifics?.accommodation;
+        const units = accom?.units || existing?.units || [];
+        const primaryUnit =
+          units.find((u) => u.id === accom?.selectedUnitId) ||
+          units.find((u) => u.isAvailable !== false) ||
+          units[0];
+        const activeRooms =
+          primaryUnit?.roomTypes && primaryUnit.roomTypes.length > 0
+            ? primaryUnit.roomTypes
+            : accom?.roomTypes && accom.roomTypes.length > 0
+            ? accom.roomTypes
+            : existing?.roomTypes || [];
+        const codeNumber =
+          v.id.slice(-4).replace(/\D/g, '') ||
+          Math.floor(10 + Math.random() * 89).toString();
+        const validRates = [
+          ...(primaryUnit?.roomTypes || []).map((r) => Number(r.pricePerNight) || 0),
+          ...units.flatMap((u) => (u.roomTypes || []).map((r) => Number(r.pricePerNight) || 0)),
+          ...(accom?.roomTypes || []).map((r) => Number(r.pricePerNight) || 0),
+          ...(v.motorbikePackages || []).map((p) => Number(p.dailyRateRm) || 0),
+          Number(existing?.pricePerNight) || 0,
+        ].filter((n) => n > 0);
+        const price = validRates[0] ?? 0;
+        const unitCode =
+          primaryUnit?.unitCode?.trim() ||
+          existing?.code ||
+          `CH-${codeNumber}`;
+        const anyUnitAvailable =
+          units.length > 0 ? units.some((u) => u.isAvailable !== false) : true;
+        const resolvedAvailStatus: RoomAvailabilityStatus =
+          units.length > 0 && !anyUnitAvailable
+            ? 'fully_booked'
+            : v.roomAvailabilityStatus ||
+              existing?.roomAvailabilityStatus ||
+              'rooms_available';
 
         const mapped: AccommodationListing = {
           id: v.id,
           vendorId: v.id,
           ownerUid: v.ownerUid,
           ownerEmail: v.ownerEmail,
-          code: existing?.code || `CH-${codeNumber}`,
-          maskedTitle: existing?.maskedTitle || `${v.businessName} (CH-${codeNumber})`,
+          code: unitCode,
+          maskedTitle: `${unitCode}`,
           realBusinessName: v.businessName,
           township: v.township || 'Kea Farm',
           proximityDesc: `Verified Highland Stay · ${v.township || 'Cameron Highlands'}`,
           ownerName: existing?.ownerName || v.businessName + ' Host',
-          ownerPhone: existing?.ownerPhone || v.contactPhone || v.whatsappNumber || '+60123456789',
-          whatsappNumber: existing?.whatsappNumber || v.whatsappNumber || v.contactPhone || '+60123456789',
-          pricePerNight: existing?.pricePerNight || price,
+          ownerPhone: v.contactPhone || v.whatsappNumber || existing?.ownerPhone || '+60123456789',
+          whatsappNumber: v.whatsappNumber || v.contactPhone || existing?.whatsappNumber || '+60123456789',
+          pricePerNight: price,
           depositAmount: 30,
-          balanceToCollect: Math.max(0, (existing?.pricePerNight || price) - 30),
+          balanceToCollect: price > 0 ? Math.max(0, price - 30) : 0,
           bookingType: existing?.bookingType || 'instant',
-          roomAvailabilityStatus: v.roomAvailabilityStatus || existing?.roomAvailabilityStatus || 'rooms_available',
-          bedrooms: existing?.bedrooms || v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3,
-          bathrooms: existing?.bathrooms || 2,
+          roomAvailabilityStatus: resolvedAvailStatus,
+          bedrooms: primaryUnit?.roomsPerUnit || accom?.apartment?.roomsPerUnit || existing?.bedrooms || 3,
+          bathrooms: primaryUnit?.bathrooms || accom?.apartment?.bathrooms || existing?.bathrooms || 2,
           maxGuests:
+            accom?.maxOccupancy ||
+            (accom?.apartment?.roomsPerUnit || 3) * 2 ||
             existing?.maxGuests ||
-            v.sectorSpecifics?.accommodation?.maxOccupancy ||
-            (v.sectorSpecifics?.accommodation?.apartment?.roomsPerUnit || 3) * 2,
+            6,
           rating: existing?.rating || (v.profileHealthScore ? 4.5 + (v.profileHealthScore / 200) : 4.9),
           reviewCount: existing?.reviewCount || 18,
-          coverImage: existing?.coverImage || v.coverImage || v.galleryImages?.[0] || v.logoUrl || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
-          galleryImages: existing?.galleryImages && existing.galleryImages.length > 0 ? existing.galleryImages : v.galleryImages && v.galleryImages.length > 0 ? v.galleryImages : [v.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80'],
+          coverImage: v.coverImage || v.galleryImages?.[0] || v.logoUrl || existing?.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+          galleryImages: v.galleryImages && v.galleryImages.length > 0 ? v.galleryImages : existing?.galleryImages && existing.galleryImages.length > 0 ? existing.galleryImages : [v.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80'],
           features: existing?.features || ['Highland Mountain Air', 'Fast Wi-Fi', 'Balcony View', 'Free Parking'],
           bundledPerks: existing?.bundledPerks || [
             '🍓 Free Strawberry Farm Passes (Kea Farm)',
@@ -3938,6 +4144,18 @@ class FirebaseStorageService {
           ],
           verifiedHost: v.verificationStatus === 'verified',
           ownerPortalSlug: (v.businessName || 'host').toLowerCase().replace(/[^a-z0-9]/g, '-'),
+          units,
+          roomTypes: activeRooms,
+          amenityAddons: primaryUnit?.amenityAddons || accom?.amenityAddons || existing?.amenityAddons,
+          breakfastIncluded: primaryUnit?.breakfastIncluded ?? accom?.breakfastIncluded ?? existing?.breakfastIncluded,
+          checkInWindow: primaryUnit?.checkInTime || accom?.checkInWindow || existing?.checkInWindow || '15:00',
+          checkOutWindow: primaryUnit?.checkOutTime || accom?.checkOutWindow || existing?.checkOutWindow || '12:00',
+          parkingType: primaryUnit?.parkingType || accom?.parkingType || existing?.parkingType || 'private_available',
+          parkingDetails: primaryUnit?.parkingDetails || accom?.parkingDetails || existing?.parkingDetails,
+          cookingPermitted: primaryUnit?.cookingPermitted ?? accom?.apartment?.cookingPermitted ?? existing?.cookingPermitted,
+          kitchenNotes: primaryUnit?.kitchenNotes || accom?.apartment?.kitchenNotes || existing?.kitchenNotes,
+          description: v.description || existing?.description || '',
+          houseRules: primaryUnit?.houseRules || accom?.houseRules || v.vendorTerms || existing?.houseRules || '',
         };
 
         accommodationMap.set(v.id, mapped);
@@ -3962,7 +4180,10 @@ class FirebaseStorageService {
     this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_LISTINGS, JSON.stringify(updated));
     if (db) {
       try {
-        await setDoc(doc(db, 'accommodation_listings', listing.id), listing, { merge: true });
+        const cleanListing = Object.fromEntries(
+          Object.entries(listing).filter(([_, v]) => v !== undefined)
+        );
+        await setDoc(doc(db, 'accommodation_listings', listing.id), cleanListing, { merge: true });
       } catch (e) {
         console.error('Error saving accommodation listing to Firestore:', e);
       }

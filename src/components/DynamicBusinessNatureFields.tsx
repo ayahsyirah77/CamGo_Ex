@@ -3,6 +3,7 @@ import {
   VendorListing,
   VendorSectorSpecifics,
   AccommodationSpecifics,
+  AccommodationUnitConfig,
   VehicleRentalSpecifics,
   RetailProductSpecifics,
   ProfessionalServiceSpecifics,
@@ -31,12 +32,18 @@ import {
   BedDouble,
   Users,
   ClipboardCheck,
+  Save,
+  Loader2,
+  CheckCircle2,
+  FileText,
 } from 'lucide-react';
 
 interface DynamicBusinessNatureFieldsProps {
   vendor: VendorListing;
   onChange: (updatedVendor: VendorListing) => void;
   isReadOnly?: boolean;
+  onSave?: (updatedVendor: VendorListing) => Promise<void> | void;
+  isSaving?: boolean;
 }
 
 interface RentalSubConfig {
@@ -164,12 +171,24 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
   vendor,
   onChange,
   isReadOnly = false,
+  onSave,
+  isSaving = false,
 }) => {
   const specifics: VendorSectorSpecifics = vendor.sectorSpecifics || {};
   const subCatStr = String(vendor.subCategory || '');
   const sectorKey = resolveVendorSectorKey(vendor);
 
   const [newBlockedDate, setNewBlockedDate] = useState('');
+  const [accomSaveSuccess, setAccomSaveSuccess] = useState(false);
+
+  const toTimeInputValue = (raw: string | undefined, fallback: string): string => {
+    if (!raw) return fallback;
+    const match = raw.match(/\b(\d{1,2}):(\d{2})\b/);
+    if (!match) return fallback;
+    const hh = match[1].padStart(2, '0');
+    const mm = match[2];
+    return `${hh}:${mm}`;
+  };
 
   const isAccommodation = sectorKey === 'accommodation';
   const isFnB = sectorKey === 'food_beverage';
@@ -224,159 +243,388 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
       </div>
 
       {/* -------------------------------------------------------------
-          5.1 ACCOMMODATION & LODGING SECTOR (Strictly isolated)
+          5.1 ACCOMMODATION & LODGING SECTOR (Simplified 9-Step Sequence)
       ------------------------------------------------------------- */}
       {isAccommodation && (() => {
         const accom: AccommodationSpecifics = specifics.accommodation || {};
-        const roomTypes = accom.roomTypes || [];
-        const amenityAddons = accom.amenityAddons || [
+        const defaultAmenities = [
           { id: 'am-mattress', name: 'Extra Single Mattress & Blanket Set', priceRm: 35, enabled: true },
           { id: 'am-steamboat', name: 'Portable Steamboat Pot & Butane Gas', priceRm: 25, enabled: true },
           { id: 'am-bbq', name: 'Outdoor BBQ Charcoal & Pit Setup', priceRm: 40, enabled: false },
           { id: 'am-lateout', name: 'Late Check-Out Extension (Until 2:00 PM)', priceRm: 50, enabled: false },
         ];
-        const showApartmentUnitBlock =
-          subCatStr === 'realestate_residential' ||
-          subCatStr === 'realestate_vacation_homestay' ||
-          subCatStr === 'homestay' ||
-          subCatStr === 'homestay_apartment';
+
+        const fallbackCodeDigits = (vendor.id || '').slice(-2).replace(/\D/g, '') || '1';
+        const fallbackUnit: AccommodationUnitConfig = {
+          id: 'unit-1',
+          unitLabel: 'Unit 1',
+          unitCode: `CH-${fallbackCodeDigits}`,
+          isAvailable: vendor.roomAvailabilityStatus !== 'fully_booked',
+          checkInTime: toTimeInputValue(accom.checkInWindow, '15:00'),
+          checkOutTime: toTimeInputValue(accom.checkOutWindow, '12:00'),
+          parkingType: accom.parkingType || 'private_available',
+          parkingDetails: accom.parkingDetails || '',
+          roomTypes:
+            accom.roomTypes && accom.roomTypes.length > 0
+              ? accom.roomTypes
+              : [
+                  {
+                    id: 'room-1',
+                    name: 'Standard Highland Suite',
+                    quantity: 1,
+                    pricePerNight: vendor.motorbikePackages?.[0]?.dailyRateRm ?? 0,
+                    bedConfig: accom.bedConfig || '2 Queen Beds',
+                    maxOccupancy: accom.maxOccupancy || 4,
+                  },
+                ],
+          amenityAddons: accom.amenityAddons && accom.amenityAddons.length > 0 ? accom.amenityAddons : defaultAmenities,
+          breakfastIncluded: !!accom.breakfastIncluded,
+          roomsPerUnit: accom.apartment?.roomsPerUnit ?? 2,
+          bathrooms: accom.apartment?.bathrooms ?? 2,
+          cookingPermitted: !!accom.apartment?.cookingPermitted,
+          kitchenNotes: accom.apartment?.kitchenNotes || '',
+          houseRules: accom.houseRules || vendor.vendorTerms || '',
+        };
+
+        // Ensure any property/room items created in vendor catalog are reflected in the unit selection dropdown
+        const existingUnits = accom.units || [];
+        const syncedPackageUnits: AccommodationUnitConfig[] = (vendor.motorbikePackages || [])
+          .filter((pkg) => !existingUnits.some((u) => u.id === pkg.id || u.unitLabel === pkg.name))
+          .map((pkg, pkgIdx) => ({
+            id: pkg.id,
+            unitLabel: pkg.name,
+            unitCode: `CH-${existingUnits.length + pkgIdx + 1}`,
+            isAvailable: vendor.roomAvailabilityStatus !== 'fully_booked',
+            checkInTime: toTimeInputValue(accom.checkInWindow, '15:00'),
+            checkOutTime: toTimeInputValue(accom.checkOutWindow, '12:00'),
+            parkingType: accom.parkingType || 'private_available',
+            parkingDetails: accom.parkingDetails || '',
+            roomTypes: [
+              {
+                id: `room-${pkg.id}`,
+                name: pkg.name,
+                quantity: 1,
+                pricePerNight: Number(pkg.dailyRateRm) || 0,
+                bedConfig: pkg.cc || 'Standard Bed',
+                maxOccupancy: (Number(pkg.helmetsIncluded) || 1) * 2,
+              },
+            ],
+            amenityAddons: accom.amenityAddons && accom.amenityAddons.length > 0 ? accom.amenityAddons : defaultAmenities,
+            breakfastIncluded: !!accom.breakfastIncluded,
+            roomsPerUnit: Number(pkg.helmetsIncluded) || accom.apartment?.roomsPerUnit || 2,
+            bathrooms: accom.apartment?.bathrooms ?? 2,
+            cookingPermitted: !!accom.apartment?.cookingPermitted,
+            kitchenNotes: accom.apartment?.kitchenNotes || '',
+            houseRules: pkg.packageDetails || accom.houseRules || vendor.vendorTerms || '',
+          }));
+
+        const combinedUnits = [...existingUnits, ...syncedPackageUnits];
+        const unitsList: AccommodationUnitConfig[] =
+          combinedUnits.length > 0 ? combinedUnits : [fallbackUnit];
+
+        const selectedUnitId =
+          accom.selectedUnitId && unitsList.some((u) => u.id === accom.selectedUnitId)
+            ? accom.selectedUnitId
+            : unitsList[0].id;
+
+        const activeUnitIndex = Math.max(
+          0,
+          unitsList.findIndex((u) => u.id === selectedUnitId)
+        );
+        const activeUnit = unitsList[activeUnitIndex] || unitsList[0];
+
+        const activeRoomTypes = activeUnit.roomTypes || [];
+        const activeAmenities =
+          activeUnit.amenityAddons && activeUnit.amenityAddons.length > 0
+            ? activeUnit.amenityAddons
+            : defaultAmenities;
+
+        const updateSelectedUnit = (
+          unitPatch: Partial<AccommodationUnitConfig>,
+          vendorExtra?: Partial<VendorListing>
+        ) => {
+          const updatedUnits = unitsList.map((u, idx) =>
+            idx === activeUnitIndex ? { ...u, ...unitPatch } : u
+          );
+          const mergedUnit = updatedUnits[activeUnitIndex];
+          const anyUnitAvailable = updatedUnits.some((u) => u.isAvailable !== false);
+
+          const updatedAccom: AccommodationSpecifics = {
+            ...accom,
+            units: updatedUnits,
+            selectedUnitId: mergedUnit.id,
+            checkInWindow: mergedUnit.checkInTime || accom.checkInWindow || '15:00',
+            checkOutWindow: mergedUnit.checkOutTime || accom.checkOutWindow || '12:00',
+            parkingType: mergedUnit.parkingType || accom.parkingType || 'private_available',
+            parkingDetails: mergedUnit.parkingDetails ?? accom.parkingDetails,
+            roomTypes: mergedUnit.roomTypes || accom.roomTypes,
+            amenityAddons: mergedUnit.amenityAddons || accom.amenityAddons,
+            breakfastIncluded:
+              mergedUnit.breakfastIncluded !== undefined
+                ? mergedUnit.breakfastIncluded
+                : accom.breakfastIncluded,
+            houseRules: mergedUnit.houseRules ?? accom.houseRules,
+            roomAvailabilityStatus: anyUnitAvailable ? 'rooms_available' : 'fully_booked',
+            apartment: {
+              ...accom.apartment,
+              totalUnits: updatedUnits.length,
+              roomsPerUnit: mergedUnit.roomsPerUnit ?? accom.apartment?.roomsPerUnit ?? 2,
+              bathrooms: mergedUnit.bathrooms ?? accom.apartment?.bathrooms ?? 2,
+              cookingPermitted:
+                mergedUnit.cookingPermitted !== undefined
+                  ? mergedUnit.cookingPermitted
+                  : accom.apartment?.cookingPermitted,
+              kitchenNotes: mergedUnit.kitchenNotes ?? accom.apartment?.kitchenNotes,
+            },
+          };
+
+          const parkingVendorStatus =
+            mergedUnit.parkingType === 'valet'
+              ? 'valet_only'
+              : mergedUnit.parkingType === 'public_parking'
+              ? 'street_busy'
+              : 'private_available';
+
+          onChange({
+            ...vendor,
+            ...vendorExtra,
+            parkingStatus: (vendorExtra?.parkingStatus || parkingVendorStatus) as any,
+            roomAvailabilityStatus: anyUnitAvailable ? 'rooms_available' : 'fully_booked',
+            vendorTerms:
+              unitPatch.houseRules !== undefined ? unitPatch.houseRules : vendor.vendorTerms,
+            sectorSpecifics: {
+              ...vendor.sectorSpecifics,
+              accommodation: updatedAccom,
+            },
+          });
+        };
 
         return (
-          <div className="p-4 rounded-2xl bg-stone-950/80 border border-teal-500/25 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-teal-300">
-                <Home className="w-4 h-4 text-teal-400" />
-                <span>5.1 Accommodation &amp; Lodging Attributes</span>
-              </div>
-              <span className="text-[11px] font-mono text-teal-300">
-                Housekeeping:{' '}
-                <strong className="uppercase">
-                  {(accom.housekeepingStatus || 'clean_ready').replace(/_/g, ' ')}
-                </strong>
-              </span>
-            </div>
-
-            {/* Check-in / Check-out Windows, Occupancy Limit & Bed Summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-              <div>
-                <label className="block font-medium text-stone-300 mb-1 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-teal-400" />
-                  <span>Check-In Window</span>
+          <div className="p-4 sm:p-5 rounded-2xl bg-stone-950/80 border border-teal-500/25 space-y-5">
+            {/* 1. UNIT SELECTION */}
+            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-bold text-teal-300 flex items-center gap-1.5">
+                  <Home className="w-3.5 h-3.5 text-teal-400" />
+                  <span>1. Unit Selection</span>
                 </label>
-                <input
-                  type="text"
-                  disabled={isReadOnly}
-                  value={accom.checkInWindow ?? '15:00 - 22:00'}
-                  onChange={(e) =>
-                    updateSectorSpecifics({
-                      accommodation: { ...accom, checkInWindow: e.target.value },
-                    })
-                  }
-                  placeholder="e.g. 15:00 - 22:00"
-                  className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-300 mb-1 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Check-Out Window</span>
-                </label>
-                <input
-                  type="text"
-                  disabled={isReadOnly}
-                  value={accom.checkOutWindow ?? '08:00 - 12:00'}
-                  onChange={(e) =>
-                    updateSectorSpecifics({
-                      accommodation: { ...accom, checkOutWindow: e.target.value },
-                    })
-                  }
-                  placeholder="e.g. 08:00 - 12:00"
-                  className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-300 mb-1 flex items-center gap-1">
-                  <Users className="w-3.5 h-3.5 text-teal-400" />
-                  <span>Max Occupancy (Guests)</span>
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  disabled={isReadOnly}
-                  value={accom.maxOccupancy ?? 6}
-                  onChange={(e) =>
-                    updateSectorSpecifics({
-                      accommodation: { ...accom, maxOccupancy: Number(e.target.value) },
-                    })
-                  }
-                  className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white font-mono tabular-nums font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-300 mb-1 flex items-center gap-1">
-                  <BedDouble className="w-3.5 h-3.5 text-teal-400" />
-                  <span>Primary Bed Configuration</span>
-                </label>
-                <input
-                  type="text"
-                  disabled={isReadOnly}
-                  value={accom.bedConfig ?? '2 Queen Beds + 1 Single'}
-                  onChange={(e) =>
-                    updateSectorSpecifics({
-                      accommodation: { ...accom, bedConfig: e.target.value },
-                    })
-                  }
-                  placeholder="e.g. 1 King + 2 Singles"
-                  className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white"
-                />
-              </div>
-            </div>
-
-            {/* Housekeeping Status */}
-            <div>
-              <label className="block text-xs font-medium text-stone-300 mb-1.5 flex items-center gap-1.5">
-                <ClipboardCheck className="w-3.5 h-3.5 text-teal-400" />
-                <span>Housekeeping &amp; Unit Readiness Status</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { id: 'clean_ready', label: 'Clean & Ready' },
-                  { id: 'turnover_in_progress', label: 'Turnover In Progress' },
-                  { id: 'inspection_needed', label: 'Inspection Needed' },
-                  { id: 'deep_cleaning', label: 'Deep Cleaning' },
-                ].map((hk) => {
-                  const isSelected = (accom.housekeepingStatus || 'clean_ready') === hk.id;
-                  return (
+                {!isReadOnly && (
+                  <div className="flex items-center gap-1.5">
                     <button
-                      key={hk.id}
                       type="button"
-                      disabled={isReadOnly}
-                      onClick={() =>
+                      onClick={() => {
+                        const nextIdx = unitsList.length + 1;
+                        const newUnit: AccommodationUnitConfig = {
+                          id: `unit-${Date.now()}`,
+                          unitLabel: `Unit ${nextIdx}`,
+                          unitCode: `CH-${nextIdx}`,
+                          isAvailable: true,
+                          checkInTime: activeUnit.checkInTime || '15:00',
+                          checkOutTime: activeUnit.checkOutTime || '12:00',
+                          parkingType: activeUnit.parkingType || 'private_available',
+                          parkingDetails: activeUnit.parkingDetails || '',
+                          roomTypes: [
+                            {
+                              id: `room-${Date.now()}`,
+                              name: `Unit ${nextIdx} Standard Suite`,
+                              quantity: 1,
+                              pricePerNight: activeRoomTypes[0]?.pricePerNight ?? 0,
+                              bedConfig: '1 Queen Bed',
+                              maxOccupancy: 4,
+                            },
+                          ],
+                          amenityAddons: defaultAmenities,
+                          breakfastIncluded: false,
+                          roomsPerUnit: 2,
+                          bathrooms: 2,
+                          cookingPermitted: true,
+                          kitchenNotes: '',
+                          houseRules: activeUnit.houseRules || '',
+                        };
+                        const nextUnits = [...unitsList, newUnit];
                         updateSectorSpecifics({
-                          accommodation: { ...accom, housekeepingStatus: hk.id as any },
-                        })
-                      }
-                      className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
-                        isSelected
-                          ? 'bg-teal-600 text-white border-teal-400 shadow-md'
-                          : 'bg-stone-900 text-stone-400 border-stone-800 hover:text-white'
-                      }`}
+                          accommodation: {
+                            ...accom,
+                            units: nextUnits,
+                            selectedUnitId: newUnit.id,
+                            apartment: {
+                              ...accom.apartment,
+                              totalUnits: nextUnits.length,
+                            },
+                          },
+                        });
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-teal-600/20 hover:bg-teal-600/35 text-teal-300 border border-teal-500/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      {isSelected ? '✓ ' : ''}
-                      {hk.label}
+                      <Plus className="w-3 h-3" />
+                      <span>Add Unit</span>
                     </button>
-                  );
-                })}
+                    {unitsList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const remaining = unitsList.filter((_, i) => i !== activeUnitIndex);
+                          const nextSelected = remaining[0];
+                          updateSectorSpecifics({
+                            accommodation: {
+                              ...accom,
+                              units: remaining,
+                              selectedUnitId: nextSelected.id,
+                              roomTypes: nextSelected.roomTypes,
+                              apartment: {
+                                ...accom.apartment,
+                                totalUnits: remaining.length,
+                              },
+                            },
+                          });
+                        }}
+                        className="p-1.5 rounded-lg bg-rose-950/50 text-rose-300 hover:bg-rose-900 cursor-pointer"
+                        title="Remove selected unit"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-medium text-stone-400 mb-1">
+                    Select Unit to Configure
+                  </label>
+                  <select
+                    disabled={isReadOnly}
+                    value={activeUnit.id}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      const picked = unitsList.find((u) => u.id === nextId) || unitsList[0];
+                      updateSectorSpecifics({
+                        accommodation: {
+                          ...accom,
+                          units: unitsList,
+                          selectedUnitId: nextId,
+                          checkInWindow: picked.checkInTime || accom.checkInWindow,
+                          checkOutWindow: picked.checkOutTime || accom.checkOutWindow,
+                          parkingType: picked.parkingType || accom.parkingType,
+                          parkingDetails: picked.parkingDetails ?? accom.parkingDetails,
+                          roomTypes: picked.roomTypes || accom.roomTypes,
+                          amenityAddons: picked.amenityAddons || accom.amenityAddons,
+                          breakfastIncluded:
+                            picked.breakfastIncluded !== undefined
+                              ? picked.breakfastIncluded
+                              : accom.breakfastIncluded,
+                          houseRules: picked.houseRules ?? accom.houseRules,
+                        },
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white font-semibold cursor-pointer"
+                  >
+                    {unitsList.map((u, idx) => {
+                      const codeLabel = u.unitCode || `CH-${idx + 1}`;
+                      return (
+                        <option key={u.id} value={u.id}>
+                          Unit {codeLabel} — {vendor.businessName || 'Homestay'} ({u.unitLabel || `Unit ${idx + 1}`}) ·{' '}
+                          {u.isAvailable !== false ? 'Available' : 'Unavailable'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-stone-400 mb-1">
+                    Unit Code (Prefix behind Business Name: Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`} — {vendor.businessName})
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={activeUnit.unitCode || ''}
+                    onChange={(e) => updateSelectedUnit({ unitCode: e.target.value.toUpperCase() })}
+                    placeholder="e.g. CH-1"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-emerald-300 font-mono font-bold uppercase"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Parking Toggles */}
-            <div>
-              <label className="block text-xs font-medium text-stone-300 mb-1.5">
-                Parking Facilities &amp; Availability
+            {/* 2. CHECK-IN & CHECK-OUT WINDOWS */}
+            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-2.5">
+              <label className="block text-xs font-bold text-white flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-teal-400" />
+                <span>2. Check-In &amp; Check-Out Windows</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-medium text-stone-400 mb-1">
+                    Check-In Time
+                  </label>
+                  <input
+                    type="time"
+                    disabled={isReadOnly}
+                    value={toTimeInputValue(activeUnit.checkInTime || accom.checkInWindow, '15:00')}
+                    onChange={(e) => updateSelectedUnit({ checkInTime: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white font-mono cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-stone-400 mb-1">
+                    Check-Out Time
+                  </label>
+                  <input
+                    type="time"
+                    disabled={isReadOnly}
+                    value={toTimeInputValue(activeUnit.checkOutTime || accom.checkOutWindow, '12:00')}
+                    onChange={(e) => updateSelectedUnit({ checkOutTime: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white font-mono cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 3. UNIT AVAILABILITY */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-stone-900/90 border border-stone-800">
+              <div>
+                <span className="text-xs font-bold text-white block">
+                  3. Unit Availability (Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`} — {vendor.businessName})
+                </span>
+                <span className="text-[11px] text-stone-400">
+                  Toggle whether this unit can currently accept new guest bookings
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isReadOnly}
+                  onClick={() => updateSelectedUnit({ isAvailable: true })}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    activeUnit.isAvailable !== false
+                      ? 'bg-emerald-600 text-white border-emerald-400 shadow'
+                      : 'bg-stone-950 text-stone-400 border-stone-800 hover:text-white'
+                  }`}
+                >
+                  ✓ Available
+                </button>
+                <button
+                  type="button"
+                  disabled={isReadOnly}
+                  onClick={() => updateSelectedUnit({ isAvailable: false })}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    activeUnit.isAvailable === false
+                      ? 'bg-rose-600 text-white border-rose-400 shadow'
+                      : 'bg-stone-950 text-stone-400 border-stone-800 hover:text-white'
+                  }`}
+                >
+                  ✕ Unavailable / Booked
+                </button>
+              </div>
+            </div>
+
+            {/* 4. PARKING FACILITIES & AVAILABILITY */}
+            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-2.5">
+              <label className="block text-xs font-bold text-white flex items-center gap-1.5">
+                <ParkingCircle className="w-3.5 h-3.5 text-teal-400" />
+                <span>4. Parking Facilities &amp; Availability</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
@@ -385,31 +633,17 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   { id: 'valet', label: 'Valet Parking' },
                   { id: 'none', label: 'No Parking' },
                 ].map((opt) => {
-                  const isSelected = (accom.parkingType || vendor.parkingStatus) === opt.id;
+                  const isSelected = (activeUnit.parkingType || accom.parkingType || 'private_available') === opt.id;
                   return (
                     <button
                       key={opt.id}
                       type="button"
                       disabled={isReadOnly}
-                      onClick={() => {
-                        const updatedAccom: AccommodationSpecifics = {
-                          ...accom,
-                          parkingType: opt.id as any,
-                        };
-                        onChange({
-                          ...vendor,
-                          parkingStatus: (opt.id === 'valet'
-                            ? 'valet_only'
-                            : opt.id === 'public_parking'
-                            ? 'street_busy'
-                            : 'private_available') as any,
-                          sectorSpecifics: { ...vendor.sectorSpecifics, accommodation: updatedAccom },
-                        });
-                      }}
+                      onClick={() => updateSelectedUnit({ parkingType: opt.id as any })}
                       className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
                         isSelected
                           ? 'bg-teal-600 text-white border-teal-400 shadow-md'
-                          : 'bg-stone-900 text-stone-400 border-stone-800 hover:text-white'
+                          : 'bg-stone-950 text-stone-400 border-stone-800 hover:text-white'
                       }`}
                     >
                       {isSelected ? '✓ ' : ''}
@@ -418,33 +652,39 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   );
                 })}
               </div>
+              <input
+                type="text"
+                disabled={isReadOnly}
+                value={activeUnit.parkingDetails ?? accom.parkingDetails ?? ''}
+                onChange={(e) => updateSelectedUnit({ parkingDetails: e.target.value })}
+                placeholder="Parking details / bay availability (e.g. 1 free covered basement bay included)"
+                className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs text-white placeholder-stone-500"
+              />
             </div>
 
-            {/* Room Types, Nightly Rates, Bed Config & Occupancy */}
-            <div className="space-y-2">
+            {/* 5. ROOM TYPES, NIGHTLY RATES & BED CONFIGURATIONS */}
+            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-medium text-stone-300">
-                  Room Types, Nightly Rates &amp; Bed Configurations
+                <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <BedDouble className="w-3.5 h-3.5 text-teal-400" />
+                  <span>5. Room Types, Nightly Rates &amp; Bed Configurations</span>
                 </label>
                 {!isReadOnly && (
                   <button
                     type="button"
                     onClick={() => {
-                      updateSectorSpecifics({
-                        accommodation: {
-                          ...accom,
-                          roomTypes: [
-                            ...roomTypes,
-                            {
-                              id: `room-${Date.now()}`,
-                              name: `${vendor.businessName ? `${vendor.businessName} Room` : 'Standard Room'} ${roomTypes.length + 1}`,
-                              quantity: 1,
-                              pricePerNight: 180,
-                              bedConfig: '1 Queen Bed',
-                              maxOccupancy: 2,
-                            },
-                          ],
-                        },
+                      updateSelectedUnit({
+                        roomTypes: [
+                          ...activeRoomTypes,
+                          {
+                            id: `room-${Date.now()}`,
+                            name: `${activeUnit.unitCode || activeUnit.unitLabel} Room ${activeRoomTypes.length + 1}`,
+                            quantity: 1,
+                            pricePerNight: 0,
+                            bedConfig: '1 Queen Bed',
+                            maxOccupancy: 2,
+                          },
+                        ],
                       });
                     }}
                     className="px-2.5 py-1 rounded-lg bg-teal-600/20 text-teal-300 border border-teal-500/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer hover:bg-teal-600/30"
@@ -455,93 +695,67 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                 )}
               </div>
 
-              {roomTypes.length === 0 ? (
-                <div className="p-4 rounded-xl bg-stone-900/70 border border-dashed border-stone-800 text-center space-y-2">
+              {activeRoomTypes.length === 0 ? (
+                <div className="p-4 rounded-xl bg-stone-950/70 border border-dashed border-stone-800 text-center space-y-2">
                   <p className="text-xs text-stone-400">
-                    No room or unit configurations added for{' '}
-                    <strong className="text-white">{vendor.businessName}</strong> yet.
+                    No room types configured for <strong>Unit {activeUnit.unitCode || activeUnit.unitLabel} — {vendor.businessName}</strong> yet.
                   </p>
                   {!isReadOnly && (
                     <button
                       type="button"
                       onClick={() =>
-                        updateSectorSpecifics({
-                          accommodation: {
-                            ...accom,
-                            roomTypes: [
-                              {
-                                id: `room-${Date.now()}`,
-                                name: 'Standard Highland Room',
-                                quantity: 2,
-                                pricePerNight: 180,
-                                bedConfig: '1 Queen Bed',
-                                maxOccupancy: 2,
-                              },
-                            ],
-                          },
+                        updateSelectedUnit({
+                          roomTypes: [
+                            {
+                              id: `room-${Date.now()}`,
+                              name: 'Standard Highland Room',
+                              quantity: 1,
+                              pricePerNight: 0,
+                              bedConfig: '1 Queen Bed',
+                              maxOccupancy: 2,
+                            },
+                          ],
                         })
                       }
                       className="px-3 py-1.5 rounded-lg bg-teal-600/20 text-teal-300 border border-teal-500/30 text-[11px] font-bold cursor-pointer hover:bg-teal-600/35"
                     >
-                      + Create First Room / Unit Entry
+                      + Add First Room Type
                     </button>
                   )}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {roomTypes.map((room, idx) => (
+                  {activeRoomTypes.map((room, idx) => (
                     <div
                       key={room.id || idx}
-                      className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs"
+                      className="p-2.5 rounded-xl bg-stone-950 border border-stone-800 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs"
                     >
                       <input
                         type="text"
                         disabled={isReadOnly}
                         value={room.name}
                         onChange={(e) => {
-                          const updatedRooms = roomTypes.map((r, i) =>
+                          const updatedRooms = activeRoomTypes.map((r, i) =>
                             i === idx ? { ...r, name: e.target.value } : r
                           );
-                          updateSectorSpecifics({
-                            accommodation: { ...accom, roomTypes: updatedRooms },
-                          });
+                          updateSelectedUnit({ roomTypes: updatedRooms });
                         }}
                         placeholder="Room / Unit Name"
-                        className="sm:col-span-4 px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white"
+                        className="sm:col-span-4 px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-white"
                       />
                       <input
                         type="text"
                         disabled={isReadOnly}
                         value={room.bedConfig || ''}
                         onChange={(e) => {
-                          const updatedRooms = roomTypes.map((r, i) =>
+                          const updatedRooms = activeRoomTypes.map((r, i) =>
                             i === idx ? { ...r, bedConfig: e.target.value } : r
                           );
-                          updateSectorSpecifics({
-                            accommodation: { ...accom, roomTypes: updatedRooms },
-                          });
+                          updateSelectedUnit({ roomTypes: updatedRooms });
                         }}
                         placeholder="Bed config (e.g. 2 Queen)"
-                        className="sm:col-span-3 px-2.5 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-stone-200"
+                        className="sm:col-span-4 px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-stone-200"
                       />
-                      <div className="sm:col-span-1 flex items-center gap-1">
-                        <span className="text-[10px] text-stone-400 font-mono">Pax:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          disabled={isReadOnly}
-                          value={room.maxOccupancy ?? 2}
-                          onChange={(e) => {
-                            const updatedRooms = roomTypes.map((r, i) =>
-                              i === idx ? { ...r, maxOccupancy: Number(e.target.value) } : r
-                            );
-                            updateSectorSpecifics({
-                              accommodation: { ...accom, roomTypes: updatedRooms },
-                            });
-                          }}
-                          className="w-full px-1.5 py-1 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
-                        />
-                      </div>
                       <div className="sm:col-span-1 flex items-center gap-1">
                         <span className="text-[10px] text-stone-400 font-mono">Qty:</span>
                         <input
@@ -550,14 +764,12 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                           disabled={isReadOnly}
                           value={room.quantity}
                           onChange={(e) => {
-                            const updatedRooms = roomTypes.map((r, i) =>
+                            const updatedRooms = activeRoomTypes.map((r, i) =>
                               i === idx ? { ...r, quantity: Number(e.target.value) } : r
                             );
-                            updateSectorSpecifics({
-                              accommodation: { ...accom, roomTypes: updatedRooms },
-                            });
+                            updateSelectedUnit({ roomTypes: updatedRooms });
                           }}
-                          className="w-full px-1.5 py-1 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
+                          className="w-full px-1.5 py-1 rounded-lg bg-stone-900 border border-stone-700 text-white font-mono tabular-nums text-center"
                         />
                       </div>
                       <div className="sm:col-span-2 flex items-center gap-1">
@@ -568,14 +780,12 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                           disabled={isReadOnly}
                           value={room.pricePerNight}
                           onChange={(e) => {
-                            const updatedRooms = roomTypes.map((r, i) =>
+                            const updatedRooms = activeRoomTypes.map((r, i) =>
                               i === idx ? { ...r, pricePerNight: Number(e.target.value) } : r
                             );
-                            updateSectorSpecifics({
-                              accommodation: { ...accom, roomTypes: updatedRooms },
-                            });
+                            updateSelectedUnit({ roomTypes: updatedRooms });
                           }}
-                          className="w-full px-2 py-1 rounded-lg bg-stone-950 border border-stone-700 text-emerald-300 font-mono tabular-nums text-right font-bold"
+                          className="w-full px-2 py-1 rounded-lg bg-stone-900 border border-stone-700 text-emerald-300 font-mono tabular-nums text-right font-bold"
                         />
                       </div>
                       <div className="sm:col-span-1 flex justify-end">
@@ -583,10 +793,8 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                           <button
                             type="button"
                             onClick={() => {
-                              const updatedRooms = roomTypes.filter((_, i) => i !== idx);
-                              updateSectorSpecifics({
-                                accommodation: { ...accom, roomTypes: updatedRooms },
-                              });
+                              const updatedRooms = activeRoomTypes.filter((_, i) => i !== idx);
+                              updateSelectedUnit({ roomTypes: updatedRooms });
                             }}
                             className="p-1.5 rounded bg-rose-950/50 text-rose-300 hover:bg-rose-900 cursor-pointer"
                             title="Remove Room Type"
@@ -601,22 +809,22 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
               )}
             </div>
 
-            {/* Amenity Add-ons */}
+            {/* 6. GUEST AMENITY ADD-ONS & STAY UPGRADES */}
             <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-teal-400" />
-                  <span>Guest Amenity Add-ons &amp; Stay Upgrades</span>
+                  <span>6. Guest Amenity Add-ons &amp; Stay Upgrades</span>
                 </span>
                 {!isReadOnly && (
                   <button
                     type="button"
                     onClick={() => {
                       const nextAddons = [
-                        ...amenityAddons,
+                        ...activeAmenities,
                         { id: 'am-' + Date.now(), name: 'Extra Amenity Add-on', priceRm: 20, enabled: true },
                       ];
-                      updateSectorSpecifics({ accommodation: { ...accom, amenityAddons: nextAddons } });
+                      updateSelectedUnit({ amenityAddons: nextAddons });
                     }}
                     className="px-2 py-1 rounded-lg bg-teal-600/20 hover:bg-teal-600/40 text-teal-300 border border-teal-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                   >
@@ -625,7 +833,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {amenityAddons.map((addon, idx) => (
+                {activeAmenities.map((addon, idx) => (
                   <div
                     key={addon.id}
                     className={`p-2 rounded-xl border flex items-center justify-between gap-2 text-xs ${
@@ -639,10 +847,10 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                       disabled={isReadOnly}
                       checked={addon.enabled}
                       onChange={(e) => {
-                        const updated = amenityAddons.map((a, i) =>
+                        const updated = activeAmenities.map((a, i) =>
                           i === idx ? { ...a, enabled: e.target.checked } : a
                         );
-                        updateSectorSpecifics({ accommodation: { ...accom, amenityAddons: updated } });
+                        updateSelectedUnit({ amenityAddons: updated });
                       }}
                       className="w-3.5 h-3.5 rounded text-teal-500 bg-stone-900 border-stone-700 shrink-0 cursor-pointer"
                     />
@@ -651,10 +859,10 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                       disabled={isReadOnly}
                       value={addon.name}
                       onChange={(e) => {
-                        const updated = amenityAddons.map((a, i) =>
+                        const updated = activeAmenities.map((a, i) =>
                           i === idx ? { ...a, name: e.target.value } : a
                         );
-                        updateSectorSpecifics({ accommodation: { ...accom, amenityAddons: updated } });
+                        updateSelectedUnit({ amenityAddons: updated });
                       }}
                       className="flex-1 min-w-0 bg-transparent text-white text-xs focus:outline-none border-b border-transparent focus:border-teal-500"
                     />
@@ -666,10 +874,10 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                         disabled={isReadOnly}
                         value={addon.priceRm}
                         onChange={(e) => {
-                          const updated = amenityAddons.map((a, i) =>
+                          const updated = activeAmenities.map((a, i) =>
                             i === idx ? { ...a, priceRm: Number(e.target.value) } : a
                           );
-                          updateSectorSpecifics({ accommodation: { ...accom, amenityAddons: updated } });
+                          updateSelectedUnit({ amenityAddons: updated });
                         }}
                         className="w-14 px-1.5 py-0.5 rounded bg-stone-900 border border-stone-700 text-emerald-300 font-mono tabular-nums text-xs text-right"
                       />
@@ -679,101 +887,143 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
               </div>
             </div>
 
-            {/* Breakfast Included & Apartment Unit Breakdown */}
-            <div className={`grid ${showApartmentUnitBlock ? 'sm:grid-cols-2' : 'sm:grid-cols-1'} gap-3 pt-2 border-t border-stone-800`}>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-stone-900 border border-stone-800">
-                <span className="text-xs font-semibold text-white flex items-center gap-2">
-                  <Coffee className="w-4 h-4 text-amber-400" />
-                  Breakfast Option Included
-                </span>
-                <button
-                  type="button"
-                  disabled={isReadOnly}
-                  onClick={() => {
-                    const currentVal = !!accom.breakfastIncluded;
-                    updateSectorSpecifics({
-                      accommodation: { ...accom, breakfastIncluded: !currentVal },
-                    });
-                  }}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                    accom.breakfastIncluded
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-stone-800 text-stone-400'
-                  }`}
-                >
-                  {accom.breakfastIncluded ? 'Yes (Included)' : 'No'}
-                </button>
+            {/* 7. BREAKFAST OPTION INCLUDED */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-stone-900/90 border border-stone-800">
+              <span className="text-xs font-bold text-white flex items-center gap-2">
+                <Coffee className="w-4 h-4 text-amber-400" />
+                <span>7. Breakfast Option Included</span>
+              </span>
+              <button
+                type="button"
+                disabled={isReadOnly}
+                onClick={() => updateSelectedUnit({ breakfastIncluded: !activeUnit.breakfastIncluded })}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  activeUnit.breakfastIncluded
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'bg-stone-800 text-stone-400 hover:text-white'
+                }`}
+              >
+                {activeUnit.breakfastIncluded ? '✓ Yes (Included)' : 'No'}
+              </button>
+            </div>
+
+            {/* 8. UNIT & KITCHEN BREAKDOWN */}
+            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-3">
+              <span className="text-xs font-bold text-white block">
+                8. Unit &amp; Kitchen Breakdown
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div>
+                  <span className="text-[10px] text-stone-400 block mb-1">Total Units</span>
+                  <input
+                    type="number"
+                    min={1}
+                    disabled={isReadOnly}
+                    value={unitsList.length}
+                    readOnly
+                    className="w-full px-2 py-1.5 rounded-lg bg-stone-950 border border-stone-800 text-stone-300 font-mono tabular-nums text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-stone-400 block mb-1">Rooms / Unit</span>
+                  <input
+                    type="number"
+                    min={1}
+                    disabled={isReadOnly}
+                    value={activeUnit.roomsPerUnit ?? accom.apartment?.roomsPerUnit ?? 2}
+                    onChange={(e) => updateSelectedUnit({ roomsPerUnit: Number(e.target.value) })}
+                    className="w-full px-2 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-stone-400 block mb-1">Bathrooms</span>
+                  <input
+                    type="number"
+                    min={1}
+                    disabled={isReadOnly}
+                    value={activeUnit.bathrooms ?? accom.apartment?.bathrooms ?? 2}
+                    onChange={(e) => updateSelectedUnit({ bathrooms: Number(e.target.value) })}
+                    className="w-full px-2 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-stone-400 block mb-1">Cooking Permitted?</span>
+                  <button
+                    type="button"
+                    disabled={isReadOnly}
+                    onClick={() => updateSelectedUnit({ cookingPermitted: !activeUnit.cookingPermitted })}
+                    className={`w-full py-1.5 rounded-lg font-bold transition-all text-center cursor-pointer ${
+                      activeUnit.cookingPermitted
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-stone-800 text-stone-400'
+                    }`}
+                  >
+                    {activeUnit.cookingPermitted ? 'Yes (Permitted)' : 'No'}
+                  </button>
+                </div>
               </div>
 
-              {showApartmentUnitBlock && (
-                <div className="p-3 rounded-xl bg-stone-900 border border-stone-800 space-y-2">
-                  <span className="text-xs font-semibold text-white block">
-                    Unit &amp; Kitchen Breakdown
-                  </span>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <span className="text-[10px] text-stone-400 block">Total Units</span>
-                      <input
-                        type="number"
-                        min={1}
-                        disabled={isReadOnly}
-                        value={accom.apartment?.totalUnits ?? 1}
-                        onChange={(e) => {
-                          updateSectorSpecifics({
-                            accommodation: {
-                              ...accom,
-                              apartment: { ...accom.apartment, totalUnits: Number(e.target.value) },
-                            },
-                          });
-                        }}
-                        className="w-full px-2 py-1 rounded bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-stone-400 block">Rooms / Unit</span>
-                      <input
-                        type="number"
-                        min={1}
-                        disabled={isReadOnly}
-                        value={accom.apartment?.roomsPerUnit ?? 2}
-                        onChange={(e) => {
-                          updateSectorSpecifics({
-                            accommodation: {
-                              ...accom,
-                              apartment: { ...accom.apartment, roomsPerUnit: Number(e.target.value) },
-                            },
-                          });
-                        }}
-                        className="w-full px-2 py-1 rounded bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-stone-400 block">Cooking?</span>
-                      <button
-                        type="button"
-                        disabled={isReadOnly}
-                        onClick={() => {
-                          const cur = !!accom.apartment?.cookingPermitted;
-                          updateSectorSpecifics({
-                            accommodation: {
-                              ...accom,
-                              apartment: { ...accom.apartment, cookingPermitted: !cur },
-                            },
-                          });
-                        }}
-                        className={`w-full py-1 rounded font-bold transition-all text-center cursor-pointer ${
-                          accom.apartment?.cookingPermitted
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-stone-800 text-stone-400'
-                        }`}
-                      >
-                        {accom.apartment?.cookingPermitted ? 'Permitted' : 'No'}
-                      </button>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div>
+                  <label className="block text-[11px] font-medium text-stone-400 mb-1">
+                    Kitchen Facilities Details
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={activeUnit.kitchenNotes ?? accom.apartment?.kitchenNotes ?? ''}
+                    onChange={(e) => updateSelectedUnit({ kitchenNotes: e.target.value })}
+                    placeholder="e.g. Fridge, Induction Cooker, Coway Water Filter, Halal Utensils"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs"
+                  />
                 </div>
-              )}
+                <div>
+                  <label className="block text-[11px] font-medium text-stone-400 mb-1 flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-teal-400" />
+                    <span>House Rules &amp; Reminders (More Info Modal)</span>
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={activeUnit.houseRules ?? accom.houseRules ?? vendor.vendorTerms ?? ''}
+                    onChange={(e) => updateSelectedUnit({ houseRules: e.target.value })}
+                    placeholder="e.g. No smoking indoors, quiet hours after 11 PM, RM100 security deposit at door"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs"
+                  />
+                </div>
+              </div>
             </div>
+
+            {/* 9. SAVE CHANGES BUTTON */}
+            {!isReadOnly && (
+              <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-[11px] text-stone-400">
+                  {accomSaveSuccess ? (
+                    <span className="text-emerald-400 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Saved and synced to Verified Homestays &amp; Stays!
+                    </span>
+                  ) : (
+                    <span>Updates apply to all unit dropdowns and guest booking cards immediately.</span>
+                  )}
+                </div>
+                {onSave && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={async () => {
+                      await onSave(vendor);
+                      setAccomSaveSuccess(true);
+                      setTimeout(() => setAccomSaveSuccess(false), 3000);
+                    }}
+                    className="py-2.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-xs shadow-xl shadow-emerald-950/60 flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-all"
+                  >
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    <span>Save Changes</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}

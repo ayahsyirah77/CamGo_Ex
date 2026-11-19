@@ -550,8 +550,42 @@ export type RoomAvailabilityStatus = 'rooms_available' | 'limited_units' | 'full
 export type DietaryTag = 'halal_certified' | 'muslim_owned' | 'pork_free' | 'vegetarian_friendly';
 export type SubscriptionTier = 'free_trial' | 'monthly_pro' | 'annual_pro' | 'pay_per_feature';
 
-export interface AccommodationSpecifics {
+export interface AccommodationUnitConfig {
+  id: string;
+  unitLabel: string; // e.g. "Unit 1"
+  unitCode: string; // e.g. "CH-1"
+  isAvailable: boolean;
+  checkInTime?: string; // e.g. "15:00"
+  checkOutTime?: string; // e.g. "12:00"
   parkingType?: 'private_available' | 'public_parking' | 'valet' | 'none';
+  parkingDetails?: string;
+  roomTypes?: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    pricePerNight: number;
+    bedConfig?: string;
+    maxOccupancy?: number;
+  }>;
+  amenityAddons?: Array<{
+    id: string;
+    name: string;
+    priceRm: number;
+    enabled: boolean;
+  }>;
+  breakfastIncluded?: boolean;
+  roomsPerUnit?: number;
+  bathrooms?: number;
+  cookingPermitted?: boolean;
+  kitchenNotes?: string;
+  houseRules?: string;
+}
+
+export interface AccommodationSpecifics {
+  units?: AccommodationUnitConfig[];
+  selectedUnitId?: string;
+  parkingType?: 'private_available' | 'public_parking' | 'valet' | 'none';
+  parkingDetails?: string;
   roomTypes?: Array<{
     id: string;
     name: string;
@@ -567,6 +601,7 @@ export interface AccommodationSpecifics {
   checkOutWindow?: string;
   maxOccupancy?: number;
   housekeepingStatus?: 'clean_ready' | 'turnover_in_progress' | 'inspection_needed' | 'deep_cleaning';
+  houseRules?: string;
   amenityAddons?: Array<{
     id: string;
     name: string;
@@ -576,7 +611,9 @@ export interface AccommodationSpecifics {
   apartment?: {
     totalUnits?: number;
     roomsPerUnit?: number;
+    bathrooms?: number;
     cookingPermitted?: boolean;
+    kitchenNotes?: string;
     facilities?: string[];
   };
 }
@@ -1127,6 +1164,18 @@ export interface AccommodationListing {
   verifiedHost: boolean;
   ownerPortalSlug?: string;
   whatsappNumber?: string;
+  units?: AccommodationUnitConfig[];
+  roomTypes?: AccommodationSpecifics['roomTypes'];
+  amenityAddons?: AccommodationSpecifics['amenityAddons'];
+  breakfastIncluded?: boolean;
+  checkInWindow?: string;
+  checkOutWindow?: string;
+  parkingType?: string;
+  parkingDetails?: string;
+  cookingPermitted?: boolean;
+  kitchenNotes?: string;
+  description?: string;
+  houseRules?: string;
 }
 
 export interface VendorBookingAlert {
