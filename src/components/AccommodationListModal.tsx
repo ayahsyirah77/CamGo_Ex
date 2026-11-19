@@ -6,7 +6,6 @@ import {
   MapPin,
   Calendar,
   Lock,
-  Unlock,
   ShieldCheck,
   CheckCircle2,
   Users,
@@ -14,7 +13,6 @@ import {
   Bath,
   Sparkles,
   ExternalLink,
-  Copy,
   Clock,
   ArrowRight,
   Phone,
@@ -24,6 +22,9 @@ import {
   Store,
   Check,
   Filter,
+  Upload,
+  FileCheck2,
+  AlertTriangle,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { AccommodationListing, AccommodationBooking, Township, Language } from '../types';
@@ -63,12 +64,17 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   const [guestPhone, setGuestPhone] = useState('+601');
   const [guestEmail, setGuestEmail] = useState('');
   const [selectedGateway, setSelectedGateway] = useState<'billplz' | 'toyyibpay' | 'stripe'>('billplz');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
+  const [paymentProofName, setPaymentProofName] = useState<string>('');
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [bookingFormError, setBookingFormError] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
-  // Unlocked Voucher Modal
+  // Confirmed Booking Voucher Modal
   const [unlockedBooking, setUnlockedBooking] = useState<AccommodationBooking | null>(null);
   const [voucherQrUrl, setVoucherQrUrl] = useState<string | null>(null);
-  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [hostWhatsAppUrl, setHostWhatsAppUrl] = useState<string>('');
 
   // Load listings on mount
   useEffect(() => {
@@ -142,19 +148,67 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle Pay-to-Reveal Lock Submit
+  const handleUploadProof = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBookingFormError(null);
+    if (file.size > 10 * 1024 * 1024) {
+      setBookingFormError('Receipt file exceeds 10MB. Please upload a smaller image or PDF.');
+      return;
+    }
+    setIsUploadingProof(true);
+    setPaymentProofName(file.name);
+    try {
+      const uploadedUrl = await firebaseService.uploadImage(file, 'payment_proofs');
+      setPaymentProofUrl(uploadedUrl);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setPaymentProofUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsUploadingProof(false);
+    }
+  };
+
+  // Handle RM30 Deposit Payment, Vendor Alert & Host WhatsApp Notification
   const handleLockHomestay = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeListingForBooking || !guestName || !guestPhone) return;
+    setBookingFormError(null);
+    if (!activeListingForBooking || !guestName.trim() || !guestPhone.trim()) {
+      setBookingFormError('Please fill in your Full Name and WhatsApp Phone Number.');
+      return;
+    }
+    if (!paymentProofUrl && !paymentReference.trim()) {
+      setBookingFormError('Please upload your Proof of Payment receipt or enter your Transaction Reference ID before paying.');
+      return;
+    }
 
     setIsProcessingPayment(true);
 
     try {
       // Simulate Payment Gateway Settlement (~1s)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 900));
 
       const bookingCode = `CG-${activeListingForBooking.code.replace('CH-', '')}-${Math.floor(1000 + Math.random() * 9000)}`;
       const qrCode = `VCHR-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+      const matchedVendor = firebaseService
+        .getVendorListings()
+        .find(
+          (v) =>
+            v.id === activeListingForBooking.vendorId ||
+            v.id === activeListingForBooking.id ||
+            v.businessName.toLowerCase().trim() === activeListingForBooking.realBusinessName.toLowerCase().trim()
+        );
+
+      const vendorEmail = activeListingForBooking.ownerEmail || matchedVendor?.ownerEmail;
+      const vendorUid = activeListingForBooking.ownerUid || matchedVendor?.ownerUid;
+      const hostWaRaw = activeListingForBooking.whatsappNumber || activeListingForBooking.ownerPhone || '+60123456789';
+      const hostWaDigits = hostWaRaw.replace(/\D/g, '');
 
       const newBooking: AccommodationBooking = {
         id: `cg_bk_${Date.now()}`,
@@ -162,24 +216,29 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         homestayId: activeListingForBooking.id,
         homestayName: activeListingForBooking.realBusinessName,
         maskedTitle: activeListingForBooking.maskedTitle,
-        fullAddress: activeListingForBooking.fullAddress,
-        ownerPhone: activeListingForBooking.ownerPhone,
+        township: activeListingForBooking.township,
+        ownerPhone: hostWaRaw,
         ownerName: activeListingForBooking.ownerName,
-        customerName: guestName,
-        customerPhone: guestPhone,
-        customerEmail: guestEmail || undefined,
+        vendorEmail,
+        vendorUid,
+        customerName: guestName.trim(),
+        customerPhone: guestPhone.trim(),
+        customerEmail: guestEmail.trim() || undefined,
         checkInDate,
         checkOutDate,
         nights,
         roomTypeName: `${activeListingForBooking.bedrooms}BR ${activeListingForBooking.maskedTitle.split('-')[0]}`,
         totalRoomPrice: totalPrice,
-        depositAmount: 30, // Fixed RM30 lock fee
+        depositAmount: 30,
         balanceToCollect,
         bookingType: activeListingForBooking.bookingType,
         status: activeListingForBooking.bookingType === 'instant' ? 'confirmed' : 'pending_owner_approval',
         depositPaymentStatus: 'paid',
         paymentGateway: selectedGateway,
-        isUnlocked: true, // Unlocked post-payment!
+        paymentProofUrl: paymentProofUrl || undefined,
+        paymentProofName: paymentProofName || undefined,
+        paymentReference: paymentReference.trim() || undefined,
+        isUnlocked: true,
         qrVoucherCode: qrCode,
         bundledPerks: activeListingForBooking.bundledPerks,
         createdAt: new Date().toISOString(),
@@ -187,17 +246,82 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
           activeListingForBooking.bookingType === 'request'
             ? new Date(Date.now() + 30 * 60 * 1000).toISOString()
             : undefined,
-        whatsappStatus: activeListingForBooking.bookingType === 'instant' ? 'replied_yes' : 'sent',
-        notes: `Guest reserved via CamGo Pay-to-Reveal Engine with RM30 deposit via ${selectedGateway.toUpperCase()}.`,
+        whatsappStatus: 'sent',
+        notes: `RM30 deposit paid via ${selectedGateway.toUpperCase()}${paymentReference.trim() ? ` (Ref: ${paymentReference.trim()})` : ''}.`,
       };
 
       await firebaseService.saveAccommodationBooking(newBooking);
 
-      // Open Voucher Modal
+      // Dispatch Real-Time Vendor Booking & Payment Alert (triggers vendor banner + phone alert + standalone modal)
+      await firebaseService.createVendorBookingAlert({
+        bookingId: newBooking.id,
+        bookingCode: newBooking.bookingCode,
+        bookingType: 'accommodation',
+        vendorId: activeListingForBooking.vendorId || activeListingForBooking.id,
+        vendorName: activeListingForBooking.realBusinessName,
+        vendorEmail,
+        vendorUid,
+        guestName: newBooking.customerName,
+        guestPhone: newBooking.customerPhone,
+        guestEmail: newBooking.customerEmail,
+        itemSummary: `${activeListingForBooking.maskedTitle} (${nights} night${nights > 1 ? 's' : ''})`,
+        checkInOrStart: checkInDate,
+        checkOutOrEnd: checkOutDate,
+        totalAmountRm: totalPrice,
+        depositPaidRm: 30,
+        balanceDueRm: balanceToCollect,
+        paymentGateway: selectedGateway,
+        paymentReference: paymentReference.trim() || undefined,
+        paymentProofUrl: paymentProofUrl || undefined,
+        paymentProofName: paymentProofName || undefined,
+        whatsappNotified: true,
+      });
+
+      const proofLine = paymentProofUrl && !paymentProofUrl.startsWith('data:')
+        ? `Proof of Payment Link: ${paymentProofUrl}`
+        : paymentProofName
+        ? `Proof of Payment Attached: ${paymentProofName}`
+        : `Proof Reference: ${paymentReference.trim()}`;
+
+      const hostWaText = [
+        `CamGo New Paid Booking (${bookingCode})`,
+        `Homestay: ${activeListingForBooking.realBusinessName} (${activeListingForBooking.township})`,
+        `Guest Name: ${newBooking.customerName}`,
+        `Guest Phone: ${newBooking.customerPhone}`,
+        newBooking.customerEmail ? `Guest Email: ${newBooking.customerEmail}` : null,
+        `Check-In: ${checkInDate}`,
+        `Check-Out: ${checkOutDate} (${nights} night${nights > 1 ? 's' : ''})`,
+        `Payment Method: ${selectedGateway.toUpperCase()}`,
+        `RM30 Deposit: PAID`,
+        `Door Balance: RM ${balanceToCollect}`,
+        paymentReference.trim() ? `Transaction Ref: ${paymentReference.trim()}` : null,
+        proofLine,
+        `Please confirm check-in arrangement with guest.`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const builtWaUrl = `https://wa.me/${hostWaDigits}?text=${encodeURIComponent(hostWaText)}`;
+      setHostWhatsAppUrl(builtWaUrl);
+
+      // Automatically open WhatsApp notification to host with full guest details & proof of payment
+      if (hostWaDigits) {
+        try {
+          window.open(builtWaUrl, '_blank', 'noopener,noreferrer');
+        } catch (waErr) {
+          console.warn('WhatsApp popup fallback will be shown in confirmation modal:', waErr);
+        }
+      }
+
+      // Open Voucher Confirmation Modal
       setUnlockedBooking(newBooking);
       setActiveListingForBooking(null);
+      setPaymentProofUrl(null);
+      setPaymentProofName('');
+      setPaymentReference('');
     } catch (err) {
       console.error('Booking lock error:', err);
+      setBookingFormError('Could not complete deposit submission. Please try again.');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -633,7 +757,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               {/* Payment Gateway Selection */}
               <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2">
                 <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
-                  3. Select Payment Gateway for RM30 Lock Fee
+                  3. Select Payment Gateway for RM30 Deposit
                 </span>
                 <div className="grid grid-cols-3 gap-2">
                   {[
@@ -658,6 +782,74 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </div>
               </div>
 
+              {/* 4. Proof of Payment Upload & Transaction Reference */}
+              <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2.5">
+                <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
+                  4. Proof of Payment (Sent to Host WhatsApp &amp; Vendor Alert)
+                </span>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <label className="flex-1 px-3 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 border border-dashed border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors">
+                    <Upload className="w-4 h-4 shrink-0" />
+                    <span className="truncate">
+                      {isUploadingProof
+                        ? 'Uploading Receipt...'
+                        : paymentProofName
+                        ? `Uploaded: ${paymentProofName}`
+                        : 'Upload Payment Receipt (Image / PDF)'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={handleUploadProof}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {paymentProofUrl && paymentProofUrl.startsWith('data:image') && (
+                  <div className="flex items-center gap-2.5 p-2 rounded-xl bg-stone-900 border border-emerald-500/30">
+                    <img
+                      src={safeSrc(paymentProofUrl)}
+                      alt="Payment proof"
+                      className="w-12 h-12 rounded-lg object-cover border border-stone-700"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[11px] font-bold text-emerald-300 block truncate">
+                        <FileCheck2 className="w-3.5 h-3.5 inline mr-1" />
+                        {paymentProofName || 'Payment Receipt Ready'}
+                      </span>
+                      <span className="text-[10px] text-stone-400">
+                        Will be attached with your booking notification
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[11px] font-bold text-stone-300 block mb-1">
+                    Payment Reference / Transaction ID
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentReference}
+                    onChange={(e) => {
+                      setPaymentReference(e.target.value);
+                      setBookingFormError(null);
+                    }}
+                    placeholder="e.g. FPX-20261119-8821 (or upload receipt above)"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {bookingFormError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{bookingFormError}</span>
+                </div>
+              )}
+
               {/* Financial Summary */}
               <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
@@ -678,21 +870,24 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               <div className="flex items-center gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={isProcessingPayment}
+                  disabled={isProcessingPayment || isUploadingProof}
                   className="flex-1 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs cursor-pointer shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
                 >
                   {isProcessingPayment ? (
-                    <span>Securing Deposit &amp; Unlocking...</span>
+                    <span>Securing Deposit &amp; Notifying Host...</span>
                   ) : (
                     <>
                       <Lock className="w-4 h-4" />
-                      <span>Pay RM30 Deposit &amp; Unlock Address</span>
+                      <span>Pay RM30 Deposit &amp; Notify Host</span>
                     </>
                   )}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveListingForBooking(null)}
+                  onClick={() => {
+                    setActiveListingForBooking(null);
+                    setBookingFormError(null);
+                  }}
                   className="px-4 py-3 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
                 >
                   Cancel
@@ -703,21 +898,21 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         </div>
       )}
 
-      {/* PAY-TO-REVEAL UNLOCKED VOUCHER MODAL */}
+      {/* CONFIRMED BOOKING VOUCHER MODAL */}
       {unlockedBooking && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
-          <div className="w-full max-w-md bg-stone-900 border border-emerald-500/50 rounded-3xl p-6 text-stone-100 space-y-5 shadow-2xl relative max-h-[92vh] overflow-y-auto no-scrollbar">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-4 bg-black/95 backdrop-blur-md">
+          <div className="w-full max-w-md bg-stone-900 border border-emerald-500/50 rounded-3xl p-5 sm:p-6 text-stone-100 space-y-4 shadow-2xl relative max-h-[92dvh] overflow-y-auto no-scrollbar">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-stone-800 pb-3">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                  <Unlock className="w-5 h-5" />
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
                 <div>
                   <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
                     Deposit RM30 Confirmed
                   </span>
-                  <h3 className="font-black text-base text-white">Booking Locked &amp; Unlocked!</h3>
+                  <h3 className="font-black text-base text-white">Booking Confirmed &amp; Host Notified!</h3>
                 </div>
               </div>
               <button
@@ -735,10 +930,10 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               </p>
               {safeSrc(voucherQrUrl) ? (
                 <div className="inline-block p-2.5 bg-white rounded-2xl shadow-xl">
-                  <img src={safeSrc(voucherQrUrl)} alt="Voucher QR Code" className="w-40 h-40 object-contain" />
+                  <img src={safeSrc(voucherQrUrl)} alt="Voucher QR Code" className="w-36 h-36 sm:w-40 sm:h-40 object-contain" />
                 </div>
               ) : (
-                <div className="w-40 h-40 mx-auto bg-stone-800 rounded-2xl flex items-center justify-center text-xs text-stone-500">
+                <div className="w-36 h-36 mx-auto bg-stone-800 rounded-2xl flex items-center justify-center text-xs text-stone-500">
                   Generating QR...
                 </div>
               )}
@@ -747,51 +942,58 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               </div>
             </div>
 
-            {/* Revealed Host Details */}
+            {/* Stay & Guest Summary (No complete street address shown) */}
             <div className="bg-stone-950/80 border border-stone-800 rounded-2xl p-4 space-y-3">
               <div>
                 <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">
-                  Real Business Name (Revealed)
+                  Verified Stay &amp; Township
                 </span>
                 <p className="font-black text-base text-white">{unlockedBooking.homestayName}</p>
+                <p className="text-xs text-stone-400 flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{unlockedBooking.township || 'Cameron Highlands'} · {unlockedBooking.checkInDate} to {unlockedBooking.checkOutDate}</span>
+                </p>
               </div>
 
-              <div>
-                <span className="text-[10px] uppercase font-bold text-stone-400 tracking-wider block mb-1">
-                  Full Physical Address
-                </span>
-                <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs text-stone-200 flex items-center justify-between">
-                  <span className="truncate pr-2">{unlockedBooking.fullAddress}</span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard?.writeText(unlockedBooking.fullAddress);
-                      setCopiedAddress(true);
-                      setTimeout(() => setCopiedAddress(false), 2500);
-                    }}
-                    className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer shrink-0"
-                    title="Copy Address"
-                  >
-                    {copiedAddress ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+              {/* Submitted Guest & Proof of Payment Summary */}
+              <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-400">Guest:</span>
+                  <span className="font-bold text-white">{unlockedBooking.customerName} ({unlockedBooking.customerPhone})</span>
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-400">Gateway / Ref:</span>
+                  <span className="font-mono text-emerald-300 uppercase">
+                    {unlockedBooking.paymentGateway} {unlockedBooking.paymentReference ? `· ${unlockedBooking.paymentReference}` : ''}
+                  </span>
+                </div>
+                {unlockedBooking.paymentProofName && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-stone-400">Receipt Uploaded:</span>
+                    <span className="text-emerald-300 font-semibold truncate max-w-[170px]">{unlockedBooking.paymentProofName}</span>
+                  </div>
+                )}
               </div>
 
-              {/* Host WhatsApp */}
-              <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-bold text-stone-400 block uppercase">Host Direct Contact</span>
-                  <span className="font-bold text-xs text-emerald-400">{unlockedBooking.ownerPhone}</span>
+              {/* Host WhatsApp Notification CTA */}
+              <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold text-stone-400 block uppercase">Host WhatsApp Notification</span>
+                  <span className="font-bold text-xs text-emerald-400 block truncate">{unlockedBooking.ownerPhone}</span>
                 </div>
                 <a
-                  href={`https://wa.me/${(unlockedBooking.ownerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(
-                    `Hi, I have booked ${unlockedBooking.homestayName} via CamGo (Code: ${unlockedBooking.bookingCode}) for ${unlockedBooking.checkInDate} to ${unlockedBooking.checkOutDate}. My deposit of RM30 is paid. Looking forward to our stay!`
-                  )}`}
+                  href={
+                    hostWhatsAppUrl ||
+                    `https://wa.me/${(unlockedBooking.ownerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(
+                      `CamGo Paid Booking ${unlockedBooking.bookingCode}\nStay: ${unlockedBooking.homestayName}\nGuest: ${unlockedBooking.customerName} (${unlockedBooking.customerPhone})\nDates: ${unlockedBooking.checkInDate} to ${unlockedBooking.checkOutDate}\nGateway: ${unlockedBooking.paymentGateway.toUpperCase()} · RM30 PAID\nDoor Balance: RM${unlockedBooking.balanceToCollect}`
+                    )}`
+                  }
                   target="_blank"
                   rel="noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer shrink-0"
                 >
-                  <Phone className="w-3 h-3" />
-                  <span>WhatsApp Host</span>
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>Send Proof on WhatsApp</span>
                 </a>
               </div>
 

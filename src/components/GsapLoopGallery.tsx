@@ -779,7 +779,7 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({ items = 
                     </span>
                     <span className="text-xs font-bold text-emerald-300">{activeItem.township}</span>
                   </div>
-                  <p className="text-xs sm:text-sm text-stone-300 leading-relaxed">
+                  <p className="text-xs sm:text-sm text-stone-300 leading-relaxed whitespace-pre-line break-words">
                     {language === 'bm' ? activeItem.descriptionBm || activeItem.description : activeItem.description}
                   </p>
                   <div className="pt-2 text-xs text-stone-400 italic">

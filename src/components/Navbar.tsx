@@ -105,6 +105,8 @@ interface NavbarProps {
   onOpenGalleryModal?: () => void;
   onOpenCurrencyConverter?: () => void;
   onOpenVendorPortal?: () => void;
+  onOpenVendorAlerts?: () => void;
+  vendorAlertCount?: number;
   onOpenFarmMatrix?: () => void;
   onOpenParkingEvModal?: () => void;
   onOpenMasjidModal?: () => void;
@@ -142,6 +144,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenGalleryModal,
   onOpenCurrencyConverter,
   onOpenVendorPortal,
+  onOpenVendorAlerts,
+  vendorAlertCount = 0,
   onOpenFarmMatrix,
   onOpenParkingEvModal,
   onOpenMasjidModal,
@@ -1008,7 +1012,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               </AnimatePresence>
             </div>
 
-            {/* Dedicated Main Page -> Vendor Dashboard Quick Jump Button (Strictly for Logged-In Vendors & Admins) */}
+            {/* Dedicated Main Page -> Vendor Dashboard Quick Jump Button & Alerts Bell (Strictly for Logged-In Vendors & Admins) */}
+            {currentUser && isRegisteredVendor && onOpenVendorAlerts && (
+              <button
+                type="button"
+                onClick={onOpenVendorAlerts}
+                className="relative flex items-center justify-center w-9 h-9 rounded-full bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/60 text-amber-300 hover:text-white transition-all active:scale-95 cursor-pointer shrink-0 shadow-md"
+                title={language === 'bm' ? 'Amaran Tempahan & Pembayaran Vendor' : 'Vendor Booking & Payment Alerts'}
+                aria-label="Vendor Booking Alerts"
+              >
+                <BellRing className={`w-4 h-4 ${vendorAlertCount > 0 ? 'animate-bounce text-amber-200' : ''}`} />
+                {vendorAlertCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center ring-2 ring-stone-950 shadow">
+                    {vendorAlertCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             {currentUser && isRegisteredVendor && onOpenVendorPortal && (
               <button
                 type="button"
@@ -1661,28 +1682,62 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                   {/* Business Vendor Portal (Only visible to admin and registered vendors) */}
                   {(isUserAdmin || isRegisteredVendor) && (
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        if (onOpenVendorPortal) onOpenVendorPortal();
-                      }}
-                      className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 hover:text-white border border-amber-500/30 transition-all cursor-pointer text-left group shadow-md"
-                    >
-                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                        <Store className="w-4 h-4 text-amber-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-amber-200 block group-hover:text-white transition-colors">
-                            Business Vendor Portal
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold">
-                            Vendor
-                          </span>
+                    <>
+                      <button
+                        onClick={() => {
+                          setIsMobileMenuOpen(false);
+                          if (onOpenVendorPortal) onOpenVendorPortal();
+                        }}
+                        className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 hover:text-white border border-amber-500/30 transition-all cursor-pointer text-left group shadow-md"
+                      >
+                        <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <Store className="w-4 h-4 text-amber-400" />
                         </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
-                    </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-amber-200 block group-hover:text-white transition-colors">
+                              Business Vendor Portal
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold">
+                              Vendor
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
+                      </button>
+
+                      {onOpenVendorAlerts && (
+                        <button
+                          onClick={() => {
+                            setIsMobileMenuOpen(false);
+                            onOpenVendorAlerts();
+                          }}
+                          className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-amber-950/40 hover:bg-amber-900/60 text-amber-200 hover:text-white border border-amber-500/40 transition-all cursor-pointer text-left group shadow-md"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform relative">
+                            <BellRing className={`w-4 h-4 text-amber-300 ${vendorAlertCount > 0 ? 'animate-bounce' : ''}`} />
+                            {vendorAlertCount > 0 && (
+                              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
+                                {vendorAlertCount}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-amber-100 block group-hover:text-white transition-colors">
+                                {language === 'bm' ? 'Amaran Tempahan & Bayaran' : 'Vendor Booking & Pay Alerts'}
+                              </span>
+                              {vendorAlertCount > 0 && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] bg-rose-500 text-white font-mono font-bold">
+                                  {vendorAlertCount} New
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
+                        </button>
+                      )}
+                    </>
                   )}
 
                   {/* 10. Admin Control Room */}

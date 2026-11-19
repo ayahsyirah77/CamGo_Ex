@@ -292,6 +292,22 @@
     "broadcast_notifications/{notificationId}": {
       "schema": { "$ref": "Notification" },
       "description": "Collection of real-time multi-channel broadcast notifications"
+    },
+    "accommodation_listings/{listingId}": {
+      "schema": { "$ref": "VendorListing" },
+      "description": "Collection of verified accommodation stay listings"
+    },
+    "accommodation_bookings/{bookingId}": {
+      "schema": { "$ref": "VendorListing" },
+      "description": "Collection of verified homestay deposit bookings with proof of payment"
+    },
+    "vendor_booking_alerts/{alertId}": {
+      "schema": { "$ref": "Notification" },
+      "description": "Real-time paid booking & proof of payment notifications for vendors"
+    },
+    "bookings/{bookingId}": {
+      "schema": { "$ref": "VendorListing" },
+      "description": "Unified customer rental & stay bookings linked to vendor UIDs"
     }
   }
 }

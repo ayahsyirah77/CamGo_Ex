@@ -286,6 +286,34 @@ service cloud.firestore {
       }
     }
 
+    match /accommodation_listings/{listingId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /accommodation_bookings/{bookingId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /vendor_booking_alerts/{alertId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /bookings/{bookingId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
     // Default deny for unmatched documents
     match /{document=**} {
       allow read, write: if false;

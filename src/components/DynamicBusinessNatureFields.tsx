@@ -880,6 +880,11 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
         const vr: VehicleRentalSpecifics = specifics.vehicleRental || {};
         const fleetUnits = vr.fleetUnits || [];
         const addOnPackages = vr.addOnPackages || rentalSubConfig.defaultAddons;
+        const customHourPackages = vr.customHourPackages || [];
+        const fuelPolicy = vr.fuelPolicy || 'none';
+        const freeRaincoat = vr.freeRaincoat ?? false;
+        const childrenHelmet = vr.childrenHelmet ?? false;
+        const vendorRulesNotice = vr.vendorRulesNotice ?? vendor.vendorTerms ?? '';
         const calendarConfig = vr.bookingCalendar || {};
         const maintSched = vr.maintenanceSchedule || {};
         const blockedDates = calendarConfig.blockedDates || [];
@@ -1563,9 +1568,9 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
               </div>
             </div>
 
-            {/* F. Package Options & Custom Add-ons */}
-            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-2.5">
-              <div className="flex items-center justify-between">
+            {/* F. Custom Rental Packages, Equipment Add-ons, Policies & Rules */}
+            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Custom Rental Packages &amp; Equipment Add-ons</span>
@@ -1592,6 +1597,240 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   </button>
                 )}
               </div>
+
+              {/* Fuel Policy, Free Waterproof Raincoat, Children's Helmet */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 text-xs">
+                {/* Fuel Policy Segmented Toggle */}
+                <div className="p-3 rounded-xl bg-stone-950/90 border border-stone-800 space-y-2">
+                  <span className="text-[11px] font-bold text-stone-200 block">
+                    Fuel Policy on Handover
+                  </span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        { id: 'none', label: 'No Fuel' },
+                        { id: 'half_tank', label: 'Half Tank' },
+                        { id: 'full_tank', label: 'Full Tank' },
+                      ] as const
+                    ).map((fp) => (
+                      <button
+                        key={fp.id}
+                        type="button"
+                        disabled={isReadOnly}
+                        onClick={() =>
+                          updateSectorSpecifics({
+                            vehicleRental: { ...vr, fuelPolicy: fp.id },
+                          })
+                        }
+                        className={`py-1.5 px-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          fuelPolicy === fp.id
+                            ? 'bg-emerald-600 text-white border-emerald-400 shadow'
+                            : 'bg-stone-900 text-stone-400 border-stone-800 hover:text-white'
+                        }`}
+                      >
+                        {fp.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Free Waterproof Raincoat */}
+                <div className="p-3 rounded-xl bg-stone-950/90 border border-stone-800 flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[11px] font-bold text-stone-200 block">
+                      Free Waterproof Raincoat
+                    </span>
+                    <span className="text-[10px] text-stone-400">
+                      Provided free with rental
+                    </span>
+                  </div>
+                  <div className="inline-flex rounded-lg bg-stone-900 p-0.5 border border-stone-800 shrink-0">
+                    {[
+                      { val: true, label: 'Yes' },
+                      { val: false, label: 'No' },
+                    ].map((opt) => (
+                      <button
+                        key={String(opt.val)}
+                        type="button"
+                        disabled={isReadOnly}
+                        onClick={() =>
+                          updateSectorSpecifics({
+                            vehicleRental: { ...vr, freeRaincoat: opt.val },
+                          })
+                        }
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
+                          freeRaincoat === opt.val
+                            ? opt.val
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-stone-700 text-white'
+                            : 'text-stone-400 hover:text-white'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Children's Helmet */}
+                <div className="p-3 rounded-xl bg-stone-950/90 border border-stone-800 flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[11px] font-bold text-stone-200 block">
+                      Children&apos;s Helmet
+                    </span>
+                    <span className="text-[10px] text-stone-400">
+                      Child-size available on request
+                    </span>
+                  </div>
+                  <div className="inline-flex rounded-lg bg-stone-900 p-0.5 border border-stone-800 shrink-0">
+                    {[
+                      { val: true, label: 'Yes' },
+                      { val: false, label: 'No' },
+                    ].map((opt) => (
+                      <button
+                        key={String(opt.val)}
+                        type="button"
+                        disabled={isReadOnly}
+                        onClick={() =>
+                          updateSectorSpecifics({
+                            vehicleRental: { ...vr, childrenHelmet: opt.val },
+                          })
+                        }
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
+                          childrenHelmet === opt.val
+                            ? opt.val
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-stone-700 text-white'
+                            : 'text-stone-400 hover:text-white'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Hour Packages (e.g. 4-Hour Express, Half-Day 6 Hrs) */}
+              <div className="p-3 rounded-xl bg-stone-950/80 border border-stone-800 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Custom Hour Packages (Optional Deals)</span>
+                  </span>
+                  {!isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = [
+                          ...customHourPackages,
+                          {
+                            id: 'hrpkg-' + Date.now(),
+                            label: `${customHourPackages.length === 0 ? 'Half-Day Highland Loop' : 'Sunset Ride Package'}`,
+                            hours: customHourPackages.length === 0 ? 4 : 6,
+                            priceRm: customHourPackages.length === 0 ? 45 : 60,
+                            enabled: true,
+                          },
+                        ];
+                        updateSectorSpecifics({ vehicleRental: { ...vr, customHourPackages: next } });
+                      }}
+                      className="px-2 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/35 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Add Hour Package
+                    </button>
+                  )}
+                </div>
+
+                {customHourPackages.length === 0 ? (
+                  <p className="text-[11px] text-stone-500 italic">
+                    No custom hour packages configured yet. Click &quot;Add Hour Package&quot; to offer 3hr/4hr/6hr bundles.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {customHourPackages.map((pkg, idx) => (
+                      <div
+                        key={pkg.id}
+                        className={`p-2 rounded-xl border flex flex-wrap items-center gap-1.5 text-xs ${
+                          pkg.enabled ? 'bg-stone-900 border-cyan-500/30' : 'bg-stone-950 border-stone-800 opacity-60'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          disabled={isReadOnly}
+                          checked={pkg.enabled}
+                          onChange={(e) => {
+                            const updated = customHourPackages.map((item, i) =>
+                              i === idx ? { ...item, enabled: e.target.checked } : item
+                            );
+                            updateSectorSpecifics({ vehicleRental: { ...vr, customHourPackages: updated } });
+                          }}
+                          className="w-3.5 h-3.5 rounded text-cyan-500 bg-stone-900 border-stone-700 cursor-pointer shrink-0"
+                        />
+                        <input
+                          type="text"
+                          disabled={isReadOnly}
+                          value={pkg.label}
+                          onChange={(e) => {
+                            const updated = customHourPackages.map((item, i) =>
+                              i === idx ? { ...item, label: e.target.value } : item
+                            );
+                            updateSectorSpecifics({ vehicleRental: { ...vr, customHourPackages: updated } });
+                          }}
+                          placeholder="Package Label"
+                          className="flex-1 min-w-[110px] bg-transparent text-white text-xs focus:outline-none border-b border-transparent focus:border-cyan-500"
+                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <input
+                            type="number"
+                            min={1}
+                            disabled={isReadOnly}
+                            value={pkg.hours}
+                            onChange={(e) => {
+                              const updated = customHourPackages.map((item, i) =>
+                                i === idx ? { ...item, hours: Math.max(1, Number(e.target.value)) } : item
+                              );
+                              updateSectorSpecifics({ vehicleRental: { ...vr, customHourPackages: updated } });
+                            }}
+                            className="w-11 px-1 py-0.5 rounded bg-stone-950 border border-stone-700 text-cyan-300 font-mono text-[11px] text-right"
+                          />
+                          <span className="text-[10px] text-stone-400">hrs</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] text-stone-400">RM</span>
+                          <input
+                            type="number"
+                            min={0}
+                            disabled={isReadOnly}
+                            value={pkg.priceRm}
+                            onChange={(e) => {
+                              const updated = customHourPackages.map((item, i) =>
+                                i === idx ? { ...item, priceRm: Math.max(0, Number(e.target.value)) } : item
+                              );
+                              updateSectorSpecifics({ vehicleRental: { ...vr, customHourPackages: updated } });
+                            }}
+                            className="w-12 px-1 py-0.5 rounded bg-stone-950 border border-stone-700 text-emerald-300 font-mono text-[11px] text-right"
+                          />
+                        </div>
+                        {!isReadOnly && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = customHourPackages.filter((_, i) => i !== idx);
+                              updateSectorSpecifics({ vehicleRental: { ...vr, customHourPackages: updated } });
+                            }}
+                            className="p-1 text-rose-400 hover:text-rose-300 cursor-pointer"
+                            title="Remove Package"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Paid Equipment Add-on Packages */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {addOnPackages.map((addon, idx) => (
                   <div
@@ -1645,6 +1884,34 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   </div>
                 ))}
               </div>
+
+              {/* Vendor Rules & Notice Multi-line Editor */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-[11px] font-bold text-amber-300 block">
+                  Vendor Rules &amp; Notice (Shown on Public Card &amp; Booking Modal)
+                </label>
+                <textarea
+                  rows={3}
+                  disabled={isReadOnly}
+                  value={vendorRulesNotice}
+                  onChange={(e) => {
+                    const nextText = e.target.value;
+                    onChange({
+                      ...vendor,
+                      vendorTerms: nextText,
+                      sectorSpecifics: {
+                        ...vendor.sectorSpecifics,
+                        vehicleRental: {
+                          ...vr,
+                          vendorRulesNotice: nextText,
+                        },
+                      },
+                    });
+                  }}
+                  placeholder="e.g., Must hold valid B2/B license, deposit refundable upon return with same fuel level. No riding beyond Blue Valley / Lojing after 8PM."
+                  className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-stone-200 text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
             </div>
 
             {/* G. Individual Rental Inventory & Equipment Unit List */}
@@ -1661,11 +1928,16 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                     type="button"
                     onClick={() => {
                       const template = rentalSubConfig.sampleItems[0];
+                      const modelName = template ? template.name : `${rentalSubConfig.unitNoun} #${fleetUnits.length + 1}`;
+                      const guessedType = modelName.toLowerCase().includes('scooter') || modelName.toLowerCase().includes('vario') || modelName.toLowerCase().includes('nmax') || modelName.toLowerCase().includes('beat') || modelName.toLowerCase().includes('avantiz')
+                        ? ('scooter' as const)
+                        : ('motorbike' as const);
                       const nextUnits = [
                         ...fleetUnits,
                         {
                           id: 'unit-' + Date.now(),
-                          model: template ? template.name : `${rentalSubConfig.unitNoun} #${fleetUnits.length + 1}`,
+                          model: modelName,
+                          vehicleType: guessedType,
                           plateOrCode: `INV-${101 + fleetUnits.length}`,
                           status: 'available' as const,
                           dailyRateRm: template?.dailyRateRm ?? 80,
@@ -1694,6 +1966,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                         const starter = rentalSubConfig.sampleItems.map((s, i) => ({
                           id: `unit-${Date.now()}-${i}`,
                           model: s.name,
+                          vehicleType: (s.name.toLowerCase().includes('scooter') || s.name.toLowerCase().includes('vario') || s.name.toLowerCase().includes('nmax') || s.name.toLowerCase().includes('beat') || s.name.toLowerCase().includes('avantiz')) ? ('scooter' as const) : ('motorbike' as const),
                           plateOrCode: s.code,
                           status: 'available' as const,
                           dailyRateRm: s.dailyRateRm,
@@ -1721,6 +1994,22 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                       key={unit.id}
                       className="p-2.5 rounded-xl bg-stone-950 border border-stone-800 flex flex-wrap lg:flex-nowrap items-center gap-2 text-xs"
                     >
+                      {isMotorbikeSector && (
+                        <select
+                          disabled={isReadOnly}
+                          value={unit.vehicleType || (unit.model.toLowerCase().includes('scooter') || unit.model.toLowerCase().includes('vario') || unit.model.toLowerCase().includes('nmax') || unit.model.toLowerCase().includes('beat') || unit.model.toLowerCase().includes('avantiz') ? 'scooter' : 'motorbike')}
+                          onChange={(e) => {
+                            const next = fleetUnits.map((u, i) =>
+                              i === idx ? { ...u, vehicleType: e.target.value as 'scooter' | 'motorbike' } : u
+                            );
+                            updateSectorSpecifics({ vehicleRental: { ...vr, fleetUnits: next } });
+                          }}
+                          className="px-2 py-1 rounded bg-stone-900 border border-stone-700 text-cyan-300 font-bold text-[11px]"
+                        >
+                          <option value="scooter">Scooter</option>
+                          <option value="motorbike">Motorbike</option>
+                        </select>
+                      )}
                       <input
                         type="text"
                         disabled={isReadOnly}

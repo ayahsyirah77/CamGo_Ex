@@ -63,6 +63,7 @@ import {
   AlertTriangle,
   BedDouble,
   Truck,
+  BellRing,
 } from 'lucide-react';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import QRCode from 'qrcode';
@@ -114,6 +115,8 @@ interface VendorDashboardProps {
   onOpenOnboarding: () => void;
   onSignOut?: () => void;
   onOpenAdmin?: () => void;
+  onOpenBookingAlerts?: () => void;
+  unreadAlertCount?: number;
 }
 
 export const VendorDashboard: React.FC<VendorDashboardProps> = ({
@@ -124,6 +127,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   onOpenOnboarding,
   onSignOut,
   onOpenAdmin,
+  onOpenBookingAlerts,
+  unreadAlertCount = 0,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'directory' | 'promotions' | 'analytics' | 'billing' | 'reservations' | 'overview' | 'motorbikes'
@@ -626,13 +631,16 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     const isTravelerOnly = currentUser?.role === 'user' && !isAdmin;
 
     // Strict RBAC: admins see all, vendors see only their own listings, standard travelers get zero access
+    const normalizedUserEmail = currentUser?.email?.toLowerCase().trim() || '';
     const userListings = isAdmin
       ? allListings
       : isTravelerOnly
       ? []
       : currentUser
       ? allListings.filter(
-          (l) => l.ownerUid === currentUser.uid || l.ownerEmail === currentUser.email
+          (l) =>
+            (l.ownerUid && l.ownerUid === currentUser.uid) ||
+            (l.ownerEmail && normalizedUserEmail && l.ownerEmail.toLowerCase().trim() === normalizedUserEmail)
         )
       : [];
 
@@ -720,6 +728,9 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
     setActiveVendor(updatedVendor);
     await firebaseService.saveVendorListing(updatedVendor);
 
+    const vr = updatedVendor.sectorSpecifics?.vehicleRental;
+    const depReq = vr?.depositConfig?.required ?? true;
+
     // Also update motorbike partner in firebaseService so public marketplace reflects it immediately
     const partnerToSync: MotorbikeRentalPartner = {
       id: activeVendor.id,
@@ -731,7 +742,25 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       contactPhone: activeVendor.contactPhone,
       whatsappNumber: activeVendor.whatsappNumber || activeVendor.contactPhone,
       packages: updatedPkgs,
-      vendorTerms: updatedVendor.vendorTerms || '',
+      vendorTerms: updatedVendor.vendorTerms || vr?.vendorRulesNotice || '',
+      vendorRulesNotice: vr?.vendorRulesNotice || updatedVendor.vendorTerms || '',
+      fuelPolicy: vr?.fuelPolicy || 'none',
+      freeRaincoat: vr?.freeRaincoat ?? false,
+      childrenHelmet: vr?.childrenHelmet ?? false,
+      hourlyRateRm: vr?.durationModels?.defaultHourlyRateRm ?? vr?.baseHourlyRateRm ?? updatedPkgs[0]?.hourlyRateRm ?? 18,
+      dailyRateRm: vr?.durationModels?.defaultDailyRateRm ?? vr?.baseDailyRateRm ?? updatedPkgs[0]?.dailyRateRm ?? 75,
+      allowDays: vr?.durationModels?.allowDays ?? true,
+      allowHours: vr?.durationModels?.allowHours ?? true,
+      depositRequired: depReq,
+      depositAmountRm: depReq ? (vr?.depositConfig?.depositAmountRm ?? updatedPkgs[0]?.depositRm ?? 100) : 0,
+      lockInFeeRm: vr?.depositConfig?.lockInFeeRm ?? 20,
+      pickupHubAddress: vr?.serviceOptions?.pickupHubAddress || updatedVendor.address || '',
+      customHourPackages: vr?.customHourPackages || [],
+      fleetUnits: vr?.fleetUnits || [],
+      isBookingEnabled: updatedVendor.isBookingEnabled ?? true,
+      verificationStatus: updatedVendor.verificationStatus || 'verified',
+      ownerEmail: updatedVendor.ownerEmail,
+      ownerUid: updatedVendor.ownerUid,
     };
     await firebaseService.saveMotorbikePartner(partnerToSync);
     setMotorbikePartners(firebaseService.getMotorbikePartners());
@@ -849,8 +878,10 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
         firebaseService.deleteMotorbikePartner(updated.id);
         setMotorbikePartners(firebaseService.getMotorbikePartners());
       } else if (isMotorbikeVendorCheck) {
+        const vr = updated.sectorSpecifics?.vehicleRental;
+        const depReq = vr?.depositConfig?.required ?? existingPartner?.depositRequired ?? true;
         const syncedAvailability =
-          updated.sectorSpecifics?.vehicleRental?.realTimeAvailability ||
+          vr?.realTimeAvailability ||
           updated.motorbikeFleetStatus ||
           motorbikeFleetStatus;
         const partnerToSync: MotorbikeRentalPartner = {
@@ -863,7 +894,25 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           contactPhone: updated.contactPhone || '+60123456789',
           whatsappNumber: updated.whatsappNumber || updated.contactPhone || '+60123456789',
           packages: updated.motorbikePackages || existingPartner?.packages || [],
-          vendorTerms: updated.vendorTerms || '',
+          vendorTerms: updated.vendorTerms || vr?.vendorRulesNotice || '',
+          vendorRulesNotice: vr?.vendorRulesNotice || updated.vendorTerms || '',
+          fuelPolicy: vr?.fuelPolicy || existingPartner?.fuelPolicy || 'none',
+          freeRaincoat: vr?.freeRaincoat ?? existingPartner?.freeRaincoat ?? false,
+          childrenHelmet: vr?.childrenHelmet ?? existingPartner?.childrenHelmet ?? false,
+          hourlyRateRm: vr?.durationModels?.defaultHourlyRateRm ?? vr?.baseHourlyRateRm ?? existingPartner?.hourlyRateRm ?? 18,
+          dailyRateRm: vr?.durationModels?.defaultDailyRateRm ?? vr?.baseDailyRateRm ?? existingPartner?.dailyRateRm ?? 75,
+          allowDays: vr?.durationModels?.allowDays ?? existingPartner?.allowDays ?? true,
+          allowHours: vr?.durationModels?.allowHours ?? existingPartner?.allowHours ?? true,
+          depositRequired: depReq,
+          depositAmountRm: depReq ? (vr?.depositConfig?.depositAmountRm ?? existingPartner?.depositAmountRm ?? 100) : 0,
+          lockInFeeRm: vr?.depositConfig?.lockInFeeRm ?? existingPartner?.lockInFeeRm ?? 20,
+          pickupHubAddress: vr?.serviceOptions?.pickupHubAddress || updated.address || '',
+          customHourPackages: vr?.customHourPackages || existingPartner?.customHourPackages || [],
+          fleetUnits: vr?.fleetUnits || existingPartner?.fleetUnits || [],
+          isBookingEnabled: updated.isBookingEnabled ?? true,
+          verificationStatus: updated.verificationStatus || 'verified',
+          ownerEmail: updated.ownerEmail,
+          ownerUid: updated.ownerUid,
         };
         await firebaseService.saveMotorbikePartner(partnerToSync);
         setMotorbikePartners(firebaseService.getMotorbikePartners());
@@ -1574,6 +1623,21 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              {onOpenBookingAlerts && (
+                <button
+                  onClick={onOpenBookingAlerts}
+                  className="relative px-2 py-1 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                  title="Booking & Payment Alerts"
+                >
+                  <BellRing className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Alerts</span>
+                  {unreadAlertCount > 0 && (
+                    <span className="px-1 rounded-full bg-rose-500 text-white text-[9px] font-black">
+                      {unreadAlertCount}
+                    </span>
+                  )}
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
@@ -1877,6 +1941,21 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {onOpenBookingAlerts && (
+                <button
+                  type="button"
+                  onClick={onOpenBookingAlerts}
+                  className="relative px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-bold flex items-center gap-1.5 shadow cursor-pointer transition-colors"
+                >
+                  <BellRing className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Booking Alerts</span>
+                  {unreadAlertCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                      {unreadAlertCount}
+                    </span>
+                  )}
+                </button>
+              )}
               {activeTab === 'directory' && (
                 <button
                   onClick={handleSaveActiveVendor}
@@ -4467,11 +4546,31 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                                     </div>
                                   </div>
 
-                                  {/* Add-ons / Helmets / Gear */}
+                                  {/* Add-ons / Helmets / Gear & Documents */}
                                   <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                                    {booking.quantity && booking.quantity > 1 && (
+                                      <span className="px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-500/40 text-cyan-200 font-bold">
+                                        ×{booking.quantity} Units
+                                      </span>
+                                    )}
+                                    {booking.customPackageLabel && (
+                                      <span className="px-2 py-0.5 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-200 font-bold">
+                                        {booking.customPackageLabel}
+                                      </span>
+                                    )}
                                     <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-800 text-stone-300">
                                       🪖 {booking.helmetsAddon} Helmet(s)
                                     </span>
+                                    {booking.childrenHelmetRequested && (
+                                      <span className="px-2 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-semibold">
+                                        👶 Children&apos;s Helmet Requested
+                                      </span>
+                                    )}
+                                    {booking.raincoatRequested && (
+                                      <span className="px-2 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-semibold">
+                                        🧥 Waterproof Raincoat Requested
+                                      </span>
+                                    )}
                                     {booking.includePhoneMount && (
                                       <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-800 text-stone-300">
                                         📱 Phone Mount Included
@@ -4481,6 +4580,32 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                                       <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-800 text-cyan-300">
                                         🛡️ {booking.insuranceTier}
                                       </span>
+                                    )}
+                                    {booking.paymentGateway && (
+                                      <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-stone-700 text-emerald-300 font-mono uppercase">
+                                        💳 {booking.paymentGateway}
+                                        {booking.paymentReference ? ` • ${booking.paymentReference}` : ''}
+                                      </span>
+                                    )}
+                                    {booking.licenseDocUrl && (
+                                      <a
+                                        href={booking.licenseDocUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-0.5 rounded-full bg-cyan-600/20 hover:bg-cyan-600/35 border border-cyan-500/40 text-cyan-200 font-bold"
+                                      >
+                                        📄 View License/IC
+                                      </a>
+                                    )}
+                                    {booking.paymentProofUrl && (
+                                      <a
+                                        href={booking.paymentProofUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-0.5 rounded-full bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/40 text-emerald-200 font-bold"
+                                      >
+                                        🧾 View Payment Proof
+                                      </a>
                                     )}
                                   </div>
 
@@ -5497,20 +5622,21 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] text-stone-400 block font-semibold">Full Unlocked Physical Address:</span>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs text-stone-200 font-medium flex items-center justify-between">
-                    <span className="truncate pr-2">{selectedBookingForVoucher.fullAddress}</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard?.writeText(selectedBookingForVoucher.fullAddress);
-                        setSaveNotification('Copied address to clipboard!');
-                        setTimeout(() => setSaveNotification(null), 3000);
-                      }}
-                      className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer shrink-0"
-                      title="Copy Address"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
+                  <span className="text-[11px] text-stone-400 block font-semibold">Stay Location &amp; Payment Verification:</span>
+                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs text-stone-200 font-medium flex items-center justify-between gap-2">
+                    <span className="truncate">
+                      {selectedBookingForVoucher.township || activeVendor?.township || 'Cameron Highlands'} · {selectedBookingForVoucher.paymentReference ? `Ref: ${selectedBookingForVoucher.paymentReference}` : 'RM30 Deposit Verified'}
+                    </span>
+                    {selectedBookingForVoucher.paymentProofUrl && (
+                      <a
+                        href={selectedBookingForVoucher.paymentProofUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 text-[10px] font-bold shrink-0 hover:bg-emerald-600/30"
+                      >
+                        View Proof
+                      </a>
+                    )}
                   </div>
                 </div>
 

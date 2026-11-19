@@ -17,10 +17,12 @@ import {
   SubCategory,
   Township,
   CamgoHazard,
+  VendorBookingAlert,
 } from './types';
 import { weatherService } from './services/weather';
 import { firebaseService, UserProfile } from './services/firebase';
 import { hazardFeedService } from './services/hazardFeedService';
+import { pushNotificationService } from './services/pushNotificationService';
 import { getTranslation } from './services/i18n';
 
 import { LoadingScreen } from './components/LoadingScreen';
@@ -59,6 +61,7 @@ import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
 import { ForeignerMedicalChargesModal } from './components/ForeignerMedicalChargesModal';
+import { VendorBookingAlertModal } from './components/VendorBookingAlertModal';
 import { WeatherWidget } from './components/WeatherWidget';
 import { TrafficWidget } from './components/TrafficWidget';
 import { HazardWidget } from './components/HazardWidget';
@@ -79,6 +82,7 @@ import {
   Smartphone,
   X,
   BedDouble,
+  BellRing,
 } from 'lucide-react';
 
 function checkIsStandaloneChat(): boolean {
@@ -184,15 +188,43 @@ export default function App() {
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
   const [isVendorPortalOpen, setIsVendorPortalOpen] = useState(false);
+  const [isVendorAlertsModalOpen, setIsVendorAlertsModalOpen] = useState(false);
+  const [vendorAlerts, setVendorAlerts] = useState<VendorBookingAlert[]>([]);
+  const [activeVendorBannerAlert, setActiveVendorBannerAlert] = useState<VendorBookingAlert | null>(null);
+  const lastRedirectedVendorUidRef = useRef<string | null>(null);
   const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
   const [isForeignerMedicalOpen, setIsForeignerMedicalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('food');
   const [selectedSubCategory, setSelectedSubCategory] = useState<SubCategory | undefined>(undefined);
 
+  // Helper to filter alerts for currently signed-in vendor (or all for admin)
+  const getScopedVendorAlerts = useCallback((user: UserProfile | null): VendorBookingAlert[] => {
+    if (!user || (user.role !== 'vendor' && user.role !== 'admin')) return [];
+    const allAlerts = firebaseService.getVendorBookingAlerts();
+    if (user.role === 'admin') return allAlerts;
+    const normalizedEmail = user.email?.trim().toLowerCase();
+    const ownedListingIds = new Set(
+      firebaseService
+        .getVendorListings()
+        .filter(
+          (l) =>
+            (normalizedEmail && l.ownerEmail?.trim().toLowerCase() === normalizedEmail) ||
+            (user.uid && l.ownerUid === user.uid)
+        )
+        .map((l) => l.id)
+    );
+    return allAlerts.filter((a) => {
+      if (user.uid && a.vendorUid && a.vendorUid === user.uid) return true;
+      if (normalizedEmail && a.vendorEmail?.trim().toLowerCase() === normalizedEmail) return true;
+      if (a.vendorId && ownedListingIds.has(a.vendorId)) return true;
+      return false;
+    });
+  }, []);
+
   // Lock body scroll when capsule modal is open
   useEffect(() => {
-    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isAccommodationModalOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen || isVendorPortalOpen;
+    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isAccommodationModalOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen || isVendorPortalOpen || isVendorAlertsModalOpen || isGalleryOpen;
     if (isAnyModalOpen) {
       const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
       document.body.style.overflow = 'hidden';
@@ -205,7 +237,7 @@ export default function App() {
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
     };
-  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen, isVendorPortalOpen]);
+  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen, isVendorPortalOpen, isVendorAlertsModalOpen, isGalleryOpen]);
 
   // Strict RBAC guard: Standard travelers ('user') cannot access Vendor Dashboard under any circumstances
   const handleOpenVendorPortal = useCallback(() => {
@@ -225,8 +257,66 @@ export default function App() {
     setTrafficAlerts(firebaseService.getTrafficAlerts());
     setHazards(firebaseService.getHazardAlerts());
     setEvents(firebaseService.getEvents());
-    setCurrentUser(firebaseService.getCurrentUser());
+    const activeUser = firebaseService.getCurrentUser();
+    setCurrentUser(activeUser);
+    setVendorAlerts(getScopedVendorAlerts(activeUser));
   };
+
+  // Automatically direct admin-registered or existing vendors straightaway to Vendor Dashboard upon sign in
+  useEffect(() => {
+    if (!currentUser) {
+      lastRedirectedVendorUidRef.current = null;
+      setVendorAlerts([]);
+      setActiveVendorBannerAlert(null);
+      return;
+    }
+
+    setVendorAlerts(getScopedVendorAlerts(currentUser));
+
+    if (currentUser.role === 'vendor' && lastRedirectedVendorUidRef.current !== currentUser.uid) {
+      lastRedirectedVendorUidRef.current = currentUser.uid;
+      setIsAuthOpen(false);
+      setIsUserDashboardOpen(false);
+      setIsAdminOpen(false);
+      setIsVendorPortalOpen(true);
+    }
+  }, [currentUser, getScopedVendorAlerts]);
+
+  // Real-time Vendor Booking & Payment Alerts listener (in-app banner + phone push chime)
+  useEffect(() => {
+    const syncVendorAlerts = () => {
+      const user = firebaseService.getCurrentUser();
+      setVendorAlerts(getScopedVendorAlerts(user));
+    };
+
+    const handleNewBookingAlert = (e: any) => {
+      const alert = e?.detail as VendorBookingAlert | undefined;
+      const user = firebaseService.getCurrentUser();
+      syncVendorAlerts();
+      if (!alert || !user || (user.role !== 'vendor' && user.role !== 'admin')) return;
+
+      const scoped = getScopedVendorAlerts(user);
+      const matchesUser = user.role === 'admin' || scoped.some((item) => item.id === alert.id);
+      if (matchesUser && !alert.isRead) {
+        setActiveVendorBannerAlert(alert);
+        pushNotificationService
+          .dispatchNotification({
+            title: `New Paid Booking: RM${alert.depositPaidRm} Deposit`,
+            body: `${alert.guestName} booked ${alert.itemSummary} (${alert.bookingCode}). Tap to view proof & contact guest.`,
+            tag: alert.id,
+            url: '/',
+          })
+          .catch(() => {});
+      }
+    };
+
+    window.addEventListener('vendor-booking-alert', handleNewBookingAlert);
+    window.addEventListener('vendor-booking-alerts-updated', syncVendorAlerts);
+    return () => {
+      window.removeEventListener('vendor-booking-alert', handleNewBookingAlert);
+      window.removeEventListener('vendor-booking-alerts-updated', syncVendorAlerts);
+    };
+  }, [getScopedVendorAlerts]);
 
   useEffect(() => {
     refreshStorageData();
@@ -451,6 +541,10 @@ export default function App() {
       setIsCurrencyOpen(false);
       return true;
     }
+    if (isVendorAlertsModalOpen) {
+      setIsVendorAlertsModalOpen(false);
+      return true;
+    }
     if (isVendorPortalOpen) {
       setIsVendorPortalOpen(false);
       return true;
@@ -495,6 +589,7 @@ export default function App() {
     isMotorbikeRentalOpen,
     isGalleryOpen,
     isCurrencyOpen,
+    isVendorAlertsModalOpen,
     isVendorPortalOpen,
     isFarmMatrixOpen,
     isParkingEvOpen,
@@ -568,6 +663,8 @@ export default function App() {
         onOpenGalleryModal={() => setIsGalleryOpen(true)}
         onOpenCurrencyConverter={() => setIsCurrencyOpen(true)}
         onOpenVendorPortal={handleOpenVendorPortal}
+        onOpenVendorAlerts={() => setIsVendorAlertsModalOpen(true)}
+        vendorAlertCount={vendorAlerts.filter((a) => !a.isRead).length}
         onOpenFarmMatrix={() => setIsFarmMatrixOpen(true)}
         onOpenParkingEvModal={() => setIsParkingEvOpen(true)}
         onOpenMasjidModal={() => setIsMasjidModalOpen(true)}
@@ -582,6 +679,53 @@ export default function App() {
         weatherList={weatherList}
         onSelectPlace={handleSelectPlaceForMap}
       />
+
+      {/* Sticky Live Vendor Booking & Payment Alert Banner */}
+      {activeVendorBannerAlert && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[135] w-[94vw] max-w-2xl px-2">
+          <div className="rounded-2xl bg-gradient-to-r from-amber-950/95 via-stone-900/95 to-emerald-950/95 backdrop-blur-xl border border-amber-400/70 shadow-[0_12px_40px_rgba(245,158,11,0.35)] p-3.5 sm:p-4 flex items-center justify-between gap-3 text-stone-100">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-xl bg-amber-500 text-stone-950 shrink-0 animate-bounce">
+                <BellRing className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500 text-white">
+                    New Paid Deposit
+                  </span>
+                  <span className="font-mono text-xs font-black text-amber-300">
+                    {activeVendorBannerAlert.bookingCode}
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">
+                  {activeVendorBannerAlert.guestName} paid RM{activeVendorBannerAlert.depositPaidRm} • {activeVendorBannerAlert.itemSummary}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  firebaseService.markVendorBookingAlertRead(activeVendorBannerAlert.id);
+                  setActiveVendorBannerAlert(null);
+                  setIsVendorAlertsModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 text-xs font-black cursor-pointer whitespace-nowrap"
+              >
+                View Proof
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveVendorBannerAlert(null)}
+                className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer"
+                aria-label="Dismiss alert banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Offline Status Bar */}
       <OfflineIndicator
@@ -786,6 +930,7 @@ export default function App() {
         isOpen={isMotorbikeRentalOpen}
         onClose={() => setIsMotorbikeRentalOpen(false)}
         language={language}
+        currentUser={currentUser}
       />
 
       {/* Itinerary Modal */}
@@ -831,8 +976,19 @@ export default function App() {
               setIsAdminOpen(true);
             }
           }}
+          onOpenBookingAlerts={() => setIsVendorAlertsModalOpen(true)}
+          unreadAlertCount={vendorAlerts.filter((a) => !a.isRead).length}
         />
       )}
+
+      {/* Standalone Vendor Booking & Payment Alerts Modal */}
+      <VendorBookingAlertModal
+        isOpen={isVendorAlertsModalOpen}
+        onClose={() => setIsVendorAlertsModalOpen(false)}
+        alerts={vendorAlerts}
+        currentUser={currentUser}
+        onOpenVendorDashboard={handleOpenVendorPortal}
+      />
       
       {/* Farm Matrix Modal */}
       {isFarmMatrixOpen && (
@@ -994,23 +1150,23 @@ export default function App() {
       {/* Highland Photo Gallery Popup Modal */}
       {isGalleryOpen && (
         <div
-          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-6 overflow-y-auto"
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/90 backdrop-blur-md p-2 sm:p-6 overflow-hidden"
           onClick={() => setIsGalleryOpen(false)}
         >
           <div
-            className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-3xl bg-stone-950 border border-emerald-500/40 shadow-2xl p-4 sm:p-8 space-y-6 relative text-stone-100"
+            className="w-full max-w-6xl max-h-[92dvh] flex flex-col rounded-2xl sm:rounded-3xl bg-stone-950 border border-emerald-500/40 shadow-2xl overflow-hidden relative text-stone-100"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-4 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  <Camera className="w-6 h-6" />
+            <div className="sticky top-0 z-20 flex items-center justify-between gap-3 p-3.5 sm:p-5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md shrink-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                  <Camera className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <div>
-                  <h3 className="text-xl font-heading font-black text-stone-100">
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-xl font-heading font-black text-stone-100 truncate">
                     Highland Photo Gallery
                   </h3>
-                  <p className="text-xs text-stone-400">
+                  <p className="text-[11px] sm:text-xs text-stone-400 truncate">
                     High-elevation photography, tea valley horizons, &amp; cultural spotlights
                   </p>
                 </div>
@@ -1024,13 +1180,15 @@ export default function App() {
               </button>
             </div>
 
-            <GalleryCarousel
-              items={galleryItems}
-              onSelectPlace={(place) => {
-                setIsGalleryOpen(false);
-                handleSelectPlaceForMap(place);
-              }}
-            />
+            <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 sm:p-6">
+              <GalleryCarousel
+                items={galleryItems}
+                onSelectPlace={(place) => {
+                  setIsGalleryOpen(false);
+                  handleSelectPlaceForMap(place);
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

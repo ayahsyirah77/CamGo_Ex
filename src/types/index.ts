@@ -633,6 +633,17 @@ export interface VehicleRentalSpecifics {
     lockInFeeRm?: number;
     depositNotes?: string;
   };
+  fuelPolicy?: 'none' | 'half_tank' | 'full_tank';
+  freeRaincoat?: boolean;
+  childrenHelmet?: boolean;
+  vendorRulesNotice?: string;
+  customHourPackages?: Array<{
+    id: string;
+    label: string;
+    hours: number;
+    priceRm: number;
+    enabled: boolean;
+  }>;
   addOnPackages?: Array<{
     id: string;
     name: string;
@@ -643,6 +654,7 @@ export interface VehicleRentalSpecifics {
   fleetUnits?: Array<{
     id: string;
     model: string;
+    vehicleType?: 'motorbike' | 'scooter';
     plateOrCode?: string;
     status: 'available' | 'rented' | 'maintenance';
     dailyRateRm: number;
@@ -919,6 +931,7 @@ export interface MotorbikePackage {
   id: string;
   name: string;
   cc: string;
+  vehicleType?: 'motorbike' | 'scooter';
   dailyRateRm: number;
   hourlyRateRm?: number;
   depositRm?: number;
@@ -945,9 +958,38 @@ export interface MotorbikeRentalPartner {
   whatsappNumber: string;
   packages: MotorbikePackage[];
   vendorTerms?: string;
+  vendorRulesNotice?: string;
+  fuelPolicy?: 'none' | 'half_tank' | 'full_tank';
+  freeRaincoat?: boolean;
+  childrenHelmet?: boolean;
+  hourlyRateRm?: number;
+  dailyRateRm?: number;
+  allowDays?: boolean;
+  allowHours?: boolean;
+  depositRequired?: boolean;
+  depositAmountRm?: number;
+  lockInFeeRm?: number;
+  pickupHubAddress?: string;
+  customHourPackages?: Array<{
+    id: string;
+    label: string;
+    hours: number;
+    priceRm: number;
+    enabled: boolean;
+  }>;
+  fleetUnits?: Array<{
+    id: string;
+    model: string;
+    vehicleType?: 'motorbike' | 'scooter';
+    plateOrCode?: string;
+    status: 'available' | 'rented' | 'maintenance';
+    dailyRateRm: number;
+    hourlyRateRm?: number;
+  }>;
   isBookingEnabled?: boolean;
   verificationStatus?: VendorVerificationStatus;
   ownerEmail?: string;
+  ownerUid?: string;
 }
 
 export type MotorbikeBookingStatus =
@@ -962,10 +1004,15 @@ export type MotorbikeBookingStatus =
 export interface MotorbikeBookingRecord {
   id: string;
   bookingCode?: string;
+  bookingType?: 'motorbike_rental';
   partnerId: string;
   partnerName: string;
+  vendorUid?: string;
+  vendorEmail?: string;
   packageId: string;
   packageName: string;
+  vehicleType?: 'motorbike' | 'scooter';
+  quantity?: number;
   unitPlateOrCode?: string;
   renterName: string;
   renterEmail: string;
@@ -979,17 +1026,28 @@ export interface MotorbikeBookingRecord {
   endDate: string;
   days: number;
   hours?: number;
-  rentalDurationType?: 'days' | 'hours';
+  rentalDurationType?: 'days' | 'hours' | 'custom_package';
+  customPackageLabel?: string;
   fulfillmentMethod?: 'self_collect' | 'delivered';
   deliveryAddressOrHotel?: string;
   helmetsAddon: number;
   includePhoneMount: boolean;
+  childrenHelmetRequested?: boolean;
+  raincoatRequested?: boolean;
+  licenseAck?: boolean;
+  licenseDocUrl?: string;
+  licenseDocName?: string;
   insuranceTier?: string;
   gearAddons?: string[];
+  rentalFeeRm?: number;
   depositRm?: number;
   lockInFeeRm?: number;
   balanceToCollectRm?: number;
   depositStatus?: 'paid' | 'pending' | 'refunded';
+  paymentGateway?: 'billplz' | 'toyyibpay' | 'stripe' | 'camgo_direct';
+  paymentProofUrl?: string;
+  paymentProofName?: string;
+  paymentReference?: string;
   isUnlocked?: boolean;
   qrVoucherCode?: string;
   totalRm: number;
@@ -1004,9 +1062,12 @@ export interface AccommodationBooking {
   homestayId: string;
   homestayName: string; // Real business name e.g. "Barrington Alpine Homestay"
   maskedTitle: string; // Anti-Bypass Title e.g. "Cozy 3BR - 350m to Kea Farm (CH-07)"
-  fullAddress: string; // Revealed only post-payment
-  ownerPhone: string; // Revealed only post-payment
+  fullAddress?: string; // Optional internal only — not shown publicly
+  township?: Township;
+  ownerPhone: string;
   ownerName: string;
+  vendorEmail?: string;
+  vendorUid?: string;
   hostPhone?: string; // Host phone alias
   customerName: string;
   customerPhone: string;
@@ -1024,6 +1085,9 @@ export interface AccommodationBooking {
   status: 'pending_owner_approval' | 'confirmed' | 'rejected' | 'auto_refunded' | 'checked_in' | 'completed';
   depositPaymentStatus: 'paid' | 'refunded' | 'unpaid';
   paymentGateway: 'billplz' | 'toyyibpay' | 'stripe';
+  paymentProofUrl?: string;
+  paymentProofName?: string;
+  paymentReference?: string;
   isUnlocked: boolean; // Pay to reveal trigger
   qrVoucherCode: string;
   bundledPerks: string[];
@@ -1036,12 +1100,14 @@ export interface AccommodationBooking {
 export interface AccommodationListing {
   id: string;
   vendorId?: string;
+  ownerUid?: string;
+  ownerEmail?: string;
   code: string; // e.g. "CH-07"
   maskedTitle: string; // e.g. "Cozy 3BR Alpine Apartment - 350m to Kea Farm (CH-07)"
   realBusinessName: string; // e.g. "Barrington Alpine Homestay"
   township: Township;
-  proximityDesc: string; // "350m to Kea Farm Market & Strawberry Walk"
-  fullAddress: string;
+  proximityDesc: string; // General area / township proximity without full street address
+  fullAddress?: string;
   ownerName: string;
   ownerPhone: string;
   pricePerNight: number;
@@ -1061,6 +1127,34 @@ export interface AccommodationListing {
   verifiedHost: boolean;
   ownerPortalSlug?: string;
   whatsappNumber?: string;
+}
+
+export interface VendorBookingAlert {
+  id: string;
+  bookingId: string;
+  bookingCode: string;
+  bookingType: 'accommodation' | 'motorbike';
+  vendorId: string;
+  vendorName: string;
+  vendorEmail?: string;
+  vendorUid?: string;
+  guestName: string;
+  guestPhone: string;
+  guestEmail?: string;
+  itemSummary: string;
+  checkInOrStart: string;
+  checkOutOrEnd: string;
+  totalAmountRm: number;
+  depositPaidRm: number;
+  balanceDueRm: number;
+  paymentGateway: string;
+  paymentReference?: string;
+  paymentProofUrl?: string;
+  paymentProofName?: string;
+  whatsappNotified?: boolean;
+  status: 'new' | 'acknowledged' | 'confirmed' | 'completed';
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface MobileHomeCard {

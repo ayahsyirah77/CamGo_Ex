@@ -1,4 +1,4 @@
-import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MotorbikeBookingStatus, MobileHomeCard, AccommodationBooking, AccommodationListing, RoomAvailabilityStatus, SiteVisitorStats, VisitorLogEntry } from '../types';
+import { Place, GalleryItem, EventNotification, LoungePost, LoungePostReply, ItineraryPlan, TownshipHubInfo, JobClassified, TrafficAlert, HazardAlert, EmergencyCard, EmergencyDispatchRecord, FarmTicket, VendorListing, VendorVoucher, VendorEventItem, VendorStaffMember, VendorAnalyticsData, MotorbikeRentalPartner, MotorbikePackage, MotorbikeBookingRecord, MotorbikeBookingStatus, MobileHomeCard, AccommodationBooking, AccommodationListing, RoomAvailabilityStatus, SiteVisitorStats, VisitorLogEntry, VendorBookingAlert, MainCategory, SubCategory, Township } from '../types';
 import {
   INITIAL_PLACES,
   INITIAL_GALLERY,
@@ -27,7 +27,7 @@ import {
   updateProfile 
 } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot, updateDoc, increment } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot, updateDoc, increment, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { pruneVendorForSector, resolveVendorSectorKey } from '../utils/sectorIsolation';
@@ -37,6 +37,10 @@ export interface UserProfile {
   email: string;
   displayName: string;
   fullName?: string;
+  phone?: string;
+  userType?: 'local' | 'tourist';
+  vendorBusinessName?: string;
+  createdByAdmin?: boolean;
   address?: string;
   street?: string;
   postcode?: string;
@@ -72,6 +76,7 @@ const STORAGE_KEYS = {
   VENDOR_VOUCHERS: 'camgo_vendor_vouchers',
   VENDOR_EVENTS: 'camgo_vendor_events',
   VENDOR_STAFF: 'camgo_vendor_staff',
+  VENDOR_BOOKING_ALERTS: 'camgo_vendor_booking_alerts',
   HOME_CARDS: 'camgo_home_cards',
   ACCOMMODATION_BOOKINGS: 'camgo_accommodation_bookings',
   ACCOMMODATION_LISTINGS: 'camgo_accommodation_listings',
@@ -784,6 +789,49 @@ class FirebaseStorageService {
         }
       }, (err) => console.warn('Realtime jobs listener warning:', err));
 
+      // 14. Real-time Accommodation Bookings Listener
+      onSnapshot(collection(db, 'accommodation_bookings'), (snap) => {
+        if (!snap.empty) {
+          const cloudBookings = snap.docs.map((d) => d.data() as AccommodationBooking);
+          const localBookings = this.getAccommodationBookings();
+          const map = new Map<string, AccommodationBooking>();
+          localBookings.forEach((b) => b?.id && map.set(b.id, b));
+          cloudBookings.forEach((b) => b?.id && map.set(b.id, b));
+          const merged = Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          this.setLocalStorageItem(STORAGE_KEYS.ACCOMMODATION_BOOKINGS, JSON.stringify(merged));
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('accommodation-bookings-updated', { detail: merged }));
+          }
+          this.notify();
+        }
+      }, (err) => console.warn('Realtime accommodation bookings listener warning:', err));
+
+      // 15. Real-time Vendor Booking Alerts Listener
+      onSnapshot(collection(db, 'vendor_booking_alerts'), (snap) => {
+        const cloudAlerts = snap.docs.map((d) => d.data() as VendorBookingAlert);
+        const existingAlerts = this.getVendorBookingAlerts();
+        const existingIds = new Set(existingAlerts.map((a) => a.id));
+        const map = new Map<string, VendorBookingAlert>();
+        existingAlerts.forEach((a) => a?.id && map.set(a.id, a));
+        cloudAlerts.forEach((a) => a?.id && map.set(a.id, a));
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        this.setLocalStorageItem(STORAGE_KEYS.VENDOR_BOOKING_ALERTS, JSON.stringify(merged));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('vendor-booking-alerts-updated', { detail: merged }));
+          // Emit incoming alert event for newly arrived unread cloud alerts
+          cloudAlerts.forEach((a) => {
+            if (!existingIds.has(a.id) && !a.isRead) {
+              window.dispatchEvent(new CustomEvent('vendor-booking-alert', { detail: a }));
+            }
+          });
+        }
+        this.notify();
+      }, (err) => console.warn('Realtime vendor booking alerts listener warning:', err));
+
     } catch (e) {
       console.warn("Cloud sync offline mode active, using local cache:", e);
     }
@@ -864,12 +912,14 @@ class FirebaseStorageService {
             }, (err) => console.warn('Realtime emergency card listener warning:', err));
 
             try {
-              const [userSnap, cardSnap] = await Promise.all([
+              const cleanEmail = (fbUser.email || '').trim().toLowerCase();
+              const [userSnap, cardSnap, emailResolution] = await Promise.all([
                 getDoc(doc(db, 'users', fbUser.uid)),
                 getDoc(doc(db, 'emergency_cards', fbUser.uid)),
+                cleanEmail ? this.resolveUserAccountByEmail(cleanEmail) : Promise.resolve({ existingUser: null, hasVendorListing: false }),
               ]);
 
-              const userData = userSnap.exists() ? userSnap.data() : null;
+              const userData = (userSnap.exists() ? userSnap.data() : null) || emailResolution.existingUser;
               const cardData = cardSnap.exists() ? (cardSnap.data() as EmergencyCard) : null;
 
               if (cardData) {
@@ -880,23 +930,38 @@ class FirebaseStorageService {
                 this.setLocalStorageItem(STORAGE_KEYS.EMERGENCY_CARD, JSON.stringify(emergencyCard));
               }
 
+              const isVendorResolved =
+                userData?.role === 'vendor' ||
+                emailResolution.hasVendorListing ||
+                (existingProfile?.uid === fbUser.uid && existingProfile?.role === 'vendor');
+
               const resolvedRole: 'admin' | 'user' | 'vendor' = isAdmin
                 ? 'admin'
-                : existingProfile?.uid === fbUser.uid && existingProfile?.role === 'vendor'
+                : userData?.role === 'admin'
+                ? 'admin'
+                : isVendorResolved
                 ? 'vendor'
-                : (userData?.role === 'vendor' || userData?.role === 'admin' ? userData.role : 'user');
+                : 'user';
+
+              if (resolvedRole === 'vendor' && cleanEmail) {
+                this.claimVendorListingsForUser(fbUser.uid, cleanEmail).catch(() => {});
+              }
 
               const profile: UserProfile = {
                 uid: fbUser.uid,
                 email: fbUser.email || 'user@camgo.my',
                 displayName: userData?.displayName || fbUser.displayName || 'Highland Explorer',
                 fullName: userData?.fullName || existingProfile?.fullName || fbUser.displayName || '',
+                phone: userData?.phone || existingProfile?.phone,
+                vendorBusinessName: userData?.vendorBusinessName || existingProfile?.vendorBusinessName,
                 photoURL: fbUser.photoURL || userData?.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
                 role: resolvedRole,
                 bookmarks: userData?.bookmarks || existingProfile?.bookmarks || [],
                 createdAt: userData?.createdAt || existingProfile?.createdAt || new Date().toISOString(),
                 emergencyCard: emergencyCard || existingProfile?.emergencyCard,
               };
+
+              await this.syncUserToFirestore(profile).catch(() => {});
 
               this.currentUser = profile;
               this.setLocalStorageItem(STORAGE_KEYS.USER, JSON.stringify(profile));
@@ -911,13 +976,21 @@ class FirebaseStorageService {
           }
 
           // Fallback if offline
+          const offlineEmail = (fbUser.email || '').trim().toLowerCase();
+          const hasLocalVendor = offlineEmail
+            ? this.getVendorListings().some((v) => v.ownerEmail?.toLowerCase().trim() === offlineEmail)
+            : false;
           const profile: UserProfile = {
             uid: fbUser.uid,
             email: fbUser.email || 'user@camgo.my',
             displayName: fbUser.displayName || 'Highland Explorer',
             fullName: existingProfile?.fullName || fbUser.displayName || '',
             photoURL: fbUser.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
-            role: isAdmin ? 'admin' : (existingProfile?.uid === fbUser.uid && existingProfile?.role === 'vendor' ? 'vendor' : 'user'),
+            role: isAdmin
+              ? 'admin'
+              : hasLocalVendor || (existingProfile?.uid === fbUser.uid && existingProfile?.role === 'vendor')
+              ? 'vendor'
+              : 'user',
             bookmarks: existingProfile?.bookmarks || [],
             createdAt: existingProfile?.createdAt || new Date().toISOString(),
             emergencyCard: emergencyCard || existingProfile?.emergencyCard,
@@ -930,6 +1003,179 @@ class FirebaseStorageService {
     }
   }
 
+  private async resolveUserAccountByEmail(cleanEmail: string): Promise<{
+    existingUser: any | null;
+    hasVendorListing: boolean;
+  }> {
+    const normalized = cleanEmail.trim().toLowerCase();
+    const localVendors = this.getVendorListings();
+    let hasVendorListing = localVendors.some(
+      (v) => v.ownerEmail?.toLowerCase().trim() === normalized
+    );
+    let existingUser: any | null = null;
+
+    if (db && normalized) {
+      try {
+        const userQ = query(collection(db, 'users'), where('email', '==', normalized));
+        const userSnap = await getDocs(userQ);
+        if (!userSnap.empty) {
+          // Prefer vendor/admin record if multiple docs exist for same email
+          const docsData = userSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          existingUser =
+            docsData.find((d: any) => d.role === 'vendor' || d.role === 'admin') || docsData[0];
+        }
+
+        if (!hasVendorListing) {
+          const vQ = query(collection(db, 'vendor_listings'), where('ownerEmail', '==', normalized));
+          const vSnap = await getDocs(vQ);
+          if (!vSnap.empty) {
+            hasVendorListing = true;
+            // Cache cloud vendor listings locally so VendorDashboard loads them immediately
+            const existingLocal = this.getVendorListings();
+            const map = new Map<string, VendorListing>();
+            existingLocal.forEach((l) => l?.id && map.set(l.id, l));
+            vSnap.docs.forEach((d) => {
+              const vl = d.data() as VendorListing;
+              if (vl?.id) map.set(vl.id, vl);
+            });
+            this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(Array.from(map.values())));
+          }
+        }
+      } catch (err) {
+        console.warn('[FirebaseService] resolveUserAccountByEmail query warning:', err);
+      }
+    }
+
+    return { existingUser, hasVendorListing };
+  }
+
+  private async claimVendorListingsForUser(uid: string, cleanEmail: string): Promise<void> {
+    const normalized = cleanEmail.trim().toLowerCase();
+    const listings = this.getVendorListings();
+    let changed = false;
+
+    const updatedListings = listings.map((l) => {
+      if (l.ownerEmail?.toLowerCase().trim() === normalized && l.ownerUid !== uid) {
+        changed = true;
+        const updated = { ...l, ownerUid: uid, ownerEmail: normalized };
+        if (db) {
+          setDoc(doc(db, 'vendor_listings', l.id), { ownerUid: uid, ownerEmail: normalized }, { merge: true }).catch(() => {});
+        }
+        return updated;
+      }
+      return l;
+    });
+
+    if (changed) {
+      this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(updatedListings));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: updatedListings }));
+      }
+    }
+  }
+
+  public async registerUserOnBehalf(params: {
+    fullName: string;
+    email: string;
+    phone: string;
+    userType: 'local' | 'tourist';
+    role: 'user' | 'vendor';
+    businessName?: string;
+    subCategory?: SubCategory;
+    category?: MainCategory;
+    township?: Township;
+    address?: string;
+    description?: string;
+    whatsappNumber?: string;
+  }): Promise<{ userObj: any; vendorListing?: VendorListing }> {
+    const cleanEmail = params.email.trim().toLowerCase();
+    if (!cleanEmail.endsWith('@gmail.com')) {
+      throw new Error('User registration requires a valid Google (@gmail.com) email address.');
+    }
+
+    // Reuse existing UID if a user doc already exists for this email
+    const { existingUser } = await this.resolveUserAccountByEmail(cleanEmail);
+    const targetUid = existingUser?.uid || existingUser?.id || 'usr-' + Date.now().toString(36);
+
+    const userObj = {
+      id: targetUid,
+      uid: targetUid,
+      email: cleanEmail,
+      fullName: params.fullName.trim() || cleanEmail.split('@')[0],
+      displayName: params.fullName.trim() || cleanEmail.split('@')[0],
+      phone: params.phone.trim(),
+      userType: params.userType,
+      role: params.role,
+      vendorBusinessName: params.role === 'vendor' ? (params.businessName?.trim() || `${params.fullName.trim()} Business`) : undefined,
+      createdByAdmin: true,
+      isBlocked: false,
+      createdAt: existingUser?.createdAt || new Date().toISOString(),
+    };
+
+    const cleanUserDoc = Object.fromEntries(
+      Object.entries(userObj).filter(([_, v]) => v !== undefined)
+    );
+
+    if (db) {
+      try {
+        await setDoc(doc(db, 'users', targetUid), cleanUserDoc, { merge: true });
+      } catch (err) {
+        console.warn('Could not save user on behalf to Firestore:', err);
+      }
+    }
+
+    let createdVendorListing: VendorListing | undefined;
+    if (params.role === 'vendor') {
+      const bizName = params.businessName?.trim() || `${userObj.fullName} Enterprise`;
+      const existingByOwner = this.getVendorListings().find(
+        (v) => v.ownerEmail?.toLowerCase().trim() === cleanEmail || v.businessName.toLowerCase().trim() === bizName.toLowerCase().trim()
+      );
+      const listingId = existingByOwner?.id || 'vnd-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+      const cleanWa = (params.whatsappNumber || params.phone || '+60123456789').trim();
+      const township: Township = params.township || 'Tanah Rata';
+      const subCategory: SubCategory = params.subCategory || 'homestay';
+      const category: MainCategory = params.category || 'accommodation';
+
+      const newVendorListing: VendorListing = {
+        ...(existingByOwner || {}),
+        id: listingId,
+        ownerUid: targetUid,
+        ownerEmail: cleanEmail,
+        businessName: bizName,
+        verificationStatus: 'verified',
+        isBookingEnabled: true,
+        category,
+        subCategory,
+        township,
+        address: params.address?.trim() || `${township}, 39000 Cameron Highlands, Pahang`,
+        contactPhone: params.phone.trim() || cleanWa,
+        whatsappNumber: cleanWa,
+        description: params.description?.trim() || `Verified ${bizName} in ${township}, Cameron Highlands.`,
+        operatingHours: existingByOwner?.operatingHours || { from: '08:30', to: '21:00', isOpen: true },
+        coordinates: existingByOwner?.coordinates || { lat: 4.4716, lng: 101.3766 },
+        realTimeStatus: existingByOwner?.realTimeStatus || 'open',
+        diyHarvestStatus: existingByOwner?.diyHarvestStatus,
+        parkingStatus: existingByOwner?.parkingStatus || 'private_available',
+        roomAvailabilityStatus: category === 'accommodation' ? (existingByOwner?.roomAvailabilityStatus || 'rooms_available') : 'not_applicable',
+        dietaryTags: existingByOwner?.dietaryTags || [],
+        tier: existingByOwner?.tier || 'monthly_pro',
+        billingCadence: existingByOwner?.billingCadence || 'monthly',
+        tierExpiresAt: existingByOwner?.tierExpiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        isSponsored: existingByOwner?.isSponsored ?? false,
+        coverImage: existingByOwner?.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+        galleryImages: existingByOwner?.galleryImages || [],
+        profileHealthScore: 95,
+        createdAt: existingByOwner?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      createdVendorListing = newVendorListing;
+      await this.saveVendorListing(newVendorListing);
+    }
+
+    return { userObj, vendorListing: createdVendorListing };
+  }
+
   private initGsapImagesRealtimeListener() {
     // Handled in syncCloudData
   }
@@ -937,33 +1183,65 @@ class FirebaseStorageService {
   public async syncUserToFirestore(profile: UserProfile): Promise<UserProfile> {
     if (!db) return profile;
     try {
+      const cleanEmail = (profile.email || '').trim().toLowerCase();
       const userRef = doc(db, 'users', profile.uid);
-      const snap = await getDoc(userRef);
-      const existingData = snap.exists() ? snap.data() : {};
+      const [snap, emailCheck] = await Promise.all([
+        getDoc(userRef),
+        cleanEmail ? this.resolveUserAccountByEmail(cleanEmail) : Promise.resolve({ existingUser: null, hasVendorListing: false }),
+      ]);
+      const existingData = snap.exists() ? snap.data() : (emailCheck.existingUser || {});
       
       if (existingData?.isBlocked) {
         throw new Error("ACCOUNT_BLOCKED: This account has been blocked by the administrator.");
       }
 
+      const preservedRole: 'admin' | 'user' | 'vendor' =
+        profile.role === 'admin' || existingData?.role === 'admin'
+          ? 'admin'
+          : profile.role === 'vendor' || existingData?.role === 'vendor' || emailCheck.hasVendorListing
+          ? 'vendor'
+          : 'user';
+
       const updatedProfile: UserProfile = {
         ...profile,
-        fullName: profile.fullName || profile.displayName || profile.email.split('@')[0],
+        email: cleanEmail || profile.email,
+        role: preservedRole,
+        fullName: profile.fullName || existingData?.fullName || profile.displayName || profile.email.split('@')[0],
+        phone: profile.phone || existingData?.phone,
+        vendorBusinessName: profile.vendorBusinessName || existingData?.vendorBusinessName,
         isBlocked: false,
         createdAt: existingData?.createdAt || profile.createdAt || new Date().toISOString(),
       };
 
-      await setDoc(userRef, {
+      const firestorePayload: Record<string, any> = {
         id: updatedProfile.uid,
         uid: updatedProfile.uid,
         email: updatedProfile.email,
         displayName: updatedProfile.displayName,
         fullName: updatedProfile.fullName,
         ...(updatedProfile.photoURL?.trim() ? { photoURL: updatedProfile.photoURL.trim() } : {}),
+        ...(updatedProfile.phone ? { phone: updatedProfile.phone } : {}),
+        ...(updatedProfile.vendorBusinessName ? { vendorBusinessName: updatedProfile.vendorBusinessName } : {}),
         role: updatedProfile.role,
         isBlocked: false,
         createdAt: updatedProfile.createdAt,
         lastLoginAt: new Date().toISOString(),
-      }, { merge: true });
+      };
+
+      await setDoc(userRef, firestorePayload, { merge: true });
+
+      // If admin created an earlier pre-auth doc (e.g., usr-...) with a different doc id, keep it synced to this uid & role
+      if (emailCheck.existingUser?.id && emailCheck.existingUser.id !== updatedProfile.uid) {
+        await setDoc(doc(db, 'users', emailCheck.existingUser.id), {
+          uid: updatedProfile.uid,
+          role: updatedProfile.role,
+          lastLoginAt: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+      }
+
+      if (updatedProfile.role === 'vendor' && cleanEmail) {
+        await this.claimVendorListingsForUser(updatedProfile.uid, cleanEmail);
+      }
 
       return updatedProfile;
     } catch (e: any) {
@@ -1005,7 +1283,7 @@ class FirebaseStorageService {
         const provider = new GoogleAuthProvider();
         const result = await signInWithPopup(auth, provider);
         const fbUser = result.user;
-        const targetEmail = (fbUser.email || '').toLowerCase();
+        const targetEmail = (fbUser.email || '').trim().toLowerCase();
         const isAdminUser =
           asAdmin ||
           targetEmail === 'ayahsyirah77@gmail.com' ||
@@ -1013,22 +1291,31 @@ class FirebaseStorageService {
           targetEmail.includes('admin') ||
           targetEmail === 'admin@camgo.my';
 
+        // Check if Admin previously registered this Google email as a Vendor (or created a VendorListing for them)
+        const { existingUser, hasVendorListing } = targetEmail
+          ? await this.resolveUserAccountByEmail(targetEmail)
+          : { existingUser: null, hasVendorListing: false };
+
         const assignedRole: 'admin' | 'vendor' | 'user' = isAdminUser
           ? 'admin'
-          : effectivePreferredRole === 'vendor'
+          : existingUser?.role === 'admin'
+          ? 'admin'
+          : existingUser?.role === 'vendor' || hasVendorListing || effectivePreferredRole === 'vendor'
           ? 'vendor'
           : 'user';
 
         const profile: UserProfile = {
           uid: fbUser.uid,
-          email: fbUser.email || (isAdminUser ? 'ayahsyirah77@gmail.com' : assignedRole === 'vendor' ? 'vendor@gmail.com' : 'traveler@gmail.com'),
-          displayName: fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
-          fullName: fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
+          email: targetEmail || (isAdminUser ? 'ayahsyirah77@gmail.com' : assignedRole === 'vendor' ? 'vendor@gmail.com' : 'traveler@gmail.com'),
+          displayName: existingUser?.displayName || fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
+          fullName: existingUser?.fullName || fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
+          phone: existingUser?.phone,
+          vendorBusinessName: existingUser?.vendorBusinessName,
           photoURL: fbUser.photoURL || undefined,
           role: assignedRole,
           isBlocked: false,
-          bookmarks: [],
-          createdAt: new Date().toISOString(),
+          bookmarks: existingUser?.bookmarks || [],
+          createdAt: existingUser?.createdAt || new Date().toISOString(),
         };
 
         const user = await this.syncUserToFirestore(profile);
@@ -1114,25 +1401,34 @@ class FirebaseStorageService {
     if (!cleanEmail.endsWith('@gmail.com')) {
       throw new Error('Registration and sign-in require a valid @gmail.com email address.');
     }
+
+    const { existingUser, hasVendorListing } = await this.resolveUserAccountByEmail(cleanEmail);
     const isAdmin = cleanEmail.includes('admin') || cleanEmail === 'ayahsyirah77@gmail.com' || cleanEmail === 'asuypower7984@gmail.com';
     const assignedRole: 'admin' | 'vendor' | 'user' = isAdmin
       ? 'admin'
-      : preferredRole === 'vendor'
+      : existingUser?.role === 'admin'
+      ? 'admin'
+      : existingUser?.role === 'vendor' || hasVendorListing || preferredRole === 'vendor'
       ? 'vendor'
       : 'user';
 
-    const deterministicUid = (isAdmin ? 'admin-' : assignedRole === 'vendor' ? 'vendor-' : 'user-') + cleanEmail.replace(/[^a-z0-9]/g, '_');
+    const deterministicUid =
+      existingUser?.uid ||
+      existingUser?.id ||
+      (isAdmin ? 'admin-' : assignedRole === 'vendor' ? 'vendor-' : 'user-') + cleanEmail.replace(/[^a-z0-9]/g, '_');
 
     const rawUser: UserProfile = {
       uid: deterministicUid,
       email: cleanEmail,
-      displayName: name?.trim() || cleanEmail.split('@')[0],
-      fullName: name?.trim() || cleanEmail.split('@')[0],
-      photoURL: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(cleanEmail)}`,
+      displayName: name?.trim() || existingUser?.displayName || existingUser?.fullName || cleanEmail.split('@')[0],
+      fullName: name?.trim() || existingUser?.fullName || existingUser?.displayName || cleanEmail.split('@')[0],
+      phone: existingUser?.phone,
+      vendorBusinessName: existingUser?.vendorBusinessName,
+      photoURL: existingUser?.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(cleanEmail)}`,
       role: assignedRole,
       isBlocked: false,
-      bookmarks: [],
-      createdAt: new Date().toISOString(),
+      bookmarks: existingUser?.bookmarks || [],
+      createdAt: existingUser?.createdAt || new Date().toISOString(),
     };
 
     const user = await this.syncUserToFirestore(rawUser);
@@ -2435,19 +2731,37 @@ class FirebaseStorageService {
       !isMockVendorListing(listing) && this.isSpecificMotorbikeVendorListing(listing);
 
     if (isSpecificMotorbikeVendor) {
+      const vr = listing.sectorSpecifics?.vehicleRental;
+      const depReq = vr?.depositConfig?.required ?? true;
       const partnerObj: MotorbikeRentalPartner = {
         id: listing.id,
         businessName: listing.businessName,
         township: listing.township,
         imageUrl: listing.coverImage || listing.logoUrl || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
         operatingStatus: listing.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
-        fleetAvailability: (listing.motorbikeFleetStatus === 'not_applicable' || !listing.motorbikeFleetStatus ? 'high' : listing.motorbikeFleetStatus) as any,
+        fleetAvailability: (listing.motorbikeFleetStatus === 'not_applicable' || !listing.motorbikeFleetStatus ? (vr?.realTimeAvailability === 'low' ? 'limited' : vr?.realTimeAvailability || 'high') : listing.motorbikeFleetStatus) as any,
         contactPhone: listing.contactPhone,
         whatsappNumber: listing.whatsappNumber || listing.contactPhone,
         packages: listing.motorbikePackages && listing.motorbikePackages.length > 0 ? listing.motorbikePackages : [],
+        vendorTerms: listing.vendorTerms || vr?.vendorRulesNotice || '',
+        vendorRulesNotice: vr?.vendorRulesNotice || listing.vendorTerms || '',
+        fuelPolicy: vr?.fuelPolicy || 'none',
+        freeRaincoat: vr?.freeRaincoat ?? false,
+        childrenHelmet: vr?.childrenHelmet ?? false,
+        hourlyRateRm: vr?.durationModels?.defaultHourlyRateRm ?? vr?.baseHourlyRateRm ?? listing.motorbikePackages?.[0]?.hourlyRateRm ?? 18,
+        dailyRateRm: vr?.durationModels?.defaultDailyRateRm ?? vr?.baseDailyRateRm ?? listing.motorbikePackages?.[0]?.dailyRateRm ?? 75,
+        allowDays: vr?.durationModels?.allowDays ?? true,
+        allowHours: vr?.durationModels?.allowHours ?? true,
+        depositRequired: depReq,
+        depositAmountRm: depReq ? (vr?.depositConfig?.depositAmountRm ?? listing.motorbikePackages?.[0]?.depositRm ?? 100) : 0,
+        lockInFeeRm: vr?.depositConfig?.lockInFeeRm ?? 20,
+        pickupHubAddress: vr?.serviceOptions?.pickupHubAddress || listing.address || '',
+        customHourPackages: vr?.customHourPackages || [],
+        fleetUnits: vr?.fleetUnits || [],
         isBookingEnabled: listing.isBookingEnabled !== undefined ? listing.isBookingEnabled : true,
         verificationStatus: listing.verificationStatus || 'verified',
         ownerEmail: listing.ownerEmail,
+        ownerUid: listing.ownerUid,
       };
       await this.saveMotorbikePartner(partnerObj, { skipVendorSync: true });
     }
@@ -2938,6 +3252,8 @@ class FirebaseStorageService {
 
       if (this.isSpecificMotorbikeVendorListing(v)) {
         const existing = partnersMap.get(v.id);
+        const vr = v.sectorSpecifics?.vehicleRental;
+        const depReq = vr?.depositConfig?.required ?? existing?.depositRequired ?? true;
         const actualPackages: MotorbikePackage[] =
           v.motorbikePackages && v.motorbikePackages.length > 0
             ? v.motorbikePackages
@@ -2952,18 +3268,49 @@ class FirebaseStorageService {
           imageUrl:
             v.coverImage ||
             v.logoUrl ||
+            existing?.imageUrl ||
             'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80',
           operatingStatus: v.realTimeStatus === 'closed_roadworks' ? 'closed' : 'open',
           fleetAvailability: (v.motorbikeFleetStatus === 'not_applicable' || !v.motorbikeFleetStatus
-            ? 'high'
+            ? vr?.realTimeAvailability === 'low'
+              ? 'limited'
+              : vr?.realTimeAvailability || existing?.fleetAvailability || 'high'
             : v.motorbikeFleetStatus) as any,
           contactPhone: v.contactPhone,
           whatsappNumber: v.whatsappNumber || v.contactPhone,
           packages: actualPackages,
+          vendorTerms: v.vendorTerms || vr?.vendorRulesNotice || existing?.vendorTerms || '',
+          vendorRulesNotice: vr?.vendorRulesNotice || v.vendorTerms || existing?.vendorRulesNotice || '',
+          fuelPolicy: vr?.fuelPolicy || existing?.fuelPolicy || 'none',
+          freeRaincoat: vr?.freeRaincoat ?? existing?.freeRaincoat ?? false,
+          childrenHelmet: vr?.childrenHelmet ?? existing?.childrenHelmet ?? false,
+          hourlyRateRm:
+            vr?.durationModels?.defaultHourlyRateRm ??
+            vr?.baseHourlyRateRm ??
+            existing?.hourlyRateRm ??
+            actualPackages[0]?.hourlyRateRm ??
+            18,
+          dailyRateRm:
+            vr?.durationModels?.defaultDailyRateRm ??
+            vr?.baseDailyRateRm ??
+            existing?.dailyRateRm ??
+            actualPackages[0]?.dailyRateRm ??
+            75,
+          allowDays: vr?.durationModels?.allowDays ?? existing?.allowDays ?? true,
+          allowHours: vr?.durationModels?.allowHours ?? existing?.allowHours ?? true,
+          depositRequired: depReq,
+          depositAmountRm: depReq
+            ? vr?.depositConfig?.depositAmountRm ?? existing?.depositAmountRm ?? actualPackages[0]?.depositRm ?? 100
+            : 0,
+          lockInFeeRm: vr?.depositConfig?.lockInFeeRm ?? existing?.lockInFeeRm ?? 20,
+          pickupHubAddress: vr?.serviceOptions?.pickupHubAddress || existing?.pickupHubAddress || v.address || '',
+          customHourPackages: vr?.customHourPackages || existing?.customHourPackages || [],
+          fleetUnits: vr?.fleetUnits || existing?.fleetUnits || [],
           isBookingEnabled:
             v.isBookingEnabled !== undefined ? v.isBookingEnabled : v.verificationStatus === 'verified',
           verificationStatus: v.verificationStatus,
           ownerEmail: v.ownerEmail,
+          ownerUid: v.ownerUid || existing?.ownerUid,
         };
 
         partnersMap.set(v.id, partnerObj);
@@ -3063,7 +3410,10 @@ class FirebaseStorageService {
 
     if (db) {
       try {
-        await setDoc(doc(db, 'motorbike_partners', partner.id), partner);
+        const cleanPartner = Object.fromEntries(
+          Object.entries(partner).filter(([_, v]) => v !== undefined)
+        );
+        await setDoc(doc(db, 'motorbike_partners', partner.id), cleanPartner);
       } catch (e) {
         console.error("Error saving motorbike partner:", e);
       }
@@ -3084,6 +3434,7 @@ class FirebaseStorageService {
 
         if (vIdx >= 0) {
           const existingVendor = vendorListings[vIdx];
+          const existingVr = existingVendor.sectorSpecifics?.vehicleRental;
           const syncedVendor = pruneVendorForSector({
             ...existingVendor,
             businessName: partner.businessName,
@@ -3094,22 +3445,42 @@ class FirebaseStorageService {
             contactPhone: partner.contactPhone,
             whatsappNumber: partner.whatsappNumber || partner.contactPhone,
             motorbikePackages: partner.packages,
+            vendorTerms: partner.vendorRulesNotice || partner.vendorTerms || existingVendor.vendorTerms,
             ownerEmail: partner.ownerEmail || existingVendor.ownerEmail,
+            ownerUid: partner.ownerUid || existingVendor.ownerUid,
             isBookingEnabled:
               partner.isBookingEnabled !== undefined ? partner.isBookingEnabled : existingVendor.isBookingEnabled,
             verificationStatus: partner.verificationStatus || existingVendor.verificationStatus,
             sectorSpecifics: {
               ...existingVendor.sectorSpecifics,
               vehicleRental: {
-                ...existingVendor.sectorSpecifics?.vehicleRental,
+                ...existingVr,
                 realTimeAvailability:
                   partner.fleetAvailability === 'limited' ? 'low' : (partner.fleetAvailability as any),
+                fuelPolicy: partner.fuelPolicy ?? existingVr?.fuelPolicy,
+                freeRaincoat: partner.freeRaincoat ?? existingVr?.freeRaincoat,
+                childrenHelmet: partner.childrenHelmet ?? existingVr?.childrenHelmet,
+                vendorRulesNotice: partner.vendorRulesNotice || partner.vendorTerms || existingVr?.vendorRulesNotice,
+                customHourPackages: partner.customHourPackages ?? existingVr?.customHourPackages,
+                fleetUnits: partner.fleetUnits ?? existingVr?.fleetUnits,
+                baseDailyRateRm: partner.dailyRateRm ?? existingVr?.baseDailyRateRm,
+                baseHourlyRateRm: partner.hourlyRateRm ?? existingVr?.baseHourlyRateRm,
+                durationModels: {
+                  ...existingVr?.durationModels,
+                  allowDays: partner.allowDays ?? existingVr?.durationModels?.allowDays ?? true,
+                  allowHours: partner.allowHours ?? existingVr?.durationModels?.allowHours ?? true,
+                  defaultDailyRateRm: partner.dailyRateRm ?? existingVr?.durationModels?.defaultDailyRateRm,
+                  defaultHourlyRateRm: partner.hourlyRateRm ?? existingVr?.durationModels?.defaultHourlyRateRm,
+                },
                 depositConfig: {
-                  ...existingVendor.sectorSpecifics?.vehicleRental?.depositConfig,
+                  ...existingVr?.depositConfig,
+                  required: partner.depositRequired ?? existingVr?.depositConfig?.required ?? true,
                   depositAmountRm:
+                    partner.depositAmountRm ??
                     partner.packages?.[0]?.depositRm ??
-                    existingVendor.sectorSpecifics?.vehicleRental?.depositConfig?.depositAmountRm ??
+                    existingVr?.depositConfig?.depositAmountRm ??
                     100,
+                  lockInFeeRm: partner.lockInFeeRm ?? existingVr?.depositConfig?.lockInFeeRm ?? 20,
                 },
               },
             },
@@ -3119,7 +3490,10 @@ class FirebaseStorageService {
           vendorListings[vIdx] = syncedVendor;
           this.setLocalStorageItem(STORAGE_KEYS.VENDOR_LISTINGS, JSON.stringify(vendorListings));
           if (db) {
-            await setDoc(doc(db, 'vendor_listings', syncedVendor.id), syncedVendor, { merge: true }).catch(() => {});
+            const cleanSyncedVendor = Object.fromEntries(
+              Object.entries(syncedVendor).filter(([_, v]) => v !== undefined)
+            );
+            await setDoc(doc(db, 'vendor_listings', syncedVendor.id), cleanSyncedVendor, { merge: true }).catch(() => {});
           }
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('vendor-listings-updated', { detail: vendorListings }));
@@ -3154,7 +3528,17 @@ class FirebaseStorageService {
     this.setLocalStorageItem('camgo_motorbike_bookings', JSON.stringify(updated));
     if (db) {
       try {
-        await setDoc(doc(db, 'motorbike_rentals', booking.id), booking);
+        const cleanBooking = Object.fromEntries(
+          Object.entries({
+            ...booking,
+            bookingType: 'motorbike_rental',
+            vendorUid: booking.vendorUid || booking.partnerId,
+          }).filter(([_, v]) => v !== undefined)
+        );
+        await Promise.all([
+          setDoc(doc(db, 'motorbike_rentals', booking.id), cleanBooking),
+          setDoc(doc(db, 'bookings', booking.id), cleanBooking),
+        ]);
       } catch (e) {
         console.error("Error saving motorbike booking to Firestore:", e);
       }
@@ -3192,7 +3576,13 @@ class FirebaseStorageService {
       try {
         const target = updated.find((b) => b.id === id);
         if (target) {
-          await setDoc(doc(db, 'motorbike_rentals', id), target, { merge: true });
+          const cleanTarget = Object.fromEntries(
+            Object.entries(target).filter(([_, v]) => v !== undefined)
+          );
+          await Promise.all([
+            setDoc(doc(db, 'motorbike_rentals', id), cleanTarget, { merge: true }),
+            setDoc(doc(db, 'bookings', id), cleanTarget, { merge: true }),
+          ]);
         }
       } catch (e) {
         console.error("Error updating motorbike booking status in Firestore:", e);
@@ -3210,7 +3600,10 @@ class FirebaseStorageService {
     this.setLocalStorageItem('camgo_motorbike_bookings', JSON.stringify(bookings));
     if (db) {
       try {
-        await deleteDoc(doc(db, 'motorbike_rentals', id));
+        await Promise.all([
+          deleteDoc(doc(db, 'motorbike_rentals', id)),
+          deleteDoc(doc(db, 'bookings', id)),
+        ]);
       } catch (e) {
         console.error("Error deleting motorbike booking from Firestore:", e);
       }
@@ -3512,12 +3905,13 @@ class FirebaseStorageService {
         const mapped: AccommodationListing = {
           id: v.id,
           vendorId: v.id,
+          ownerUid: v.ownerUid,
+          ownerEmail: v.ownerEmail,
           code: existing?.code || `CH-${codeNumber}`,
           maskedTitle: existing?.maskedTitle || `${v.businessName} (CH-${codeNumber})`,
           realBusinessName: v.businessName,
           township: v.township || 'Kea Farm',
-          proximityDesc: v.address ? `Located at ${v.address}` : `Central ${v.township || 'Cameron Highlands'}`,
-          fullAddress: v.address || `${v.township}, 39000 Cameron Highlands`,
+          proximityDesc: `Verified Highland Stay · ${v.township || 'Cameron Highlands'}`,
           ownerName: existing?.ownerName || v.businessName + ' Host',
           ownerPhone: existing?.ownerPhone || v.contactPhone || v.whatsappNumber || '+60123456789',
           whatsappNumber: existing?.whatsappNumber || v.whatsappNumber || v.contactPhone || '+60123456789',
@@ -3626,6 +4020,124 @@ class FirebaseStorageService {
       this.notify();
     }
     return listings;
+  }
+
+  // ==========================================
+  // Real-Time Vendor Booking & Payment Alerts
+  // ==========================================
+  public getVendorBookingAlerts(): VendorBookingAlert[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.VENDOR_BOOKING_ALERTS);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.sort(
+            (a: VendorBookingAlert, b: VendorBookingAlert) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  public async createVendorBookingAlert(
+    alertInput: Omit<VendorBookingAlert, 'id' | 'createdAt' | 'isRead' | 'status'>
+  ): Promise<VendorBookingAlert> {
+    const alert: VendorBookingAlert = {
+      ...alertInput,
+      id: 'vba-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6),
+      status: 'new',
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    const existing = this.getVendorBookingAlerts();
+    const updated = [alert, ...existing.filter((a) => a.id !== alert.id)].slice(0, 100);
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_BOOKING_ALERTS, JSON.stringify(updated));
+
+    if (db) {
+      const cleanAlert = Object.fromEntries(
+        Object.entries(alert).filter(([_, v]) => v !== undefined)
+      );
+      try {
+        await setDoc(doc(db, 'vendor_booking_alerts', alert.id), cleanAlert);
+        await setDoc(doc(db, 'notifications', alert.id), {
+          ...cleanAlert,
+          recipientUid: alert.vendorUid,
+          recipientEmail: alert.vendorEmail,
+          type: 'vendor_booking_payment',
+          title: `RM${alert.depositPaidRm} Paid Booking · ${alert.vendorName}`,
+          message: `${alert.guestName} booked ${alert.itemSummary} (${alert.bookingCode})`,
+        }).catch(() => {});
+      } catch (e) {
+        console.error('Error saving vendor booking alert to Firestore:', e);
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vendor-booking-alert', { detail: alert }));
+      window.dispatchEvent(new CustomEvent('vendor-booking-alerts-updated', { detail: updated }));
+    }
+    this.notify();
+    return alert;
+  }
+
+  public async markVendorBookingAlertRead(id: string): Promise<VendorBookingAlert[]> {
+    const updated = this.getVendorBookingAlerts().map((a) =>
+      a.id === id ? { ...a, isRead: true, status: a.status === 'new' ? 'acknowledged' as const : a.status } : a
+    );
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_BOOKING_ALERTS, JSON.stringify(updated));
+    if (db) {
+      const target = updated.find((a) => a.id === id);
+      if (target) {
+        setDoc(doc(db, 'vendor_booking_alerts', id), { isRead: true, status: target.status }, { merge: true }).catch(() => {});
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vendor-booking-alerts-updated', { detail: updated }));
+    }
+    return updated;
+  }
+
+  public async markAllVendorBookingAlertsRead(vendorEmail?: string, vendorUid?: string): Promise<VendorBookingAlert[]> {
+    const cleanEmail = vendorEmail?.toLowerCase().trim();
+    const updated = this.getVendorBookingAlerts().map((a) => {
+      const matchesVendor =
+        !cleanEmail && !vendorUid
+          ? true
+          : (cleanEmail && a.vendorEmail?.toLowerCase().trim() === cleanEmail) ||
+            (vendorUid && a.vendorUid === vendorUid);
+      if (matchesVendor && !a.isRead) {
+        if (db) {
+          setDoc(doc(db, 'vendor_booking_alerts', a.id), { isRead: true }, { merge: true }).catch(() => {});
+        }
+        return { ...a, isRead: true };
+      }
+      return a;
+    });
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_BOOKING_ALERTS, JSON.stringify(updated));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vendor-booking-alerts-updated', { detail: updated }));
+    }
+    return updated;
+  }
+
+  public async updateVendorBookingAlertStatus(
+    id: string,
+    status: VendorBookingAlert['status']
+  ): Promise<VendorBookingAlert[]> {
+    const updated = this.getVendorBookingAlerts().map((a) =>
+      a.id === id ? { ...a, status, isRead: true } : a
+    );
+    this.setLocalStorageItem(STORAGE_KEYS.VENDOR_BOOKING_ALERTS, JSON.stringify(updated));
+    if (db) {
+      setDoc(doc(db, 'vendor_booking_alerts', id), { status, isRead: true }, { merge: true }).catch(() => {});
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vendor-booking-alerts-updated', { detail: updated }));
+    }
+    return updated;
   }
 
   // ==================== WEBSITE VISITOR ANALYTICS ====================

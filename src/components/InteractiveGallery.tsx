@@ -185,17 +185,17 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({
       {/* Full-Screen Focused Modal Details Viewer */}
       {activeItem && (
         <div
-          className="fixed inset-0 z-[100] flex items-start justify-center bg-stone-950/95 backdrop-blur-2xl p-2 sm:p-6 overflow-y-auto"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-950/95 backdrop-blur-2xl p-2 sm:p-6 overflow-hidden"
           role="dialog"
           aria-modal="true"
           onClick={handleClose}
         >
           <div 
-            className="relative w-full max-w-4xl mt-16 mb-20 pb-28 overflow-y-auto bg-stone-900 rounded-3xl p-6 border border-emerald-500/30 shadow-2xl"
+            className="relative w-full max-w-4xl max-h-[92dvh] flex flex-col bg-stone-900 rounded-2xl sm:rounded-3xl border border-emerald-500/30 shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Sticky Top Close Bar */}
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10 sticky top-0 bg-stone-900/95 backdrop-blur-md z-30 pt-1">
+            <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-white/10 bg-stone-900/95 backdrop-blur-md z-30 shrink-0">
               <span className="text-xs font-mono font-bold text-emerald-400">Interactive Gallery Spotlight</span>
               <button
                 onClick={handleClose}
@@ -206,29 +206,35 @@ export const InteractiveGallery: React.FC<InteractiveGalleryProps> = ({
               </button>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-6 items-center">
-                <div className="w-full md:w-1/2 h-72 md:h-80 rounded-2xl overflow-hidden bg-stone-950 shrink-0 border border-white/10">
-                  <img
-                    src={safeSrc(activeItem.imageUrl, DEFAULT_PLACE_IMAGE)}
-                    alt={activeItem.title}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
-                    }}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="flex-1 space-y-4 w-full">
-                    <h2 className="text-2xl font-bold text-white">{language === 'bm' ? activeItem.titleBm || activeItem.title : activeItem.title}</h2>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-lg border border-emerald-500/30 font-bold">{activeItem.category}</span>
-                        <span className="text-xs font-mono text-stone-300 bg-stone-800 px-2 py-0.5 rounded">{activeItem.elevation}</span>
-                        <span className="text-xs font-bold text-emerald-300">{activeItem.township}</span>
-                    </div>
-                    <p className="text-sm text-stone-300 leading-relaxed">{activeItem.description}</p>
-                    <button onClick={handleClose} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg">
-                        <MapPin className="w-4 h-4" /> Return to Gallery
-                    </button>
-                </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+              <div className="flex flex-col md:flex-row gap-4 sm:gap-6 items-start">
+                  <div className="w-full md:w-1/2 h-48 sm:h-64 md:h-80 rounded-2xl overflow-hidden bg-stone-950 shrink-0 border border-white/10">
+                    <img
+                      src={safeSrc(activeItem.imageUrl, DEFAULT_PLACE_IMAGE)}
+                      alt={activeItem.title}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
+                      }}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-3 sm:space-y-4 w-full">
+                      <h2 className="text-lg sm:text-2xl font-bold text-white leading-snug break-words">
+                        {language === 'bm' ? activeItem.titleBm || activeItem.title : activeItem.title}
+                      </h2>
+                      <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-lg border border-emerald-500/30 font-bold">{activeItem.category}</span>
+                          <span className="text-xs font-mono text-stone-300 bg-stone-800 px-2 py-0.5 rounded">{activeItem.elevation}</span>
+                          <span className="text-xs font-bold text-emerald-300">{activeItem.township}</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-stone-300 leading-relaxed whitespace-pre-line break-words">
+                        {language === 'bm' ? activeItem.descriptionBm || activeItem.description : activeItem.description}
+                      </p>
+                      <button onClick={handleClose} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg">
+                          <MapPin className="w-4 h-4" /> Return to Gallery
+                      </button>
+                  </div>
+              </div>
             </div>
           </div>
         </div>

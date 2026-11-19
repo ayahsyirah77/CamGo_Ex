@@ -90,6 +90,7 @@ import {
   Radio,
   ExternalLink,
   Bike,
+  Store,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -1220,6 +1221,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserType, setNewUserType] = useState<'local' | 'tourist'>('local');
+  const [newUserRole, setNewUserRole] = useState<'user' | 'vendor'>('user');
+  const [newVendorBizName, setNewVendorBizName] = useState('');
+  const [newVendorSubCategory, setNewVendorSubCategory] = useState<SubCategory>('homestay');
+  const [newVendorTownship, setNewVendorTownship] = useState<Township>('Tanah Rata');
+  const [newVendorAddress, setNewVendorAddress] = useState('');
+  const [newVendorDescription, setNewVendorDescription] = useState('');
+  const [newUserFormError, setNewUserFormError] = useState<string | null>(null);
+  const [isSavingNewUser, setIsSavingNewUser] = useState(false);
 
   // Editing IDs
   const [editingPlaceId, setEditingPlaceId] = useState<string | null>(null);
@@ -1806,10 +1815,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleToggleRole = async (u: any) => {
     if (u.email === 'ayahsyirah77@gmail.com') {
-      window.alert('Cannot modify the Master Admin.');
       return;
     }
-    const newRole = u.role === 'admin' ? 'user' : 'admin';
+    const newRole: 'user' | 'vendor' | 'admin' =
+      u.role === 'user' || !u.role ? 'vendor' : u.role === 'vendor' ? 'admin' : 'user';
     await updateAdminUser(u.id, { role: newRole });
     setLiveUsers((prev) =>
       prev.map((item) => (item.id === u.id ? { ...item, role: newRole } : item))
@@ -1822,7 +1831,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleToggleBlock = async (u: any) => {
     if (u.email === 'ayahsyirah77@gmail.com') {
-      window.alert('Cannot block the Master Admin.');
       return;
     }
     const newStatus = !u.isBlocked;
@@ -1850,40 +1858,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    setNewUserFormError(null);
     const cleanEmail = newUserEmail.trim().toLowerCase();
     if (!cleanEmail.endsWith('@gmail.com')) {
-      window.alert('User registration requires a valid Google (@gmail.com) email address.');
+      setNewUserFormError('User/vendor registration requires a valid Google (@gmail.com) email address.');
+      return;
+    }
+    if (newUserRole === 'vendor' && !newVendorBizName.trim()) {
+      setNewUserFormError('Please enter a Business Name for the vendor account.');
       return;
     }
 
-    const newUid = 'usr-' + Date.now().toString(36);
-    const newUserObj = {
-      id: newUid,
-      uid: newUid,
-      email: cleanEmail,
-      fullName: newUserName || cleanEmail.split('@')[0],
-      displayName: newUserName || cleanEmail.split('@')[0],
-      phone: newUserPhone,
-      userType: newUserType,
-      role: 'user',
-      isBlocked: false,
-      createdAt: new Date().toISOString(),
-    };
+    setIsSavingNewUser(true);
+    try {
+      const mainCategory = mapSubCategoryToMainCategory(newVendorSubCategory);
+      const { userObj, vendorListing } = await firebaseService.registerUserOnBehalf({
+        fullName: newUserName,
+        email: cleanEmail,
+        phone: newUserPhone,
+        userType: newUserType,
+        role: newUserRole,
+        businessName: newUserRole === 'vendor' ? newVendorBizName : undefined,
+        subCategory: newUserRole === 'vendor' ? newVendorSubCategory : undefined,
+        category: newUserRole === 'vendor' ? mainCategory : undefined,
+        township: newUserRole === 'vendor' ? newVendorTownship : undefined,
+        address: newUserRole === 'vendor' ? newVendorAddress : undefined,
+        description: newUserRole === 'vendor' ? newVendorDescription : undefined,
+        whatsappNumber: newUserPhone,
+      });
 
-    if (db) {
-      try {
-        await setDoc(doc(db, 'users', newUid), newUserObj);
-      } catch (err) {
-        console.warn('Could not save user to Firestore:', err);
+      setLiveUsers((prev) => {
+        const filtered = prev.filter((u) => u.id !== userObj.id && u.email?.toLowerCase() !== cleanEmail);
+        return [userObj, ...filtered];
+      });
+      if (vendorListing) {
+        setVendorListingsState(firebaseService.getVendorListings());
+        addActivity(`Registered Vendor "${vendorListing.businessName}" on behalf of ${cleanEmail}`);
+      } else {
+        addActivity(`Added user ${newUserName} (${cleanEmail})`);
       }
-    }
 
-    setLiveUsers((prev) => [newUserObj, ...prev]);
-    addActivity(`Added user ${newUserName} (${cleanEmail})`);
-    setShowAddUserModal(false);
-    setNewUserName('');
-    setNewUserEmail('');
-    setNewUserPhone('');
+      setShowAddUserModal(false);
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPhone('');
+      setNewUserRole('user');
+      setNewVendorBizName('');
+      setNewVendorAddress('');
+      setNewVendorDescription('');
+    } catch (err: any) {
+      setNewUserFormError(err?.message || 'Failed to register user.');
+    } finally {
+      setIsSavingNewUser(false);
+    }
   };
 
   const handleExportData = () => {
@@ -3124,16 +3151,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     liveUsers.map((u) => (
                       <tr key={u.id} className="hover:bg-white/5">
                         <td className="py-2.5 font-bold text-stone-200">
-                          {u.fullName || u.displayName || 'User'}
+                          <div>{u.fullName || u.displayName || 'User'}</div>
+                          {u.vendorBusinessName && (
+                            <div className="text-[10px] text-amber-300 font-medium truncate max-w-[180px]">
+                              {u.vendorBusinessName}
+                            </div>
+                          )}
                         </td>
                         <td className="text-stone-400 font-mono">
                           {u.email}
                         </td>
                         <td>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                               u.role === 'admin'
                                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                : u.role === 'vendor'
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                                 : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                             }`}
                           >
@@ -3753,7 +3787,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                         <td className="p-3">
                           <div className="font-medium text-stone-300">{stay.township}</div>
-                          <div className="text-[11px] text-stone-500 truncate max-w-[200px]">{stay.fullAddress}</div>
+                          <div className="text-[11px] text-stone-500 truncate max-w-[200px]">
+                            {stay.proximityDesc || `Verified Stay · ${stay.township}`}
+                          </div>
                         </td>
                         <td className="p-3 font-bold text-emerald-400">
                           RM {stay.pricePerNight} <span className="text-[10px] text-stone-500 font-normal">/ night</span>
@@ -5299,7 +5335,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-      {/* Modal: User */}
+      {/* Modal: User / Register Vendor on Behalf */}
       {showAddUserModal &&
         renderModal(
           <div
@@ -5307,14 +5343,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl p-6 my-auto bg-stone-900 border border-purple-500/30 shadow-2xl relative"
+              className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl p-5 sm:p-6 my-auto bg-stone-900 border border-purple-500/30 shadow-2xl relative"
             >
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10 sticky top-0 bg-stone-900/95 backdrop-blur-md z-30 pt-1">
-                <h3 className="text-xl font-heading font-extrabold text-stone-100">Add New User</h3>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-heading font-extrabold text-stone-100">
+                    Add User / Register Vendor on Behalf
+                  </h3>
+                  <p className="text-[11px] text-stone-400">
+                    Register a traveler or pre-verify a business vendor with their Google (@gmail.com) email
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowAddUserModal(false)}
-                  className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer border border-white/10 transition-colors"
+                  onClick={() => {
+                    setShowAddUserModal(false);
+                    setNewUserFormError(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer border border-white/10 transition-colors shrink-0"
                 >
                   <X className="w-4 h-4" />
                   <span>Close</span>
@@ -5330,65 +5376,207 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 }}
                 className="space-y-4"
               >
-                <div className="grid grid-cols-2 gap-3">
+                {/* Role Switcher */}
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-stone-950 border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUserRole('user');
+                      setNewUserFormError(null);
+                    }}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      newUserRole === 'user'
+                        ? 'bg-emerald-600 text-white shadow'
+                        : 'text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Standard User</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUserRole('vendor');
+                      setNewUserFormError(null);
+                    }}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      newUserRole === 'vendor'
+                        ? 'bg-amber-600 text-white shadow'
+                        : 'text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <Store className="w-4 h-4" />
+                    <span>Vendor (On Behalf)</span>
+                  </button>
+                </div>
+
+                {newUserFormError && (
+                  <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{newUserFormError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-stone-300 block mb-1">Full Name</label>
+                    <label className="text-xs font-bold text-stone-300 block mb-1">Full Name / Owner Name</label>
                     <input
                       required
                       type="text"
+                      placeholder="e.g. Encik Hafiz"
                       value={newUserName}
                       onChange={(e) => setNewUserName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-emerald-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-stone-300 block mb-1">Phone Number</label>
+                    <label className="text-xs font-bold text-stone-300 block mb-1">WhatsApp / Phone Number</label>
                     <input
                       required
                       type="tel"
+                      placeholder="+6012-3456789"
                       value={newUserPhone}
                       onChange={(e) => setNewUserPhone(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-emerald-500"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-stone-300 block mb-1">Email Account</label>
+                  <label className="text-xs font-bold text-stone-300 block mb-1">
+                    Google Email Account (@gmail.com)
+                  </label>
                   <input
                     required
                     type="email"
+                    placeholder="vendor.business@gmail.com"
                     value={newUserEmail}
                     onChange={(e) => setNewUserEmail(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-emerald-500"
                   />
+                  {newUserRole === 'vendor' && (
+                    <p className="text-[11px] text-amber-300/90 mt-1">
+                      When this user signs in with this Google account, they will be redirected straight to the Vendor Dashboard to manage and update their listing.
+                    </p>
+                  )}
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-stone-300 block mb-1">User Type</label>
-                  <select
-                    value={newUserType}
-                    onChange={(e) => setNewUserType(e.target.value as 'local' | 'tourist')}
-                    className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
-                  >
-                    <option value="local">Local / Resident</option>
-                    <option value="tourist">Tourist / Visitor</option>
-                  </select>
-                </div>
+                {newUserRole === 'user' ? (
+                  <div>
+                    <label className="text-xs font-bold text-stone-300 block mb-1">User Type</label>
+                    <select
+                      value={newUserType}
+                      onChange={(e) => setNewUserType(e.target.value as 'local' | 'tourist')}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none"
+                    >
+                      <option value="local">Local / Resident</option>
+                      <option value="tourist">Tourist / Visitor</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-300 uppercase tracking-wider">
+                      <Store className="w-4 h-4" />
+                      <span>Vendor Business Profile (Auto-Verified)</span>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-stone-300 block mb-1">Business Name *</label>
+                      <input
+                        required={newUserRole === 'vendor'}
+                        type="text"
+                        placeholder="e.g. Tanah Rata Highland Villa"
+                        value={newVendorBizName}
+                        onChange={(e) => setNewVendorBizName(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-stone-300 block mb-1">Business Sector &amp; Category</label>
+                        <select
+                          value={newVendorSubCategory}
+                          onChange={(e) => setNewVendorSubCategory(e.target.value as SubCategory)}
+                          className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-amber-500"
+                        >
+                          {BUSINESS_TAXONOMY.map((sector) => (
+                            <optgroup key={sector.id} label={sector.name}>
+                              {sector.categories.map((cat) => (
+                                <option key={cat.id} value={cat.id}>
+                                  {cat.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-stone-300 block mb-1">Township</label>
+                        <select
+                          value={newVendorTownship}
+                          onChange={(e) => setNewVendorTownship(e.target.value as Township)}
+                          className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-amber-500"
+                        >
+                          {ALL_9_TOWNSHIPS.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-stone-300 block mb-1">Business Area / Location Notes</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Jalan Masjid, Tanah Rata"
+                        value={newVendorAddress}
+                        onChange={(e) => setNewVendorAddress(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-stone-300 block mb-1">Short Description</label>
+                      <textarea
+                        rows={2}
+                        placeholder="Highlight what this vendor offers..."
+                        value={newVendorDescription}
+                        onChange={(e) => setNewVendorDescription(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-stone-800 border border-white/10 text-xs text-stone-100 outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-3 pt-3 border-t border-white/10">
                   <button
                     type="button"
-                    onClick={() => setShowAddUserModal(false)}
+                    onClick={() => {
+                      setShowAddUserModal(false);
+                      setNewUserFormError(null);
+                    }}
                     className="flex-1 py-2.5 rounded-xl bg-stone-800 text-xs text-stone-300 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white font-bold text-xs cursor-pointer"
+                    disabled={isSavingNewUser}
+                    className={`flex-1 py-2.5 rounded-xl text-white font-bold text-xs cursor-pointer disabled:opacity-50 ${
+                      newUserRole === 'vendor'
+                        ? 'bg-amber-600 hover:bg-amber-500'
+                        : 'bg-purple-600 hover:bg-purple-500'
+                    }`}
                   >
-                    Save User
+                    {isSavingNewUser
+                      ? 'Registering...'
+                      : newUserRole === 'vendor'
+                      ? 'Register Vendor on Behalf'
+                      : 'Save User'}
                   </button>
                 </div>
               </form>

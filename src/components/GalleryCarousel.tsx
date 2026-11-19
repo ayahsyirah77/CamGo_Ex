@@ -157,23 +157,23 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
   const currentItem = items[currentIndex];
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6">
+    <div className="w-full max-w-7xl mx-auto space-y-3 sm:space-y-5">
       {/* Section Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-mono font-bold tracking-wider uppercase mb-1">
-            <Camera className="w-3.5 h-3.5" />
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase mb-1">
+            <Camera className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span>Highland Horizons</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-stone-100">
-            Visual Highlights & Highland Horizons
+          <h2 className="text-lg sm:text-2xl md:text-3xl font-heading font-extrabold text-stone-100 leading-tight">
+            Visual Highlights &amp; Highland Horizons
           </h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Mobile touch swipe hint badge */}
-          <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 rounded-full sm:hidden">
+          <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-1 rounded-full sm:hidden">
             <span className="animate-pulse">↔</span>
-            <span>Swipe photos</span>
+            <span>Swipe</span>
           </div>
           <div className="text-xs text-stone-400 font-mono hidden sm:block">
             {currentIndex + 1} / {items.length} Spotlights
@@ -181,7 +181,7 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
         </div>
       </div>
 
-      {/* Main Card with Consistent Dimensions & Touch Swiping for Mobile View */}
+      {/* Adaptive Card: Expands naturally to description length on mobile & desktop */}
       <div
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -194,11 +194,10 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
           transform: isSwiping || isMouseDown ? `translateX(${swipeOffset * 0.45}px)` : 'translateX(0px)',
           transition: isSwiping || isMouseDown ? 'none' : 'transform 280ms cubic-bezier(0.16, 1, 0.3, 1)',
         }}
-        className="bg-stone-900/95 rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col md:flex-row w-full h-[520px] sm:h-[480px] md:h-[420px] select-none touch-pan-y cursor-grab active:cursor-grabbing transition-colors relative"
+        className="bg-stone-900/95 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col md:flex-row w-full md:min-h-[380px] select-none touch-pan-y cursor-grab active:cursor-grabbing transition-colors relative"
       >
-        {/* Uniform Consistent Image Box (Fixed 50% split on desktop, exact height on mobile) */}
-        <div className="w-full md:w-1/2 h-[260px] sm:h-[250px] md:h-full relative overflow-hidden bg-stone-950 shrink-0">
-          {/* Ambient Blurred Background to guarantee aesthetic fit regardless of aspect ratio */}
+        {/* Responsive Image Box */}
+        <div className="w-full md:w-1/2 h-44 sm:h-60 md:h-auto md:min-h-[380px] relative overflow-hidden bg-stone-950 shrink-0">
           <img
             src={safeSrc(currentItem.imageUrl, DEFAULT_PLACE_IMAGE)}
             alt=""
@@ -206,7 +205,6 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
             className="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-30 pointer-events-none"
           />
 
-          {/* Sharp Main Image with Consistent Object-Cover & Centered Positioning */}
           <img
             src={safeSrc(currentItem.imageUrl, DEFAULT_PLACE_IMAGE)}
             alt={currentItem.title}
@@ -215,46 +213,46 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
             }}
             className="relative z-10 w-full h-full object-cover object-center transition-transform duration-700 hover:scale-105"
           />
-          <div className="absolute inset-0 z-10 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent md:hidden" />
+          <div className="absolute inset-0 z-10 bg-gradient-to-t from-stone-950/75 via-transparent to-transparent md:hidden" />
           {currentItem.elevation && (
-            <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/75 backdrop-blur-md text-[11px] font-mono text-emerald-400 border border-white/10 shadow-lg">
-              <Mountain className="w-3.5 h-3.5" />
+            <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[10px] sm:text-[11px] font-mono text-emerald-400 border border-white/10 shadow-lg">
+              <Mountain className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span>{currentItem.elevation} ASL</span>
             </div>
           )}
         </div>
 
-        {/* Uniform Consistent Text Content Panel */}
-        <div className="w-full md:w-1/2 p-5 sm:p-7 md:p-8 flex flex-col justify-between h-[260px] sm:h-[230px] md:h-full overflow-hidden shrink-0">
-          <div className="space-y-2.5 overflow-hidden">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+        {/* Adaptive Text Content Panel */}
+        <div className="w-full md:w-1/2 p-4 sm:p-6 md:p-8 flex flex-col justify-between gap-3 sm:gap-4">
+          <div className="space-y-2 sm:space-y-3">
+            <div className="flex items-center flex-wrap gap-2">
+              <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] sm:text-xs font-bold uppercase tracking-wider">
                 {currentItem.category || 'Highlands'}
               </span>
-              <span className="text-xs text-stone-400 flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-stone-400" />
-                {currentItem.township}
+              <span className="text-[11px] sm:text-xs text-stone-400 flex items-center gap-1">
+                <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-stone-400 shrink-0" />
+                <span>{currentItem.township}</span>
               </span>
             </div>
 
-            <h3 className="text-xl sm:text-2xl md:text-3xl font-heading font-bold text-stone-100 line-clamp-2 leading-tight">
+            <h3 className="text-lg sm:text-2xl md:text-3xl font-heading font-bold text-stone-100 leading-snug break-words">
               {currentItem.title}
             </h3>
 
-            <p className="text-stone-300 text-xs sm:text-sm leading-relaxed line-clamp-3 sm:line-clamp-4 overflow-hidden">
+            <p className="text-stone-300 text-xs sm:text-sm leading-relaxed whitespace-pre-line break-words">
               {currentItem.description}
             </p>
           </div>
 
           {/* Pinned Bottom Metadata & Action Bar */}
-          <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2 mt-auto shrink-0">
+          <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2 shrink-0">
             <span className="text-[11px] font-mono text-stone-400">
               {currentIndex + 1} of {items.length} Spotlights
             </span>
             {onSelectPlace && (
               <button
                 onClick={() => handleViewDetails(currentItem)}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                className="px-3 py-1.5 sm:px-3.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
               >
                 <Compass className="w-3.5 h-3.5" />
                 <span>Explore on Map</span>
@@ -265,23 +263,23 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
       </div>
 
       {/* Pagination Controls */}
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-3 sm:gap-4 pt-1">
         <button
           onClick={prevSlide}
-          className="p-2.5 rounded-full bg-stone-800 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
+          className="p-2 sm:p-2.5 rounded-full bg-stone-800 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
           aria-label="Previous Spotlight"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2">
           {items.map((_, idx) => (
             <button
               key={idx}
               onClick={() => setCurrentIndex(idx)}
               aria-label={`Go to slide ${idx + 1}`}
               className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                idx === currentIndex ? 'w-10 bg-emerald-500' : 'w-2 bg-stone-700 hover:bg-stone-600'
+                idx === currentIndex ? 'w-8 sm:w-10 bg-emerald-500' : 'w-2 bg-stone-700 hover:bg-stone-600'
               }`}
             />
           ))}
@@ -289,10 +287,10 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
 
         <button
           onClick={nextSlide}
-          className="p-2.5 rounded-full bg-stone-800 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
+          className="p-2 sm:p-2.5 rounded-full bg-stone-800 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
           aria-label="Next Spotlight"
         >
-          <ChevronRight className="w-5 h-5" />
+          <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
       </div>
     </div>
