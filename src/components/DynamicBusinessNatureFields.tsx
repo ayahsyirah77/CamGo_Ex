@@ -9,6 +9,7 @@ import {
   ProfessionalServiceSpecifics,
 } from '../types';
 import { resolveVendorSectorKey } from '../utils/sectorIsolation';
+import { firebaseService } from '../services/firebase';
 import {
   ParkingCircle,
   Coffee,
@@ -266,18 +267,22 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
           parkingDetails: accom.parkingDetails || '',
           roomTypes:
             accom.roomTypes && accom.roomTypes.length > 0
-              ? accom.roomTypes
+              ? accom.roomTypes.map((r) => ({ ...r, peakPricePerNight: r.peakPricePerNight ?? 0 }))
               : [
                   {
                     id: 'room-1',
                     name: 'Standard Highland Suite',
                     quantity: 1,
                     pricePerNight: vendor.motorbikePackages?.[0]?.dailyRateRm ?? 0,
+                    peakPricePerNight: 0,
                     bedConfig: accom.bedConfig || '2 Queen Beds',
                     maxOccupancy: accom.maxOccupancy || 4,
                   },
                 ],
-          amenityAddons: accom.amenityAddons && accom.amenityAddons.length > 0 ? accom.amenityAddons : defaultAmenities,
+          amenityAddons:
+            accom.amenityAddons && accom.amenityAddons.length > 0
+              ? accom.amenityAddons.map((a) => ({ ...a }))
+              : defaultAmenities.map((a) => ({ ...a })),
           breakfastIncluded: !!accom.breakfastIncluded,
           roomsPerUnit: accom.apartment?.roomsPerUnit ?? 2,
           bathrooms: accom.apartment?.bathrooms ?? 2,
@@ -287,35 +292,60 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
         };
 
         // Ensure any property/room items created in vendor catalog are reflected in the unit selection dropdown
-        const existingUnits = accom.units || [];
+        const existingUnits = (accom.units || []).map((u, idx) => ({
+          ...u,
+          unitLabel: u.unitLabel || `Unit ${idx + 1}`,
+          unitCode: u.unitCode || `CH-${idx + 1}`,
+          isAvailable: u.isAvailable !== false,
+          checkInTime: toTimeInputValue(u.checkInTime, '15:00'),
+          checkOutTime: toTimeInputValue(u.checkOutTime, '12:00'),
+          parkingType: u.parkingType || 'private_available',
+          parkingDetails: u.parkingDetails ?? '',
+          roomTypes: (u.roomTypes || []).map((r) => ({
+            ...r,
+            peakPricePerNight: r.peakPricePerNight ?? 0,
+          })),
+          amenityAddons:
+            u.amenityAddons && u.amenityAddons.length > 0
+              ? u.amenityAddons
+              : defaultAmenities.map((a) => ({ ...a })),
+          breakfastIncluded: u.breakfastIncluded ?? false,
+          roomsPerUnit: u.roomsPerUnit ?? 2,
+          bathrooms: u.bathrooms ?? 2,
+          cookingPermitted: u.cookingPermitted ?? false,
+          kitchenNotes: u.kitchenNotes ?? '',
+          houseRules: u.houseRules ?? '',
+        }));
+
         const syncedPackageUnits: AccommodationUnitConfig[] = (vendor.motorbikePackages || [])
           .filter((pkg) => !existingUnits.some((u) => u.id === pkg.id || u.unitLabel === pkg.name))
           .map((pkg, pkgIdx) => ({
             id: pkg.id,
             unitLabel: pkg.name,
             unitCode: `CH-${existingUnits.length + pkgIdx + 1}`,
-            isAvailable: vendor.roomAvailabilityStatus !== 'fully_booked',
-            checkInTime: toTimeInputValue(accom.checkInWindow, '15:00'),
-            checkOutTime: toTimeInputValue(accom.checkOutWindow, '12:00'),
-            parkingType: accom.parkingType || 'private_available',
-            parkingDetails: accom.parkingDetails || '',
+            isAvailable: true,
+            checkInTime: '15:00',
+            checkOutTime: '12:00',
+            parkingType: 'private_available',
+            parkingDetails: '',
             roomTypes: [
               {
                 id: `room-${pkg.id}`,
                 name: pkg.name,
                 quantity: 1,
                 pricePerNight: Number(pkg.dailyRateRm) || 0,
+                peakPricePerNight: 0,
                 bedConfig: pkg.cc || 'Standard Bed',
                 maxOccupancy: (Number(pkg.helmetsIncluded) || 1) * 2,
               },
             ],
-            amenityAddons: accom.amenityAddons && accom.amenityAddons.length > 0 ? accom.amenityAddons : defaultAmenities,
-            breakfastIncluded: !!accom.breakfastIncluded,
-            roomsPerUnit: Number(pkg.helmetsIncluded) || accom.apartment?.roomsPerUnit || 2,
-            bathrooms: accom.apartment?.bathrooms ?? 2,
-            cookingPermitted: !!accom.apartment?.cookingPermitted,
-            kitchenNotes: accom.apartment?.kitchenNotes || '',
-            houseRules: pkg.packageDetails || accom.houseRules || vendor.vendorTerms || '',
+            amenityAddons: defaultAmenities.map((a) => ({ ...a })),
+            breakfastIncluded: false,
+            roomsPerUnit: Number(pkg.helmetsIncluded) || 2,
+            bathrooms: 2,
+            cookingPermitted: false,
+            kitchenNotes: '',
+            houseRules: pkg.packageDetails || '',
           }));
 
         const combinedUnits = [...existingUnits, ...syncedPackageUnits];
@@ -343,6 +373,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
           unitPatch: Partial<AccommodationUnitConfig>,
           vendorExtra?: Partial<VendorListing>
         ) => {
+          // Strict per-unit isolation: ONLY update unitsList[activeUnitIndex], leave all sibling units untouched
           const updatedUnits = unitsList.map((u, idx) =>
             idx === activeUnitIndex ? { ...u, ...unitPatch } : u
           );
@@ -353,45 +384,17 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
             ...accom,
             units: updatedUnits,
             selectedUnitId: mergedUnit.id,
-            checkInWindow: mergedUnit.checkInTime || accom.checkInWindow || '15:00',
-            checkOutWindow: mergedUnit.checkOutTime || accom.checkOutWindow || '12:00',
-            parkingType: mergedUnit.parkingType || accom.parkingType || 'private_available',
-            parkingDetails: mergedUnit.parkingDetails ?? accom.parkingDetails,
-            roomTypes: mergedUnit.roomTypes || accom.roomTypes,
-            amenityAddons: mergedUnit.amenityAddons || accom.amenityAddons,
-            breakfastIncluded:
-              mergedUnit.breakfastIncluded !== undefined
-                ? mergedUnit.breakfastIncluded
-                : accom.breakfastIncluded,
-            houseRules: mergedUnit.houseRules ?? accom.houseRules,
             roomAvailabilityStatus: anyUnitAvailable ? 'rooms_available' : 'fully_booked',
             apartment: {
               ...accom.apartment,
               totalUnits: updatedUnits.length,
-              roomsPerUnit: mergedUnit.roomsPerUnit ?? accom.apartment?.roomsPerUnit ?? 2,
-              bathrooms: mergedUnit.bathrooms ?? accom.apartment?.bathrooms ?? 2,
-              cookingPermitted:
-                mergedUnit.cookingPermitted !== undefined
-                  ? mergedUnit.cookingPermitted
-                  : accom.apartment?.cookingPermitted,
-              kitchenNotes: mergedUnit.kitchenNotes ?? accom.apartment?.kitchenNotes,
             },
           };
-
-          const parkingVendorStatus =
-            mergedUnit.parkingType === 'valet'
-              ? 'valet_only'
-              : mergedUnit.parkingType === 'public_parking'
-              ? 'street_busy'
-              : 'private_available';
 
           onChange({
             ...vendor,
             ...vendorExtra,
-            parkingStatus: (vendorExtra?.parkingStatus || parkingVendorStatus) as any,
             roomAvailabilityStatus: anyUnitAvailable ? 'rooms_available' : 'fully_booked',
-            vendorTerms:
-              unitPatch.houseRules !== undefined ? unitPatch.houseRules : vendor.vendorTerms,
             sectorSpecifics: {
               ...vendor.sectorSpecifics,
               accommodation: updatedAccom,
@@ -419,27 +422,28 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                           unitLabel: `Unit ${nextIdx}`,
                           unitCode: `CH-${nextIdx}`,
                           isAvailable: true,
-                          checkInTime: activeUnit.checkInTime || '15:00',
-                          checkOutTime: activeUnit.checkOutTime || '12:00',
-                          parkingType: activeUnit.parkingType || 'private_available',
-                          parkingDetails: activeUnit.parkingDetails || '',
+                          checkInTime: '15:00',
+                          checkOutTime: '12:00',
+                          parkingType: 'private_available',
+                          parkingDetails: '',
                           roomTypes: [
                             {
                               id: `room-${Date.now()}`,
                               name: `Unit ${nextIdx} Standard Suite`,
                               quantity: 1,
-                              pricePerNight: activeRoomTypes[0]?.pricePerNight ?? 0,
+                              pricePerNight: 0,
+                              peakPricePerNight: 0,
                               bedConfig: '1 Queen Bed',
                               maxOccupancy: 4,
                             },
                           ],
-                          amenityAddons: defaultAmenities,
+                          amenityAddons: defaultAmenities.map((a) => ({ ...a })),
                           breakfastIncluded: false,
                           roomsPerUnit: 2,
                           bathrooms: 2,
                           cookingPermitted: true,
                           kitchenNotes: '',
-                          houseRules: activeUnit.houseRules || '',
+                          houseRules: '',
                         };
                         const nextUnits = [...unitsList, newUnit];
                         updateSectorSpecifics({
@@ -470,7 +474,6 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                               ...accom,
                               units: remaining,
                               selectedUnitId: nextSelected.id,
-                              roomTypes: nextSelected.roomTypes,
                               apartment: {
                                 ...accom.apartment,
                                 totalUnits: remaining.length,
@@ -498,23 +501,20 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                     value={activeUnit.id}
                     onChange={(e) => {
                       const nextId = e.target.value;
-                      const picked = unitsList.find((u) => u.id === nextId) || unitsList[0];
+                      // Switching unit resets unsaved sibling drift by restoring saved units for non-selected units
+                      const persisted = firebaseService
+                        .getVendorListings()
+                        .find((v) => v.id === vendor.id);
+                      const persistedUnits = persisted?.sectorSpecifics?.accommodation?.units || [];
+                      const syncedUnits = unitsList.map((u) => {
+                        if (u.id === nextId) return u;
+                        return persistedUnits.find((pu) => pu.id === u.id) || u;
+                      });
                       updateSectorSpecifics({
                         accommodation: {
                           ...accom,
-                          units: unitsList,
+                          units: syncedUnits,
                           selectedUnitId: nextId,
-                          checkInWindow: picked.checkInTime || accom.checkInWindow,
-                          checkOutWindow: picked.checkOutTime || accom.checkOutWindow,
-                          parkingType: picked.parkingType || accom.parkingType,
-                          parkingDetails: picked.parkingDetails ?? accom.parkingDetails,
-                          roomTypes: picked.roomTypes || accom.roomTypes,
-                          amenityAddons: picked.amenityAddons || accom.amenityAddons,
-                          breakfastIncluded:
-                            picked.breakfastIncluded !== undefined
-                              ? picked.breakfastIncluded
-                              : accom.breakfastIncluded,
-                          houseRules: picked.houseRules ?? accom.houseRules,
                         },
                       });
                     }}
@@ -546,6 +546,14 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   />
                 </div>
               </div>
+              <div className="px-2.5 py-1.5 rounded-lg bg-teal-950/30 border border-teal-500/20 text-[11px] text-teal-200 flex items-center justify-between gap-2">
+                <span>
+                  Editing scoped strictly to: <strong>Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`} — {vendor.businessName}</strong>
+                </span>
+                <span className="font-mono text-[10px] text-teal-400">
+                  Other units remain untouched
+                </span>
+              </div>
             </div>
 
             {/* 2. CHECK-IN & CHECK-OUT WINDOWS */}
@@ -562,7 +570,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   <input
                     type="time"
                     disabled={isReadOnly}
-                    value={toTimeInputValue(activeUnit.checkInTime || accom.checkInWindow, '15:00')}
+                    value={toTimeInputValue(activeUnit.checkInTime, '15:00')}
                     onChange={(e) => updateSelectedUnit({ checkInTime: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white font-mono cursor-pointer"
                   />
@@ -574,7 +582,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   <input
                     type="time"
                     disabled={isReadOnly}
-                    value={toTimeInputValue(activeUnit.checkOutTime || accom.checkOutWindow, '12:00')}
+                    value={toTimeInputValue(activeUnit.checkOutTime, '12:00')}
                     onChange={(e) => updateSelectedUnit({ checkOutTime: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white font-mono cursor-pointer"
                   />
@@ -633,7 +641,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   { id: 'valet', label: 'Valet Parking' },
                   { id: 'none', label: 'No Parking' },
                 ].map((opt) => {
-                  const isSelected = (activeUnit.parkingType || accom.parkingType || 'private_available') === opt.id;
+                  const isSelected = (activeUnit.parkingType || 'private_available') === opt.id;
                   return (
                     <button
                       key={opt.id}
@@ -655,7 +663,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
               <input
                 type="text"
                 disabled={isReadOnly}
-                value={activeUnit.parkingDetails ?? accom.parkingDetails ?? ''}
+                value={activeUnit.parkingDetails ?? ''}
                 onChange={(e) => updateSelectedUnit({ parkingDetails: e.target.value })}
                 placeholder="Parking details / bay availability (e.g. 1 free covered basement bay included)"
                 className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs text-white placeholder-stone-500"
@@ -663,7 +671,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
             </div>
 
             {/* 5. ROOM TYPES, NIGHTLY RATES & BED CONFIGURATIONS */}
-            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-2.5">
+            <div className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-bold text-white flex items-center gap-1.5">
                   <BedDouble className="w-3.5 h-3.5 text-teal-400" />
@@ -681,6 +689,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                             name: `${activeUnit.unitCode || activeUnit.unitLabel} Room ${activeRoomTypes.length + 1}`,
                             quantity: 1,
                             pricePerNight: 0,
+                            peakPricePerNight: 0,
                             bedConfig: '1 Queen Bed',
                             maxOccupancy: 2,
                           },
@@ -711,6 +720,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                               name: 'Standard Highland Room',
                               quantity: 1,
                               pricePerNight: 0,
+                              peakPricePerNight: 0,
                               bedConfig: '1 Queen Bed',
                               maxOccupancy: 2,
                             },
@@ -724,84 +734,139 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   )}
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {activeRoomTypes.map((room, idx) => (
                     <div
                       key={room.id || idx}
-                      className="p-2.5 rounded-xl bg-stone-950 border border-stone-800 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs"
+                      className="p-3 rounded-xl bg-stone-950 border border-stone-800 space-y-2.5 text-xs"
                     >
-                      <input
-                        type="text"
-                        disabled={isReadOnly}
-                        value={room.name}
-                        onChange={(e) => {
-                          const updatedRooms = activeRoomTypes.map((r, i) =>
-                            i === idx ? { ...r, name: e.target.value } : r
-                          );
-                          updateSelectedUnit({ roomTypes: updatedRooms });
-                        }}
-                        placeholder="Room / Unit Name"
-                        className="sm:col-span-4 px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-white"
-                      />
-                      <input
-                        type="text"
-                        disabled={isReadOnly}
-                        value={room.bedConfig || ''}
-                        onChange={(e) => {
-                          const updatedRooms = activeRoomTypes.map((r, i) =>
-                            i === idx ? { ...r, bedConfig: e.target.value } : r
-                          );
-                          updateSelectedUnit({ roomTypes: updatedRooms });
-                        }}
-                        placeholder="Bed config (e.g. 2 Queen)"
-                        className="sm:col-span-4 px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-stone-200"
-                      />
-                      <div className="sm:col-span-1 flex items-center gap-1">
-                        <span className="text-[10px] text-stone-400 font-mono">Qty:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          disabled={isReadOnly}
-                          value={room.quantity}
-                          onChange={(e) => {
-                            const updatedRooms = activeRoomTypes.map((r, i) =>
-                              i === idx ? { ...r, quantity: Number(e.target.value) } : r
-                            );
-                            updateSelectedUnit({ roomTypes: updatedRooms });
-                          }}
-                          className="w-full px-1.5 py-1 rounded-lg bg-stone-900 border border-stone-700 text-white font-mono tabular-nums text-center"
-                        />
-                      </div>
-                      <div className="sm:col-span-2 flex items-center gap-1">
-                        <span className="text-[10px] text-stone-400 font-mono">RM:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          disabled={isReadOnly}
-                          value={room.pricePerNight}
-                          onChange={(e) => {
-                            const updatedRooms = activeRoomTypes.map((r, i) =>
-                              i === idx ? { ...r, pricePerNight: Number(e.target.value) } : r
-                            );
-                            updateSelectedUnit({ roomTypes: updatedRooms });
-                          }}
-                          className="w-full px-2 py-1 rounded-lg bg-stone-900 border border-stone-700 text-emerald-300 font-mono tabular-nums text-right font-bold"
-                        />
-                      </div>
-                      <div className="sm:col-span-1 flex justify-end">
-                        {!isReadOnly && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updatedRooms = activeRoomTypes.filter((_, i) => i !== idx);
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                        <div className="sm:col-span-5">
+                          <label className="block text-[10px] font-semibold text-stone-400 mb-1">
+                            Room Type / Name
+                          </label>
+                          <input
+                            type="text"
+                            disabled={isReadOnly}
+                            value={room.name}
+                            onChange={(e) => {
+                              const updatedRooms = activeRoomTypes.map((r, i) =>
+                                i === idx ? { ...r, name: e.target.value } : r
+                              );
                               updateSelectedUnit({ roomTypes: updatedRooms });
                             }}
-                            className="p-1.5 rounded bg-rose-950/50 text-rose-300 hover:bg-rose-900 cursor-pointer"
-                            title="Remove Room Type"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                            placeholder="Room / Unit Name"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-white"
+                          />
+                        </div>
+                        <div className="sm:col-span-5">
+                          <label className="block text-[10px] font-semibold text-stone-400 mb-1">
+                            Bed Configuration Details
+                          </label>
+                          <input
+                            type="text"
+                            disabled={isReadOnly}
+                            value={room.bedConfig || ''}
+                            onChange={(e) => {
+                              const updatedRooms = activeRoomTypes.map((r, i) =>
+                                i === idx ? { ...r, bedConfig: e.target.value } : r
+                              );
+                              updateSelectedUnit({ roomTypes: updatedRooms });
+                            }}
+                            placeholder="e.g. 2 Queen Beds + 1 Sofa Bed"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-stone-200"
+                          />
+                        </div>
+                        <div className="sm:col-span-2 flex items-end gap-1.5">
+                          <div className="flex-1">
+                            <label className="block text-[10px] font-semibold text-stone-400 mb-1">
+                              Qty
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              disabled={isReadOnly}
+                              value={room.quantity}
+                              onChange={(e) => {
+                                const updatedRooms = activeRoomTypes.map((r, i) =>
+                                  i === idx ? { ...r, quantity: Number(e.target.value) } : r
+                                );
+                                updateSelectedUnit({ roomTypes: updatedRooms });
+                              }}
+                              className="w-full px-2 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-white font-mono tabular-nums text-center"
+                            />
+                          </div>
+                          {!isReadOnly && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updatedRooms = activeRoomTypes.filter((_, i) => i !== idx);
+                                updateSelectedUnit({ roomTypes: updatedRooms });
+                              }}
+                              className="p-1.5 rounded-lg bg-rose-950/50 text-rose-300 hover:bg-rose-900 cursor-pointer mb-0.5"
+                              title="Remove Room Type"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Normal Rate & Peak Season Rate */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-stone-800/80">
+                        <div className="p-2 rounded-lg bg-stone-900/70 border border-stone-800 flex items-center justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-bold text-emerald-300 block">
+                              Normal Rate (RM / night)
+                            </span>
+                            <span className="text-[10px] text-stone-500">
+                              Standard weekday nightly rate
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] text-stone-400 font-mono">RM</span>
+                            <input
+                              type="number"
+                              min={0}
+                              disabled={isReadOnly}
+                              value={room.pricePerNight ?? 0}
+                              onChange={(e) => {
+                                const updatedRooms = activeRoomTypes.map((r, i) =>
+                                  i === idx ? { ...r, pricePerNight: Number(e.target.value) } : r
+                                );
+                                updateSelectedUnit({ roomTypes: updatedRooms });
+                              }}
+                              className="w-24 px-2 py-1 rounded-lg bg-stone-950 border border-stone-700 text-emerald-300 font-mono tabular-nums text-right font-bold"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="p-2 rounded-lg bg-amber-950/20 border border-amber-500/25 flex items-center justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-bold text-amber-300 block">
+                              Peak Season Rate (RM / night)
+                            </span>
+                            <span className="text-[10px] text-stone-400">
+                              Public holidays, school breaks, weekends
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] text-amber-400 font-mono">RM</span>
+                            <input
+                              type="number"
+                              min={0}
+                              disabled={isReadOnly}
+                              value={room.peakPricePerNight ?? 0}
+                              onChange={(e) => {
+                                const updatedRooms = activeRoomTypes.map((r, i) =>
+                                  i === idx ? { ...r, peakPricePerNight: Number(e.target.value) } : r
+                                );
+                                updateSelectedUnit({ roomTypes: updatedRooms });
+                              }}
+                              className="w-24 px-2 py-1 rounded-lg bg-stone-950 border border-amber-500/40 text-amber-300 font-mono tabular-nums text-right font-bold"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -930,7 +995,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                     type="number"
                     min={1}
                     disabled={isReadOnly}
-                    value={activeUnit.roomsPerUnit ?? accom.apartment?.roomsPerUnit ?? 2}
+                    value={activeUnit.roomsPerUnit ?? 2}
                     onChange={(e) => updateSelectedUnit({ roomsPerUnit: Number(e.target.value) })}
                     className="w-full px-2 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
                   />
@@ -941,7 +1006,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                     type="number"
                     min={1}
                     disabled={isReadOnly}
-                    value={activeUnit.bathrooms ?? accom.apartment?.bathrooms ?? 2}
+                    value={activeUnit.bathrooms ?? 2}
                     onChange={(e) => updateSelectedUnit({ bathrooms: Number(e.target.value) })}
                     className="w-full px-2 py-1.5 rounded-lg bg-stone-950 border border-stone-700 text-white font-mono tabular-nums text-center"
                   />
@@ -971,7 +1036,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   <input
                     type="text"
                     disabled={isReadOnly}
-                    value={activeUnit.kitchenNotes ?? accom.apartment?.kitchenNotes ?? ''}
+                    value={activeUnit.kitchenNotes ?? ''}
                     onChange={(e) => updateSelectedUnit({ kitchenNotes: e.target.value })}
                     placeholder="e.g. Fridge, Induction Cooker, Coway Water Filter, Halal Utensils"
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs"
@@ -985,7 +1050,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   <input
                     type="text"
                     disabled={isReadOnly}
-                    value={activeUnit.houseRules ?? accom.houseRules ?? vendor.vendorTerms ?? ''}
+                    value={activeUnit.houseRules ?? ''}
                     onChange={(e) => updateSelectedUnit({ houseRules: e.target.value })}
                     placeholder="e.g. No smoking indoors, quiet hours after 11 PM, RM100 security deposit at door"
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs"
@@ -994,17 +1059,19 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
               </div>
             </div>
 
-            {/* 9. SAVE CHANGES BUTTON */}
+            {/* 9. SAVE CHANGES BUTTON (STRICTLY SCOPED TO ACTIVE UNIT + IMMEDIATE SYNC) */}
             {!isReadOnly && (
               <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-[11px] text-stone-400">
                   {accomSaveSuccess ? (
                     <span className="text-emerald-400 font-bold flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      Saved and synced to Verified Homestays &amp; Stays!
+                      Saved Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`} and synced live to Verified Homestays &amp; Stays!
                     </span>
                   ) : (
-                    <span>Updates apply to all unit dropdowns and guest booking cards immediately.</span>
+                    <span>
+                      Saves changes strictly to <strong>Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`}</strong> and immediately syncs to guest dropdown &amp; booking card.
+                    </span>
                   )}
                 </div>
                 {onSave && (
@@ -1012,14 +1079,66 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                     type="button"
                     disabled={isSaving}
                     onClick={async () => {
-                      await onSave(vendor);
+                      // Scoped Saving: apply updates strictly to the currently selected unit (activeUnit)
+                      // while preserving saved configurations of all sibling units untouched
+                      const persistedVendor = firebaseService
+                        .getVendorListings()
+                        .find((v) => v.id === vendor.id);
+                      const persistedUnits =
+                        persistedVendor?.sectorSpecifics?.accommodation?.units || [];
+
+                      const scopedUnits = unitsList.map((u) => {
+                        if (u.id === activeUnit.id) return activeUnit;
+                        const persistedSibling = persistedUnits.find((pu) => pu.id === u.id);
+                        return persistedSibling || u;
+                      });
+
+                      const anyUnitAvailable = scopedUnits.some((u) => u.isAvailable !== false);
+
+                      // Keep matching catalog package price synced ONLY for the active unit
+                      const updatedCatalogPackages = (vendor.motorbikePackages || []).map((pkg) => {
+                        if (pkg.id !== activeUnit.id) {
+                          const persistedPkg = (persistedVendor?.motorbikePackages || []).find(
+                            (pp) => pp.id === pkg.id
+                          );
+                          return persistedPkg || pkg;
+                        }
+                        const primaryRate = activeUnit.roomTypes?.[0]?.pricePerNight ?? pkg.dailyRateRm;
+                        return {
+                          ...pkg,
+                          dailyRateRm: Number(primaryRate) || 0,
+                          packageDetails: activeUnit.houseRules || pkg.packageDetails,
+                        };
+                      });
+
+                      const scopedVendor: VendorListing = {
+                        ...vendor,
+                        motorbikePackages: updatedCatalogPackages,
+                        roomAvailabilityStatus: anyUnitAvailable ? 'rooms_available' : 'fully_booked',
+                        sectorSpecifics: {
+                          ...vendor.sectorSpecifics,
+                          accommodation: {
+                            ...accom,
+                            units: scopedUnits,
+                            selectedUnitId: activeUnit.id,
+                            roomAvailabilityStatus: anyUnitAvailable ? 'rooms_available' : 'fully_booked',
+                            apartment: {
+                              ...accom.apartment,
+                              totalUnits: scopedUnits.length,
+                            },
+                          },
+                        },
+                      };
+
+                      onChange(scopedVendor);
+                      await onSave(scopedVendor);
                       setAccomSaveSuccess(true);
                       setTimeout(() => setAccomSaveSuccess(false), 3000);
                     }}
                     className="py-2.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-xs shadow-xl shadow-emerald-950/60 flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-all"
                   >
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    <span>Save Changes</span>
+                    <span>Save Changes (Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`})</span>
                   </button>
                 )}
               </div>

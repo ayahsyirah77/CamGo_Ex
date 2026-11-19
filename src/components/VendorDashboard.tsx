@@ -728,36 +728,42 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       const nextUnitCode =
         existingMatchedUnit?.unitCode ||
         `CH-${existingUnits.length + 1}`;
+      const existingRoom0 = existingMatchedUnit?.roomTypes?.[0];
       const newRoomEntry = {
-        id: `room-${pkgId}`,
+        id: existingRoom0?.id || `room-${pkgId}`,
         name: bikeName,
-        quantity: Number(bikeHelmets) || 1,
+        quantity: Number(bikeHelmets) || existingRoom0?.quantity || 1,
         pricePerNight: enteredRate,
-        bedConfig: bikeCc || 'Standard Bed',
+        peakPricePerNight: existingRoom0?.peakPricePerNight ?? 0,
+        bedConfig: bikeCc || existingRoom0?.bedConfig || 'Standard Bed',
         maxOccupancy: (Number(bikeHelmets) || 1) * 2,
       };
+      const preservedRoomTypes =
+        existingMatchedUnit?.roomTypes && existingMatchedUnit.roomTypes.length > 1
+          ? [newRoomEntry, ...existingMatchedUnit.roomTypes.slice(1)]
+          : [newRoomEntry];
       const syncedUnit = {
         id: pkgId,
         unitLabel: bikeName,
         unitCode: nextUnitCode,
         isAvailable: existingMatchedUnit?.isAvailable ?? true,
-        checkInTime: existingMatchedUnit?.checkInTime || curAccom.checkInWindow || '15:00',
-        checkOutTime: existingMatchedUnit?.checkOutTime || curAccom.checkOutWindow || '12:00',
-        parkingType: existingMatchedUnit?.parkingType || curAccom.parkingType || 'private_available',
-        parkingDetails: existingMatchedUnit?.parkingDetails || curAccom.parkingDetails || '',
-        roomTypes: [newRoomEntry],
-        amenityAddons: existingMatchedUnit?.amenityAddons || curAccom.amenityAddons || [
+        checkInTime: existingMatchedUnit?.checkInTime || '15:00',
+        checkOutTime: existingMatchedUnit?.checkOutTime || '12:00',
+        parkingType: existingMatchedUnit?.parkingType || 'private_available',
+        parkingDetails: existingMatchedUnit?.parkingDetails ?? '',
+        roomTypes: preservedRoomTypes,
+        amenityAddons: existingMatchedUnit?.amenityAddons || [
           { id: 'am-mattress', name: 'Extra Single Mattress & Blanket Set', priceRm: 35, enabled: true },
           { id: 'am-steamboat', name: 'Portable Steamboat Pot & Butane Gas', priceRm: 25, enabled: true },
           { id: 'am-bbq', name: 'Outdoor BBQ Charcoal & Pit Setup', priceRm: 40, enabled: false },
           { id: 'am-lateout', name: 'Late Check-Out Extension (Until 2:00 PM)', priceRm: 50, enabled: false },
         ],
-        breakfastIncluded: existingMatchedUnit?.breakfastIncluded ?? !!curAccom.breakfastIncluded,
-        roomsPerUnit: Number(bikeHelmets) || existingMatchedUnit?.roomsPerUnit || curAccom.apartment?.roomsPerUnit || 2,
-        bathrooms: existingMatchedUnit?.bathrooms ?? curAccom.apartment?.bathrooms ?? 2,
-        cookingPermitted: existingMatchedUnit?.cookingPermitted ?? !!curAccom.apartment?.cookingPermitted,
-        kitchenNotes: existingMatchedUnit?.kitchenNotes || curAccom.apartment?.kitchenNotes || '',
-        houseRules: bikePkgDetails || existingMatchedUnit?.houseRules || curAccom.houseRules || activeVendor.vendorTerms || '',
+        breakfastIncluded: existingMatchedUnit?.breakfastIncluded ?? false,
+        roomsPerUnit: Number(bikeHelmets) || existingMatchedUnit?.roomsPerUnit || 2,
+        bathrooms: existingMatchedUnit?.bathrooms ?? 2,
+        cookingPermitted: existingMatchedUnit?.cookingPermitted ?? false,
+        kitchenNotes: existingMatchedUnit?.kitchenNotes ?? '',
+        houseRules: bikePkgDetails || existingMatchedUnit?.houseRules || '',
       };
 
       const nextUnits = existingMatchedUnit
@@ -770,7 +776,6 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
           ...curAccom,
           units: nextUnits,
           selectedUnitId: syncedUnit.id,
-          roomTypes: syncedUnit.roomTypes,
           apartment: {
             ...curAccom.apartment,
             totalUnits: nextUnits.length,

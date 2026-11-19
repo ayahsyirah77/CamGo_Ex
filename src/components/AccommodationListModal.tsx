@@ -73,6 +73,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   const [bookingFormError, setBookingFormError] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [selectedRoomOptionId, setSelectedRoomOptionId] = useState<string>('');
+  const [rateTier, setRateTier] = useState<'normal' | 'peak'>('normal');
   const [showMoreInfo, setShowMoreInfo] = useState(false);
 
   // Confirmed Booking Voucher Modal
@@ -121,9 +122,11 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
     if (!activeListingForBooking) return [];
     const options: Array<{
       id: string;
+      unitId?: string;
       label: string;
       unitCode: string;
       pricePerNight: number;
+      peakPricePerNight: number;
       bedConfig?: string;
       checkInWindow?: string;
       checkOutWindow?: string;
@@ -143,16 +146,27 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
           u.roomTypes.forEach((rt, rtIdx) => {
             if ((rt.quantity ?? 1) <= 0) return;
             const rate = Number(rt.pricePerNight ?? activeListingForBooking.pricePerNight ?? 0);
+            const peakRate = Number(rt.peakPricePerNight ?? 0);
+            const rateLabel =
+              rate > 0
+                ? peakRate > 0
+                  ? ` · Normal RM ${rate} / Peak RM ${peakRate}`
+                  : ` · RM ${rate}/night`
+                : peakRate > 0
+                ? ` · Peak RM ${peakRate}/night`
+                : '';
             options.push({
               id: `${u.id}__${rt.id || rtIdx}`,
-              label: `${uCode} — ${rt.name}${rt.bedConfig ? ` (${rt.bedConfig})` : ''}${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+              unitId: u.id,
+              label: `${uCode} — ${rt.name}${rt.bedConfig ? ` (${rt.bedConfig})` : ''}${rateLabel}`,
               unitCode: uCode,
               pricePerNight: rate,
+              peakPricePerNight: peakRate,
               bedConfig: rt.bedConfig,
               checkInWindow: u.checkInTime || activeListingForBooking.checkInWindow,
               checkOutWindow: u.checkOutTime || activeListingForBooking.checkOutWindow,
               parkingType: u.parkingType || activeListingForBooking.parkingType,
-              parkingDetails: u.parkingDetails || activeListingForBooking.parkingDetails,
+              parkingDetails: u.parkingDetails ?? activeListingForBooking.parkingDetails,
               breakfastIncluded:
                 u.breakfastIncluded !== undefined
                   ? u.breakfastIncluded
@@ -161,21 +175,24 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 u.cookingPermitted !== undefined
                   ? u.cookingPermitted
                   : activeListingForBooking.cookingPermitted,
-              kitchenNotes: u.kitchenNotes || activeListingForBooking.kitchenNotes,
-              houseRules: u.houseRules || activeListingForBooking.houseRules,
+              kitchenNotes: u.kitchenNotes ?? activeListingForBooking.kitchenNotes,
+              houseRules: u.houseRules ?? activeListingForBooking.houseRules,
             });
           });
         } else {
           const rate = Number(activeListingForBooking.pricePerNight ?? 0);
+          const peakRate = Number(activeListingForBooking.peakPricePerNight ?? 0);
           options.push({
             id: u.id,
-            label: `${uCode} (${u.roomsPerUnit || activeListingForBooking.bedrooms} Rooms)${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+            unitId: u.id,
+            label: `${uCode} (${u.roomsPerUnit || activeListingForBooking.bedrooms} Rooms)${rate > 0 ? ` · RM ${rate}/night` : ''}${peakRate > 0 ? ` / Peak RM ${peakRate}` : ''}`,
             unitCode: uCode,
             pricePerNight: rate,
+            peakPricePerNight: peakRate,
             checkInWindow: u.checkInTime || activeListingForBooking.checkInWindow,
             checkOutWindow: u.checkOutTime || activeListingForBooking.checkOutWindow,
             parkingType: u.parkingType || activeListingForBooking.parkingType,
-            parkingDetails: u.parkingDetails || activeListingForBooking.parkingDetails,
+            parkingDetails: u.parkingDetails ?? activeListingForBooking.parkingDetails,
             breakfastIncluded:
               u.breakfastIncluded !== undefined
                 ? u.breakfastIncluded
@@ -184,8 +201,8 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               u.cookingPermitted !== undefined
                 ? u.cookingPermitted
                 : activeListingForBooking.cookingPermitted,
-            kitchenNotes: u.kitchenNotes || activeListingForBooking.kitchenNotes,
-            houseRules: u.houseRules || activeListingForBooking.houseRules,
+            kitchenNotes: u.kitchenNotes ?? activeListingForBooking.kitchenNotes,
+            houseRules: u.houseRules ?? activeListingForBooking.houseRules,
           });
         }
       });
@@ -193,11 +210,22 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
       activeListingForBooking.roomTypes.forEach((rt, idx) => {
         if ((rt.quantity ?? 1) <= 0) return;
         const rate = Number(rt.pricePerNight ?? activeListingForBooking.pricePerNight ?? 0);
+        const peakRate = Number(rt.peakPricePerNight ?? activeListingForBooking.peakPricePerNight ?? 0);
+        const rateLabel =
+          rate > 0
+            ? peakRate > 0
+              ? ` · Normal RM ${rate} / Peak RM ${peakRate}`
+              : ` · RM ${rate}/night`
+            : peakRate > 0
+            ? ` · Peak RM ${peakRate}/night`
+            : '';
         options.push({
           id: rt.id || `rt-${idx}`,
-          label: `${activeListingForBooking.code} — ${rt.name}${rt.bedConfig ? ` (${rt.bedConfig})` : ''}${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+          unitId: activeListingForBooking.unitId,
+          label: `${activeListingForBooking.code} — ${rt.name}${rt.bedConfig ? ` (${rt.bedConfig})` : ''}${rateLabel}`,
           unitCode: activeListingForBooking.code,
           pricePerNight: rate,
+          peakPricePerNight: peakRate,
           bedConfig: rt.bedConfig,
           checkInWindow: activeListingForBooking.checkInWindow,
           checkOutWindow: activeListingForBooking.checkOutWindow,
@@ -213,11 +241,14 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
     if (options.length === 0) {
       const rate = Number(activeListingForBooking.pricePerNight ?? 0);
+      const peakRate = Number(activeListingForBooking.peakPricePerNight ?? 0);
       options.push({
         id: 'default-unit',
-        label: `${activeListingForBooking.code} — Standard Unit${rate > 0 ? ` · RM ${rate}/night` : ''}`,
+        unitId: activeListingForBooking.unitId,
+        label: `${activeListingForBooking.code} — Standard Unit${rate > 0 ? ` · RM ${rate}/night` : ''}${peakRate > 0 ? ` / Peak RM ${peakRate}` : ''}`,
         unitCode: activeListingForBooking.code,
         pricePerNight: rate,
+        peakPricePerNight: peakRate,
         checkInWindow: activeListingForBooking.checkInWindow,
         checkOutWindow: activeListingForBooking.checkOutWindow,
         parkingType: activeListingForBooking.parkingType,
@@ -234,7 +265,10 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
   useEffect(() => {
     if (activeListingForBooking) {
-      setSelectedRoomOptionId(availableRoomOptions[0]?.id || '');
+      const matchedOpt = activeListingForBooking.unitId
+        ? availableRoomOptions.find((o) => o.unitId === activeListingForBooking.unitId)
+        : undefined;
+      setSelectedRoomOptionId(matchedOpt?.id || availableRoomOptions[0]?.id || '');
       setShowMoreInfo(false);
     }
   }, [activeListingForBooking, availableRoomOptions]);
@@ -247,8 +281,22 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
     );
   }, [availableRoomOptions, selectedRoomOptionId]);
 
-  const activeNightlyRate =
+  // Auto-detect Fri/Sat/Sun check-in as weekend/peak hint when peak rate exists
+  useEffect(() => {
+    if (!checkInDate || !(selectedRoomOption?.peakPricePerNight)) {
+      setRateTier('normal');
+      return;
+    }
+    const day = new Date(`${checkInDate}T12:00:00`).getDay();
+    setRateTier(day === 5 || day === 6 || day === 0 ? 'peak' : 'normal');
+  }, [checkInDate, selectedRoomOption?.peakPricePerNight]);
+
+  const activeNormalRate =
     selectedRoomOption?.pricePerNight ?? activeListingForBooking?.pricePerNight ?? 0;
+  const activePeakRate =
+    selectedRoomOption?.peakPricePerNight ?? activeListingForBooking?.peakPricePerNight ?? 0;
+  const activeNightlyRate =
+    rateTier === 'peak' && activePeakRate > 0 ? activePeakRate : activeNormalRate;
 
   // Nights and pricing calculation
   const nights = useMemo(() => {
@@ -356,7 +404,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
       const newBooking: AccommodationBooking = {
         id: `cg_bk_${Date.now()}`,
         bookingCode,
-        homestayId: activeListingForBooking.id,
+        homestayId: activeListingForBooking.vendorId || activeListingForBooking.id,
         homestayName: activeListingForBooking.realBusinessName,
         maskedTitle: chosenUnitCode,
         township: activeListingForBooking.township,
@@ -737,7 +785,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                         </div>
 
                         <div className="text-right">
-                          <span className="text-[10px] text-stone-500 block">Total Room Rate</span>
+                          <span className="text-[10px] text-stone-500 block">Normal Rate</span>
                           {stay.pricePerNight > 0 ? (
                             <>
                               <span className="text-base font-black text-white">RM {stay.pricePerNight}</span>
@@ -745,6 +793,11 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                             </>
                           ) : (
                             <span className="text-xs font-bold text-stone-400">Rate Set by Vendor</span>
+                          )}
+                          {stay.peakPricePerNight && stay.peakPricePerNight > 0 && (
+                            <span className="block text-[10px] font-bold text-amber-300 mt-0.5">
+                              Peak Season: RM {stay.peakPricePerNight}/night
+                            </span>
                           )}
                         </div>
                       </div>
@@ -869,8 +922,38 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1">
                   <span>Duration: <strong>{nights} night{nights > 1 ? 's' : ''}</strong></span>
-                  <span>Rate: RM {activeNightlyRate} / night</span>
+                  <span>
+                    Applied Rate ({rateTier === 'peak' && activePeakRate > 0 ? 'Peak Season' : 'Normal'}):{' '}
+                    <strong className="text-white">RM {activeNightlyRate} / night</strong>
+                  </span>
                 </div>
+
+                {activePeakRate > 0 && (
+                  <div className="grid grid-cols-2 gap-2 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setRateTier('normal')}
+                      className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                        rateTier === 'normal'
+                          ? 'bg-emerald-600/20 border-emerald-400 text-emerald-300'
+                          : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-white'
+                      }`}
+                    >
+                      Normal Rate (RM {activeNormalRate}/night)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRateTier('peak')}
+                      className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                        rateTier === 'peak'
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                          : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-white'
+                      }`}
+                    >
+                      Peak Season (RM {activePeakRate}/night)
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Guest Information */}

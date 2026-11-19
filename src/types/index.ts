@@ -564,6 +564,7 @@ export interface AccommodationUnitConfig {
     name: string;
     quantity: number;
     pricePerNight: number;
+    peakPricePerNight?: number;
     bedConfig?: string;
     maxOccupancy?: number;
   }>;
@@ -591,6 +592,7 @@ export interface AccommodationSpecifics {
     name: string;
     quantity: number;
     pricePerNight: number;
+    peakPricePerNight?: number;
     bedConfig?: string;
     maxOccupancy?: number;
   }>;
@@ -1137,6 +1139,7 @@ export interface AccommodationBooking {
 export interface AccommodationListing {
   id: string;
   vendorId?: string;
+  unitId?: string;
   ownerUid?: string;
   ownerEmail?: string;
   code: string; // e.g. "CH-07"
@@ -1148,6 +1151,7 @@ export interface AccommodationListing {
   ownerName: string;
   ownerPhone: string;
   pricePerNight: number;
+  peakPricePerNight?: number;
   depositAmount: number; // 30
   balanceToCollect: number; // pricePerNight - 30
   bookingType: 'instant' | 'request';
