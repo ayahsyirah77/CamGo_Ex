@@ -27,6 +27,9 @@ import {
   Coffee,
   ParkingCircle,
   Utensils,
+  ChevronDown,
+  ChevronUp,
+  Minimize2,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { AccommodationListing, AccommodationBooking, Township, Language } from '../types';
@@ -75,6 +78,11 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   const [selectedRoomOptionId, setSelectedRoomOptionId] = useState<string>('');
   const [rateTier, setRateTier] = useState<'normal' | 'peak'>('normal');
   const [showMoreInfo, setShowMoreInfo] = useState(false);
+
+  // Collapsible Capsule Card State (auto-collapses previously opened card on new selection)
+  const [expandedStayId, setExpandedStayId] = useState<string | null>(null);
+  const [expandedCardNotesId, setExpandedCardNotesId] = useState<string | null>(null);
+  const [cardGalleryIdx, setCardGalleryIdx] = useState<Record<string, number>>({});
 
   // Confirmed Booking Voucher Modal
   const [unlockedBooking, setUnlockedBooking] = useState<AccommodationBooking | null>(null);
@@ -668,29 +676,151 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
             {filteredListings.map((stay) => {
               const isAvailable = stay.roomAvailabilityStatus === 'rooms_available';
               const isLimited = stay.roomAvailabilityStatus === 'limited_units';
               const isSoldOut = stay.roomAvailabilityStatus === 'fully_booked';
+              const isExpanded = expandedStayId === stay.id;
+              const isNotesOpen = expandedCardNotesId === stay.id;
               const displayPropertyName =
                 stay.propertyName?.trim() ||
                 stay.realBusinessName?.trim() ||
                 `Unit ${stay.code}`;
+              const shortUnitCode = stay.code.split(' (')[0].trim() || stay.code;
+              const galleryList =
+                stay.galleryImages && stay.galleryImages.length > 0
+                  ? stay.galleryImages
+                  : [stay.coverImage];
+              const activePhotoIdx = Math.min(
+                cardGalleryIdx[stay.id] ?? 0,
+                Math.max(0, galleryList.length - 1)
+              );
+              const activePhotoUrl = galleryList[activePhotoIdx] || stay.coverImage;
+              const enabledAddons = (stay.amenityAddons || []).filter((a) => a.enabled);
+
+              if (!isExpanded) {
+                return (
+                  <button
+                    key={stay.id}
+                    type="button"
+                    onClick={() => {
+                      setExpandedStayId(stay.id);
+                      setExpandedCardNotesId(null);
+                    }}
+                    aria-expanded={false}
+                    className="w-full min-h-[64px] px-2.5 py-2 rounded-2xl bg-stone-900/90 hover:bg-stone-800/95 border border-stone-800 hover:border-emerald-500/50 shadow-md hover:shadow-emerald-950/40 transition-all duration-200 flex items-center justify-between gap-2 text-left group cursor-pointer active:scale-[0.99]"
+                  >
+                    {/* Left: Thumbnail + Property Name & Unit Code */}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="relative shrink-0">
+                        <img
+                          src={safeSrc(stay.coverImage, DEFAULT_PLACE_IMAGE)}
+                          alt={displayPropertyName}
+                          className="w-9 h-9 rounded-full object-cover border border-white/15 bg-stone-950 group-hover:scale-105 transition-transform"
+                        />
+                        <span
+                          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-stone-900 ${
+                            isAvailable
+                              ? 'bg-emerald-400 animate-pulse'
+                              : isLimited
+                              ? 'bg-amber-400'
+                              : 'bg-rose-500'
+                          }`}
+                          title={
+                            isAvailable ? 'Available' : isLimited ? '1-2 Left' : 'Sold Out Today'
+                          }
+                        />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-bold text-[11px] sm:text-xs text-white group-hover:text-emerald-300 transition-colors leading-snug whitespace-normal break-words">
+                          {displayPropertyName}
+                        </h4>
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 text-[9px] sm:text-[10px] font-mono text-emerald-400 leading-tight">
+                          <span className="font-bold whitespace-nowrap">{shortUnitCode}</span>
+                          <span className="text-stone-600">·</span>
+                          <span className="font-sans text-stone-400 break-words">{stay.township}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Starting Rate + Live Availability Dot + Expand Caret */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              isAvailable
+                                ? 'bg-emerald-400 animate-pulse'
+                                : isLimited
+                                ? 'bg-amber-400'
+                                : 'bg-rose-400'
+                            }`}
+                          />
+                          <span className="text-[11px] font-black text-white whitespace-nowrap">
+                            {stay.pricePerNight > 0 ? `RM ${stay.pricePerNight}` : 'Vendor Rate'}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-stone-400 block leading-none mt-0.5">
+                          {stay.pricePerNight > 0 ? '/night' : stay.bookingType === 'instant' ? 'Instant' : '30m SLA'}
+                        </span>
+                      </div>
+                      <div className="w-6 h-6 rounded-full bg-stone-950/80 border border-stone-700/80 group-hover:border-emerald-500/50 flex items-center justify-center text-stone-400 group-hover:text-emerald-300 transition-colors shrink-0">
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  </button>
+                );
+              }
 
               return (
                 <div
                   key={stay.id}
-                  className="rounded-3xl bg-stone-900/90 border border-stone-800 hover:border-emerald-500/50 shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden group hover:-translate-y-1"
+                  className="rounded-3xl bg-stone-900/95 border border-emerald-500/50 shadow-2xl shadow-emerald-950/30 transition-all duration-300 flex flex-col justify-between overflow-hidden group"
                 >
+                  {/* Collapsible Card Header Strip (Tap to Collapse) */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setExpandedStayId(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setExpandedStayId(null);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-stone-950/90 border-b border-stone-800 flex items-center justify-between gap-2 cursor-pointer hover:bg-stone-950 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          isAvailable
+                            ? 'bg-emerald-400 animate-pulse'
+                            : isLimited
+                            ? 'bg-amber-400'
+                            : 'bg-rose-400'
+                        }`}
+                      />
+                      <span className="text-[11px] font-bold text-stone-200 truncate">
+                        {displayPropertyName}
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-white/10 text-[10px] font-bold flex items-center gap-1 shrink-0">
+                      <Minimize2 className="w-3 h-3 text-emerald-400" />
+                      <span>Collapse</span>
+                      <ChevronUp className="w-3 h-3" />
+                    </span>
+                  </div>
+
                   {/* Top Image & Badges */}
                   <div className="relative aspect-[16/10] overflow-hidden bg-stone-950">
                     <img
-                      src={safeSrc(stay.coverImage, DEFAULT_PLACE_IMAGE)}
+                      src={safeSrc(activePhotoUrl, DEFAULT_PLACE_IMAGE)}
                       alt={displayPropertyName}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      className="w-full h-full object-cover transition-transform duration-500"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/40" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/40 pointer-events-none" />
 
                     {/* Top Row: Unit Code (Left) & Booking Confirmation Type (Right) */}
                     <div className="absolute top-2.5 left-2.5 right-2.5 flex flex-wrap items-start justify-between gap-1.5">
@@ -722,9 +852,35 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Body Content (Availability Status, Full Property Title & Unit Code) */}
+                  {/* Full Media Gallery Thumbnails (when multiple photos exist) */}
+                  {galleryList.length > 1 && (
+                    <div className="px-3 pt-2.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {galleryList.map((imgUrl, idx) => (
+                        <button
+                          key={`${stay.id}-gal-${idx}`}
+                          type="button"
+                          onClick={() =>
+                            setCardGalleryIdx((prev) => ({ ...prev, [stay.id]: idx }))
+                          }
+                          className={`w-12 h-9 rounded-lg overflow-hidden border transition-all shrink-0 cursor-pointer ${
+                            idx === activePhotoIdx
+                              ? 'border-emerald-400 ring-1 ring-emerald-400/60 scale-105'
+                              : 'border-stone-700 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <img
+                            src={safeSrc(imgUrl, DEFAULT_PLACE_IMAGE)}
+                            alt={`${displayPropertyName} gallery ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Body Content (Availability Status, Full Property Title, Unit Code, Specs, Amenities & Booking) */}
                   <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {/* Status & Breakfast Row */}
                       <div className="flex flex-wrap items-center gap-1.5">
                         {isAvailable && (
@@ -745,7 +901,8 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                           </span>
                         )}
                         {stay.breakfastIncluded && (
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 whitespace-nowrap">
+                            <Coffee className="w-3 h-3" />
                             Breakfast Included
                           </span>
                         )}
@@ -761,14 +918,31 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                         </span>
                       </div>
 
-                      <p className="text-[11px] text-stone-400 line-clamp-1">
+                      <p className="text-[11px] text-stone-400">
                         📍 {stay.proximityDesc}
                       </p>
 
-                      {/* Bundled Perks Highlight */}
-                      <div className="space-y-1 pt-1">
+                      {/* Check-In / Out Windows & Parking Quick Details */}
+                      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                        <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
+                          <span className="text-stone-400 block">Check-In / Out</span>
+                          <strong className="text-white font-mono">
+                            {stay.checkInWindow || '15:00'} / {stay.checkOutWindow || '12:00'}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
+                          <span className="text-stone-400 block">Parking &amp; Kitchen</span>
+                          <strong className="text-white truncate block">
+                            {(stay.parkingType || 'private_available').replace(/_/g, ' ')}
+                            {stay.cookingPermitted ? ' · Cooking OK' : ''}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {/* Amenities / CamGo Exclusive Perks */}
+                      <div className="space-y-1 pt-0.5">
                         <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">
-                          CamGo Exclusive Perks
+                          Amenities &amp; CamGo Perks
                         </span>
                         <div className="flex flex-wrap gap-1">
                           {stay.bundledPerks.slice(0, 2).map((perk, idx) => (
@@ -779,7 +953,52 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                               {perk}
                             </span>
                           ))}
+                          {enabledAddons.slice(0, 2).map((addon) => (
+                            <span
+                              key={addon.id}
+                              className="px-2 py-0.5 rounded-lg bg-stone-800 text-stone-200 border border-stone-700 text-[10px] font-medium"
+                            >
+                              + {addon.name} (RM {addon.priceRm})
+                            </span>
+                          ))}
                         </div>
+                      </div>
+
+                      {/* Inline More Information / Vendor Notes Toggle */}
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedCardNotesId(isNotesOpen ? null : stay.id)
+                          }
+                          className="text-[11px] font-bold text-teal-300 hover:text-teal-200 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                          <span>{isNotesOpen ? 'Hide Vendor Notes & Rules' : 'More Information & Vendor Notes'}</span>
+                        </button>
+
+                        {isNotesOpen && (
+                          <div className="mt-2 p-2.5 rounded-xl bg-stone-950 border border-teal-500/30 text-[11px] text-stone-300 space-y-1.5">
+                            {stay.description && (
+                              <p className="leading-relaxed whitespace-pre-line">{stay.description}</p>
+                            )}
+                            {stay.parkingDetails && (
+                              <p className="text-stone-400">
+                                <strong className="text-stone-200">Parking:</strong> {stay.parkingDetails}
+                              </p>
+                            )}
+                            {stay.kitchenNotes && (
+                              <p className="text-stone-400">
+                                <strong className="text-stone-200">Kitchen:</strong> {stay.kitchenNotes}
+                              </p>
+                            )}
+                            <p className="text-amber-200/90">
+                              <strong className="text-amber-300">Rules:</strong>{' '}
+                              {stay.houseRules ||
+                                'Observe quiet hours after 11:00 PM & present CamGo voucher on arrival.'}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -815,19 +1034,31 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                         </div>
                       </div>
 
-                      {/* CTA Lock Button */}
-                      <button
-                        onClick={() => setActiveListingForBooking(stay)}
-                        disabled={isSoldOut}
-                        className={`w-full py-2.5 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg cursor-pointer ${
-                          isSoldOut
-                            ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
-                            : 'bg-emerald-500 hover:bg-emerald-400 text-stone-950 hover:shadow-emerald-950/80 active:scale-[0.98]'
-                        }`}
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>{isSoldOut ? 'Sold Out Today' : 'Lock Room'}</span>
-                      </button>
+                      {/* CTA Actions: Lock Room + Collapse */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveListingForBooking(stay)}
+                          disabled={isSoldOut}
+                          className={`flex-1 py-2.5 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg cursor-pointer ${
+                            isSoldOut
+                              ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
+                              : 'bg-emerald-500 hover:bg-emerald-400 text-stone-950 hover:shadow-emerald-950/80 active:scale-[0.98]'
+                          }`}
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>{isSoldOut ? 'Sold Out Today' : 'Lock Room'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedStayId(null)}
+                          className="px-3 py-2.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Minimize back to capsule"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                          <span>Minimize</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
