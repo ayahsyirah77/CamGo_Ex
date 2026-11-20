@@ -193,6 +193,9 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
   // New Listing Form State (for Admin Add)
   const [newBizName, setNewBizName] = useState('');
+  const [newPropertyName, setNewPropertyName] = useState('');
+  const [isNewPropertyOverridden, setIsNewPropertyOverridden] = useState(false);
+  const [isPropertyNameOverridden, setIsPropertyNameOverridden] = useState(false);
   const [newBizLogo, setNewBizLogo] = useState('');
   const [newBizTownship, setNewBizTownship] = useState<Township>('Brinchang');
   const [selectedNewBizSectorId, setSelectedNewBizSectorId] = useState<string>('food_beverage');
@@ -596,6 +599,9 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const applySelectedVendorState = (rawVendor: VendorListing) => {
     const clean = pruneVendorForSector(rawVendor);
     const sKey = resolveVendorSectorKey(clean);
+    const cleanProp = (clean.propertyName || '').trim();
+    const cleanBiz = (clean.businessName || '').trim();
+    setIsPropertyNameOverridden(Boolean(cleanProp && cleanProp !== cleanBiz));
     setActiveVendor(clean);
     setRealTimeStatus(clean.realTimeStatus || 'open');
     setDiyHarvestStatus(clean.diyHarvestStatus || 'picking_open');
@@ -1030,11 +1036,13 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
       const newId = `vendor-${Date.now().toString(36)}`;
       const mainCat = mapSubCategoryToMainCategory(newBizSubCategory);
 
+      const resolvedNewProp = newPropertyName.trim() || newBizName.trim();
       const newListing = pruneVendorForSector({
         id: newId,
         ownerUid: currentUser?.uid || 'admin-ayahsyirah77',
         ownerEmail: currentUser?.email || 'ayahsyirah77@gmail.com',
         businessName: newBizName.trim(),
+        propertyName: resolvedNewProp,
         ssmNumber: 'SSM-PENDING',
         verificationStatus: 'verified',
         isBookingEnabled: true,
@@ -1101,6 +1109,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
       setShowAddListingModal(false);
       setNewBizName('');
+      setNewPropertyName('');
+      setIsNewPropertyOverridden(false);
       setNewBizLogo('');
       setNewBizAddress('');
       refreshVendorData();
@@ -1270,10 +1280,33 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   type="text"
                   value={newBizName}
                   onChange={(e) => {
-                    setNewBizName(e.target.value);
+                    const nextVal = e.target.value;
+                    setNewBizName(nextVal);
+                    if (!isNewPropertyOverridden) {
+                      setNewPropertyName(nextVal);
+                    }
                     if (createListingError) setCreateListingError(null);
                   }}
-                  placeholder="e.g. Tanah Rata Scooter Rentals"
+                  placeholder="e.g. Park View Apartment"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-300 mb-1 font-semibold">
+                  Property Name <span className="text-[10px] font-normal text-stone-400">(Displayed on Public Listing Card)</span>
+                </label>
+                <input
+                  type="text"
+                  value={newPropertyName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewPropertyName(val);
+                    const trimmedVal = val.trim();
+                    const trimmedBiz = newBizName.trim();
+                    setIsNewPropertyOverridden(trimmedVal !== '' && trimmedVal !== trimmedBiz);
+                  }}
+                  placeholder="Auto-fills from Business Name unless customized"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-stone-950 border border-stone-800 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -2270,8 +2303,85 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                     <input
                       type="text"
                       value={activeVendor.businessName}
-                      onChange={(e) => setActiveVendor({ ...activeVendor, businessName: e.target.value })}
+                      onChange={(e) => {
+                        const nextBiz = e.target.value;
+                        const prevBizTrim = (activeVendor.businessName || '').trim();
+                        const prevPropTrim = (activeVendor.propertyName || '').trim();
+                        const shouldAutoSync =
+                          !isPropertyNameOverridden || !prevPropTrim || prevPropTrim === prevBizTrim;
+
+                        let nextSectorSpecifics = activeVendor.sectorSpecifics;
+                        if (shouldAutoSync && activeVendor.sectorSpecifics?.accommodation?.units?.length === 1) {
+                          const onlyUnit = activeVendor.sectorSpecifics.accommodation.units[0];
+                          const unitPropTrim = (onlyUnit.propertyName || '').trim();
+                          if (!unitPropTrim || unitPropTrim === prevBizTrim || unitPropTrim === prevPropTrim) {
+                            nextSectorSpecifics = {
+                              ...activeVendor.sectorSpecifics,
+                              accommodation: {
+                                ...activeVendor.sectorSpecifics.accommodation,
+                                units: [{ ...onlyUnit, propertyName: nextBiz }],
+                              },
+                            };
+                          }
+                        }
+
+                        setActiveVendor({
+                          ...activeVendor,
+                          businessName: nextBiz,
+                          ...(shouldAutoSync ? { propertyName: nextBiz } : {}),
+                          sectorSpecifics: nextSectorSpecifics,
+                        });
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-stone-300 mb-1">
+                      Property Name <span className="text-[10px] text-emerald-400">(Shown on Public Card)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={activeVendor.propertyName ?? activeVendor.businessName ?? ''}
+                      onChange={(e) => {
+                        const nextProp = e.target.value;
+                        const prevPropTrim = (activeVendor.propertyName || activeVendor.businessName || '').trim();
+                        const bizTrim = (activeVendor.businessName || '').trim();
+                        setIsPropertyNameOverridden(
+                          nextProp.trim() !== '' && nextProp.trim() !== bizTrim
+                        );
+
+                        let nextSectorSpecifics = activeVendor.sectorSpecifics;
+                        if (activeVendor.sectorSpecifics?.accommodation?.units?.length === 1) {
+                          const onlyUnit = activeVendor.sectorSpecifics.accommodation.units[0];
+                          const nextUnitLabel =
+                            onlyUnit.unitLabel &&
+                            onlyUnit.unitLabel.trim().toLowerCase() === prevPropTrim.toLowerCase()
+                              ? nextProp
+                              : onlyUnit.unitLabel;
+                          nextSectorSpecifics = {
+                            ...activeVendor.sectorSpecifics,
+                            accommodation: {
+                              ...activeVendor.sectorSpecifics.accommodation,
+                              units: [
+                                {
+                                  ...onlyUnit,
+                                  propertyName: nextProp,
+                                  unitLabel: nextUnitLabel,
+                                },
+                              ],
+                            },
+                          };
+                        }
+
+                        setActiveVendor({
+                          ...activeVendor,
+                          propertyName: nextProp,
+                          sectorSpecifics: nextSectorSpecifics,
+                        });
+                      }}
+                      placeholder="e.g. Park View Apartment"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-emerald-500/40 text-xs text-white focus:outline-none focus:border-emerald-400"
                     />
                   </div>
 

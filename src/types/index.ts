@@ -556,6 +556,7 @@ export interface AccommodationUnitConfig {
   id: string;
   unitLabel: string; // e.g. "Unit 1"
   unitCode: string; // e.g. "CH-1"
+  propertyName?: string; // Custom property title displayed on Verified Stays card
   isAvailable: boolean;
   checkInTime?: string; // e.g. "15:00"
   checkOutTime?: string; // e.g. "12:00"
@@ -781,6 +782,7 @@ export interface VendorListing {
   ownerUid: string;
   ownerEmail: string;
   businessName: string;
+  propertyName?: string;
   ssmNumber?: string;
   mdchLicense?: string;
   verificationStatus: VendorVerificationStatus;
@@ -1147,6 +1149,7 @@ export interface AccommodationListing {
   code: string; // e.g. "CH-07"
   maskedTitle: string; // e.g. "Cozy 3BR Alpine Apartment - 350m to Kea Farm (CH-07)"
   realBusinessName: string; // e.g. "Barrington Alpine Homestay"
+  propertyName?: string; // Saved display property title shown on vendor card
   township: Township;
   proximityDesc: string; // General area / township proximity without full street address
   fullAddress?: string;

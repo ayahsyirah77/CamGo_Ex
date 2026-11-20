@@ -491,7 +491,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div>
                   <label className="block text-[11px] font-medium text-stone-400 mb-1">
                     Select Unit to Configure
@@ -522,9 +522,14 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                   >
                     {unitsList.map((u, idx) => {
                       const codeLabel = u.unitCode || `CH-${idx + 1}`;
+                      const unitTitle =
+                        u.propertyName?.trim() ||
+                        vendor.propertyName?.trim() ||
+                        vendor.businessName ||
+                        'Homestay';
                       return (
                         <option key={u.id} value={u.id}>
-                          Unit {codeLabel} — {vendor.businessName || 'Homestay'} ({u.unitLabel || `Unit ${idx + 1}`}) ·{' '}
+                          Unit {codeLabel} — {unitTitle} ({u.unitLabel || `Unit ${idx + 1}`}) ·{' '}
                           {u.isAvailable !== false ? 'Available' : 'Unavailable'}
                         </option>
                       );
@@ -534,7 +539,7 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
 
                 <div>
                   <label className="block text-[11px] font-medium text-stone-400 mb-1">
-                    Unit Code (Prefix behind Business Name: Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`} — {vendor.businessName})
+                    Unit Code (Prefix: Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`})
                   </label>
                   <input
                     type="text"
@@ -545,10 +550,46 @@ export const DynamicBusinessNatureFields: React.FC<DynamicBusinessNatureFieldsPr
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-emerald-300 font-mono font-bold uppercase"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-stone-400 mb-1">
+                    Property Name (Card Title)
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={
+                      activeUnit.propertyName ??
+                      (activeUnit.unitLabel &&
+                      !/^(unit|room|suite|ch)[-\s]*\d*$/i.test(activeUnit.unitLabel.trim())
+                        ? activeUnit.unitLabel
+                        : vendor.propertyName ?? vendor.businessName ?? '')
+                    }
+                    onChange={(e) => {
+                      const nextProp = e.target.value;
+                      const isGeneric = /^(unit|room|suite|ch)[-\s]*\d*$/i.test(
+                        (activeUnit.unitLabel || '').trim()
+                      );
+                      updateSelectedUnit(
+                        {
+                          propertyName: nextProp,
+                          ...(isGeneric ? {} : { unitLabel: nextProp || `Unit ${activeUnitIndex + 1}` }),
+                        },
+                        unitsList.length === 1 ? { propertyName: nextProp } : undefined
+                      );
+                    }}
+                    placeholder={vendor.propertyName || vendor.businessName || 'e.g. Park View Apartment'}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-emerald-500/40 text-white font-semibold"
+                  />
+                </div>
               </div>
               <div className="px-2.5 py-1.5 rounded-lg bg-teal-950/30 border border-teal-500/20 text-[11px] text-teal-200 flex items-center justify-between gap-2">
                 <span>
-                  Editing scoped strictly to: <strong>Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`} — {vendor.businessName}</strong>
+                  Editing scoped strictly to:{' '}
+                  <strong>
+                    Unit {activeUnit.unitCode || `CH-${activeUnitIndex + 1}`} —{' '}
+                    {activeUnit.propertyName?.trim() || vendor.propertyName?.trim() || vendor.businessName}
+                  </strong>
                 </span>
                 <span className="font-mono text-[10px] text-teal-400">
                   Other units remain untouched

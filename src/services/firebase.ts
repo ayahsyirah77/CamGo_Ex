@@ -4037,20 +4037,35 @@ class FirebaseStorageService {
         .filter((n) => n > 0);
       const peakPrice = validPeakRates[0] ?? 0;
 
+      const isGenericLabel = (val?: string): boolean => {
+        const trimmed = (val || '').trim();
+        if (!trimmed) return true;
+        return /^(unit|room|suite|ch)[-\s]*\d*$/i.test(trimmed);
+      };
+
+      const unitCustomProp =
+        (unit?.propertyName?.trim() && !isGenericLabel(unit.propertyName)
+          ? unit.propertyName.trim()
+          : '') ||
+        (unit?.unitLabel?.trim() && !isGenericLabel(unit.unitLabel)
+          ? unit.unitLabel.trim()
+          : '') ||
+        (unit?.unitCode?.trim() && !isGenericLabel(unit.unitCode)
+          ? unit.unitCode.trim()
+          : '');
+
+      const vendorSavedProp = v.propertyName?.trim() || v.businessName?.trim() || '';
+
       let unitCode = '';
+      let resolvedPropertyName = '';
       if (!multiUnit) {
-        const propertyName =
-          singleUnit?.unitLabel?.trim() ||
-          singleUnit?.unitCode?.trim() ||
-          v.businessName?.trim() ||
-          'Homestay';
-        unitCode = `${baseCode} (${propertyName})`;
+        resolvedPropertyName = unitCustomProp || vendorSavedProp || 'Homestay';
+        unitCode = `${baseCode} (${resolvedPropertyName})`;
       } else {
-        const uLabel = unit?.unitLabel?.trim();
-        const uCode = unit?.unitCode?.trim();
-        const hasSpecificName = uLabel && !uLabel.toLowerCase().startsWith('unit') && !uLabel.toLowerCase().startsWith('room');
-        const propertyName = hasSpecificName ? uLabel : (uCode && !uCode.toLowerCase().startsWith('ch-') ? uCode : '');
-        unitCode = propertyName ? `CH-${unitIdx + 1} (${propertyName})` : `CH-${unitIdx + 1}`;
+        resolvedPropertyName = unitCustomProp || vendorSavedProp;
+        unitCode = resolvedPropertyName
+          ? `CH-${unitIdx + 1} (${resolvedPropertyName})`
+          : `CH-${unitIdx + 1}`;
       }
 
       const resolvedAvailStatus: RoomAvailabilityStatus = unit
@@ -4068,9 +4083,10 @@ class FirebaseStorageService {
         code: unitCode,
         maskedTitle: `${unitCode}`,
         realBusinessName: v.businessName,
+        propertyName: resolvedPropertyName || v.businessName,
         township: v.township || 'Kea Farm',
         proximityDesc: `Verified Highland Stay · ${v.township || 'Cameron Highlands'}`,
-        ownerName: existing?.ownerName || `${v.businessName} Host`,
+        ownerName: existing?.ownerName || `${resolvedPropertyName || v.businessName} Host`,
         ownerPhone: v.contactPhone || v.whatsappNumber || existing?.ownerPhone || '+60123456789',
         whatsappNumber: v.whatsappNumber || v.contactPhone || existing?.whatsappNumber || '+60123456789',
         pricePerNight: normalPrice,

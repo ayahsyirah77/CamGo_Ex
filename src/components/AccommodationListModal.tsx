@@ -326,7 +326,8 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         const matchCode = item.code.toLowerCase().includes(q);
         const matchTown = item.township.toLowerCase().includes(q);
         const matchReal = item.realBusinessName.toLowerCase().includes(q);
-        if (!matchTitle && !matchCode && !matchTown && !matchReal) return false;
+        const matchProp = (item.propertyName || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchCode && !matchTown && !matchReal && !matchProp) return false;
       }
       return true;
     });
@@ -401,11 +402,16 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         `${activeListingForBooking.code} Standard Room`;
       const chosenUnitCode = selectedRoomOption?.unitCode || activeListingForBooking.code;
 
+      const activePropertyTitle =
+        activeListingForBooking.propertyName?.trim() ||
+        activeListingForBooking.realBusinessName?.trim() ||
+        chosenUnitCode;
+
       const newBooking: AccommodationBooking = {
         id: `cg_bk_${Date.now()}`,
         bookingCode,
         homestayId: activeListingForBooking.vendorId || activeListingForBooking.id,
-        homestayName: activeListingForBooking.realBusinessName,
+        homestayName: activePropertyTitle,
         maskedTitle: chosenUnitCode,
         township: activeListingForBooking.township,
         ownerPhone: hostWaRaw,
@@ -449,7 +455,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         bookingCode: newBooking.bookingCode,
         bookingType: 'accommodation',
         vendorId: activeListingForBooking.vendorId || activeListingForBooking.id,
-        vendorName: activeListingForBooking.realBusinessName,
+        vendorName: activePropertyTitle,
         vendorEmail,
         vendorUid,
         guestName: newBooking.customerName,
@@ -477,7 +483,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
       const hostWaText = [
         `CamGo New Paid Booking (${bookingCode})`,
         `Unit / Room: ${chosenUnitRoomLabel}`,
-        `Homestay: ${activeListingForBooking.realBusinessName} (${activeListingForBooking.township})`,
+        `Homestay: ${activePropertyTitle} (${activeListingForBooking.township})`,
         `Guest Name: ${newBooking.customerName}`,
         `Guest Phone: ${newBooking.customerPhone}`,
         newBooking.customerEmail ? `Guest Email: ${newBooking.customerEmail}` : null,
@@ -667,6 +673,10 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               const isAvailable = stay.roomAvailabilityStatus === 'rooms_available';
               const isLimited = stay.roomAvailabilityStatus === 'limited_units';
               const isSoldOut = stay.roomAvailabilityStatus === 'fully_booked';
+              const displayPropertyName =
+                stay.propertyName?.trim() ||
+                stay.realBusinessName?.trim() ||
+                `Unit ${stay.code}`;
 
               return (
                 <div
@@ -677,46 +687,25 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                   <div className="relative aspect-[16/10] overflow-hidden bg-stone-950">
                     <img
                       src={safeSrc(stay.coverImage, DEFAULT_PLACE_IMAGE)}
-                      alt={stay.code}
+                      alt={displayPropertyName}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/40" />
 
-                    {/* Unit Code Badge */}
-                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                      <span className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/20 text-white font-mono font-black text-xs shadow-md">
+                    {/* Top Row: Unit Code (Left) & Booking Confirmation Type (Right) */}
+                    <div className="absolute top-2.5 left-2.5 right-2.5 flex flex-wrap items-start justify-between gap-1.5">
+                      <span className="px-2 py-0.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/20 text-white font-mono font-bold text-[10px] leading-snug shadow-md whitespace-normal break-words max-w-[62%]">
                         {stay.code}
                       </span>
                       {stay.bookingType === 'instant' ? (
-                        <span className="px-2 py-1 rounded-xl bg-emerald-600/90 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md">
-                          <Sparkles className="w-3 h-3 text-amber-300" />
+                        <span className="px-2 py-0.5 rounded-lg bg-emerald-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
+                          <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
                           <span>Instant Confirm</span>
                         </span>
                       ) : (
-                        <span className="px-2 py-1 rounded-xl bg-amber-600/90 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md">
-                          <Clock className="w-3 h-3" />
+                        <span className="px-2 py-0.5 rounded-lg bg-amber-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
+                          <Clock className="w-3 h-3 shrink-0" />
                           <span>30m SLA</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Room Availability Status Badge */}
-                    <div className="absolute top-3 right-3">
-                      {isAvailable && (
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase flex items-center gap-1 backdrop-blur-md">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          Rooms Open
-                        </span>
-                      )}
-                      {isLimited && (
-                        <span className="px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase flex items-center gap-1 backdrop-blur-md">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                          1-2 Left
-                        </span>
-                      )}
-                      {isSoldOut && (
-                        <span className="px-2.5 py-1 rounded-full bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase flex items-center gap-1 backdrop-blur-md">
-                          Sold Out Today
                         </span>
                       )}
                     </div>
@@ -733,19 +722,43 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Body Content (Unit Code Only — No Property Name & No Capacity Specs) */}
+                  {/* Body Content (Availability Status, Full Property Title & Unit Code) */}
                   <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
                     <div className="space-y-2">
-                      {/* Unit Code Title Only */}
-                      <div className="flex items-center justify-between gap-2">
-                        <h4 className="font-black font-mono text-base sm:text-lg text-white leading-tight group-hover:text-emerald-300 transition-colors">
-                          Unit {stay.code}
-                        </h4>
+                      {/* Status & Breakfast Row */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {isAvailable && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            Available
+                          </span>
+                        )}
+                        {isLimited && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-950/90 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            1-2 Left
+                          </span>
+                        )}
+                        {isSoldOut && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-950/90 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                            Sold Out Today
+                          </span>
+                        )}
                         {stay.breakfastIncluded && (
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold whitespace-nowrap">
                             Breakfast Included
                           </span>
                         )}
+                      </div>
+
+                      {/* Full-Width Property Name & Unit Code (Fully Visible, Never Truncated) */}
+                      <div className="space-y-0.5">
+                        <h4 className="font-black text-sm sm:text-[15px] text-white leading-snug group-hover:text-emerald-300 transition-colors break-words">
+                          {displayPropertyName}
+                        </h4>
+                        <span className="font-mono text-[10px] sm:text-[11px] font-semibold text-emerald-400 block leading-snug break-words">
+                          Unit {stay.code}
+                        </span>
                       </div>
 
                       <p className="text-[11px] text-stone-400 line-clamp-1">
@@ -850,15 +863,20 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               </button>
             </div>
 
-            {/* Selected Unit Summary (Code Only) */}
+            {/* Selected Unit Summary */}
             <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 flex items-center gap-3">
               <img
                 src={safeSrc(activeListingForBooking.coverImage, DEFAULT_PLACE_IMAGE)}
-                alt={activeListingForBooking.code}
+                alt={activeListingForBooking.propertyName || activeListingForBooking.realBusinessName}
                 className="w-16 h-16 rounded-xl object-cover shrink-0"
               />
               <div className="min-w-0 flex-1">
-                <span className="font-black font-mono text-sm text-white truncate block">
+                <span className="font-black text-sm text-white truncate block">
+                  {activeListingForBooking.propertyName?.trim() ||
+                    activeListingForBooking.realBusinessName?.trim() ||
+                    `Unit ${activeListingForBooking.code}`}
+                </span>
+                <span className="font-mono text-[11px] text-emerald-400 font-bold truncate block">
                   Unit {selectedRoomOption?.unitCode || activeListingForBooking.code}
                 </span>
                 <p className="text-[11px] text-stone-400 truncate">📍 {activeListingForBooking.proximityDesc}</p>

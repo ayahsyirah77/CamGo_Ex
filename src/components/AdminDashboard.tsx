@@ -346,7 +346,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleOpenEditAccom = (stay: AccommodationListing) => {
     setSelectedAccomForEdit(stay);
-    setAccomFormName(stay.realBusinessName);
+    setAccomFormName(stay.propertyName || stay.realBusinessName);
     setAccomFormCode(stay.code);
     setAccomFormTownship(stay.township || 'Tanah Rata');
     setAccomFormAddress(stay.fullAddress || '');
@@ -371,10 +371,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       const listingToSave: AccommodationListing = {
         id: targetId,
-        vendorId: targetId,
+        vendorId: selectedAccomForEdit?.vendorId || targetId,
+        unitId: selectedAccomForEdit?.unitId,
         code: codeToUse,
         maskedTitle: `${accomFormName.trim()} (${codeToUse})`,
         realBusinessName: accomFormName.trim(),
+        propertyName: accomFormName.trim(),
         township: accomFormTownship,
         proximityDesc: accomFormAddress ? `Located at ${accomFormAddress}` : `Central ${accomFormTownship}`,
         fullAddress: accomFormAddress || `${accomFormTownship}, Cameron Highlands`,
@@ -403,6 +405,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ownerPortalSlug: accomFormName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
       };
 
+      if (selectedAccomForEdit?.vendorId) {
+        const linkedVendor = firebaseService.getVendorListingById(selectedAccomForEdit.vendorId);
+        if (linkedVendor) {
+          const updatedUnits = linkedVendor.sectorSpecifics?.accommodation?.units?.map((u) =>
+            !selectedAccomForEdit.unitId || u.id === selectedAccomForEdit.unitId
+              ? { ...u, propertyName: accomFormName.trim() }
+              : u
+          );
+          await firebaseService.saveVendorListing({
+            ...linkedVendor,
+            propertyName: accomFormName.trim(),
+            ...(updatedUnits
+              ? {
+                  sectorSpecifics: {
+                    ...linkedVendor.sectorSpecifics,
+                    accommodation: {
+                      ...linkedVendor.sectorSpecifics?.accommodation,
+                      units: updatedUnits,
+                    },
+                  },
+                }
+              : {}),
+          });
+        }
+      }
       const updatedListings = await firebaseService.saveAccommodationListing(listingToSave);
       setAccommodationListings(updatedListings);
       if (typeof addActivity === 'function') {
@@ -3569,8 +3596,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input
                       type="text"
                       value={selectedVendorForAdmin.businessName}
-                      onChange={(e) => setSelectedVendorForAdmin({ ...selectedVendorForAdmin, businessName: e.target.value })}
+                      onChange={(e) => {
+                        const nextBiz = e.target.value;
+                        const prevBiz = (selectedVendorForAdmin.businessName || '').trim();
+                        const prevProp = (selectedVendorForAdmin.propertyName || '').trim();
+                        const syncProp = !prevProp || prevProp === prevBiz;
+                        setSelectedVendorForAdmin({
+                          ...selectedVendorForAdmin,
+                          businessName: nextBiz,
+                          ...(syncProp ? { propertyName: nextBiz } : {}),
+                        });
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-300 mb-1">Property Name (Card Title)</label>
+                    <input
+                      type="text"
+                      value={selectedVendorForAdmin.propertyName ?? selectedVendorForAdmin.businessName ?? ''}
+                      onChange={(e) =>
+                        setSelectedVendorForAdmin({ ...selectedVendorForAdmin, propertyName: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-emerald-500/40 text-white focus:outline-none focus:border-emerald-400"
                     />
                   </div>
 
@@ -3960,7 +4009,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             />
                             <div>
                               <div className="font-bold text-white flex items-center gap-1.5">
-                                <span>{stay.realBusinessName}</span>
+                                <span>{stay.propertyName || stay.realBusinessName}</span>
                                 <span className="px-1.5 py-0.5 rounded bg-stone-800 text-emerald-400 font-mono text-[10px] font-bold">
                                   {stay.code}
                                 </span>
