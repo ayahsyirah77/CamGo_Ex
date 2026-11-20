@@ -356,14 +356,24 @@ class CamgoHazardsService {
   }
 
   /**
-   * Administrative Moderation: Delete hazard document completely from Firestore.
+   * Administrative Moderation: Delete hazard document completely from Firestore (with cleared fallback).
    */
   public async deleteHazard(hazardId: string): Promise<void> {
     if (db) {
+      const ref = doc(db, CAMGO_HAZARDS_COLLECTION, hazardId);
       try {
-        await deleteDoc(doc(db, CAMGO_HAZARDS_COLLECTION, hazardId));
+        await deleteDoc(ref);
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `${CAMGO_HAZARDS_COLLECTION}/${hazardId}`);
+        try {
+          await updateDoc(ref, {
+            status: 'cleared',
+            clearedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        } catch {
+          // ignore if document does not exist in Firestore
+        }
       }
     }
     const next = this.memoryCache.filter((h) => h.id !== hazardId);

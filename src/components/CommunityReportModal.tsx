@@ -190,7 +190,7 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
       const gpsLocation = `${areaLabel} (GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)})`;
       const autoSummary = `${finalTitle} • ${gpsLocation}`;
 
-      const newHazard: CamgoHazard & { imageUrl?: string; status: 'pending' | 'active' } = {
+      const newHazard: CamgoHazard & { imageUrl?: string; status: 'active' } = {
         id: hazardId,
         title: finalTitle,
         titleBm: finalTitle,
@@ -204,7 +204,7 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
         lat,
         lng,
         source: `Community Report • ${author}`,
-        status: 'pending', // Requires admin review or auto-approved
+        status: 'active',
         stillThereVotes: 1,
         clearedVotes: 0,
         isProvisional: false,
@@ -274,12 +274,12 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
             <div className="p-6 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-center space-y-2 animate-in zoom-in-95">
               <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
               <h4 className="font-bold text-white text-base">
-                {language === 'bm' ? 'Laporan Diterima & Disemak!' : 'Report Submitted for Moderation!'}
+                {language === 'bm' ? 'Laporan Disiarkan Secara Langsung!' : 'Incident Posted Live!'}
               </h4>
               <p className="text-xs text-stone-300">
                 {language === 'bm'
-                  ? 'Laporan anda dihantar ke sistem siaran & menunggu pengesahan admin.'
-                  : 'Your incident report is pending administrative review and map broadcast.'}
+                  ? 'Laporan insiden anda kini disiarkan terus ke peta & penanda trafik CamGo.'
+                  : 'Your incident report is now live on the Cameron Highlands map and community ticker.'}
               </p>
             </div>
           ) : (
@@ -297,7 +297,7 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
                       { id: 'fallen_tree', label: language === 'bm' ? 'Pokok Tumbang' : 'Fallen Tree' },
                       { id: 'roadblock', label: language === 'bm' ? 'Sekatan Trafik' : 'Roadblock' },
                       { id: 'flood', label: language === 'bm' ? 'Takungan Air' : 'Flood / Water' },
-                      { id: 'hazard', label: language === 'bm' ? 'Lain-lain' : 'General Hazard' },
+                      { id: 'sudden_congestion', label: language === 'bm' ? 'Kesesakan / Lain' : 'Congestion / Other' },
                     ] as const
                   ).map((item) => (
                     <button
@@ -455,7 +455,7 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>{language === 'bm' ? 'Hantar untuk Semakan' : 'Submit for Review'}</span>
+                    <span>{language === 'bm' ? 'Siarkan Laporan Insiden' : 'Post Live Incident'}</span>
                   </>
                 )}
               </button>

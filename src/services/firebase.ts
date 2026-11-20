@@ -83,6 +83,21 @@ const STORAGE_KEYS = {
   DELETED_MOTORBIKE_PARTNERS: 'camgo_deleted_motorbike_partners',
   MOTORBIKE_FRESH_START_FLAG: 'camgo_motorbike_fresh_start_v1',
   MAIN_PAGE_BG: 'camgo_main_page_bg_v1',
+  PAYMENT_GATEWAY_NOTICE: 'camgo_payment_gateway_notice_v1',
+};
+
+export interface PaymentGatewayNoticeConfig {
+  enabled: boolean;
+  title: string;
+  message: string;
+  updatedAt?: number;
+}
+
+export const DEFAULT_PAYMENT_GATEWAY_NOTICE: PaymentGatewayNoticeConfig = {
+  enabled: true,
+  title: 'Payment Gateway Temporarily Not Available at the Moment',
+  message:
+    'Online RM30 deposit payment (Billplz, ToyyibPay, Stripe) is temporarily unavailable right now. Please check back shortly or contact the host directly.',
 };
 
 export const DEFAULT_EMERGENCY_CARD: EmergencyCard = {
@@ -4618,6 +4633,102 @@ class FirebaseStorageService {
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('main-page-bg-updated', handler);
+      }
+      if (unsubFirestore) unsubFirestore();
+    };
+  }
+
+  public getPaymentGatewayNotice(): PaymentGatewayNoticeConfig {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.PAYMENT_GATEWAY_NOTICE);
+      if (!raw) return { ...DEFAULT_PAYMENT_GATEWAY_NOTICE };
+      const parsed = JSON.parse(raw);
+      return {
+        enabled: typeof parsed?.enabled === 'boolean' ? parsed.enabled : DEFAULT_PAYMENT_GATEWAY_NOTICE.enabled,
+        title: typeof parsed?.title === 'string' && parsed.title.trim() ? parsed.title : DEFAULT_PAYMENT_GATEWAY_NOTICE.title,
+        message: typeof parsed?.message === 'string' && parsed.message.trim() ? parsed.message : DEFAULT_PAYMENT_GATEWAY_NOTICE.message,
+        updatedAt: typeof parsed?.updatedAt === 'number' ? parsed.updatedAt : undefined,
+      };
+    } catch {
+      return { ...DEFAULT_PAYMENT_GATEWAY_NOTICE };
+    }
+  }
+
+  public async savePaymentGatewayNotice(
+    partial: Partial<PaymentGatewayNoticeConfig>
+  ): Promise<PaymentGatewayNoticeConfig> {
+    const current = this.getPaymentGatewayNotice();
+    const next: PaymentGatewayNoticeConfig = {
+      enabled: typeof partial.enabled === 'boolean' ? partial.enabled : current.enabled,
+      title:
+        typeof partial.title === 'string'
+          ? partial.title.trim() || DEFAULT_PAYMENT_GATEWAY_NOTICE.title
+          : current.title,
+      message:
+        typeof partial.message === 'string'
+          ? partial.message.trim() || DEFAULT_PAYMENT_GATEWAY_NOTICE.message
+          : current.message,
+      updatedAt: Date.now(),
+    };
+    this.setLocalStorageItem(STORAGE_KEYS.PAYMENT_GATEWAY_NOTICE, JSON.stringify(next));
+    if (db) {
+      try {
+        await setDoc(doc(db, 'settings', 'payment_gateway_notice'), next);
+      } catch (err) {
+        console.warn('Failed saving payment gateway notice to Firestore:', err);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('payment-gateway-notice-updated', { detail: next }));
+    }
+    this.notify();
+    return next;
+  }
+
+  public subscribePaymentGatewayNotice(
+    callback: (config: PaymentGatewayNoticeConfig) => void
+  ): () => void {
+    callback(this.getPaymentGatewayNotice());
+    const handler = (e: any) => {
+      if (e?.detail) {
+        callback(e.detail as PaymentGatewayNoticeConfig);
+      } else {
+        callback(this.getPaymentGatewayNotice());
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('payment-gateway-notice-updated', handler);
+    }
+    let unsubFirestore: (() => void) | null = null;
+    if (db) {
+      try {
+        unsubFirestore = onSnapshot(doc(db, 'settings', 'payment_gateway_notice'), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            const synced: PaymentGatewayNoticeConfig = {
+              enabled:
+                typeof data?.enabled === 'boolean'
+                  ? data.enabled
+                  : DEFAULT_PAYMENT_GATEWAY_NOTICE.enabled,
+              title:
+                typeof data?.title === 'string' && data.title.trim()
+                  ? data.title
+                  : DEFAULT_PAYMENT_GATEWAY_NOTICE.title,
+              message:
+                typeof data?.message === 'string' && data.message.trim()
+                  ? data.message
+                  : DEFAULT_PAYMENT_GATEWAY_NOTICE.message,
+              updatedAt: typeof data?.updatedAt === 'number' ? data.updatedAt : undefined,
+            };
+            this.setLocalStorageItem(STORAGE_KEYS.PAYMENT_GATEWAY_NOTICE, JSON.stringify(synced));
+            callback(synced);
+          }
+        });
+      } catch {}
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('payment-gateway-notice-updated', handler);
       }
       if (unsubFirestore) unsubFirestore();
     };

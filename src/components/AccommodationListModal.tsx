@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { AccommodationListing, AccommodationBooking, Township, Language } from '../types';
-import { firebaseService } from '../services/firebase';
+import { firebaseService, PaymentGatewayNoticeConfig } from '../services/firebase';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 interface AccommodationListModalProps {
@@ -89,7 +89,12 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   const [voucherQrUrl, setVoucherQrUrl] = useState<string | null>(null);
   const [hostWhatsAppUrl, setHostWhatsAppUrl] = useState<string>('');
 
-  // Load listings on mount
+  // Admin-controlled RM30 Deposit Payment Gateway Temporary Unavailable Notice
+  const [paymentGatewayNotice, setPaymentGatewayNotice] = useState<PaymentGatewayNoticeConfig>(() =>
+    firebaseService.getPaymentGatewayNotice()
+  );
+
+  // Load listings & subscribe to payment gateway notice on mount
   useEffect(() => {
     if (isOpen) {
       setListings(firebaseService.getAccommodationListings());
@@ -97,9 +102,13 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
     const handleUpdate = () => {
       setListings(firebaseService.getAccommodationListings());
     };
+    const unsubGatewayNotice = firebaseService.subscribePaymentGatewayNotice((cfg) => {
+      setPaymentGatewayNotice(cfg);
+    });
     window.addEventListener('accommodation-listings-updated', handleUpdate);
     window.addEventListener('vendor-listings-updated', handleUpdate);
     return () => {
+      unsubGatewayNotice();
       window.removeEventListener('accommodation-listings-updated', handleUpdate);
       window.removeEventListener('vendor-listings-updated', handleUpdate);
     };
@@ -374,6 +383,10 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   const handleLockHomestay = async (e: React.FormEvent) => {
     e.preventDefault();
     setBookingFormError(null);
+    if (paymentGatewayNotice.enabled) {
+      setBookingFormError(`${paymentGatewayNotice.title}: ${paymentGatewayNotice.message}`);
+      return;
+    }
     if (!activeListingForBooking || !guestName.trim() || !guestPhone.trim()) {
       setBookingFormError('Please fill in your Full Name and WhatsApp Phone Number.');
       return;
@@ -1247,11 +1260,33 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               </div>
 
               {/* Payment Gateway Selection */}
-              <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2">
-                <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
-                  3. Select Payment Gateway for RM30 Deposit
-                </span>
-                <div className="grid grid-cols-3 gap-2">
+              <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
+                    3. Select Payment Gateway for RM30 Deposit
+                  </span>
+                  {paymentGatewayNotice.enabled && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold uppercase">
+                      Temporarily Unavailable
+                    </span>
+                  )}
+                </div>
+
+                {paymentGatewayNotice.enabled && (
+                  <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-amber-200 leading-snug">
+                        {paymentGatewayNotice.title}
+                      </p>
+                      <p className="text-[11px] text-amber-100/85 leading-relaxed">
+                        {paymentGatewayNotice.message}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className={`grid grid-cols-3 gap-2 ${paymentGatewayNotice.enabled ? 'opacity-45 pointer-events-none select-none' : ''}`}>
                   {[
                     { id: 'billplz', name: 'Billplz', sub: 'FPX / Maybank2u' },
                     { id: 'toyyibpay', name: 'ToyyibPay', sub: 'FPX Direct' },
@@ -1260,11 +1295,14 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                     <button
                       key={gw.id}
                       type="button"
+                      disabled={paymentGatewayNotice.enabled}
                       onClick={() => setSelectedGateway(gw.id as any)}
-                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
-                        selectedGateway === gw.id
-                          ? 'bg-emerald-500/20 border-emerald-400 text-white font-bold'
-                          : 'bg-stone-900 border-stone-800 text-stone-400'
+                      className={`p-2.5 rounded-xl border text-center transition-all ${
+                        paymentGatewayNotice.enabled
+                          ? 'bg-stone-900 border-stone-800 text-stone-500 cursor-not-allowed'
+                          : selectedGateway === gw.id
+                          ? 'bg-emerald-500/20 border-emerald-400 text-white font-bold cursor-pointer'
+                          : 'bg-stone-900 border-stone-800 text-stone-400 cursor-pointer'
                       }`}
                     >
                       <span className="font-bold text-xs block">{gw.name}</span>
@@ -1444,10 +1482,15 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={isProcessingPayment || isUploadingProof}
-                  className="flex-1 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs cursor-pointer shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+                  disabled={isProcessingPayment || isUploadingProof || paymentGatewayNotice.enabled}
+                  className="flex-1 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs cursor-pointer shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {isProcessingPayment ? (
+                  {paymentGatewayNotice.enabled ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Payment Gateway Temporarily Unavailable</span>
+                    </>
+                  ) : isProcessingPayment ? (
                     <span>Securing Deposit &amp; Notifying Host...</span>
                   ) : (
                     <>

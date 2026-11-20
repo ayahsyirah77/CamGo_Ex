@@ -30,7 +30,12 @@ import {
   MotorbikeRentalPartner,
   MotorbikePackage,
 } from '../types';
-import { firebaseService, UserProfile } from '../services/firebase';
+import {
+  firebaseService,
+  UserProfile,
+  PaymentGatewayNoticeConfig,
+  DEFAULT_PAYMENT_GATEWAY_NOTICE,
+} from '../services/firebase';
 import { camgoHazardsService } from '../services/camgoHazardsService';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
 import { formatTimeTo12Hour } from '../utils/highlandLogic';
@@ -93,6 +98,7 @@ import {
   Bike,
   Store,
   FolderOpen,
+  CreditCard,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -932,11 +938,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Community Hazards & Incident Broadcast Moderation State
+  // Community Hazards & Incident Broadcast Moderation State (Direct live posts; admin can remove/delete fake or inappropriate reports)
   const [communityHazards, setCommunityHazards] = useState<CamgoHazard[]>(() =>
     camgoHazardsService.getCachedActiveHazards()
   );
-  const [hazardStatusFilter, setHazardStatusFilter] = useState<'all' | 'pending' | 'active' | 'cleared'>('all');
+  const [hazardStatusFilter, setHazardStatusFilter] = useState<'all' | 'active' | 'cleared'>('all');
   const [hazardTypeFilter, setHazardTypeFilter] = useState<string>('all');
   const [hazardSearchQuery, setHazardSearchQuery] = useState('');
   const [moderationLoadingId, setModerationLoadingId] = useState<string | null>(null);
@@ -949,38 +955,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return () => unsub();
   }, []);
 
-  const handleApproveHazard = async (hazard: CamgoHazard) => {
-    setModerationLoadingId(hazard.id);
-    try {
-      await camgoHazardsService.updateHazardStatus(hazard.id, 'active');
-      setCommunityHazards((prev) =>
-        prev.map((h) => (h.id === hazard.id ? { ...h, status: 'active' } : h))
-      );
-      addActivity(`Approved and broadcasted community hazard "${hazard.title}" to live map & ticker`);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('camgo-broadcast-event', {
-            detail: {
-              id: hazard.id,
-              event: 'community_hazard_approved',
-              priority: 'high',
-              payload: {
-                title: hazard.title,
-                message: hazard.description,
-                location: hazard.location,
-              },
-              timestamp: new Date().toISOString(),
-            },
-          })
-        );
-      }
-    } catch (err) {
-      console.error('Failed to approve hazard:', err);
-    } finally {
-      setModerationLoadingId(null);
-    }
-  };
-
   const handleRemoveHazardBroadcast = async (hazard: CamgoHazard) => {
     setModerationLoadingId(hazard.id);
     try {
@@ -988,7 +962,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setCommunityHazards((prev) =>
         prev.map((h) => (h.id === hazard.id ? { ...h, status: 'cleared' } : h))
       );
-      addActivity(`Took down broadcast for hazard "${hazard.title}" (status set to cleared)`);
+      addActivity(`Removed incident broadcast "${hazard.title}" from live map & ticker`);
     } catch (err) {
       console.error('Failed to clear hazard broadcast:', err);
     } finally {
@@ -997,13 +971,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleDeleteHazardRecord = async (hazardId: string, title: string) => {
-    if (!window.confirm(`Permanently delete incident report "${title}" from Firestore?`)) return;
+    if (!window.confirm(`Permanently delete fake/inappropriate incident post "${title}"?`)) return;
     setModerationLoadingId(hazardId);
     try {
       await camgoHazardsService.deleteHazard(hazardId);
       setCommunityHazards((prev) => prev.filter((h) => h.id !== hazardId));
       if (selectedHazardModal?.id === hazardId) setSelectedHazardModal(null);
-      addActivity(`Permanently deleted incident report "${title}"`);
+      addActivity(`Deleted inappropriate/fake incident post "${title}"`);
     } catch (err) {
       console.error('Failed to delete hazard record:', err);
     } finally {
@@ -1025,7 +999,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return true;
   });
 
-  const pendingHazardsCount = communityHazards.filter((h) => h.status === 'pending').length;
   const activeHazardsCount = communityHazards.filter((h) => h.status === 'active').length;
   const clearedHazardsCount = communityHazards.filter((h) => h.status === 'cleared').length;
 
@@ -2040,6 +2013,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // RM30 Deposit Payment Gateway Temporary Unavailable Notice Control
+  const [gatewayNotice, setGatewayNotice] = useState<PaymentGatewayNoticeConfig>(() =>
+    firebaseService.getPaymentGatewayNotice()
+  );
+  const [isSavingGatewayNotice, setIsSavingGatewayNotice] = useState(false);
+  const [gatewayNoticeFeedback, setGatewayNoticeFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = firebaseService.subscribePaymentGatewayNotice((cfg) => {
+      setGatewayNotice(cfg);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleToggleGatewayNotice = async (nextEnabled: boolean) => {
+    setIsSavingGatewayNotice(true);
+    setGatewayNoticeFeedback(null);
+    try {
+      const saved = await firebaseService.savePaymentGatewayNotice({
+        ...gatewayNotice,
+        enabled: nextEnabled,
+      });
+      setGatewayNotice(saved);
+      setGatewayNoticeFeedback(
+        nextEnabled
+          ? '⚠️ Temporary Unavailable Notice is now ON for "Select Payment Gateway for RM30 Deposit".'
+          : '✅ Temporary Unavailable Notice is now OFF. RM30 Deposit Payment Gateways are active.'
+      );
+      addActivity(
+        `${nextEnabled ? 'Enabled' : 'Disabled'} temporary unavailable notice on RM30 Deposit Payment Gateway`
+      );
+      setTimeout(() => setGatewayNoticeFeedback(null), 4000);
+    } catch (err: any) {
+      setGatewayNoticeFeedback('Failed to update notice: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setIsSavingGatewayNotice(false);
+    }
+  };
+
+  const handleSaveGatewayNoticeText = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingGatewayNotice(true);
+    setGatewayNoticeFeedback(null);
+    try {
+      const saved = await firebaseService.savePaymentGatewayNotice(gatewayNotice);
+      setGatewayNotice(saved);
+      setGatewayNoticeFeedback('✅ Payment Gateway notice message saved across all devices.');
+      addActivity('Updated RM30 Deposit Payment Gateway notice text');
+      setTimeout(() => setGatewayNoticeFeedback(null), 4000);
+    } catch (err: any) {
+      setGatewayNoticeFeedback('Failed to save notice text: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setIsSavingGatewayNotice(false);
+    }
+  };
+
   const handleOpenEditTownship = (townName: Township) => {
     setTownError(null);
     setEditingTownship(townName);
@@ -2607,6 +2636,115 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </form>
           </div>
 
+          {/* RM30 Deposit Payment Gateway Notice Toggle */}
+          <div className="p-6 rounded-3xl bg-stone-900/95 border border-amber-500/35 shadow-2xl space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-stone-100 flex items-center gap-2 flex-wrap">
+                    <span>RM30 Deposit Payment Gateway Notice</span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                        gatewayNotice.enabled
+                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                          : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                      }`}
+                    >
+                      {gatewayNotice.enabled ? 'NOTICE ON (GATEWAY PAUSED)' : 'NOTICE OFF (GATEWAY ACTIVE)'}
+                    </span>
+                  </h4>
+                  <p className="text-xs text-stone-400">
+                    Toggle the &quot;Temporarily Not Available at the Moment&quot; notice on Section 3 (Select Payment Gateway for RM30 Deposit).
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={isSavingGatewayNotice}
+                onClick={() => handleToggleGatewayNotice(!gatewayNotice.enabled)}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 border transition-all cursor-pointer disabled:opacity-50 ${
+                  gatewayNotice.enabled
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-lg shadow-emerald-950/60'
+                    : 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400/50 shadow-lg shadow-amber-950/60'
+                }`}
+              >
+                {isSavingGatewayNotice ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : gatewayNotice.enabled ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4" />
+                )}
+                <span>
+                  {gatewayNotice.enabled
+                    ? 'Turn OFF Notice (Enable Payment)'
+                    : 'Turn ON Unavailable Notice'}
+                </span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveGatewayNoticeText} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-300 block">Notice Heading</label>
+                  <input
+                    type="text"
+                    value={gatewayNotice.title}
+                    onChange={(e) => setGatewayNotice((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder={DEFAULT_PAYMENT_GATEWAY_NOTICE.title}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-950 border border-white/10 text-xs text-stone-100 outline-none focus:border-amber-500/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-300 block">Notice Details</label>
+                  <input
+                    type="text"
+                    value={gatewayNotice.message}
+                    onChange={(e) => setGatewayNotice((prev) => ({ ...prev, message: e.target.value }))}
+                    placeholder={DEFAULT_PAYMENT_GATEWAY_NOTICE.message}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-950 border border-white/10 text-xs text-stone-100 outline-none focus:border-amber-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={isSavingGatewayNotice}
+                  className="py-2 px-4 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-100 font-bold text-xs border border-white/10 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Save Notice Text</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingGatewayNotice}
+                  onClick={() =>
+                    setGatewayNotice((prev) => ({
+                      ...prev,
+                      title: DEFAULT_PAYMENT_GATEWAY_NOTICE.title,
+                      message: DEFAULT_PAYMENT_GATEWAY_NOTICE.message,
+                    }))
+                  }
+                  className="py-2 px-3 rounded-xl bg-stone-950 hover:bg-stone-800 text-stone-400 hover:text-stone-200 font-bold text-xs border border-white/10 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Text</span>
+                </button>
+              </div>
+
+              {gatewayNoticeFeedback && (
+                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 font-medium">
+                  {gatewayNoticeFeedback}
+                </div>
+              )}
+            </form>
+          </div>
+
           {/* Actions Grid */}
           <div className="p-6 rounded-3xl bg-stone-900/90 border border-emerald-500/20">
             <h4 className="text-base font-bold text-stone-100 mb-4 flex items-center gap-2">
@@ -3029,14 +3167,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <h4 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
                     <span>Incident Reporting &amp; Broadcast Management System</span>
-                    {pendingHazardsCount > 0 && (
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                        {pendingHazardsCount} Pending Review
-                      </span>
-                    )}
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                      AUTO-PUBLISH ENABLED
+                    </span>
                   </h4>
                   <p className="text-xs text-stone-400 mt-0.5">
-                    Filter, moderate, approve, or remove incoming peer hazard reports, precise GPS pins, and visual evidence before/after map and marquee broadcast.
+                    User incident reports go live immediately without waiting for approval. Monitor live reports and remove or delete any fake or inappropriate posts.
                   </p>
                 </div>
               </div>
@@ -3047,10 +3183,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   Total: <strong className="text-white">{communityHazards.length}</strong>
                 </span>
                 <span className="px-3 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs font-mono font-bold text-emerald-300">
-                  Active Pins: <strong className="text-emerald-200">{activeHazardsCount}</strong>
+                  Live Pins: <strong className="text-emerald-200">{activeHazardsCount}</strong>
                 </span>
                 <span className="px-3 py-1 rounded-xl bg-stone-900 border border-white/5 text-xs font-mono text-stone-400">
-                  Cleared: <strong className="text-stone-300">{clearedHazardsCount}</strong>
+                  Removed / Cleared: <strong className="text-stone-300">{clearedHazardsCount}</strong>
                 </span>
               </div>
             </div>
@@ -3061,10 +3197,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-stone-950/80 border border-white/10 overflow-x-auto">
                 {(
                   [
-                    { id: 'all', label: 'All Reports', count: communityHazards.length, highlight: false },
-                    { id: 'pending', label: 'Pending Review', count: pendingHazardsCount, highlight: pendingHazardsCount > 0 },
-                    { id: 'active', label: 'Live Broadcast', count: activeHazardsCount, highlight: false },
-                    { id: 'cleared', label: 'Cleared', count: clearedHazardsCount, highlight: false },
+                    { id: 'all', label: 'All Reports', count: communityHazards.length },
+                    { id: 'active', label: 'Live Broadcast', count: activeHazardsCount },
+                    { id: 'cleared', label: 'Removed / Cleared', count: clearedHazardsCount },
                   ] as const
                 ).map((tab) => (
                   <button
@@ -3074,8 +3209,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                       hazardStatusFilter === tab.id
                         ? 'bg-emerald-600 text-white shadow-md'
-                        : tab.highlight
-                        ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
                         : 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
                     }`}
                   >
@@ -3100,7 +3233,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <option value="fallen_tree">🌳 Fallen Tree</option>
                   <option value="roadblock">🚧 Roadblock</option>
                   <option value="flood">🌊 Flood</option>
-                  <option value="hazard">⚠️ General Hazard</option>
+                  <option value="sudden_congestion">🚗 Congestion / Other</option>
                 </select>
 
                 <div className="relative flex-1">
@@ -3136,7 +3269,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               ) : (
                 filteredHazards.map((item) => {
-                  const isPending = item.status === 'pending';
                   const isActive = item.status === 'active';
                   const isProcessing = moderationLoadingId === item.id;
 
@@ -3155,6 +3287,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     roadblock: '🚧',
                     fallen_tree: '🌳',
                     flood: '🌊',
+                    sudden_congestion: '🚗',
                     hazard: '⚠️',
                   };
 
@@ -3162,9 +3295,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div
                       key={item.id}
                       className={`p-4 rounded-2xl border transition-all ${
-                        isPending
-                          ? 'bg-amber-950/20 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
-                          : isActive
+                        isActive
                           ? 'bg-stone-950/80 border-emerald-500/30'
                           : 'bg-stone-950/40 border-white/5 opacity-75'
                       }`}
@@ -3200,14 +3331,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <div className="flex items-center gap-2 flex-wrap">
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase ${
-                                  isPending
-                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                    : isActive
+                                  isActive
                                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                                     : 'bg-stone-800 text-stone-400 border-stone-700'
                                 }`}
                               >
-                                {isPending ? 'Pending Moderation' : isActive ? 'Live Broadcast' : 'Cleared / Inactive'}
+                                {isActive ? 'Live Broadcast' : 'Removed / Cleared'}
                               </span>
 
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${severityColor} uppercase`}>
@@ -3255,9 +3384,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         </div>
 
-                        {/* Right: Moderation Actions */}
+                        {/* Right: Removal & Delete Controls (Fake / Inappropriate Post Moderation) */}
                         <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
-                          {/* Review Details Modal Button */}
                           <button
                             type="button"
                             onClick={() => setSelectedHazardModal(item)}
@@ -3268,22 +3396,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span>Details</span>
                           </button>
 
-                          {/* Approve / Broadcast Button */}
-                          {!isActive ? (
-                            <button
-                              type="button"
-                              disabled={isProcessing}
-                              onClick={() => handleApproveHazard(item)}
-                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-950"
-                            >
-                              {isProcessing ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <CheckCircle className="w-3.5 h-3.5" />
-                              )}
-                              <span>Approve &amp; Broadcast</span>
-                            </button>
-                          ) : (
+                          {isActive && (
                             <button
                               type="button"
                               disabled={isProcessing}
@@ -3300,15 +3413,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </button>
                           )}
 
-                          {/* Delete Button */}
                           <button
                             type="button"
                             disabled={isProcessing}
                             onClick={() => handleDeleteHazardRecord(item.id, item.title)}
-                            className="p-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 hover:text-white border border-rose-500/30 transition-colors cursor-pointer"
-                            title="Permanently Delete Incident Record"
+                            className="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/35 text-rose-300 hover:text-white border border-rose-500/35 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            title="Permanently remove fake or inappropriate post"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove Post</span>
                           </button>
                         </div>
                       </div>
@@ -7771,7 +7884,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="flex items-center gap-2.5">
                   <ShieldAlert className="w-5 h-5 text-emerald-400" />
                   <h4 className="font-heading font-black text-white text-base">
-                    Incident Review &amp; Broadcast Details
+                    Incident Broadcast Details
                   </h4>
                 </div>
                 <button
@@ -7789,14 +7902,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase ${
-                        selectedHazardModal.status === 'pending'
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                          : selectedHazardModal.status === 'active'
+                        selectedHazardModal.status === 'active'
                           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                           : 'bg-stone-800 text-stone-400 border-stone-700'
                       }`}
                     >
-                      {selectedHazardModal.status.toUpperCase()}
+                      {selectedHazardModal.status === 'active' ? 'LIVE BROADCAST' : 'REMOVED / CLEARED'}
                     </span>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border border-white/20 uppercase">
                       {selectedHazardModal.severity} SEVERITY
@@ -7874,19 +7985,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 {/* Modal Action Buttons */}
                 <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
-                  {selectedHazardModal.status !== 'active' ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await handleApproveHazard(selectedHazardModal);
-                        setSelectedHazardModal((prev) => (prev ? { ...prev, status: 'active' } : null));
-                      }}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>Approve &amp; Broadcast</span>
-                    </button>
-                  ) : (
+                  {selectedHazardModal.status === 'active' && (
                     <button
                       type="button"
                       onClick={async () => {
@@ -7906,7 +8005,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="px-4 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 text-xs font-bold border border-rose-500/30 flex items-center gap-1.5 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
+                    <span>Remove / Delete Post</span>
                   </button>
                 </div>
               </div>
