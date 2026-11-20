@@ -1254,13 +1254,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [townGas, setTownGas] = useState('');
   const [townPlacesInterest, setTownPlacesInterest] = useState('');
   
-  // Prayer Times States
-  const [subuhTime, setSubuhTime] = useState('06:05');
-  const [syurukTime, setSyurukTime] = useState('07:18');
-  const [zohorTime, setZohorTime] = useState('13:21');
-  const [asarTime, setAsarTime] = useState('16:38');
-  const [maghribTime, setMaghribTime] = useState('19:22');
-  const [isyakTime, setIsyakTime] = useState('20:33');
+  // Prayer Times States (JAKIM PHG06 • Cameron Highlands Baseline)
+  const [subuhTime, setSubuhTime] = useState('05:50');
+  const [syurukTime, setSyurukTime] = useState('06:56');
+  const [zohorTime, setZohorTime] = useState('13:02');
+  const [asarTime, setAsarTime] = useState('16:23');
+  const [maghribTime, setMaghribTime] = useState('19:03');
+  const [isyakTime, setIsyakTime] = useState('20:11');
+  const [isSyncingLivePrayers, setIsSyncingLivePrayers] = useState(false);
+
+  const handleSyncLivePrayerTimes = async () => {
+    setIsSyncingLivePrayers(true);
+    try {
+      const resp = await fetch('/api/prayer-times?refresh=true');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.prayerTimes) {
+          setSubuhTime(data.prayerTimes.subuh || '05:50');
+          setSyurukTime(data.prayerTimes.syuruk || '06:56');
+          setZohorTime(data.prayerTimes.zohor || '13:02');
+          setAsarTime(data.prayerTimes.asar || '16:23');
+          setMaghribTime(data.prayerTimes.maghrib || '19:03');
+          setIsyakTime(data.prayerTimes.isyak || '20:11');
+          addActivity(`Synced live JAKIM PHG06 prayer times (${data.source || 'JAKIM'})`);
+        }
+      }
+    } catch (err) {
+      console.warn('[AdminDashboard] Live prayer sync failed:', err);
+    } finally {
+      setIsSyncingLivePrayers(false);
+    }
+  };
 
   const [townError, setTownError] = useState<string | null>(null);
   const [townSaving, setTownSaving] = useState(false);
@@ -2017,21 +2041,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       existing?.placesOfInterest || defaultPortal?.keyAttractions || ['Highland Views', 'Farms'];
     setTownPlacesInterest(Array.isArray(interestList) ? interestList.join(', ') : interestList);
 
-    // Populate Prayer Times
+    // Populate Prayer Times (JAKIM PHG06)
     if (existing?.prayerTimes) {
-      setSubuhTime(existing.prayerTimes.subuh || '06:05');
-      setSyurukTime(existing.prayerTimes.syuruk || '07:18');
-      setZohorTime(existing.prayerTimes.zohor || '13:21');
-      setAsarTime(existing.prayerTimes.asar || '16:38');
-      setMaghribTime(existing.prayerTimes.maghrib || '19:22');
-      setIsyakTime(existing.prayerTimes.isyak || '20:33');
+      setSubuhTime(existing.prayerTimes.subuh || '05:50');
+      setSyurukTime(existing.prayerTimes.syuruk || '06:56');
+      setZohorTime(existing.prayerTimes.zohor || '13:02');
+      setAsarTime(existing.prayerTimes.asar || '16:23');
+      setMaghribTime(existing.prayerTimes.maghrib || '19:03');
+      setIsyakTime(existing.prayerTimes.isyak || '20:11');
     } else {
-      setSubuhTime('06:05');
-      setSyurukTime('07:18');
-      setZohorTime('13:21');
-      setAsarTime('16:38');
-      setMaghribTime('19:22');
-      setIsyakTime('20:33');
+      setSubuhTime('05:50');
+      setSyurukTime('06:56');
+      setZohorTime('13:02');
+      setAsarTime('16:23');
+      setMaghribTime('19:03');
+      setIsyakTime('20:11');
     }
 
     setShowTownshipModal(true);
@@ -5941,9 +5965,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 {/* Prayer Times Section */}
                 <div className="pt-4 border-t border-white/10 mt-2">
-                  <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-3">
-                    Daily Prayer Times (Zon 3 Pahang)
-                  </h4>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                      Daily Prayer Times (JAKIM PHG06 • Cameron Highlands)
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={handleSyncLivePrayerTimes}
+                      disabled={isSyncingLivePrayers}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isSyncingLivePrayers ? 'Syncing PHG06...' : 'Sync Live PHG06'}
+                    </button>
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-stone-400 block mb-1 uppercase">Subuh</label>

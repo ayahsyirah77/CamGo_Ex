@@ -514,7 +514,7 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
       [4.4515, 101.3925],
       [4.4552, 101.4050],
     ],
-    advisory: 'Interior plantation valley link; clear alternative outside central weekend surges.',
+    advisory: 'Local estate spur (not a through-bypass between Ringlet and Tanah Rata).',
   },
 ];
 
@@ -529,7 +529,7 @@ export const CONGESTION_HOTSPOTS: CongestionHotspotPoint[] = [
     speedKmh: 7,
     delayMins: 28,
     cause: 'Agro Bazaar parking queue spillover & tourist road crossing.',
-    bypassTip: 'Arrive before 9:30 AM or after 5:30 PM. Consider Habu bypass route.',
+    bypassTip: 'No parallel bypass exists between Brinchang and Kea Farm. Park in Brinchang town or visit Kea Farm after 5:30 PM.',
   },
   {
     id: 'hotspot-lata-iskandar',
@@ -541,7 +541,7 @@ export const CONGESTION_HOTSPOTS: CongestionHotspotPoint[] = [
     speedKmh: 20,
     delayMins: 16,
     cause: 'Roadside fruit stall pull-ins and narrow single-lane hairpin turn.',
-    bypassTip: 'FT 185 Simpang Pulai provides dual-lane overtaking if prone to car sickness.',
+    bypassTip: 'FT 185 Simpang Pulai or FT 102 Sungai Koyan provides a full paved gateway switch.',
   },
   {
     id: 'hotspot-golden-hills',
@@ -553,7 +553,7 @@ export const CONGESTION_HOTSPOTS: CongestionHotspotPoint[] = [
     speedKmh: 14,
     delayMins: 18,
     cause: 'Weekend evening Pasar Malam shoppers parking on roadside shoulders.',
-    bypassTip: 'Park in Tanah Rata town and take local shuttle or arrive by 4:00 PM.',
+    bypassTip: 'Heavy Pasar Malam congestion after 4:00 PM; pull off at Tanah Rata Town if both FT59 and Golden Hills are gridlocked.',
   },
   {
     id: 'hotspot-pos-slim',
@@ -921,7 +921,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   } | null>(null);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
 
-  // Muslim Prayer Time ("Coming Soon") Special Alert States (JAKIM Zone PHG04 Cameron Highlands)
+  // Muslim Prayer Time ("Coming Soon") Special Alert States (JAKIM Zone PHG06 Cameron Highlands)
   interface PrayerTimesSchedule {
     subuh: string;
     syuruk: string;
@@ -930,16 +930,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     maghrib: string;
     isyak: string;
   }
-  const DEFAULT_PHG04_PRAYERS: PrayerTimesSchedule = {
-    subuh: '06:05',
-    syuruk: '07:18',
-    zohor: '13:21',
-    asar: '16:38',
-    maghrib: '19:22',
-    isyak: '20:33',
+  const DEFAULT_PHG06_PRAYERS: PrayerTimesSchedule = {
+    subuh: '05:50',
+    syuruk: '06:56',
+    zohor: '13:02',
+    asar: '16:23',
+    maghrib: '19:03',
+    isyak: '20:11',
   };
-  const [prayerSchedule, setPrayerSchedule] = useState<PrayerTimesSchedule>(DEFAULT_PHG04_PRAYERS);
-  const [prayerSourceLabel, setPrayerSourceLabel] = useState<string>('JAKIM PHG04');
+  const [prayerSchedule, setPrayerSchedule] = useState<PrayerTimesSchedule>(DEFAULT_PHG06_PRAYERS);
+  const [prayerSourceLabel, setPrayerSourceLabel] = useState<string>('JAKIM PHG06');
   const [isMuslimPrayerAlertsEnabled, setIsMuslimPrayerAlertsEnabled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     return localStorage.getItem('camgo_muslim_prayer_alerts') !== 'false';
@@ -3165,9 +3165,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return predictHazardTrafficImpact(
       selectedHazardModal,
       trafficSegments,
-      getPredictiveTargetDate(predictiveDepartureProfile)
+      getPredictiveTargetDate(predictiveDepartureProfile),
+      combinedActiveHazards
     );
-  }, [selectedHazardModal, trafficSegments, predictiveDepartureProfile]);
+  }, [selectedHazardModal, trafficSegments, predictiveDepartureProfile, combinedActiveHazards]);
 
   const resolveHazardCoords = (hazard: CamgoHazard): { lat: number; lng: number } => {
     const lat = Number(hazard.lat);
@@ -3192,7 +3193,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const algo = predictHazardTrafficImpact(
       { ...hazard, lat: resolved.lat, lng: resolved.lng },
       trafficSegments,
-      getPredictiveTargetDate(predictiveDepartureProfile)
+      getPredictiveTargetDate(predictiveDepartureProfile),
+      combinedActiveHazards
     );
     setAiIncidentForecast({
       hazardId: hazard.id,
@@ -3923,7 +3925,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     evaluateProximityGeofences(userGpsCoords.lat, userGpsCoords.lng);
   }, [userGpsCoords, language, mapVoiceLang]);
 
-  // Muslim Prayer Time ("Coming Soon") Live Fetcher & Reminder Engine (JAKIM PHG04 Cameron Highlands)
+  // Muslim Prayer Time ("Coming Soon") Live Fetcher & Reminder Engine (JAKIM PHG06 Cameron Highlands)
   useEffect(() => {
     let cancelled = false;
     const loadPrayerSchedule = async () => {
@@ -3933,19 +3935,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           const data = await res.json();
           if (!cancelled && data?.prayerTimes) {
             setPrayerSchedule({
-              subuh: data.prayerTimes.subuh || DEFAULT_PHG04_PRAYERS.subuh,
-              syuruk: data.prayerTimes.syuruk || DEFAULT_PHG04_PRAYERS.syuruk,
-              zohor: data.prayerTimes.zohor || DEFAULT_PHG04_PRAYERS.zohor,
-              asar: data.prayerTimes.asar || DEFAULT_PHG04_PRAYERS.asar,
-              maghrib: data.prayerTimes.maghrib || DEFAULT_PHG04_PRAYERS.maghrib,
-              isyak: data.prayerTimes.isyak || DEFAULT_PHG04_PRAYERS.isyak,
+              subuh: data.prayerTimes.subuh || DEFAULT_PHG06_PRAYERS.subuh,
+              syuruk: data.prayerTimes.syuruk || DEFAULT_PHG06_PRAYERS.syuruk,
+              zohor: data.prayerTimes.zohor || DEFAULT_PHG06_PRAYERS.zohor,
+              asar: data.prayerTimes.asar || DEFAULT_PHG06_PRAYERS.asar,
+              maghrib: data.prayerTimes.maghrib || DEFAULT_PHG06_PRAYERS.maghrib,
+              isyak: data.prayerTimes.isyak || DEFAULT_PHG06_PRAYERS.isyak,
             });
-            setPrayerSourceLabel(data.source || 'JAKIM PHG04');
+            setPrayerSourceLabel(data.source ? `${data.source} (${data.zone || 'PHG06'})` : 'JAKIM PHG06');
             return;
           }
         }
       } catch {
-        // fallback to Firebase Township Hub or PHG04 baseline
+        // fallback to Firebase Township Hub or PHG06 baseline
       }
       try {
         const hubs = firebaseService.getTownshipHubs();
@@ -3958,8 +3960,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       }
     };
     loadPrayerSchedule();
+    // Periodically refresh prayer times (catches midnight MYT rollover automatically)
+    const refreshTimer = window.setInterval(loadPrayerSchedule, 30 * 60 * 1000);
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
     };
   }, []);
 
@@ -7010,7 +7015,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 : selectedHazardModal.description}
             </p>
 
-            {/* Smart Algorithm + AI Traffic Flow Prediction */}
+            {/* Smart Algorithm + AI Traffic Flow Prediction (Single-Spine FT59 + Lagged Inflow + 4-Block Advisory) */}
             {selectedHazardImpact && (
               <div className="rounded-xl bg-stone-900/95 border border-emerald-500/35 p-3 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
@@ -7064,18 +7069,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     <div className="text-sm font-black text-cyan-300 mt-0.5">
                       ~{selectedHazardImpact.congestionSpreadKm} <span className="text-[10px]">km</span>
                     </div>
-                    <div className="text-[9px] text-stone-500">queue zone</div>
+                    <div className="text-[9px] text-stone-500">FT59 spine</div>
                   </div>
                 </div>
 
-                {/* AI Natural-Language Forecast */}
-                <div className="p-2.5 rounded-lg bg-stone-950/90 border border-emerald-500/20 text-[11px] text-stone-200 leading-relaxed">
-                  <div className="flex items-center justify-between gap-2 mb-1">
+                {/* Spatial-Temporal Traffic Model (Real Topology + Lagged Inflow + Incident Cap Guardrail) */}
+                <div className="p-2.5 rounded-lg bg-stone-950/90 border border-emerald-500/20 text-[11px] text-stone-200 leading-relaxed space-y-2">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-mono font-bold text-emerald-400 flex items-center gap-1">
                       {aiIncidentForecast?.loading && <Loader2 className="w-3 h-3 animate-spin" />}
                       {aiIncidentForecast?.isAiEnhanced
                         ? '✨ Gemini AI Live Flow Forecast'
-                        : '⚡ Spatial-Temporal Traffic Model'}
+                        : '⚡ Spatial-Temporal Traffic Model (FT59 Spine)'}
                     </span>
                     <button
                       type="button"
@@ -7093,17 +7098,143 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                         ? selectedHazardImpact.summaryBm
                         : selectedHazardImpact.summary}
                   </p>
+
+                  {/* 4 Upstream Feeder Corridors BPR Ascent Rate + Incident Cap Guardrail */}
+                  <div className="pt-1.5 border-t border-white/10 space-y-1.5">
+                    <div className="flex items-center justify-between text-[9.5px] font-mono">
+                      <span className="text-stone-400 uppercase font-bold">
+                        {language === 'bm' ? 'Aliran 4 Koridor Masuk (BPR)' : '4 Upstream Feeders (BPR Vᵢ)'}
+                      </span>
+                      {selectedHazardImpact.spatialTemporalModel.anyIncidentCapped && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-bold">
+                          {language === 'bm' ? '🛡️ Had Insiden Aktif' : '🛡️ Incident Cap Active'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-[9.5px]">
+                      {selectedHazardImpact.spatialTemporalModel.feeders.map((f) => (
+                        <div
+                          key={f.id}
+                          className="px-2 py-1 rounded bg-stone-900 border border-white/5 flex items-center justify-between gap-1"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-stone-200 truncate">{f.name}</div>
+                            <div className="text-[8.5px] text-stone-400 truncate">
+                              → {f.entryJunction} ({f.climbLagMinRange[0]}–{f.climbLagMinRange[1]}m)
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0 font-mono">
+                            <span className={f.isIncidentCapped ? 'text-amber-300 font-bold' : 'text-emerald-300 font-bold'}>
+                              {f.effectiveVi}
+                            </span>
+                            <span className="block text-[8px] text-stone-500">
+                              {f.isIncidentCapped ? 'capped' : 'veh/h'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Central Spine Lagged Wave Propagation (+1h, +2h, +3h) */}
+                    <div className="space-y-1 pt-1">
+                      <div className="text-[9px] font-mono text-stone-400 uppercase font-bold">
+                        {language === 'bm'
+                          ? 'Gelombang Tulang Belakang FT59 (+1j / +2j / +3j)'
+                          : 'FT59 Spine Lagged Wave (+1h / +2h / +3h)'}
+                      </div>
+                      <div className="grid grid-cols-4 gap-1 text-center text-[9px] font-mono">
+                        {selectedHazardImpact.spatialTemporalModel.spineNodes.map((node) => {
+                          const h1 = node.horizons[0];
+                          const h2 = node.horizons[1];
+                          const h3 = node.horizons[2];
+                          return (
+                            <div
+                              key={node.id}
+                              className="p-1.5 rounded bg-stone-900 border border-white/5 space-y-0.5"
+                            >
+                              <div className="font-bold text-stone-100 truncate text-[9.5px]">{node.name}</div>
+                              <div className="text-[8.5px] text-stone-400">
+                                +1h: <strong className={h1.status === 'gridlock' || h1.status === 'heavy' ? 'text-rose-300' : h1.status === 'moderate' ? 'text-amber-300' : 'text-emerald-300'}>{h1.predictedSpeedKmh}</strong>
+                              </div>
+                              <div className="text-[8.5px] text-stone-400">
+                                +2h: <strong className={h2.status === 'gridlock' || h2.status === 'heavy' ? 'text-rose-300' : h2.status === 'moderate' ? 'text-amber-300' : 'text-emerald-300'}>{h2.predictedSpeedKmh}</strong>
+                              </div>
+                              <div className="text-[8.5px] text-stone-400">
+                                +3h: <strong className={h3.status === 'gridlock' || h3.status === 'heavy' ? 'text-rose-300' : h3.status === 'moderate' ? 'text-amber-300' : 'text-emerald-300'}>{h3.predictedSpeedKmh}</strong>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Bypass Advisory */}
-                <div className="p-2 rounded-lg bg-emerald-950/50 border border-emerald-500/30 text-[11px] text-emerald-200 leading-snug">
-                  <strong className="text-emerald-300">
-                    {language === 'bm' ? 'Cadangan Pintasan: ' : 'Recommended Bypass: '}
-                  </strong>
-                  {language === 'bm'
-                    ? selectedHazardImpact.recommendedBypassBm
-                    : selectedHazardImpact.recommendedBypass}
-                </div>
+                {/* Recommended Bypass & Incident Advisory Card (4 Clear Required Blocks) */}
+                {(() => {
+                  const adv = selectedHazardImpact.incidentAdvisory;
+                  const badgeClasses =
+                    adv.badgeTone === 'green'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
+                      : adv.badgeTone === 'amber'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-400/50'
+                        : 'bg-rose-500/25 text-rose-300 border-rose-400/60';
+                  return (
+                    <div className="p-2.5 rounded-xl bg-stone-950/95 border border-emerald-500/35 space-y-2 text-[11px]">
+                      <div className="text-[10px] font-mono font-black uppercase tracking-wider text-emerald-300">
+                        {language === 'bm'
+                          ? 'Nasihat Insiden & Cadangan Pintasan'
+                          : 'Recommended Bypass & Incident Advisory'}
+                      </div>
+
+                      {/* Block 1: Incident Status & Exact Location */}
+                      <div className="p-2 rounded-lg bg-stone-900 border border-white/10">
+                        <div className="text-[9px] font-mono uppercase text-stone-400 font-bold">
+                          {language === 'bm' ? '1. Status Insiden & Lokasi Tepat' : '1. Incident Status & Exact Location'}
+                        </div>
+                        <div className="text-stone-100 font-bold mt-0.5 leading-snug">
+                          {language === 'bm' ? adv.incidentStatusLocationBm : adv.incidentStatusLocation}
+                        </div>
+                      </div>
+
+                      {/* Block 2: Alternative Route Availability Badge */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`px-2 py-1 rounded-lg border text-[10px] font-mono font-black uppercase tracking-wide ${badgeClasses}`}>
+                          {language === 'bm' ? adv.availabilityBadgeBm : adv.availabilityBadge}
+                        </span>
+                        {(language === 'bm' ? adv.vehicleRestrictionNoteBm : adv.vehicleRestrictionNote) && (
+                          <span className="text-[10px] text-amber-200/90 leading-snug">
+                            {language === 'bm' ? adv.vehicleRestrictionNoteBm : adv.vehicleRestrictionNote}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Block 3: Exact Reroute / Gateway Switch */}
+                      <div className="p-2 rounded-lg bg-emerald-950/35 border border-emerald-500/25">
+                        <div className="text-[9px] font-mono uppercase text-emerald-400 font-bold">
+                          {language === 'bm'
+                            ? '3. Lencongan Tepat / Tukar Pintu Masuk'
+                            : '3. Exact Reroute / Gateway Switch'}
+                        </div>
+                        <p className="text-emerald-100 mt-0.5 leading-snug font-medium">
+                          {language === 'bm' ? adv.exactRerouteBm : adv.exactReroute}
+                        </p>
+                      </div>
+
+                      {/* Block 4: What to Do & Where to Go Nearby */}
+                      <div className="p-2 rounded-lg bg-cyan-950/30 border border-cyan-500/25">
+                        <div className="text-[9px] font-mono uppercase text-cyan-300 font-bold">
+                          {language === 'bm'
+                            ? '4. Tindakan & Lokasi Singgah Berhampiran'
+                            : '4. What to Do & Where to Go Nearby'}
+                        </div>
+                        <p className="text-stone-200 mt-0.5 leading-snug">
+                          {language === 'bm' ? adv.whatToDoWhereToGoBm : adv.whatToDoWhereToGo}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

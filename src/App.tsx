@@ -85,8 +85,23 @@ import {
   BellRing,
 } from 'lucide-react';
 
+function checkIsVendorRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const pathname = window.location.pathname.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+
+  return (
+    pathname.startsWith('/vendor') ||
+    search.includes('vendor=true') ||
+    hash === '#vendor'
+  );
+}
+
 function checkIsStandaloneChat(): boolean {
   if (typeof window === 'undefined') return false;
+  if (checkIsVendorRoute()) return false;
 
   const pathname = window.location.pathname.toLowerCase();
   const search = window.location.search.toLowerCase();
@@ -195,7 +210,7 @@ export default function App() {
   >(null);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
-  const [isVendorPortalOpen, setIsVendorPortalOpen] = useState(false);
+  const [isVendorPortalOpen, setIsVendorPortalOpen] = useState<boolean>(checkIsVendorRoute);
   const [isVendorAlertsModalOpen, setIsVendorAlertsModalOpen] = useState(false);
   const [vendorAlerts, setVendorAlerts] = useState<VendorBookingAlert[]>([]);
   const [activeVendorBannerAlert, setActiveVendorBannerAlert] = useState<VendorBookingAlert | null>(null);
@@ -246,6 +261,38 @@ export default function App() {
       document.body.style.paddingRight = '';
     };
   }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen, isVendorPortalOpen, isVendorAlertsModalOpen, isGalleryOpen]);
+
+  // Sync PWA manifest (/manifest-vendor.json), Apple web-app title, and /vendor URL when Vendor Portal is active
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+
+    const manifestLink =
+      document.getElementById('camgo-manifest-link') ||
+      document.querySelector('link[rel="manifest"]');
+    const appleTitle =
+      document.getElementById('camgo-apple-title') ||
+      document.querySelector('meta[name="apple-mobile-web-app-title"]');
+
+    if (isVendorPortalOpen) {
+      if (manifestLink) manifestLink.setAttribute('href', '/manifest-vendor.json');
+      if (appleTitle) appleTitle.setAttribute('content', 'CamGo Vendor');
+      if (
+        window.history?.replaceState &&
+        !window.location.pathname.toLowerCase().startsWith('/vendor')
+      ) {
+        window.history.replaceState({}, document.title, '/vendor');
+      }
+    } else {
+      if (manifestLink) manifestLink.setAttribute('href', '/manifest.json');
+      if (appleTitle) appleTitle.setAttribute('content', 'CamGo');
+      if (
+        window.history?.replaceState &&
+        window.location.pathname.toLowerCase().startsWith('/vendor')
+      ) {
+        window.history.replaceState({}, document.title, '/');
+      }
+    }
+  }, [isVendorPortalOpen]);
 
   // Strict RBAC guard: Standard travelers ('user') cannot access Vendor Dashboard under any circumstances
   const handleOpenVendorPortal = useCallback(() => {
@@ -391,6 +438,13 @@ export default function App() {
     window.addEventListener('open-foreigner-medical-charges', handleOpenForeignerMedical);
 
     const handleLocationChange = () => {
+      if (checkIsVendorRoute()) {
+        setIsStandaloneChatView(false);
+        setIsChatOpen(false);
+        setIsVendorPortalOpen(true);
+        return;
+      }
+
       const isChatRoute = checkIsStandaloneChat();
       setIsStandaloneChatView(isChatRoute);
       if (isChatRoute) {
@@ -410,7 +464,11 @@ export default function App() {
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('hashchange', handleLocationChange);
 
-    if (checkIsStandaloneChat()) {
+    if (checkIsVendorRoute()) {
+      setIsStandaloneChatView(false);
+      setIsChatOpen(false);
+      setIsVendorPortalOpen(true);
+    } else if (checkIsStandaloneChat()) {
       setIsStandaloneChatView(true);
       setIsChatOpen(true);
     } else {

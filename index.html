@@ -54,10 +54,23 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="CamGo Chat" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/pwa-icon.svg" />
+    <meta id="camgo-apple-title" name="apple-mobile-web-app-title" content="CamGo" />
+    <link id="camgo-manifest-link" rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/pwa-icon.svg" />
+    <script>
+      (function() {
+        var path = (window.location.pathname || '').toLowerCase();
+        var search = (window.location.search || '').toLowerCase();
+        var hash = (window.location.hash || '').toLowerCase();
+        if (path.indexOf('/vendor') === 0 || search.indexOf('vendor=true') !== -1 || hash === '#vendor') {
+          var manifestEl = document.getElementById('camgo-manifest-link');
+          if (manifestEl) manifestEl.setAttribute('href', '/manifest-vendor.json');
+          var appleTitleEl = document.getElementById('camgo-apple-title');
+          if (appleTitleEl) appleTitleEl.setAttribute('content', 'CamGo Vendor');
+        }
+      })();
+    </script>
     <title>CamGo - Cameron Highlands Travel & Live Guide</title>
     <meta name="description" content="Live weather forecasts, real-time traffic & hazard alerts, interactive maps with satellite/terrain views, immersive lightbox gallery, community lounge, AI travel assistance, and comprehensive directories for Cameron Highlands." />
     <meta property="og:title" content="CamGo - Cameron Highlands Travel & Live Guide" />

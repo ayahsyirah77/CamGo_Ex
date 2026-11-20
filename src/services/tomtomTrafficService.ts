@@ -1,4 +1,10 @@
 import { CamgoHazard, Language } from '../types';
+import {
+  evaluateSpatialTemporalNetwork,
+  evaluateIntraHighlandIncidentAdvisory,
+  SpatialTemporalNetworkModel,
+  IntraHighlandIncidentAdvisory,
+} from './cameronTrafficModel';
 
 export const CAMERON_TRAFFIC_CENTER = {
   lat: 4.4734,
@@ -987,6 +993,8 @@ export interface HazardTrafficImpactPrediction {
   recommendedBypassBm: string;
   summary: string;
   summaryBm: string;
+  incidentAdvisory: IntraHighlandIncidentAdvisory;
+  spatialTemporalModel: SpatialTemporalNetworkModel;
 }
 
 function getHazardImpactProfile(hazard: CamgoHazard): {
@@ -1116,7 +1124,8 @@ export function applyHazardImpactToSegments(
 export function predictHazardTrafficImpact(
   hazard: CamgoHazard,
   segments: PredictiveTrafficSegment[],
-  targetDate: Date = new Date()
+  targetDate: Date = new Date(),
+  allActiveHazards: CamgoHazard[] = []
 ): HazardTrafficImpactPrediction {
   const hLat = Number(hazard.lat) || CAMERON_TRAFFIC_CENTER.lat;
   const hLng = Number(hazard.lng) || CAMERON_TRAFFIC_CENTER.lon;
@@ -1181,48 +1190,89 @@ export function predictHazardTrafficImpact(
           ? 'peaking'
           : 'stabilizing';
 
-  const locLower = `${hazard.location || ''} ${hazard.corridor || ''} ${hazard.title || ''}`.toLowerCase();
-  let recommendedBypass =
-    'Use FT185 Simpang Pulai or FT102 Sungai Koyan as an alternative mountain gateway if delays exceed 25 mins.';
-  let recommendedBypassBm =
-    'Gunakan laluan alternatif FT185 Simpang Pulai atau FT102 Sungai Koyan jika kelewatan melebihi 25 minit.';
+  const combinedHazards = [
+    hazard,
+    ...allActiveHazards.filter((item) => item && item.id !== hazard.id),
+  ];
 
-  if (locLower.includes('tapah') || locLower.includes('lata') || locLower.includes('ringlet') || hLat < 4.44) {
-    recommendedBypass =
-      'Reroute uphill/downhill via FT185 Simpang Pulai (Ipoh Exit 137) or FT102 Sungai Koyan–Raub to bypass FT59 Tapah hairpins.';
-    recommendedBypassBm =
-      'Tukar laluan melalui FT185 Simpang Pulai (Tol Ipoh 137) atau FT102 Sungai Koyan–Raub untuk mengelak laluan sempit FT59 Tapah.';
-  } else if (
-    locLower.includes('brinchang') ||
-    locLower.includes('golden') ||
-    locLower.includes('kea') ||
-    locLower.includes('tanah rata')
-  ) {
-    recommendedBypass =
-      'Use Sungai Ruil bypass link road between Tanah Rata and Golden Hills, or delay Kea Farm transit until after 5:30 PM.';
-    recommendedBypassBm =
-      'Gunakan jalan pintas Sungai Ruil antara Tanah Rata–Golden Hills, atau tangguh perjalanan ke Kea Farm selepas 5:30 petang.';
-  } else if (locLower.includes('simpang pulai') || locLower.includes('pos slim') || locLower.includes('blue valley') || hLat > 4.54) {
-    recommendedBypass =
-      'Consider FT102 Sungai Koyan (East Coast/Central) or FT59 Tapah approach; watch out for heavy agro lorries in single-lane zones.';
-    recommendedBypassBm =
-      'Pertimbangkan laluan FT102 Sungai Koyan atau FT59 Tapah; awas lori sayur perlahan di laluan satu lorong.';
-  }
+  // Derive corridor duration inputs from active traffic segments where available
+  const segSpeedById = (ids: string[]): { currentSecs: number; freeSecs: number } | null => {
+    const matched = segments.filter((s) => ids.includes(s.id));
+    if (matched.length === 0) return null;
+    const avgCur =
+      matched.reduce((acc, s) => acc + Math.max(8, s.speedKmh), 0) / matched.length;
+    const avgFree =
+      matched.reduce((acc, s) => acc + Math.max(15, s.freeFlowSpeedKmh), 0) / matched.length;
+    return {
+      freeSecs: Math.round((45 / avgFree) * 3600),
+      currentSecs: Math.round((45 / avgCur) * 3600),
+    };
+  };
 
-  const affectedCorridor = primary ? primary.name : hazard.location || 'Cameron Highlands Corridor';
+  const sp = segSpeedById(['ft185-flatland', 'ft185-pos-slim', 'ft185-blue-valley']);
+  const tp = segSpeedById(['ft59-tapah-lowland', 'ft59-lata-iskandar-choke', 'ft59-ascent-ringlet']);
+  const sk = segSpeedById(['ft102-csr-expressway', 'ft102-mountain-sweep']);
+
+  const spatialTemporalModel = evaluateSpatialTemporalNetwork({
+    targetDate,
+    hazards: combinedHazards,
+    corridorInputs: [
+      ...(sp
+        ? [
+            {
+              corridorId: 'simpang_pulai_ft185' as const,
+              currentDurationSecs: sp.currentSecs,
+              freeFlowDurationSecs: sp.freeSecs,
+              source: 'historical_baseline' as const,
+            },
+          ]
+        : []),
+      ...(tp
+        ? [
+            {
+              corridorId: 'tapah_ft59' as const,
+              currentDurationSecs: tp.currentSecs,
+              freeFlowDurationSecs: tp.freeSecs,
+              source: 'historical_baseline' as const,
+            },
+          ]
+        : []),
+      ...(sk
+        ? [
+            {
+              corridorId: 'sungai_koyan_ft102' as const,
+              currentDurationSecs: sk.currentSecs,
+              freeFlowDurationSecs: sk.freeSecs,
+              source: 'historical_baseline' as const,
+            },
+          ]
+        : []),
+    ],
+  });
+
+  const incidentAdvisory = evaluateIntraHighlandIncidentAdvisory({
+    ...hazard,
+    lat: hLat,
+    lng: hLng,
+  });
+
+  const recommendedBypass = incidentAdvisory.exactReroute;
+  const recommendedBypassBm = incidentAdvisory.exactRerouteBm;
+
+  const affectedCorridor = primary ? primary.name : hazard.location || 'Cameron Highlands FT59 Spine';
 
   const trendTextEn =
     flowTrend === 'worsening'
-      ? 'Queue expected to lengthen over the next 45 mins'
+      ? `Inflow wave peaking around ${spatialTemporalModel.peakWaveHorizon} at ${spatialTemporalModel.peakSpineNodeName} along FT59`
       : flowTrend === 'peaking'
-        ? 'Peak bottleneck active along nearby bends'
-        : 'Off-peak demand allows faster dispersal';
+        ? `Peak single-spine bottleneck active near ${affectedCorridor}`
+        : 'Off-peak demand allows faster dispersal along FT59';
   const trendTextBm =
     flowTrend === 'worsening'
-      ? 'Barisan kenderaan dijangka memanjang dalam 45 minit akan datang'
+      ? `Gelombang aliran masuk memuncak sekitar ${spatialTemporalModel.peakWaveHorizon} di ${spatialTemporalModel.peakSpineNodeName} sepanjang FT59`
       : flowTrend === 'peaking'
-        ? 'Kesesakan berada di tahap puncak di selekoh berhampiran'
-        : 'Aliran luar puncak membantu kesesakan surut lebih cepat';
+        ? `Kesesakan tulang belakang tunggal FT59 berada di tahap puncak`
+        : 'Aliran luar puncak membantu kesesakan FT59 surut lebih cepat';
 
   const summary = `${affectedCorridor} slowed from ${baselineSpeedKmh} km/h to ~${predictedSpeedKmh} km/h (+${predictedDelayMins}m delay, ~${congestionSpreadKm} km tailback). ${trendTextEn}.`;
   const summaryBm = `${affectedCorridor} perlahan dari ${baselineSpeedKmh} km/j ke ~${predictedSpeedKmh} km/j (+${predictedDelayMins}m lewat, barisan ~${congestionSpreadKm} km). ${trendTextBm}.`;
@@ -1240,6 +1290,8 @@ export function predictHazardTrafficImpact(
     recommendedBypassBm,
     summary,
     summaryBm,
+    incidentAdvisory,
+    spatialTemporalModel,
   };
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   X,
   MapPin,
@@ -11,6 +11,7 @@ import {
   Sparkles,
   Mountain,
   Share2,
+  RefreshCw,
 } from 'lucide-react';
 import { Place, Language, Township } from '../types';
 import { firebaseService } from '../services/firebase';
@@ -24,8 +25,44 @@ interface MasjidSurauModalProps {
   onSelectPlaceForMap?: (place: Place) => void;
 }
 
-// Cameron Highlands falls under Zon 3 Pahang (Cameron Highlands, Genting Highlands, Bukit Fraser)
+interface LivePrayerApiPayload {
+  zone: string;
+  region: string;
+  date: string;
+  hijri?: string | null;
+  bearing?: string;
+  source: string;
+  fetchedAt?: string;
+  prayerTimes: {
+    imsak?: string;
+    subuh: string;
+    syuruk: string;
+    dhuha?: string;
+    zohor: string;
+    asar: string;
+    maghrib: string;
+    isyak: string;
+  };
+}
 
+// Cameron Highlands officially falls under JAKIM Zone PHG06 (Cameron Highlands, Genting Highlands, Bukit Fraser)
+const PHG06_FALLBACK_24H = {
+  subuh: '05:50',
+  syuruk: '06:56',
+  zohor: '13:02',
+  asar: '16:23',
+  maghrib: '19:03',
+  isyak: '20:11',
+};
+
+const to12HourDisplay = (time24: string) => {
+  if (!time24 || !time24.includes(':')) return time24;
+  const [h, m] = time24.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return time24;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+};
 
 export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
   isOpen,
@@ -39,52 +76,83 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
   const [onlyJumaat, setOnlyJumaat] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [townshipHubs, setTownshipHubs] = useState<Record<string, any>>({});
+  const [livePrayerData, setLivePrayerData] = useState<LivePrayerApiPayload | null>(null);
+  const [isRefreshingPrayers, setIsRefreshingPrayers] = useState(false);
 
-  // Fetch township hubs for dynamic prayer times
-  useEffect(() => {
-    const fetchHubs = async () => {
-      const hubs = await firebaseService.getTownshipHubs();
-      setTownshipHubs(hubs);
-    };
-    fetchHubs();
+  const fetchLivePrayerTimes = useCallback(async (forceRefresh = false) => {
+    setIsRefreshingPrayers(true);
+    try {
+      const resp = await fetch(`/api/prayer-times${forceRefresh ? '?refresh=true' : ''}`);
+      if (resp.ok) {
+        const data: LivePrayerApiPayload = await resp.json();
+        if (data?.prayerTimes?.subuh) {
+          setLivePrayerData(data);
+        }
+      }
+    } catch {
+      // Fallback gracefully to Township Hub or PHG06 baseline
+    } finally {
+      setIsRefreshingPrayers(false);
+    }
   }, []);
 
-  const currentPrayerTimes = useMemo(() => {
-    // Try to find prayer times for the selected town filter, or fall back to Tanah Rata
+  // Fetch township hubs & live JAKIM PHG06 prayer times on open
+  useEffect(() => {
+    if (!isOpen) return;
+    firebaseService.getTownshipHubs && setTownshipHubs(firebaseService.getTownshipHubs());
+    fetchLivePrayerTimes(false);
+  }, [isOpen, fetchLivePrayerTimes]);
+
+  const { currentPrayerTimes, nextPrayerKey, nextPrayerCountdown } = useMemo(() => {
     const townKey = selectedTownFilter !== 'all' ? selectedTownFilter : 'Tanah Rata';
     const hub = townshipHubs[townKey];
-    
-    if (hub?.prayerTimes) {
-      return [
-        { nameEn: 'Subuh', nameBm: 'Subuh', time: hub.prayerTimes.subuh, icon: '🌅' },
-        { nameEn: 'Syuruk', nameBm: 'Syuruk', time: hub.prayerTimes.syuruk, icon: '☀️' },
-        { nameEn: 'Zohor', nameBm: 'Zohor', time: hub.prayerTimes.zohor, icon: '☀️' },
-        { nameEn: 'Asar', nameBm: 'Asar', time: hub.prayerTimes.asar, icon: '🌤️' },
-        { nameEn: 'Maghrib', nameBm: 'Maghrib', time: hub.prayerTimes.maghrib, icon: '🌇' },
-        { nameEn: 'Isyak', nameBm: 'Isyak', time: hub.prayerTimes.isyak, icon: '🌙' },
-      ].map(p => {
-        // Simple 24h to 12h conversion if needed, or assume it's stored correctly
-        let t = p.time;
-        if (t && t.includes(':')) {
-          const [h, m] = t.split(':').map(Number);
-          const ampm = h >= 12 ? 'PM' : 'AM';
-          const h12 = h % 12 || 12;
-          t = `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
-        }
-        return { ...p, time: t };
-      });
-    }
+    const sourceTimes = livePrayerData?.prayerTimes || hub?.prayerTimes || PHG06_FALLBACK_24H;
 
-    // Static fallback if no hub data
-    return [
-      { nameEn: 'Subuh', nameBm: 'Subuh', time: '06:05 AM', icon: '🌅' },
-      { nameEn: 'Syuruk', nameBm: 'Syuruk', time: '07:18 AM', icon: '☀️' },
-      { nameEn: 'Zohor', nameBm: 'Zohor', time: '01:21 PM', icon: '☀️' },
-      { nameEn: 'Asar', nameBm: 'Asar', time: '04:38 PM', icon: '🌤️' },
-      { nameEn: 'Maghrib', nameBm: 'Maghrib', time: '07:22 PM', icon: '🌇' },
-      { nameEn: 'Isyak', nameBm: 'Isyak', time: '08:33 PM', icon: '🌙' },
+    const rawList = [
+      { key: 'subuh', nameEn: 'Subuh', nameBm: 'Subuh', time24: sourceTimes.subuh || PHG06_FALLBACK_24H.subuh, icon: '🌅' },
+      { key: 'syuruk', nameEn: 'Syuruk', nameBm: 'Syuruk', time24: sourceTimes.syuruk || PHG06_FALLBACK_24H.syuruk, icon: '☀️' },
+      { key: 'zohor', nameEn: 'Zohor', nameBm: 'Zohor', time24: sourceTimes.zohor || PHG06_FALLBACK_24H.zohor, icon: '☀️' },
+      { key: 'asar', nameEn: 'Asar', nameBm: 'Asar', time24: sourceTimes.asar || PHG06_FALLBACK_24H.asar, icon: '🌤️' },
+      { key: 'maghrib', nameEn: 'Maghrib', nameBm: 'Maghrib', time24: sourceTimes.maghrib || PHG06_FALLBACK_24H.maghrib, icon: '🌇' },
+      { key: 'isyak', nameEn: 'Isyak', nameBm: 'Isyak', time24: sourceTimes.isyak || PHG06_FALLBACK_24H.isyak, icon: '🌙' },
     ];
-  }, [townshipHubs, selectedTownFilter]);
+
+    // Compute upcoming prayer in Malaysia Standard Time (Asia/Kuala_Lumpur)
+    const nowKl = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
+    const nowMins = nowKl.getHours() * 60 + nowKl.getMinutes();
+
+    let foundNextKey = 'subuh';
+    let minDiff = Number.MAX_SAFE_INTEGER;
+    rawList.forEach((p) => {
+      const [hh, mm] = String(p.time24).split(':').map(Number);
+      if (!Number.isNaN(hh) && !Number.isNaN(mm)) {
+        let diff = hh * 60 + mm - nowMins;
+        if (diff <= 0) diff += 24 * 60;
+        if (diff < minDiff) {
+          minDiff = diff;
+          foundNextKey = p.key;
+        }
+      }
+    });
+
+    const hrsLeft = Math.floor(minDiff / 60);
+    const minsLeft = minDiff % 60;
+    const countdownLabel =
+      minDiff < 24 * 60
+        ? hrsLeft > 0
+          ? `${hrsLeft}h ${minsLeft}m`
+          : `${minsLeft}m`
+        : '';
+
+    return {
+      currentPrayerTimes: rawList.map((p) => ({
+        ...p,
+        time: to12HourDisplay(p.time24),
+      })),
+      nextPrayerKey: foundNextKey,
+      nextPrayerCountdown: countdownLabel,
+    };
+  }, [livePrayerData, townshipHubs, selectedTownFilter]);
 
   // Filter only masjid_surau places
   const allMasjidPlaces = useMemo(() => {
@@ -201,41 +269,71 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-6 py-4 space-y-4 touch-pan-y"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {/* Cameron Highlands Zon 3 Pahang Prayer Times Ribbon */}
+          {/* Cameron Highlands JAKIM PHG06 Live Prayer Times Ribbon */}
           <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-stone-900/90 to-teal-950/80 border border-emerald-500/30 shadow-xl">
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">✨</span>
-                <div>
-                  <span className="text-xs font-bold text-emerald-300">
-                    {language === 'bm' ? 'Waktu Solat Zon 3 Pahang' : 'Highland Prayer Times (Zone 3)'}
-                  </span>
-                  <span className="text-[10px] text-stone-400 ml-1.5 hidden sm:inline">
-                    (Cameron Highlands, Genting & Fraser)
-                  </span>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm shrink-0">✨</span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-bold text-emerald-300">
+                      {language === 'bm' ? 'Waktu Solat JAKIM PHG06' : 'Prayer Times (JAKIM PHG06)'}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-200">
+                      {livePrayerData?.source || 'JAKIM PHG06'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-stone-400 truncate mt-0.5">
+                    Cameron Highlands, Genting & Fraser
+                    {livePrayerData?.date ? ` • ${livePrayerData.date}` : ''}
+                    {livePrayerData?.hijri ? ` (${livePrayerData.hijri}H)` : ''}
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-stone-300 font-mono bg-stone-900/80 px-2 py-0.5 rounded-lg border border-white/5">
-                <Compass className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Kiblat: ~292° Barat Laut</span>
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-stone-300 font-mono bg-stone-900/80 px-2 py-1 rounded-lg border border-white/5">
+                  <Compass className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{livePrayerData?.bearing ? `Kiblat: ${livePrayerData.bearing}` : 'Kiblat: 291° 56′ BL'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchLivePrayerTimes(true)}
+                  disabled={isRefreshingPrayers}
+                  title={language === 'bm' ? 'Muat semula waktu solat JAKIM' : 'Refresh live JAKIM times'}
+                  className="p-1.5 rounded-lg bg-stone-900/90 hover:bg-stone-800 text-emerald-300 border border-emerald-500/30 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingPrayers ? 'animate-spin' : ''}`} />
+                </button>
               </div>
             </div>
 
             {/* Prayer Times Badges */}
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-              {currentPrayerTimes.map((prayer) => (
-                <div
-                  key={prayer.nameEn}
-                  className="bg-stone-900/90 border border-emerald-500/20 rounded-xl p-2 text-center shadow-sm"
-                >
-                  <div className="text-[10px] text-stone-400 font-medium">
-                    {language === 'bm' ? prayer.nameBm : prayer.nameEn}
+              {currentPrayerTimes.map((prayer) => {
+                const isNext = prayer.key === nextPrayerKey;
+                return (
+                  <div
+                    key={prayer.nameEn}
+                    className={`rounded-xl p-2 text-center shadow-sm transition-all ${
+                      isNext
+                        ? 'bg-emerald-900/60 border border-emerald-400/60 ring-1 ring-emerald-400/30'
+                        : 'bg-stone-900/90 border border-emerald-500/20'
+                    }`}
+                  >
+                    <div className="text-[10px] text-stone-300 font-medium flex items-center justify-center gap-1">
+                      <span>{language === 'bm' ? prayer.nameBm : prayer.nameEn}</span>
+                    </div>
+                    <div className={`text-xs font-bold font-mono mt-0.5 ${isNext ? 'text-white' : 'text-emerald-300'}`}>
+                      {prayer.time}
+                    </div>
+                    {isNext && nextPrayerCountdown && (
+                      <div className="text-[9px] font-mono text-emerald-300 mt-0.5">
+                        {language === 'bm' ? `±${nextPrayerCountdown}` : `in ${nextPrayerCountdown}`}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-xs font-bold font-mono text-emerald-300 mt-0.5">
-                    {prayer.time}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -486,7 +584,7 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
         {/* Modal Bottom Close Bar */}
         <div className="shrink-0 p-3 bg-stone-900 border-t border-white/10 flex items-center justify-between">
           <span className="text-[11px] text-stone-400 font-mono">
-            {language === 'bm' ? 'Zon 3 Pahang • Waktu Malaysia' : 'Zone 3 Pahang • MYT'}
+            {language === 'bm' ? 'JAKIM PHG06 (Cameron Highlands) • Waktu Malaysia' : 'JAKIM PHG06 (Cameron Highlands) • MYT'}
           </span>
           <button
             onClick={onClose}

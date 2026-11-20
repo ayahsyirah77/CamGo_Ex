@@ -358,7 +358,7 @@ async function startServer() {
    • Big Red Strawberry Farm Brinchang (Surau di teras atas)
    • Taman Eko Agro MARDI Tanah Rata (Surau pelawat)
 
-Tip: Waktu Solat Cameron Highlands mengikut Zon 3 Pahang (Cameron Highlands, Genting Highlands, Bukit Fraser). Anda juga boleh klik butang "Masjid & Surau" pada menu navigasi CamGo untuk melihat peta interaktif!`;
+Tip: Waktu Solat Cameron Highlands mengikut Zon JAKIM PHG06 (Cameron Highlands, Genting Highlands, Bukit Fraser). Anda juga boleh klik butang "Masjid & Surau" pada menu navigasi CamGo untuk melihat jadual solat langsung!`;
       }
       return `Mosques & Suraus (Prayer Facilities) in Cameron Highlands (CamGo Website Directory):
 
@@ -396,7 +396,7 @@ Tip: Waktu Solat Cameron Highlands mengikut Zon 3 Pahang (Cameron Highlands, Gen
    • Big Red Strawberry Farm Brinchang (Surau on upper greenhouse level)
    • MARDI Agro Technology Park Tanah Rata (Visitor prayer room)
 
-Pro Tip: Prayer times follow Zone 3 Pahang. You can also view the full prayer times and directions by tapping the "Masjid & Surau" button on CamGo!`;
+Pro Tip: Prayer times follow JAKIM Zone PHG06 (Cameron Highlands, Genting Highlands, Bukit Fraser). You can also view the live prayer schedule and directions by tapping the "Masjid & Surau" button on CamGo!`;
     }
 
     if (q.includes('steamboat') || q.includes('makan') || q.includes('food') || q.includes('dinner') || q.includes('lunch')) {
@@ -1259,7 +1259,7 @@ VERIFIED IN-WEBSITE DIRECTORY KNOWLEDGE:
   6. Masjid Ringlet (Masjid Al-Ehsaniah): Southern gateway mosque from Tapah / Sg Koyan; Solat Jumaat.
   7. Masjid Kampung Raja: Northern gateway mosque from Simpang Pulai FT185; Solat Jumaat.
   8. Suraus at Attractions: BOH Sungei Palas (entrance surau), Cameron Valley Tea House 1 & 2 (valley view surau), Big Red Strawberry Farm (upper greenhouse surau), MARDI Agro Park (visitor prayer room).
-  (Zone 3 Pahang prayer times apply).
+  (JAKIM Zone PHG06 — Cameron Highlands, Genting Highlands, Bukit Fraser prayer times apply).
 
 - ATTRACTION TICKETS & PASSES:
   • Cameron Flora Park: RM 50 Adult / RM 25 Child (includes shuttle).
@@ -1508,8 +1508,23 @@ Only return valid JSON without markdown wrapping.`;
       const { dayPlan } = req.body;
       const ai = getGeminiClient();
       if (!ai) return res.json({ prediction: 'Traffic condition normal.' });
-      const prompt = `Analyze this itinerary for Cameron Highlands and predict traffic bottlenecks. 
-      Itinerary: ${JSON.stringify(dayPlan)}. Suggest proactive schedule shifts if needed.`;
+
+      const isIncidentFlow = dayPlan?.mode === 'incident_traffic_flow_prediction';
+      const prompt = isIncidentFlow
+        ? `You are a Cameron Highlands traffic & emergency routing specialist for camgo.my.
+Analyze this real-time incident/congestion event strictly using the REAL Cameron Highlands road network:
+- Central Spine: Single-spine FT59 (Ringlet <-> Tanah Rata <-> Brinchang <-> Kea Farm).
+- 4 Upstream Feeder Corridors: Simpang Pulai (FT185), Gua Musang/Lojing (FT185), Tapah (FT59), Sungai Koyan (FT102).
+- CRITICAL SAFETY RULES:
+  1. NEVER invent parallel highland highways, Habu agricultural bypasses, or unsafe dirt tracks.
+  2. NEVER suggest BOH Sungai Palas estate roads as a through-route between Brinchang and Kea Farm (single-lane dead-end plantation tracks).
+  3. Between Tanah Rata & Brinchang (FT59): Jalan Sungai Ruil / Jalan Golden Hills exists for light vehicles (cars & MPVs) only (warn against buses/lorries & weekend Pasar Malam jam after 4 PM).
+  4. Between Brinchang & Kea Farm/Tringkap, and between Ringlet & Tanah Rata: NO parallel paved bypass exists; recommend safe town waiting spots (Tanah Rata, Brinchang commercial square, Ringlet) or full gateway switches via FT185 Simpang Pulai, FT59 Tapah, or FT102 Sungai Koyan.
+
+Payload: ${JSON.stringify(dayPlan)}.
+Respond concisely in ${dayPlan?.language === 'bm' ? 'Bahasa Malaysia' : 'English'} (2-3 crisp sentences max).`
+        : `Analyze this itinerary for Cameron Highlands (real network: single-spine FT59 Ringlet-Tanah Rata-Brinchang-Kea Farm, feeders FT185/FT59/FT102) and predict traffic bottlenecks. Never invent fake bypass roads or BOH estate through-routes.
+Itinerary: ${JSON.stringify(dayPlan)}. Suggest proactive schedule shifts if needed.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3.8-flash',
@@ -1676,13 +1691,19 @@ Use Google Search grounding to find accurate, up-to-date answers from the live w
     }
   });
 
-  // Live Cameron Highlands (JAKIM Zone PHG04) Prayer Times Endpoint
+  // Live Cameron Highlands (Official JAKIM Zone PHG06: Cameron Highlands, Genting Highlands, Bukit Fraser) Prayer Times Endpoint
   let prayerTimesCache: { dateKey: string; fetchedAt: number; data: any } | null = null;
-  app.get('/api/prayer-times', async (_req, res) => {
+  app.get('/api/prayer-times', async (req, res) => {
     const nowKl = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
     const dateKey = `${nowKl.getFullYear()}-${String(nowKl.getMonth() + 1).padStart(2, '0')}-${String(nowKl.getDate()).padStart(2, '0')}`;
+    const forceRefresh = req.query?.refresh === 'true' || req.query?.refresh === '1';
 
-    if (prayerTimesCache && prayerTimesCache.dateKey === dateKey && Date.now() - prayerTimesCache.fetchedAt < 3600 * 1000) {
+    if (
+      !forceRefresh &&
+      prayerTimesCache &&
+      prayerTimesCache.dateKey === dateKey &&
+      Date.now() - prayerTimesCache.fetchedAt < 30 * 60 * 1000
+    ) {
       return res.json(prayerTimesCache.data);
     }
 
@@ -1699,7 +1720,7 @@ Use Google Search grounding to find accurate, up-to-date answers from the live w
     try {
       const controller = new AbortController();
       const tId = setTimeout(() => controller.abort(), 5000);
-      const resp = await fetch('https://www.e-solat.gov.my/index.php?r=esolatApi/takwimsolat&period=today&zone=PHG04', {
+      const resp = await fetch('https://www.e-solat.gov.my/index.php?r=esolatApi/takwimsolat&period=today&zone=PHG06', {
         signal: controller.signal,
       });
       clearTimeout(tId);
@@ -1708,17 +1729,25 @@ Use Google Search grounding to find accurate, up-to-date answers from the live w
         const item = Array.isArray(json?.prayerTime) ? json.prayerTime[0] : null;
         if (item) {
           const payload = {
-            zone: 'PHG04',
-            region: 'Cameron Highlands, Pahang',
+            zone: 'PHG06',
+            region: 'Cameron Highlands, Genting Highlands, Bukit Fraser (Pahang)',
             date: dateKey,
+            hijri: item.hijri || null,
+            bearing: String(json?.bearing || '291° 55′ 59″')
+              .replace(/&#176;|&deg;/g, '°')
+              .replace(/&#8242;|&prime;/g, '′')
+              .replace(/&#8243;|&Prime;/g, '″'),
             source: 'JAKIM e-Solat',
+            fetchedAt: new Date().toISOString(),
             prayerTimes: {
-              subuh: formatHhMm(item.fajr, '06:05'),
-              syuruk: formatHhMm(item.syuruk, '07:18'),
-              zohor: formatHhMm(item.dhuhr, '13:21'),
-              asar: formatHhMm(item.asr, '16:38'),
-              maghrib: formatHhMm(item.maghrib, '19:22'),
-              isyak: formatHhMm(item.isha, '20:33'),
+              imsak: formatHhMm(item.imsak, '05:40'),
+              subuh: formatHhMm(item.fajr, '05:50'),
+              syuruk: formatHhMm(item.syuruk, '06:56'),
+              dhuha: formatHhMm(item.dhuha, '07:21'),
+              zohor: formatHhMm(item.dhuhr, '13:02'),
+              asar: formatHhMm(item.asr, '16:23'),
+              maghrib: formatHhMm(item.maghrib, '19:03'),
+              isyak: formatHhMm(item.isha, '20:11'),
             },
           };
           prayerTimesCache = { dateKey, fetchedAt: Date.now(), data: payload };
@@ -1731,8 +1760,8 @@ Use Google Search grounding to find accurate, up-to-date answers from the live w
 
     try {
       const controller = new AbortController();
-      const tId = setTimeout(() => controller.abort(), 4000);
-      const resp2 = await fetch('https://api.waktusolat.app/v2/solat/PHG04', { signal: controller.signal });
+      const tId = setTimeout(() => controller.abort(), 4500);
+      const resp2 = await fetch('https://api.waktusolat.app/v2/solat/PHG06', { signal: controller.signal });
       clearTimeout(tId);
       if (resp2.ok) {
         const json2: any = await resp2.json();
@@ -1741,18 +1770,23 @@ Use Google Search grounding to find accurate, up-to-date answers from the live w
           ? json2.prayers.find((p: any) => Number(p.day) === dayOfMonth) || json2.prayers[0]
           : null;
         if (todayEntry) {
+          const subuhVal = formatHhMm(todayEntry.fajr, '05:50');
           const payload = {
-            zone: 'PHG04',
-            region: 'Cameron Highlands, Pahang',
+            zone: 'PHG06',
+            region: 'Cameron Highlands, Genting Highlands, Bukit Fraser (Pahang)',
             date: dateKey,
-            source: 'WaktuSolat PHG04',
+            hijri: todayEntry.hijri || null,
+            bearing: '291° 55′ 59″',
+            source: 'WaktuSolat PHG06',
+            fetchedAt: new Date().toISOString(),
             prayerTimes: {
-              subuh: formatHhMm(todayEntry.fajr, '06:05'),
-              syuruk: formatHhMm(todayEntry.syuruk, '07:18'),
-              zohor: formatHhMm(todayEntry.dhuhr, '13:21'),
-              asar: formatHhMm(todayEntry.asr, '16:38'),
-              maghrib: formatHhMm(todayEntry.maghrib, '19:22'),
-              isyak: formatHhMm(todayEntry.isha, '20:33'),
+              imsak: subuhVal,
+              subuh: subuhVal,
+              syuruk: formatHhMm(todayEntry.syuruk, '06:56'),
+              zohor: formatHhMm(todayEntry.dhuhr, '13:02'),
+              asar: formatHhMm(todayEntry.asr, '16:23'),
+              maghrib: formatHhMm(todayEntry.maghrib, '19:03'),
+              isyak: formatHhMm(todayEntry.isha, '20:11'),
             },
           };
           prayerTimesCache = { dateKey, fetchedAt: Date.now(), data: payload };
@@ -1764,17 +1798,22 @@ Use Google Search grounding to find accurate, up-to-date answers from the live w
     }
 
     const fallbackPayload = {
-      zone: 'PHG04',
-      region: 'Cameron Highlands, Pahang',
+      zone: 'PHG06',
+      region: 'Cameron Highlands, Genting Highlands, Bukit Fraser (Pahang)',
       date: dateKey,
-      source: 'Highland Baseline PHG04',
+      hijri: null,
+      bearing: '291° 55′ 59″',
+      source: 'Highland Baseline PHG06',
+      fetchedAt: new Date().toISOString(),
       prayerTimes: {
-        subuh: '06:05',
-        syuruk: '07:18',
-        zohor: '13:21',
-        asar: '16:38',
-        maghrib: '19:22',
-        isyak: '20:33',
+        imsak: '05:40',
+        subuh: '05:50',
+        syuruk: '06:56',
+        dhuha: '07:21',
+        zohor: '13:02',
+        asar: '16:23',
+        maghrib: '19:03',
+        isyak: '20:11',
       },
     };
     return res.json(fallbackPayload);

@@ -40,7 +40,7 @@ class GeminiHighlandService {
         delayEstimate: '25 - 45 mins',
         peakWindow: '10:30 AM - 4:30 PM (Peak on Weekends & School Holidays)',
         suggestedAlternativeRoute:
-          'If approaching from North, take the Simpang Pulai (FT 185) -> Blue Valley -> Kampung Raja route. For Sungei Palas, consider parking at the main junction and taking licensed 4x4.',
+          'No parallel paved bypass exists between Brinchang and Kea Farm (do NOT use Sungai Palas BOH estate tracks as a through-route). For Tanah Rata ↔ Brinchang only, light vehicles can divert via Jalan Sungai Ruil / Golden Hills. For highland entry from the north, use Simpang Pulai (FT185).',
         suggestedAlternativePlace:
           isSungeiPalas
             ? 'Cameron Valley Tea House 1 or 2 (along Route 59 Tanah Rata) which offers effortless highway parking and lush tea terraces without the single-lane climb.'
@@ -153,11 +153,17 @@ class GeminiHighlandService {
               predictedDelayMins: algoPrediction.predictedDelayMins,
               congestionSpreadKm: algoPrediction.congestionSpreadKm,
               flowTrend: algoPrediction.flowTrend,
+              recommendedBypass: algoPrediction.recommendedBypass,
+            },
+            networkTopologyRules: {
+              spine: 'Single-spine linear bottleneck FT59 (Ringlet <-> Tanah Rata <-> Brinchang <-> Kea Farm)',
+              upstreamFeeders: ['Simpang Pulai FT185', 'Gua Musang/Lojing FT185', 'Tapah FT59', 'Sungai Koyan FT102'],
+              prohibitedSuggestions: ['Fake parallel highways', 'Agricultural dirt tracks', 'Habu bypass', 'BOH Sungai Palas estate road as through-route'],
             },
             instruction:
               language === 'bm'
-                ? 'Berikan ramalan ringkas (maksimum 2-3 ayat) dalam Bahasa Malaysia tentang aliran trafik, tempoh kesesakan dan laluan alternatif terbaik di Cameron Highlands.'
-                : 'Provide a concise 2-3 sentence traffic flow prediction, clearance expectation, and best Cameron Highlands detour recommendation.',
+                ? 'Berikan ramalan ringkas (maksimum 2-3 ayat) dalam Bahasa Malaysia tentang aliran trafik, tempoh kesesakan dan laluan sah FT59/FT185/FT102 atau Golden Hills (kenderaan ringan sahaja).'
+                : 'Provide a concise 2-3 sentence traffic flow prediction, clearance expectation, and real paved detour or town waiting recommendation without inventing fake bypasses.',
           },
         }),
       });

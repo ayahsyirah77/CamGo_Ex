@@ -435,7 +435,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             id: 'traffic-keafarm',
             category: 'Traffic',
             title: language === 'bm' ? 'Trafik Sesak di Kea Farm' : 'Kea Farm Traffic Choke-Point',
-            desc: language === 'bm' ? 'Aliran perlahan sekitar pasar pagi & ladang strawberi. Laluan Habu dibuka.' : 'Slow-moving traffic around market & strawberry farms. Habu bypass alternate clear.',
+            desc: language === 'bm' ? 'Aliran perlahan sekitar pasar pagi & ladang strawberi. Elakkan jam puncak atau guna pintu masuk FT185.' : 'Slow-moving traffic around Kea Farm market. No parallel bypass — visit after 5:30 PM or stay in Brinchang.',
             tag: 'LIVE',
             tagColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
             action: () => {
@@ -1625,37 +1625,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* Smart Parking & EV Charging Bay Finder */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      if (onOpenParkingEvModal) {
-                        onOpenParkingEvModal();
-                      } else {
-                        window.dispatchEvent(new CustomEvent('open-smart-parking-ev-modal'));
-                      }
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-gradient-to-r from-teal-950/50 via-stone-900/90 to-emerald-950/50 hover:from-teal-900/70 hover:to-emerald-900/70 text-stone-200 hover:text-white border border-emerald-500/40 hover:border-emerald-400 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Car className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                          LIVE BAYS &amp; EV
-                        </span>
-                        <span className="text-[10px] font-bold text-amber-300">⚡ Fast Charging</span>
-                      </div>
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-emerald-300 transition-colors leading-tight">
-                        {language === 'bm'
-                          ? 'Carian Parking & Pengecas EV'
-                          : 'Smart Parking & EV Charging Bay Finder'}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
                   {/* Non-Citizen Hospital Fee */}

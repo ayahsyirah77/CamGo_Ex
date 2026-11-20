@@ -328,5 +328,160 @@ test('Cameron Trails Module: includes Gunung Irau, Gunung Siku, and Gunung Jasar
   }
 });
 
+import {
+  computeModifiedBprAscentRate,
+  evaluateSpatialTemporalNetwork,
+  evaluateIntraHighlandIncidentAdvisory,
+} from '../services/cameronTrafficModel.ts';
+
+test('Cameron Spatial-Temporal Model: BPR ascent rate + Incident Cap Guardrail + FT59 spine wave', () => {
+  // Zero delay yields 0 BPR ascent flow
+  assert.equal(
+    computeModifiedBprAscentRate({
+      capacityVehPerHr: 1450,
+      gammaAscentShare: 0.72,
+      currentDurationSecs: 3000,
+      freeFlowDurationSecs: 3000,
+      beta: 4,
+    }),
+    0
+  );
+
+  // Positive delay yields positive ascent rate V_i scaling with (delta / (0.15 * t_free))^(1/4)
+  const sampleVi = computeModifiedBprAscentRate({
+    capacityVehPerHr: 1450,
+    gammaAscentShare: 0.72,
+    currentDurationSecs: 3900, // +900s = 2 * (0.15 * 3000)
+    freeFlowDurationSecs: 3000,
+    beta: 4,
+  });
+  // 1450 * 0.72 * 2^(0.25) ~= 1044 * 1.1892 ~= 1241
+  assert.ok(sampleVi >= 1235 && sampleVi <= 1250, `Unexpected BPR Vi: ${sampleVi}`);
+
+  const sampleDate = new Date('2026-11-21T10:30:00+08:00');
+  // Without roadblock hazard, massive delay on Simpang Pulai creates high uncapped Vi
+  const uncappedModel = evaluateSpatialTemporalNetwork({
+    targetDate: sampleDate,
+    corridorInputs: [
+      {
+        corridorId: 'simpang_pulai_ft185',
+        currentDurationSecs: 6000,
+        freeFlowDurationSecs: 3000,
+        source: 'here_routing_v8',
+      },
+    ],
+  });
+  const uncappedSp = uncappedModel.feeders.find((f) => f.id === 'simpang_pulai_ft185')!;
+  assert.equal(uncappedSp.isIncidentCapped, false);
+  assert.ok(uncappedSp.effectiveVi > uncappedSp.historicalBaselineVi);
+
+  // With landslide/roadblock hazard on Simpang Pulai, Incident Cap Guardrail caps Vi at baseline
+  const cappedModel = evaluateSpatialTemporalNetwork({
+    targetDate: sampleDate,
+    corridorInputs: [
+      {
+        corridorId: 'simpang_pulai_ft185',
+        currentDurationSecs: 6000,
+        freeFlowDurationSecs: 3000,
+        source: 'here_routing_v8',
+      },
+    ],
+    hazards: [
+      {
+        id: 'haz-sp-block',
+        title: 'Landslide at Pos Slim FT185',
+        description: 'Single-lane roadwork and landslide cleanup',
+        type: 'landslide',
+        severity: 'high',
+        location: 'Simpang Pulai FT185 Pos Slim',
+        lat: 4.565,
+        lng: 101.24,
+        source: 'JKR',
+        status: 'active',
+        stillThereVotes: 0,
+        clearedVotes: 0,
+        timestamp: sampleDate.toISOString(),
+      },
+    ],
+  });
+  const cappedSp = cappedModel.feeders.find((f) => f.id === 'simpang_pulai_ft185')!;
+  assert.equal(cappedSp.isIncidentCapped, true);
+  assert.equal(cappedSp.effectiveVi, cappedSp.historicalBaselineVi);
+
+  // Spine propagates across all 4 FT59 nodes with +1h/+2h/+3h horizons
+  assert.deepEqual(
+    cappedModel.spineNodes.map((n) => n.id),
+    ['ringlet', 'tanah_rata', 'brinchang', 'kea_farm']
+  );
+  cappedModel.spineNodes.forEach((n) => {
+    assert.equal(n.horizons.length, 3);
+    assert.deepEqual(
+      n.horizons.map((h) => h.offsetHours),
+      [1, 2, 3]
+    );
+  });
+});
+
+test('Intra-Highland Incident Advisory: validates real FT59/FT185/FT102 rules across Scenarios 1-4', () => {
+  // Scenario 1: Tanah Rata <-> Brinchang (e.g. Rosa Passadena) -> Golden Hills light vehicle link
+  const s1 = evaluateIntraHighlandIncidentAdvisory({
+    title: 'Accident near Rosa Passadena',
+    type: 'accident',
+    severity: 'high',
+    location: 'Rosa Passadena / Padang Golf FT59',
+    lat: 4.482,
+    lng: 101.386,
+  });
+  assert.equal(s1.scenarioId, 'scenario_1_tanah_rata_brinchang');
+  assert.equal(s1.alternativeRouteAvailable, true);
+  assert.equal(s1.availabilityBadge, 'ALTERNATIVE ROUTE AVAILABLE');
+  assert.match(s1.exactReroute, /Golden Hills|Sungai Ruil/i);
+
+  // Scenario 2: Brinchang <-> Kea Farm -> NO parallel bypass, warns against BOH Sungai Palas estate track
+  const s2 = evaluateIntraHighlandIncidentAdvisory({
+    title: 'Severe Bottleneck at Kea Farm',
+    type: 'sudden_congestion',
+    severity: 'high',
+    location: 'Kea Farm Market Strip FT59',
+    lat: 4.5028,
+    lng: 101.4072,
+  });
+  assert.equal(s2.scenarioId, 'scenario_2_brinchang_kea_farm_tringkap');
+  assert.equal(s2.alternativeRouteAvailable, false);
+  assert.equal(s2.availabilityBadge, 'NO PARALLEL BYPASS — SINGLE SPINE ROAD');
+  assert.match(s2.vehicleRestrictionNote || '', /Do NOT attempt Sungai Palas BOH/i);
+
+  // Scenario 3: Ringlet <-> Tanah Rata (Habu / Bertam Valley) -> NO parallel bypass
+  const s3 = evaluateIntraHighlandIncidentAdvisory({
+    title: 'Fallen tree near Habu',
+    type: 'fallen_tree',
+    severity: 'high',
+    location: 'Habu / Bertam Valley Junction FT59',
+    lat: 4.4472,
+    lng: 101.3838,
+  });
+  assert.equal(s3.scenarioId, 'scenario_3_ringlet_tanah_rata');
+  assert.equal(s3.alternativeRouteAvailable, false);
+  assert.equal(s3.availabilityBadge, 'NO PARALLEL BYPASS — SINGLE SPINE ROAD');
+  assert.match(s3.whatToDoWhereToGo, /Sungai Koyan \(FT102\)/i);
+  assert.match(s3.whatToDoWhereToGo, /Simpang Pulai \(FT185\)/i);
+
+  // Scenario 4: Entry/Exit Highway (Tapah FT59 / Gua Musang FT185) -> Full gateway switch
+  const s4 = evaluateIntraHighlandIncidentAdvisory({
+    title: 'Landslide KM 43 Tapah Road',
+    type: 'landslide',
+    severity: 'critical',
+    location: 'Lata Iskandar Tapah FT59',
+    lat: 4.331,
+    lng: 101.328,
+  });
+  assert.equal(s4.scenarioId, 'scenario_4_entry_exit_highway');
+  assert.equal(s4.alternativeRouteAvailable, true);
+  assert.equal(s4.availabilityBadge, 'ALTERNATIVE ROUTE AVAILABLE');
+  assert.match(s4.exactReroute, /Simpang Pulai \(FT185\)/i);
+  assert.match(s4.whatToDoWhereToGo, /fuel/i);
+});
+
+
 
 

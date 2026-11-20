@@ -3935,11 +3935,14 @@ class FirebaseStorageService {
       try {
         const parsed = JSON.parse(data);
         if (Array.isArray(parsed)) {
-          // Strict purge: only retain entries created by Admin (accom-*) or linked to a genuine Vendor listing
+          // Strict purge: only retain entries created by Admin (accom-*) or linked to a genuine Vendor listing, removing mock entries
           cachedListings = parsed.filter((item: any) => {
             if (!item || !item.id) return false;
             if (isDirectoryAccommodationId(item.id)) return false;
             const idLower = String(item.id).toLowerCase();
+            if (idLower.includes('mock') || idLower.includes('sample') || idLower.includes('acc-') || idLower.includes('homestay-')) {
+              return false;
+            }
             const isAdminCreated = idLower.startsWith('accom-');
             const isValidVendor = validVendorIds.has(item.id) || Boolean(item.vendorId && validVendorIds.has(item.vendorId));
             return isAdminCreated || isValidVendor;
@@ -3997,9 +4000,12 @@ class FirebaseStorageService {
   ): AccommodationListing[] {
     const accom = v.sectorSpecifics?.accommodation;
     const units = accom?.units || [];
+    const multiUnit = units.length > 1;
+    const singleUnit = units.length === 1 ? units[0] : null;
     const codeNumber =
       v.id.slice(-4).replace(/\D/g, '') ||
       Math.floor(10 + Math.random() * 89).toString();
+    const baseCode = `CH-${codeNumber}`;
     const baseExisting = existingMap.get(v.id);
 
     const buildCard = (
@@ -4031,9 +4037,21 @@ class FirebaseStorageService {
         .filter((n) => n > 0);
       const peakPrice = validPeakRates[0] ?? 0;
 
-      const unitCode =
-        unit?.unitCode?.trim() ||
-        (multiUnit ? `CH-${unitIdx + 1}` : existing?.code || `CH-${codeNumber}`);
+      let unitCode = '';
+      if (!multiUnit) {
+        const propertyName =
+          singleUnit?.unitLabel?.trim() ||
+          singleUnit?.unitCode?.trim() ||
+          v.businessName?.trim() ||
+          'Homestay';
+        unitCode = `${baseCode} (${propertyName})`;
+      } else {
+        const uLabel = unit?.unitLabel?.trim();
+        const uCode = unit?.unitCode?.trim();
+        const hasSpecificName = uLabel && !uLabel.toLowerCase().startsWith('unit') && !uLabel.toLowerCase().startsWith('room');
+        const propertyName = hasSpecificName ? uLabel : (uCode && !uCode.toLowerCase().startsWith('ch-') ? uCode : '');
+        unitCode = propertyName ? `CH-${unitIdx + 1} (${propertyName})` : `CH-${unitIdx + 1}`;
+      }
 
       const resolvedAvailStatus: RoomAvailabilityStatus = unit
         ? unit.isAvailable === false

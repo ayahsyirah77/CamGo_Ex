@@ -66,6 +66,7 @@ import {
   BellRing,
 } from 'lucide-react';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
+import { VendorPwaInstaller } from './VendorPwaInstaller';
 import QRCode from 'qrcode';
 import {
   BUSINESS_TAXONOMY,
@@ -1471,6 +1472,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             </button>
           </div>
 
+          <VendorPwaInstaller variant="banner" />
+
           <div className="pt-2 border-t border-white/5">
             <button
               onClick={onClose}
@@ -1580,6 +1583,8 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               <Plus className="w-4 h-4" />
               <span>Register &amp; Add My Business Listing Now</span>
             </button>
+
+            <VendorPwaInstaller variant="banner" />
 
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
@@ -1749,6 +1754,9 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Vendor PWA Installer Banner (Android Chromium + iOS Safari Fallback) */}
+          <VendorPwaInstaller variant="banner" />
 
           {/* Bottom Row: Mobile Horizontal Scrollable Tab Bar */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs font-semibold">
@@ -2007,7 +2015,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
 
           {/* Top Header Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-800 pb-4">
-            <div>
+            <div className="flex-1 min-w-[240px]">
               <h1 className="text-xl sm:text-2xl font-black text-white font-heading">
                 {activeTab === 'overview' && 'Listing Performance & Real-Time Actions'}
                 {activeTab === 'directory' &&
@@ -2031,6 +2039,7 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              <VendorPwaInstaller variant="compact" className="hidden lg:flex" />
               {onOpenBookingAlerts && (
                 <button
                   type="button"

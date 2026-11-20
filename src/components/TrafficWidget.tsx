@@ -1,7 +1,11 @@
 // TrafficWidget.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { TrafficAlert, Language } from '../types';
+import {
+  evaluateSpatialTemporalNetwork,
+  evaluateIntraHighlandIncidentAdvisory,
+} from '../services/cameronTrafficModel';
 import {
   Car,
   CheckCircle2,
@@ -299,6 +303,32 @@ export const TrafficWidget: React.FC<TrafficWidgetProps> = ({
 
   const isBm = language === 'bm';
 
+  const spatialTemporalModel = useMemo(() => {
+    return evaluateSpatialTemporalNetwork({
+      targetDate: new Date(),
+    });
+  }, [lastRefreshedTime]);
+
+  const selectedAlertAdvisory = useMemo(() => {
+    if (!selectedAlertPopup) return null;
+    const coords = ALERT_COORDINATES[selectedAlertPopup.id];
+    const titleVal = selectedAlertPopup.roadName || selectedAlertPopup.location || 'FT59 Highland Corridor';
+    return evaluateIntraHighlandIncidentAdvisory({
+      title: titleVal,
+      titleBm: titleVal,
+      type:
+        selectedAlertPopup.status === 'heavy' || selectedAlertPopup.status === 'congested'
+          ? 'sudden_congestion'
+          : 'roadblock',
+      severity: selectedAlertPopup.status === 'heavy' ? 'high' : 'moderate',
+      location: selectedAlertPopup.location || titleVal,
+      corridor: selectedAlertPopup.route || selectedAlertPopup.roadName || 'FT59',
+      lat: coords ? coords[0] : 4.48,
+      lng: coords ? coords[1] : 101.39,
+      description: selectedAlertPopup.message || '',
+    });
+  }, [selectedAlertPopup]);
+
   useEffect(() => {
     const handleKeyUpdated = () => {
       setIsTomTomKeyActive(Boolean(localStorage.getItem('tomtom_api_key')));
@@ -471,6 +501,63 @@ export const TrafficWidget: React.FC<TrafficWidgetProps> = ({
               </div>
               <div className="text-lg sm:text-xl lg:text-base xl:text-xl font-black text-white leading-none mt-0.5">+{totalDelayMins}m</div>
             </div>
+          </div>
+        </div>
+
+        {/* Spatial-Temporal Traffic Model: Single-Spine FT59 Lagged Inflow Wave (+1h / +2h / +3h) */}
+        <div className="mt-4 pt-3.5 border-t border-white/10 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-emerald-300">
+                {isBm
+                  ? 'Model Gelombang Aliran FT59 (+1j / +2j / +3j)'
+                  : 'Spatial-Temporal FT59 Spine Wave (+1h / +2h / +3h)'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] font-mono">
+              <span className="px-2 py-0.5 rounded-md bg-stone-800 border border-white/10 text-stone-300">
+                {isBm ? 'Puncak' : 'Peak'}: {spatialTemporalModel.peakSpineNodeName} ({spatialTemporalModel.peakWaveHorizon})
+              </span>
+              {spatialTemporalModel.anyIncidentCapped && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                  {isBm ? 'Sekatan Had Aktif' : 'Incident Cap Active'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {spatialTemporalModel.spineNodes.map((node) => (
+              <div
+                key={node.id}
+                className="p-2.5 rounded-xl bg-stone-900/90 border border-white/10 space-y-1.5"
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-bold text-stone-100 truncate">{node.name}</span>
+                  <span className="text-[9px] font-mono text-stone-400">FT59</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 text-center font-mono text-[9px]">
+                  {node.horizons.map((h) => (
+                    <div
+                      key={h.offsetHours}
+                      className={`p-1 rounded-lg border ${
+                        h.status === 'gridlock'
+                          ? 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+                          : h.status === 'heavy'
+                          ? 'bg-amber-950/60 border-amber-500/40 text-amber-300'
+                          : h.status === 'moderate'
+                          ? 'bg-yellow-950/40 border-yellow-500/30 text-yellow-200'
+                          : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                      }`}
+                    >
+                      <div className="text-[8px] text-stone-400">+{h.offsetHours}h</div>
+                      <div className="font-bold">{h.predictedSpeedKmh}km/h</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -977,8 +1064,83 @@ export const TrafficWidget: React.FC<TrafficWidgetProps> = ({
                   );
                 })()}
 
-                {/* Alternative Bypass Route if available */}
-                {(selectedAlertPopup.alternativeRoute || selectedAlertPopup.alternativeRouteBm) && (
+                {/* 4-Block Structured Recommended Bypass & Intra-Highland Incident Advisory */}
+                {selectedAlertAdvisory ? (
+                  <div className="p-3.5 rounded-2xl bg-stone-950/90 border border-cyan-500/30 space-y-3 text-xs">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[10px] text-cyan-400 uppercase tracking-wider font-extrabold">
+                        {isBm ? 'Panduan Laluan & Tindak Balas Insiden' : 'Recommended Bypass & Incident Advisory'}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
+                          selectedAlertAdvisory.badgeTone === 'green'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : selectedAlertAdvisory.badgeTone === 'amber'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                        }`}
+                      >
+                        {isBm ? selectedAlertAdvisory.availabilityBadgeBm : selectedAlertAdvisory.availabilityBadge}
+                      </span>
+                    </div>
+
+                    {/* Block 1: Incident Status & Exact Location */}
+                    <div className="p-2.5 rounded-xl bg-stone-900/90 border border-white/10 space-y-0.5">
+                      <span className="text-[9px] uppercase tracking-wider font-bold text-stone-400 block">
+                        1. {isBm ? 'Status & Lokasi Tepat' : 'Incident Status & Exact Location'}
+                      </span>
+                      <p className="text-stone-100 font-semibold leading-snug">
+                        {isBm ? selectedAlertAdvisory.incidentStatusLocationBm : selectedAlertAdvisory.incidentStatusLocation}
+                      </p>
+                      <span className="text-[10px] font-mono text-cyan-300 block">
+                        {isBm ? selectedAlertAdvisory.scenarioLabelBm : selectedAlertAdvisory.scenarioLabel}
+                      </span>
+                    </div>
+
+                    {/* Block 2 & 3: Alternative Route & Exact Reroute / Restriction */}
+                    <div
+                      className={`p-2.5 rounded-xl border space-y-1 ${
+                        selectedAlertAdvisory.alternativeRouteAvailable
+                          ? 'bg-emerald-950/25 border-emerald-500/30'
+                          : 'bg-rose-950/25 border-rose-500/30'
+                      }`}
+                    >
+                      <span className="text-[9px] uppercase tracking-wider font-bold text-stone-300 block">
+                        2. {isBm ? 'Laluan Alternatif / Pertukaran Pintu Masuk' : 'Exact Reroute / Gateway Switch'}
+                      </span>
+                      <p className="text-stone-100 font-medium leading-relaxed">
+                        {isBm ? selectedAlertAdvisory.exactRerouteBm : selectedAlertAdvisory.exactReroute}
+                      </p>
+                      {(selectedAlertAdvisory.vehicleRestrictionNote || selectedAlertAdvisory.vehicleRestrictionNoteBm) && (
+                        <p className="text-[10px] text-amber-300 font-semibold pt-0.5">
+                          ⚠️ {isBm ? selectedAlertAdvisory.vehicleRestrictionNoteBm : selectedAlertAdvisory.vehicleRestrictionNote}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Block 4: What to Do & Where to Go Nearby */}
+                    <div className="p-2.5 rounded-xl bg-stone-900/90 border border-white/10 space-y-1.5">
+                      <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-400 block">
+                        3. {isBm ? 'Tindakan & Lokasi Berhenti Selamat' : 'What to Do & Where to Go Nearby'}
+                      </span>
+                      <p className="text-stone-200 leading-relaxed">
+                        {isBm ? selectedAlertAdvisory.whatToDoWhereToGoBm : selectedAlertAdvisory.whatToDoWhereToGo}
+                      </p>
+                      {selectedAlertAdvisory.safeWaitingSpots.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {selectedAlertAdvisory.safeWaitingSpots.map((spot) => (
+                            <span
+                              key={spot}
+                              className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-medium"
+                            >
+                              📍 {spot}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (selectedAlertPopup.alternativeRoute || selectedAlertPopup.alternativeRouteBm) ? (
                   <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 text-xs space-y-1">
                     <span className="text-[10px] text-cyan-400 uppercase tracking-wider font-bold block">
                       {isBm ? 'Laluan Alternatif Disyorkan' : 'Recommended Bypass'}
@@ -987,7 +1149,7 @@ export const TrafficWidget: React.FC<TrafficWidgetProps> = ({
                       {isBm ? selectedAlertPopup.alternativeRouteBm || selectedAlertPopup.alternativeRoute : selectedAlertPopup.alternativeRoute}
                     </p>
                   </div>
-                )}
+                ) : null}
 
                 {/* Action Buttons */}
                 <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row gap-2">

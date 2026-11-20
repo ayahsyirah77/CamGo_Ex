@@ -1623,7 +1623,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                   message: 'Kea Farm Agro Bazaar Parking Spillover & Pedestrian Crossing Bottleneck',
                   updatedAt: new Date().toISOString(),
                   delayMinutes: 28,
-                  alternativeRoute: 'Habu / Boh Bypass or arrive before 9:30 AM',
+                  alternativeRoute: 'No parallel bypass — park at Brinchang or visit after 5:30 PM',
                 },
                 {
                   id: 'alert-tapah-lata-iskandar',
@@ -1931,7 +1931,7 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                     message: 'Kea Farm Agro Bazaar Parking Spillover & Pedestrian Crossing Bottleneck',
                     updatedAt: new Date().toISOString(),
                     delayMinutes: 28,
-                    alternativeRoute: 'Habu / Boh Bypass or arrive before 9:30 AM',
+                    alternativeRoute: 'No parallel bypass — park at Brinchang or visit after 5:30 PM',
                   },
                   {
                     id: 'alert-tapah-lata-iskandar',

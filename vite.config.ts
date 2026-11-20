@@ -14,7 +14,16 @@ export default defineConfig(() => {
         devOptions: {
           enabled: false,
         },
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'pwa-icon.svg', 'assets/*'],
+        includeAssets: [
+          'favicon.ico',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+          'manifest-vendor.json',
+          'pwa-icon.svg',
+          'assets/*',
+        ],
         manifest: {
           id: '/',
           name: 'CamGo Cameron Highlands - Offline Live Guide',
@@ -41,7 +50,7 @@ export default defineConfig(() => {
               purpose: 'any',
             },
             {
-              src: 'pwa-512x512.png',
+              src: 'pwa-maskable-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
