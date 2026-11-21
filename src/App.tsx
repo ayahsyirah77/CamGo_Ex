@@ -227,20 +227,22 @@ export default function App() {
     const allAlerts = firebaseService.getVendorBookingAlerts();
     if (user.role === 'admin') return allAlerts;
     const normalizedEmail = user.email?.trim().toLowerCase();
-    const ownedListingIds = new Set(
-      firebaseService
-        .getVendorListings()
-        .filter(
-          (l) =>
-            (normalizedEmail && l.ownerEmail?.trim().toLowerCase() === normalizedEmail) ||
-            (user.uid && l.ownerUid === user.uid)
-        )
-        .map((l) => l.id)
+    const ownedListings = firebaseService
+      .getVendorListings()
+      .filter(
+        (l) =>
+          (normalizedEmail && l.ownerEmail?.trim().toLowerCase() === normalizedEmail) ||
+          (user.uid && l.ownerUid === user.uid)
+      );
+    const ownedListingIds = new Set(ownedListings.map((l) => l.id));
+    const ownedBizNames = new Set(
+      ownedListings.map((l) => l.businessName?.trim().toLowerCase()).filter(Boolean)
     );
     return allAlerts.filter((a) => {
       if (user.uid && a.vendorUid && a.vendorUid === user.uid) return true;
       if (normalizedEmail && a.vendorEmail?.trim().toLowerCase() === normalizedEmail) return true;
       if (a.vendorId && ownedListingIds.has(a.vendorId)) return true;
+      if (a.vendorName && ownedBizNames.has(a.vendorName.trim().toLowerCase())) return true;
       return false;
     });
   }, []);
@@ -326,7 +328,15 @@ export default function App() {
       return;
     }
 
-    setVendorAlerts(getScopedVendorAlerts(currentUser));
+    const scoped = getScopedVendorAlerts(currentUser);
+    setVendorAlerts(scoped);
+
+    const recentUnread = scoped.find(
+      (a) => !a.isRead && Date.now() - new Date(a.createdAt || 0).getTime() < 15 * 60 * 1000
+    );
+    if (recentUnread) {
+      setActiveVendorBannerAlert((prev) => prev || recentUnread);
+    }
 
     if (currentUser.role === 'vendor' && lastRedirectedVendorUidRef.current !== currentUser.uid) {
       lastRedirectedVendorUidRef.current = currentUser.uid;
@@ -337,7 +347,7 @@ export default function App() {
     }
   }, [currentUser, getScopedVendorAlerts]);
 
-  // Real-time Vendor Booking & Payment Alerts listener (in-app banner + phone push chime)
+  // Real-time Vendor Booking & Payment Alerts listener (in-app phone banner + native push notification + chime)
   useEffect(() => {
     const syncVendorAlerts = () => {
       const user = firebaseService.getCurrentUser();
@@ -354,12 +364,17 @@ export default function App() {
       const matchesUser = user.role === 'admin' || scoped.some((item) => item.id === alert.id);
       if (matchesUser && !alert.isRead) {
         setActiveVendorBannerAlert(alert);
+        const proofNote = alert.paymentProofUrl
+          ? 'Proof of payment attached.'
+          : alert.paymentReference
+          ? `Ref: ${alert.paymentReference}.`
+          : 'Awaiting confirmation.';
         pushNotificationService
           .dispatchNotification({
-            title: `New Paid Booking: RM${alert.depositPaidRm} Deposit`,
-            body: `${alert.guestName} booked ${alert.itemSummary} (${alert.bookingCode}). Tap to view proof & contact guest.`,
+            title: `New Booking: ${alert.vendorName} (${alert.bookingCode})`,
+            body: `${alert.guestName} (${alert.guestPhone}) • ${alert.checkInOrStart} → ${alert.checkOutOrEnd} • ${proofNote}`,
             tag: alert.id,
-            url: '/',
+            url: '/vendor',
           })
           .catch(() => {});
       }
@@ -753,27 +768,54 @@ export default function App() {
 
       {/* Sticky Live Vendor Booking & Payment Alert Banner */}
       {activeVendorBannerAlert && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[135] w-[94vw] max-w-2xl px-2">
-          <div className="rounded-2xl bg-gradient-to-r from-amber-950/95 via-stone-900/95 to-emerald-950/95 backdrop-blur-xl border border-amber-400/70 shadow-[0_12px_40px_rgba(245,158,11,0.35)] p-3.5 sm:p-4 flex items-center justify-between gap-3 text-stone-100">
-            <div className="flex items-center gap-3 min-w-0">
+        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[200] w-[95vw] max-w-2xl px-1 sm:px-2 animate-in slide-in-from-top-4 duration-300">
+          <div className="rounded-2xl bg-gradient-to-r from-amber-950/95 via-stone-900/95 to-emerald-950/95 backdrop-blur-xl border-2 border-amber-400/80 shadow-[0_14px_45px_rgba(245,158,11,0.4)] p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-stone-100">
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
               <div className="p-2.5 rounded-xl bg-amber-500 text-stone-950 shrink-0 animate-bounce">
                 <BellRing className="w-5 h-5" />
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500 text-white">
-                    New Paid Deposit
+                    {activeVendorBannerAlert.depositPaidRm > 0 ? 'New Paid Deposit' : 'New Booking Alert'}
                   </span>
                   <span className="font-mono text-xs font-black text-amber-300">
                     {activeVendorBannerAlert.bookingCode}
                   </span>
+                  {activeVendorBannerAlert.paymentProofUrl && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      Proof Attached
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">
-                  {activeVendorBannerAlert.guestName} paid RM{activeVendorBannerAlert.depositPaidRm} • {activeVendorBannerAlert.itemSummary}
+                  {activeVendorBannerAlert.guestName} ({activeVendorBannerAlert.guestPhone}) • {activeVendorBannerAlert.itemSummary}
+                </p>
+                <p className="text-[11px] text-amber-200/80 truncate">
+                  {activeVendorBannerAlert.checkInOrStart} → {activeVendorBannerAlert.checkOutOrEnd}
+                  {activeVendorBannerAlert.depositPaidRm > 0
+                    ? ` · RM${activeVendorBannerAlert.depositPaidRm} Deposit`
+                    : ' · Direct Booking Confirmation'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+              {(() => {
+                const digits = (activeVendorBannerAlert.guestPhone || '').replace(/\D/g, '');
+                const waGuestDigits = digits.startsWith('0') ? `60${digits.slice(1)}` : digits;
+                if (!waGuestDigits) return null;
+                const guestReplyText = `Hi ${activeVendorBannerAlert.guestName}, we received your booking ${activeVendorBannerAlert.bookingCode} (${activeVendorBannerAlert.itemSummary}) via CamGo!`;
+                return (
+                  <a
+                    href={`https://wa.me/${waGuestDigits}?text=${encodeURIComponent(guestReplyText)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black cursor-pointer whitespace-nowrap"
+                  >
+                    WhatsApp
+                  </a>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => {
@@ -1297,10 +1339,6 @@ export default function App() {
                   } else {
                     setIsAuthOpen(true);
                   }
-                }}
-                onOpenFarmMatrix={() => {
-                  setIsDirectoriesModalOpen(false);
-                  setIsFarmMatrixOpen(true);
                 }}
               />
             </div>

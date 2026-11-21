@@ -1127,7 +1127,7 @@ export interface AccommodationBooking {
   bookingType: 'instant' | 'request'; // Type A: Instant Confirm | Type B: Request to Book (30-min SLA)
   status: 'pending_owner_approval' | 'confirmed' | 'rejected' | 'auto_refunded' | 'checked_in' | 'completed';
   depositPaymentStatus: 'paid' | 'refunded' | 'unpaid';
-  paymentGateway: 'billplz' | 'toyyibpay' | 'stripe';
+  paymentGateway: 'billplz' | 'toyyibpay' | 'stripe' | 'manual_transfer';
   paymentProofUrl?: string;
   paymentProofName?: string;
   paymentReference?: string;

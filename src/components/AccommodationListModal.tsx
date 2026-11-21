@@ -30,6 +30,9 @@ import {
   ChevronDown,
   ChevronUp,
   Minimize2,
+  Send,
+  Trash2,
+  BellRing,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { AccommodationListing, AccommodationBooking, Township, Language } from '../types';
@@ -42,6 +45,69 @@ interface AccommodationListModalProps {
   language?: Language;
   onOpenVendorPortal?: () => void;
 }
+
+const formatMalaysiaWhatsAppDigits = (raw?: string): string => {
+  const digits = (raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0')) return `60${digits.slice(1)}`;
+  if (digits.startsWith('1') && digits.length >= 9 && digits.length <= 10) return `60${digits}`;
+  return digits;
+};
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Could not read file'));
+      }
+    };
+    reader.onerror = () => reject(new Error('File read error'));
+    reader.readAsDataURL(file);
+  });
+
+const compressProofImageFile = async (file: File, maxWidth = 1000, quality = 0.72): Promise<File> => {
+  if (!file.type.startsWith('image/')) return file;
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    return await new Promise<File>((resolve) => {
+      const img = new Image();
+      img.onerror = () => resolve(file);
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxWidth / Math.max(1, img.width));
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(file);
+          ctx.drawImage(img, 0, 0, w, h);
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return resolve(file);
+              resolve(
+                new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                  type: 'image/jpeg',
+                })
+              );
+            },
+            'image/jpeg',
+            quality
+          );
+        } catch {
+          resolve(file);
+        }
+      };
+      img.src = dataUrl;
+    });
+  } catch {
+    return file;
+  }
+};
 
 export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   isOpen,
@@ -364,44 +430,44 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
     setIsUploadingProof(true);
     setPaymentProofName(file.name);
     try {
-      const uploadedUrl = await firebaseService.uploadImage(file, 'payment_proofs');
+      const preparedFile = await compressProofImageFile(file);
+      let uploadedUrl = '';
+      try {
+        uploadedUrl = await firebaseService.uploadImage(preparedFile, 'payment_proofs');
+      } catch {
+        uploadedUrl = await readFileAsDataUrl(preparedFile);
+      }
+      if (!uploadedUrl) {
+        uploadedUrl = await readFileAsDataUrl(preparedFile);
+      }
       setPaymentProofUrl(uploadedUrl);
     } catch {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setPaymentProofUrl(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      setBookingFormError('Could not process receipt file. Please try another image or enter your Transaction Reference ID.');
+      setPaymentProofUrl(null);
+      setPaymentProofName('');
     } finally {
       setIsUploadingProof(false);
     }
   };
 
-  // Handle RM30 Deposit Payment, Vendor Alert & Host WhatsApp Notification
+  // Handle Guest Booking Submit, Proof of Payment Routing, Vendor Alert Push & Automated Host WhatsApp
   const handleLockHomestay = async (e: React.FormEvent) => {
     e.preventDefault();
     setBookingFormError(null);
-    if (paymentGatewayNotice.enabled) {
-      setBookingFormError(`${paymentGatewayNotice.title}: ${paymentGatewayNotice.message}`);
-      return;
-    }
     if (!activeListingForBooking || !guestName.trim() || !guestPhone.trim()) {
-      setBookingFormError('Please fill in your Full Name and WhatsApp Phone Number.');
+      setBookingFormError('Please fill in your Full Name and WhatsApp Phone Number before submitting.');
       return;
     }
-    if (!paymentProofUrl && !paymentReference.trim()) {
-      setBookingFormError('Please upload your Proof of Payment receipt or enter your Transaction Reference ID before paying.');
+
+    const gatewayPaused = paymentGatewayNotice.enabled;
+    if (!gatewayPaused && !paymentProofUrl && !paymentReference.trim()) {
+      setBookingFormError('Please upload your Proof of Payment receipt or enter your Transaction Reference ID before submitting.');
       return;
     }
 
     setIsProcessingPayment(true);
 
     try {
-      // Simulate Payment Gateway Settlement (~1s)
-      await new Promise((resolve) => setTimeout(resolve, 900));
-
       const bookingCode = `CG-${activeListingForBooking.code.replace('CH-', '')}-${Math.floor(1000 + Math.random() * 9000)}`;
       const qrCode = `VCHR-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
       const matchedVendor = firebaseService
@@ -413,10 +479,16 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
             v.businessName.toLowerCase().trim() === activeListingForBooking.realBusinessName.toLowerCase().trim()
         );
 
+      const vendorId = activeListingForBooking.vendorId || matchedVendor?.id || activeListingForBooking.id;
       const vendorEmail = activeListingForBooking.ownerEmail || matchedVendor?.ownerEmail;
       const vendorUid = activeListingForBooking.ownerUid || matchedVendor?.ownerUid;
-      const hostWaRaw = activeListingForBooking.whatsappNumber || activeListingForBooking.ownerPhone || '+60123456789';
-      const hostWaDigits = hostWaRaw.replace(/\D/g, '');
+      const hostWaRaw =
+        activeListingForBooking.whatsappNumber ||
+        activeListingForBooking.ownerPhone ||
+        matchedVendor?.whatsappNumber ||
+        matchedVendor?.contactPhone ||
+        '+60123456789';
+      const hostWaDigits = formatMalaysiaWhatsAppDigits(hostWaRaw);
 
       const chosenUnitRoomLabel =
         selectedRoomOption?.label ||
@@ -428,10 +500,63 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         activeListingForBooking.realBusinessName?.trim() ||
         chosenUnitCode;
 
+      const effectiveGateway: AccommodationBooking['paymentGateway'] = gatewayPaused
+        ? 'manual_transfer'
+        : selectedGateway;
+      const hasProofOrRef = Boolean(paymentProofUrl || paymentReference.trim());
+      const depositStatus: AccommodationBooking['depositPaymentStatus'] =
+        hasProofOrRef || !gatewayPaused ? 'paid' : 'unpaid';
+
+      const proofLine =
+        paymentProofUrl && !paymentProofUrl.startsWith('data:')
+          ? `Proof of Payment Link: ${paymentProofUrl}`
+          : paymentProofName
+          ? `Proof of Payment Uploaded: ${paymentProofName} (View receipt in CamGo Vendor Alerts)`
+          : paymentReference.trim()
+          ? `Proof Reference: ${paymentReference.trim()}`
+          : `Proof Status: Guest requested booking confirmation (no receipt uploaded yet)`;
+
+      const paymentStatusLabel =
+        depositStatus === 'paid'
+          ? `RM30 Deposit: PAID / RECEIPT ATTACHED (${effectiveGateway.toUpperCase().replace('_', ' ')})`
+          : `RM30 Deposit: PENDING DIRECT ARRANGEMENT (Online Gateway Temporarily Unavailable)`;
+
+      const hostWaText = [
+        `*CamGo New Booking Submission (${bookingCode})*`,
+        `Unit / Room: ${chosenUnitRoomLabel}`,
+        `Homestay: ${activePropertyTitle} (${activeListingForBooking.township})`,
+        `Guest Name: ${guestName.trim()}`,
+        `Guest Phone: ${guestPhone.trim()}`,
+        guestEmail.trim() ? `Guest Email: ${guestEmail.trim()}` : null,
+        `Check-In: ${checkInDate}`,
+        `Check-Out: ${checkOutDate} (${nights} night${nights > 1 ? 's' : ''})`,
+        `Total Stay Rate: RM ${totalPrice}`,
+        paymentStatusLabel,
+        `Door Balance: RM ${depositStatus === 'paid' ? balanceToCollect : totalPrice}`,
+        paymentReference.trim() ? `Transaction Ref: ${paymentReference.trim()}` : null,
+        proofLine,
+        `View Vendor Alert & Receipt: https://camgo.my/vendor`,
+        `Please reply to guest to confirm check-in arrangement.`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const builtWaUrl = `https://wa.me/${hostWaDigits}?text=${encodeURIComponent(hostWaText)}`;
+      setHostWhatsAppUrl(builtWaUrl);
+
+      // Launch WhatsApp synchronously inside user click gesture so mobile/desktop browsers do not block it
+      if (hostWaDigits) {
+        try {
+          window.open(builtWaUrl, '_blank', 'noopener,noreferrer');
+        } catch (waErr) {
+          console.warn('WhatsApp popup fallback shown in confirmation modal:', waErr);
+        }
+      }
+
       const newBooking: AccommodationBooking = {
         id: `cg_bk_${Date.now()}`,
         bookingCode,
-        homestayId: activeListingForBooking.vendorId || activeListingForBooking.id,
+        homestayId: vendorId,
         homestayName: activePropertyTitle,
         maskedTitle: chosenUnitCode,
         township: activeListingForBooking.township,
@@ -448,11 +573,14 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         roomTypeName: chosenUnitRoomLabel,
         totalRoomPrice: totalPrice,
         depositAmount: 30,
-        balanceToCollect,
+        balanceToCollect: depositStatus === 'paid' ? balanceToCollect : totalPrice,
         bookingType: activeListingForBooking.bookingType,
-        status: activeListingForBooking.bookingType === 'instant' ? 'confirmed' : 'pending_owner_approval',
-        depositPaymentStatus: 'paid',
-        paymentGateway: selectedGateway,
+        status:
+          activeListingForBooking.bookingType === 'instant' && depositStatus === 'paid'
+            ? 'confirmed'
+            : 'pending_owner_approval',
+        depositPaymentStatus: depositStatus,
+        paymentGateway: effectiveGateway,
         paymentProofUrl: paymentProofUrl || undefined,
         paymentProofName: paymentProofName || undefined,
         paymentReference: paymentReference.trim() || undefined,
@@ -465,17 +593,19 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
             ? new Date(Date.now() + 30 * 60 * 1000).toISOString()
             : undefined,
         whatsappStatus: 'sent',
-        notes: `RM30 deposit paid via ${selectedGateway.toUpperCase()}${paymentReference.trim() ? ` (Ref: ${paymentReference.trim()})` : ''}.`,
+        notes: hasProofOrRef
+          ? `RM30 deposit proof submitted via ${effectiveGateway.toUpperCase()}${paymentReference.trim() ? ` (Ref: ${paymentReference.trim()})` : ''}.`
+          : 'Guest submitted booking confirmation directly to vendor (online gateway temporarily unavailable).',
       };
 
       await firebaseService.saveAccommodationBooking(newBooking);
 
-      // Dispatch Real-Time Vendor Booking & Payment Alert (triggers vendor banner + phone alert + standalone modal)
+      // Dispatch Real-Time Vendor Booking & Proof Alert (triggers instant phone push notification + banner + alert modal)
       await firebaseService.createVendorBookingAlert({
         bookingId: newBooking.id,
         bookingCode: newBooking.bookingCode,
         bookingType: 'accommodation',
-        vendorId: activeListingForBooking.vendorId || activeListingForBooking.id,
+        vendorId,
         vendorName: activePropertyTitle,
         vendorEmail,
         vendorUid,
@@ -486,51 +616,14 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
         checkInOrStart: checkInDate,
         checkOutOrEnd: checkOutDate,
         totalAmountRm: totalPrice,
-        depositPaidRm: 30,
-        balanceDueRm: balanceToCollect,
-        paymentGateway: selectedGateway,
+        depositPaidRm: depositStatus === 'paid' ? 30 : 0,
+        balanceDueRm: newBooking.balanceToCollect,
+        paymentGateway: effectiveGateway,
         paymentReference: paymentReference.trim() || undefined,
         paymentProofUrl: paymentProofUrl || undefined,
         paymentProofName: paymentProofName || undefined,
         whatsappNotified: true,
       });
-
-      const proofLine = paymentProofUrl && !paymentProofUrl.startsWith('data:')
-        ? `Proof of Payment Link: ${paymentProofUrl}`
-        : paymentProofName
-        ? `Proof of Payment Attached: ${paymentProofName}`
-        : `Proof Reference: ${paymentReference.trim()}`;
-
-      const hostWaText = [
-        `CamGo New Paid Booking (${bookingCode})`,
-        `Unit / Room: ${chosenUnitRoomLabel}`,
-        `Homestay: ${activePropertyTitle} (${activeListingForBooking.township})`,
-        `Guest Name: ${newBooking.customerName}`,
-        `Guest Phone: ${newBooking.customerPhone}`,
-        newBooking.customerEmail ? `Guest Email: ${newBooking.customerEmail}` : null,
-        `Check-In: ${checkInDate}`,
-        `Check-Out: ${checkOutDate} (${nights} night${nights > 1 ? 's' : ''})`,
-        `Payment Method: ${selectedGateway.toUpperCase()}`,
-        `RM30 Deposit: PAID`,
-        `Door Balance: RM ${balanceToCollect}`,
-        paymentReference.trim() ? `Transaction Ref: ${paymentReference.trim()}` : null,
-        proofLine,
-        `Please confirm check-in arrangement with guest.`,
-      ]
-        .filter(Boolean)
-        .join('\n');
-
-      const builtWaUrl = `https://wa.me/${hostWaDigits}?text=${encodeURIComponent(hostWaText)}`;
-      setHostWhatsAppUrl(builtWaUrl);
-
-      // Automatically open WhatsApp notification to host with full guest details & proof of payment
-      if (hostWaDigits) {
-        try {
-          window.open(builtWaUrl, '_blank', 'noopener,noreferrer');
-        } catch (waErr) {
-          console.warn('WhatsApp popup fallback will be shown in confirmation modal:', waErr);
-        }
-      }
 
       // Open Voucher Confirmation Modal
       setUnlockedBooking(newBooking);
@@ -539,8 +632,8 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
       setPaymentProofName('');
       setPaymentReference('');
     } catch (err) {
-      console.error('Booking lock error:', err);
-      setBookingFormError('Could not complete deposit submission. Please try again.');
+      console.error('Booking submission error:', err);
+      setBookingFormError('Could not complete booking submission. Please try again.');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -1314,16 +1407,23 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
               {/* 4. Proof of Payment Upload & Transaction Reference */}
               <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2.5">
-                <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
-                  4. Proof of Payment (Sent to Host WhatsApp &amp; Vendor Alert)
-                </span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
+                    4. Proof of Payment (Sent to Host WhatsApp &amp; Vendor Alert)
+                  </span>
+                  {paymentProofUrl && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[9px] font-bold uppercase">
+                      Routed to Host &amp; Alert
+                    </span>
+                  )}
+                </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <label className="flex-1 px-3 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 border border-dashed border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors">
                     <Upload className="w-4 h-4 shrink-0" />
                     <span className="truncate">
                       {isUploadingProof
-                        ? 'Uploading Receipt...'
+                        ? 'Processing Receipt...'
                         : paymentProofName
                         ? `Uploaded: ${paymentProofName}`
                         : 'Upload Payment Receipt (Image / PDF)'}
@@ -1337,28 +1437,47 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                   </label>
                 </div>
 
-                {paymentProofUrl && paymentProofUrl.startsWith('data:image') && (
-                  <div className="flex items-center gap-2.5 p-2 rounded-xl bg-stone-900 border border-emerald-500/30">
-                    <img
-                      src={safeSrc(paymentProofUrl)}
-                      alt="Payment proof"
-                      className="w-12 h-12 rounded-lg object-cover border border-stone-700"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <span className="text-[11px] font-bold text-emerald-300 block truncate">
-                        <FileCheck2 className="w-3.5 h-3.5 inline mr-1" />
-                        {paymentProofName || 'Payment Receipt Ready'}
-                      </span>
-                      <span className="text-[10px] text-stone-400">
-                        Will be attached with your booking notification
-                      </span>
+                {paymentProofUrl && (
+                  <div className="flex items-center justify-between gap-2.5 p-2.5 rounded-xl bg-stone-900 border border-emerald-500/35">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      {paymentProofUrl.startsWith('data:image') || /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(paymentProofUrl) || paymentProofUrl.includes('firebasestorage') ? (
+                        <img
+                          src={safeSrc(paymentProofUrl)}
+                          alt="Payment proof"
+                          className="w-12 h-12 rounded-lg object-cover border border-stone-700 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                          <FileCheck2 className="w-5 h-5 text-emerald-400" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[11px] font-bold text-emerald-300 block truncate">
+                          <FileCheck2 className="w-3.5 h-3.5 inline mr-1" />
+                          {paymentProofName || 'Payment Receipt Ready'}
+                        </span>
+                        <span className="text-[10px] text-stone-400 block">
+                          Routes automatically to Host&apos;s WhatsApp &amp; Vendor Alert phone banner on Submit
+                        </span>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentProofUrl(null);
+                        setPaymentProofName('');
+                      }}
+                      className="p-1.5 rounded-lg bg-stone-800 hover:bg-rose-600/30 text-stone-400 hover:text-rose-300 transition-colors cursor-pointer shrink-0"
+                      title="Remove uploaded receipt"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
 
                 <div>
                   <label className="text-[11px] font-bold text-stone-300 block mb-1">
-                    Payment Reference / Transaction ID
+                    Payment Reference / Transaction ID {paymentGatewayNotice.enabled ? '(Optional if direct arrangement)' : ''}
                   </label>
                   <input
                     type="text"
@@ -1470,7 +1589,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </div>
               )}
 
-              {/* Action Buttons (More Information button placed right before Pay button) */}
+              {/* Action Buttons: More Information + Clear Guest Submit Button */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2">
                 <button
                   type="button"
@@ -1482,20 +1601,21 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={isProcessingPayment || isUploadingProof || paymentGatewayNotice.enabled}
-                  className="flex-1 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs cursor-pointer shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  disabled={isProcessingPayment || isUploadingProof}
+                  className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-stone-950 font-black text-xs cursor-pointer shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
-                  {paymentGatewayNotice.enabled ? (
-                    <>
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Payment Gateway Temporarily Unavailable</span>
-                    </>
-                  ) : isProcessingPayment ? (
-                    <span>Securing Deposit &amp; Notifying Host...</span>
+                  {isProcessingPayment ? (
+                    <span>Sending Booking &amp; Alerting Vendor...</span>
+                  ) : isUploadingProof ? (
+                    <span>Uploading Proof of Payment...</span>
                   ) : (
                     <>
-                      <Lock className="w-4 h-4" />
-                      <span>Pay RM30 Deposit &amp; Notify Host</span>
+                      <Send className="w-4 h-4 shrink-0" />
+                      <span>
+                        {paymentGatewayNotice.enabled
+                          ? 'Submit Booking & Confirm to Vendor'
+                          : 'Submit Booking & Pay RM30 Deposit'}
+                      </span>
                     </>
                   )}
                 </button>
@@ -1528,9 +1648,9 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 </div>
                 <div>
                   <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
-                    Deposit RM30 Confirmed
+                    {unlockedBooking.depositPaymentStatus === 'paid' ? 'Deposit & Proof Routed' : 'Booking Submitted'}
                   </span>
-                  <h3 className="font-black text-base text-white">Booking Confirmed &amp; Host Notified!</h3>
+                  <h3 className="font-black text-base text-white">Booking Sent to Vendor &amp; WhatsApp!</h3>
                 </div>
               </div>
               <button
@@ -1539,6 +1659,13 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-emerald-950/60 border border-emerald-500/35 flex items-start gap-2.5 text-xs text-emerald-200">
+              <BellRing className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <span>
+                Vendor instant push alert &amp; proof of payment have been dispatched to the Vendor Portal and queued for WhatsApp delivery.
+              </span>
             </div>
 
             {/* QR Code Voucher */}

@@ -64,8 +64,12 @@ import {
   BedDouble,
   Truck,
   BellRing,
+  FileCheck2,
+  Image as ImageIcon,
+  Smartphone,
 } from 'lucide-react';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
+import { pushNotificationService } from '../services/pushNotificationService';
 import { VendorPwaInstaller } from './VendorPwaInstaller';
 import QRCode from 'qrcode';
 import {
@@ -259,6 +263,19 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
   const [bookingTypeSetting, setBookingTypeSetting] = useState<'instant' | 'request'>('instant');
   const [showManualBookingModal, setShowManualBookingModal] = useState(false);
   const [showMinimalOwnerView, setShowMinimalOwnerView] = useState(false);
+  const [bookingProofPreviewUrl, setBookingProofPreviewUrl] = useState<string | null>(null);
+  const [pushPermission, setPushPermission] = useState<string>(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+
+  const handleEnablePhonePush = async () => {
+    const res = await pushNotificationService.requestPermission();
+    setPushPermission(res.permission);
+    if (res.success) {
+      setSaveNotification('Phone push notification banners & chimes are active!');
+      setTimeout(() => setSaveNotification(null), 4000);
+    }
+  };
 
   // Manual Booking Form State
   const [manualGuestName, setManualGuestName] = useState('');
@@ -4266,6 +4283,73 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                                   </div>
                                 )}
 
+                                {/* Proof of Payment & Reference Summary */}
+                                {(booking.paymentProofUrl || booking.paymentReference || booking.paymentGateway) && (
+                                  <div className="p-3 rounded-xl bg-stone-950/90 border border-emerald-500/25 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                    <div className="space-y-0.5 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] font-bold uppercase text-emerald-400">
+                                          Proof &amp; Payment Method:
+                                        </span>
+                                        <span className="font-mono font-bold text-white uppercase text-[11px]">
+                                          {(booking.paymentGateway || 'manual_transfer').replace(/_/g, ' ')}
+                                        </span>
+                                        {booking.paymentReference && (
+                                          <span className="font-mono text-amber-300 text-[11px]">
+                                            Ref: {booking.paymentReference}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {booking.paymentProofName && (
+                                        <p className="text-[11px] text-stone-400 truncate">
+                                          File: {booking.paymentProofName}
+                                        </p>
+                                      )}
+                                    </div>
+                                    {booking.paymentProofUrl && (
+                                      booking.paymentProofUrl.startsWith('data:image') ||
+                                      /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(booking.paymentProofUrl) ||
+                                      booking.paymentProofUrl.includes('firebasestorage') ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setBookingProofPreviewUrl(booking.paymentProofUrl || null)}
+                                          className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+                                        >
+                                          <ImageIcon className="w-3.5 h-3.5" />
+                                          <span>View Proof Receipt</span>
+                                        </button>
+                                      ) : (
+                                        <a
+                                          href={booking.paymentProofUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-[11px] font-bold flex items-center gap-1.5 shrink-0"
+                                        >
+                                          <FileCheck2 className="w-3.5 h-3.5" />
+                                          <span>Open Receipt</span>
+                                        </a>
+                                      )
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Phone Push Activator Reminder (when not yet granted) */}
+                                {pushPermission !== 'granted' && pushPermission !== 'unsupported' && (
+                                  <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-[11px]">
+                                    <span className="text-amber-200 flex items-center gap-1.5">
+                                      <Smartphone className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                      <span>Turn on phone push banners to receive instant booking popups</span>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={handleEnablePhonePush}
+                                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-[10px] cursor-pointer shrink-0"
+                                    >
+                                      Enable Push
+                                    </button>
+                                  </div>
+                                )}
+
                                 {/* WhatsApp 30-min SLA Interactive Simulator (for pending request) */}
                                 {isPending && (
                                   <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 space-y-2.5">
@@ -4279,14 +4363,16 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                                       </span>
                                     </div>
 
-                                    {/* Simulated incoming WhatsApp template */}
+                                    {/* Incoming WhatsApp template */}
                                     <div className="p-2.5 rounded-lg bg-stone-950 border border-amber-500/20 text-xs font-mono text-stone-300 space-y-1">
                                       <div className="text-emerald-400 font-bold flex items-center gap-1">
                                         <MessageSquare className="w-3.5 h-3.5" />
-                                        <span>Incoming WhatsApp Alert to Owner (+60 19-332 8819):</span>
+                                        <span>
+                                          WhatsApp Alert to Owner ({booking.ownerPhone || activeVendor?.whatsappNumber || 'Host Phone'}):
+                                        </span>
                                       </div>
                                       <p className="text-[11px] text-stone-200">
-                                        🔔 NEW CamGo BOOKING! {booking.homestayName}: {booking.nights} night, {booking.checkInDate}. Name: {booking.customerName} ({booking.customerPhone}). Deposit: RM30 PAID. Balance to collect: RM{booking.balanceToCollect}. Reply YES to confirm, NO if fully booked.
+                                        🔔 NEW CamGo BOOKING! {booking.homestayName}: {booking.nights} night, {booking.checkInDate}. Name: {booking.customerName} ({booking.customerPhone}). Deposit: {booking.depositPaymentStatus === 'paid' ? 'RM30 PAID' : 'PENDING'}. Balance to collect: RM{booking.balanceToCollect}. Reply YES to confirm, NO if fully booked.
                                       </p>
                                     </div>
 
@@ -4334,17 +4420,25 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                                   </div>
 
                                   <div className="flex items-center gap-2">
-                                    <a
-                                      href={`https://wa.me/${booking.customerPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                                        `Salam ${booking.customerName}! This is ${activeVendor?.businessName} in Cameron Highlands regarding your CamGo booking #${booking.bookingCode}. Your check-in is on ${booking.checkInDate}. Balance to collect upon arrival: RM${booking.balanceToCollect}. See you soon!`
-                                      )}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all"
-                                    >
-                                      <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-                                      <span>WhatsApp Guest</span>
-                                    </a>
+                                    {(() => {
+                                      const rawDigits = booking.customerPhone.replace(/\D/g, '');
+                                      const normalizedGuestWa = rawDigits.startsWith('0')
+                                        ? `60${rawDigits.slice(1)}`
+                                        : rawDigits;
+                                      return (
+                                        <a
+                                          href={`https://wa.me/${normalizedGuestWa}?text=${encodeURIComponent(
+                                            `Salam ${booking.customerName}! This is ${activeVendor?.businessName} in Cameron Highlands regarding your CamGo booking #${booking.bookingCode}. Your check-in is on ${booking.checkInDate}. Balance to collect upon arrival: RM${booking.balanceToCollect}. See you soon!`
+                                          )}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all"
+                                        >
+                                          <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                                          <span>WhatsApp Guest</span>
+                                        </a>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               </div>
@@ -6700,6 +6794,34 @@ export const VendorDashboard: React.FC<VendorDashboardProps> = ({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {bookingProofPreviewUrl && (
+          <div
+            className="fixed inset-0 z-[170] flex items-center justify-center bg-black/95 p-4"
+            onClick={() => setBookingProofPreviewUrl(null)}
+          >
+            <div
+              className="relative max-w-xl w-full bg-stone-900 border border-emerald-500/40 rounded-3xl p-4 space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-400 uppercase">Proof of Payment Receipt</span>
+                <button
+                  type="button"
+                  onClick={() => setBookingProofPreviewUrl(null)}
+                  className="p-1.5 rounded-full bg-stone-800 text-stone-300 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <img
+                src={safeSrc(bookingProofPreviewUrl)}
+                alt="Proof of Payment Receipt"
+                className="w-full max-h-[70dvh] object-contain rounded-2xl bg-stone-950"
+              />
             </div>
           </div>
         )}

@@ -1,5 +1,6 @@
 // MobileStickyFooter.tsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Home, Compass, MessageSquare, Sparkles, ShieldAlert, BookOpen } from 'lucide-react';
 import { Language } from '../types';
 
@@ -26,140 +27,207 @@ export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
   hasNewChat = true,
   language = 'en',
 }) => {
+  const prefersReducedMotion = useReducedMotion();
+  const [sosActive, setSosActive] = useState(false);
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeModal) {
+      setSosActive(false);
+    }
+  }, [activeModal]);
+
+  const activeKey = sosActive ? 'sos' : activeModal || 'home';
+  const orbTargetKey = hoveredKey || activeKey;
+
+  const items = [
+    {
+      key: 'home',
+      onClick: () => {
+        setSosActive(false);
+        onGoHome();
+      },
+      label: language === 'bm' ? 'Utama' : 'Home',
+      ariaLabel: 'Home',
+      icon: Home,
+      activeText: 'text-emerald-300',
+      orbColor: 'bg-emerald-500/35 border-emerald-400/75 shadow-[0_0_18px_rgba(52,211,153,0.55)]',
+    },
+    {
+      key: 'trail',
+      onClick: () => {
+        setSosActive(false);
+        onOpenTrailEngine();
+      },
+      label: language === 'bm' ? 'Laluan' : 'Trail',
+      ariaLabel: 'Offline Trail Engine',
+      icon: Compass,
+      activeText: 'text-cyan-300',
+      orbColor: 'bg-cyan-500/35 border-cyan-400/75 shadow-[0_0_18px_rgba(34,211,238,0.55)]',
+    },
+    {
+      key: 'directories',
+      onClick: () => {
+        setSosActive(false);
+        onOpenDirectories();
+      },
+      label: language === 'bm' ? 'Direktori' : 'Dir',
+      ariaLabel: 'Highland Directories',
+      icon: BookOpen,
+      activeText: 'text-amber-300',
+      orbColor: 'bg-amber-500/35 border-amber-400/75 shadow-[0_0_18px_rgba(251,191,36,0.55)]',
+    },
+    {
+      key: 'chat',
+      onClick: () => {
+        setSosActive(false);
+        onOpenChat();
+      },
+      label: language === 'bm' ? 'Sembang' : 'Chat',
+      ariaLabel: 'Community Chat Lounge',
+      icon: MessageSquare,
+      activeText: 'text-indigo-300',
+      orbColor: 'bg-indigo-500/35 border-indigo-400/75 shadow-[0_0_18px_rgba(129,140,248,0.55)]',
+      hasBadge: hasNewChat,
+    },
+    {
+      key: 'ai',
+      onClick: () => {
+        setSosActive(false);
+        onOpenAi();
+      },
+      label: 'CamGo AI',
+      ariaLabel: 'CamGo AI Assistant',
+      icon: Sparkles,
+      activeText: 'text-teal-300',
+      orbColor: 'bg-teal-500/35 border-teal-400/75 shadow-[0_0_18px_rgba(45,212,191,0.55)]',
+    },
+    {
+      key: 'sos',
+      onClick: () => {
+        setSosActive(true);
+        onOpenSos();
+        setTimeout(() => setSosActive(false), 1800);
+      },
+      label: 'SOS',
+      ariaLabel: 'Emergency SOS',
+      icon: ShieldAlert,
+      activeText: 'text-rose-300',
+      inactiveText: 'text-rose-400/90',
+      orbColor: 'bg-rose-500/35 border-rose-400/80 shadow-[0_0_18px_rgba(244,63,94,0.6)]',
+      isSos: true,
+    },
+  ];
+
   return (
-    <nav
+    <motion.nav
       aria-label="Mobile Bottom Navigation"
-      className="fixed bottom-0 left-0 right-0 z-40 block sm:hidden bg-stone-950/92 backdrop-blur-2xl border-t border-white/10 shadow-[0_-8px_25px_rgba(0,0,0,0.8)] px-1 pt-2 pb-3 pb-safe"
+      initial={prefersReducedMotion ? false : { y: 64, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+      onMouseLeave={() => setHoveredKey(null)}
+      className="fixed bottom-0 left-0 right-0 z-40 block sm:hidden bg-stone-950/95 backdrop-blur-2xl border-t border-white/15 shadow-[0_-8px_25px_rgba(0,0,0,0.8)] px-1.5 h-16 pb-safe overflow-hidden"
     >
-      <div className="grid grid-cols-6 items-center justify-between max-w-lg mx-auto">
-        {/* 1. Home */}
-        <button
-          onClick={onGoHome}
-          className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all cursor-pointer group active:scale-95 ${
-            !activeModal
-              ? 'text-emerald-400'
-              : 'text-stone-400 hover:text-stone-200'
-          }`}
-          aria-label="Home"
-        >
-          <div className="relative">
-            <Home className="w-5 h-5 transition-transform group-hover:scale-110" />
-            {!activeModal && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-            )}
-          </div>
-          <span className="text-[9.5px] sm:text-[10px] font-bold tracking-tight mt-1 leading-none">
-            {language === 'bm' ? 'Utama' : 'Home'}
-          </span>
-        </button>
+      <div className="grid grid-cols-6 items-center h-full max-w-lg mx-auto relative">
+        {items.map((item) => {
+          const isActive = activeKey === item.key;
+          const isOrbHere = orbTargetKey === item.key;
+          const isHighlighted = isActive || isOrbHere;
+          const Icon = item.icon;
 
-        {/* 2. Offline Trail Engine */}
-        <button
-          onClick={onOpenTrailEngine}
-          className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all cursor-pointer group active:scale-95 ${
-            activeModal === 'trail'
-              ? 'text-cyan-400'
-              : 'text-stone-400 hover:text-stone-200'
-          }`}
-          aria-label="Offline Trail Engine"
-        >
-          <div className="relative">
-            <Compass className="w-5 h-5 transition-transform group-hover:scale-110" />
-            {activeModal === 'trail' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
-            )}
-          </div>
-          <span className="text-[9.5px] sm:text-[10px] font-bold tracking-tight mt-1 leading-none">
-            {language === 'bm' ? 'Laluan' : 'Trail'}
-          </span>
-        </button>
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={item.onClick}
+              onMouseEnter={() => setHoveredKey(item.key)}
+              onFocus={() => setHoveredKey(item.key)}
+              onBlur={() => setHoveredKey(null)}
+              onTouchStart={() => setHoveredKey(item.key)}
+              onTouchEnd={() => setHoveredKey(null)}
+              onTouchCancel={() => setHoveredKey(null)}
+              aria-label={item.ariaLabel}
+              className="relative flex flex-col items-center justify-center h-full py-1 px-0.5 cursor-pointer select-none focus:outline-none group"
+            >
+              {/* Contained Icon Slot with Visibly Gliding Circular Orb Inside Footer */}
+              <div className="relative w-10 h-10 flex items-center justify-center">
+                {isOrbHere && (
+                  <motion.div
+                    layoutId="stickyNavActiveDome"
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0.12 }
+                        : {
+                            type: 'spring',
+                            stiffness: 340,
+                            damping: 26,
+                          }
+                    }
+                    className={`pointer-events-none absolute inset-0 rounded-full border-2 ${item.orbColor} z-0`}
+                  />
+                )}
 
-        {/* 3. Highland Directories (Right after Trail) */}
-        <button
-          onClick={onOpenDirectories}
-          className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all cursor-pointer group active:scale-95 ${
-            activeModal === 'directories'
-              ? 'text-amber-400'
-              : 'text-stone-400 hover:text-stone-200'
-          }`}
-          aria-label="Highland Directories"
-        >
-          <div className="relative">
-            <BookOpen className="w-5 h-5 transition-transform group-hover:scale-110" />
-            {activeModal === 'directories' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
-            )}
-          </div>
-          <span className="text-[9.5px] sm:text-[10px] font-bold tracking-tight mt-1 leading-none truncate max-w-[50px]">
-            {language === 'bm' ? 'Direktori' : 'Dir'}
-          </span>
-        </button>
+                <motion.div
+                  animate={
+                    prefersReducedMotion
+                      ? { scale: isHighlighted ? 1.08 : 1 }
+                      : {
+                          y: isHighlighted ? -1.5 : 0,
+                          scale: isHighlighted ? 1.15 : 1,
+                        }
+                  }
+                  whileTap={prefersReducedMotion ? undefined : { scale: 0.86 }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 400,
+                    damping: 24,
+                  }}
+                  className={`relative z-10 flex items-center justify-center transition-colors duration-200 ${
+                    isHighlighted
+                      ? item.activeText
+                      : item.inactiveText || 'text-stone-400 group-hover:text-stone-200'
+                  }`}
+                >
+                  <Icon
+                    className="w-[19px] h-[19px]"
+                    strokeWidth={isHighlighted ? 2.3 : 1.75}
+                  />
 
-        {/* 4. Community Chat Lounge */}
-        <button
-          onClick={onOpenChat}
-          className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all cursor-pointer group active:scale-95 ${
-            activeModal === 'chat'
-              ? 'text-indigo-400'
-              : 'text-stone-400 hover:text-stone-200'
-          }`}
-          aria-label="Community Chat Lounge"
-        >
-          <div className="relative">
-            <MessageSquare className="w-5 h-5 transition-transform group-hover:scale-110" />
-            {/* Live Indicator or Unread Dot */}
-            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 border-2 border-stone-950 animate-pulse" />
-            {activeModal === 'chat' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-indigo-400 shadow-[0_0_6px_rgba(129,140,248,0.8)]" />
-            )}
-          </div>
-          <span className="text-[9.5px] sm:text-[10px] font-bold tracking-tight mt-1 leading-none">
-            {language === 'bm' ? 'Sembang' : 'Chat'}
-          </span>
-        </button>
+                  {/* Live indicator dot on Chat */}
+                  {item.hasBadge && (
+                    <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 border border-stone-950" />
+                    </span>
+                  )}
 
-        {/* 5. CamGo AI */}
-        <button
-          onClick={onOpenAi}
-          className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all cursor-pointer group active:scale-95 ${
-            activeModal === 'ai'
-              ? 'text-teal-400'
-              : 'text-stone-400 hover:text-stone-200'
-          }`}
-          aria-label="CamGo AI Assistant"
-        >
-          <div className="relative">
-            <Sparkles className="w-5 h-5 transition-transform group-hover:scale-110" />
-            {activeModal === 'ai' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-teal-400 shadow-[0_0_6px_rgba(45,212,191,0.8)]" />
-            )}
-          </div>
-          <span className="text-[9.5px] sm:text-[10px] font-bold tracking-tight mt-1 leading-none">
-            CamGo AI
-          </span>
-        </button>
+                  {/* Subtle emergency beacon on SOS */}
+                  {item.isSos && !isHighlighted && (
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                  )}
+                </motion.div>
+              </div>
 
-        {/* 6. SOS Emergency */}
-        <button
-          onClick={onOpenSos}
-          className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all cursor-pointer group active:scale-95 ${
-            activeModal === 'sos'
-              ? 'text-rose-400'
-              : 'text-rose-400/90 hover:text-rose-300'
-          }`}
-          aria-label="Emergency SOS"
-        >
-          <div className="relative">
-            <div className="p-1 rounded-lg bg-rose-600/20 border border-rose-500/40 group-hover:bg-rose-600/30 transition-colors">
-              <ShieldAlert className="w-4 h-4 text-rose-400 group-hover:scale-110 transition-transform" />
-            </div>
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-          </div>
-          <span className="text-[9.5px] sm:text-[10px] font-black tracking-tight mt-1 leading-none text-rose-400">
-            SOS
-          </span>
-        </button>
+              {/* Tab Label */}
+              <motion.span
+                animate={{
+                  opacity: isHighlighted ? 1 : 0.78,
+                }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className={`relative z-10 text-[9.5px] leading-none tracking-tight mt-0.5 truncate max-w-[52px] ${
+                  isHighlighted
+                    ? `font-extrabold ${item.activeText}`
+                    : item.isSos
+                    ? 'font-bold text-rose-400/90'
+                    : 'font-semibold text-stone-400'
+                }`}
+              >
+                {item.label}
+              </motion.span>
+            </button>
+          );
+        })}
       </div>
-    </nav>
+    </motion.nav>
   );
 };

@@ -825,6 +825,7 @@ class FirebaseStorageService {
       }, (err) => console.warn('Realtime accommodation bookings listener warning:', err));
 
       // 15. Real-time Vendor Booking Alerts Listener
+      let initialVendorAlertsLoaded = false;
       onSnapshot(collection(db, 'vendor_booking_alerts'), (snap) => {
         const cloudAlerts = snap.docs.map((d) => d.data() as VendorBookingAlert);
         const existingAlerts = this.getVendorBookingAlerts();
@@ -838,13 +839,17 @@ class FirebaseStorageService {
         this.setLocalStorageItem(STORAGE_KEYS.VENDOR_BOOKING_ALERTS, JSON.stringify(merged));
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('vendor-booking-alerts-updated', { detail: merged }));
-          // Emit incoming alert event for newly arrived unread cloud alerts
+          const nowMs = Date.now();
+          // Emit incoming alert event for newly arrived unread cloud alerts (or unread alerts within 10 mins on fresh load)
           cloudAlerts.forEach((a) => {
-            if (!existingIds.has(a.id) && !a.isRead) {
+            if (!a || a.isRead || existingIds.has(a.id)) return;
+            const ageMs = nowMs - new Date(a.createdAt || 0).getTime();
+            if (initialVendorAlertsLoaded || ageMs < 10 * 60 * 1000) {
               window.dispatchEvent(new CustomEvent('vendor-booking-alert', { detail: a }));
             }
           });
         }
+        initialVendorAlertsLoaded = true;
         this.notify();
       }, (err) => console.warn('Realtime vendor booking alerts listener warning:', err));
 
@@ -4293,8 +4298,8 @@ class FirebaseStorageService {
           recipientUid: alert.vendorUid,
           recipientEmail: alert.vendorEmail,
           type: 'vendor_booking_payment',
-          title: `RM${alert.depositPaidRm} Paid Booking · ${alert.vendorName}`,
-          message: `${alert.guestName} booked ${alert.itemSummary} (${alert.bookingCode})`,
+          title: `New Booking (${alert.bookingCode}) · ${alert.vendorName}`,
+          message: `${alert.guestName} submitted ${alert.itemSummary} (${alert.checkInOrStart} → ${alert.checkOutOrEnd})`,
         }).catch(() => {});
       } catch (e) {
         console.error('Error saving vendor booking alert to Firestore:', e);
@@ -4304,6 +4309,27 @@ class FirebaseStorageService {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('vendor-booking-alert', { detail: alert }));
       window.dispatchEvent(new CustomEvent('vendor-booking-alerts-updated', { detail: updated }));
+      fetch('/api/notifications/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'vendor_booking_alert',
+          priority: 'high',
+          payload: {
+            alertId: alert.id,
+            bookingCode: alert.bookingCode,
+            vendorId: alert.vendorId,
+            vendorUid: alert.vendorUid,
+            vendorEmail: alert.vendorEmail,
+            vendorName: alert.vendorName,
+            guestName: alert.guestName,
+            guestPhone: alert.guestPhone,
+            itemSummary: alert.itemSummary,
+            title: `New Booking: ${alert.vendorName} (${alert.bookingCode})`,
+            message: `${alert.guestName} (${alert.guestPhone}) booked ${alert.itemSummary}`,
+          },
+        }),
+      }).catch(() => {});
     }
     this.notify();
     return alert;

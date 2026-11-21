@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Place, MainCategory, SubCategory, Township, Language, FarmTicket } from '../types';
+import { Place, MainCategory, SubCategory, Township, Language } from '../types';
 import { firebaseService } from '../services/firebase';
 import { getTranslation } from '../services/i18n';
 import {
@@ -33,7 +33,6 @@ import {
   Trees,
   X,
   Calendar,
-  Ticket,
   Layers,
   RotateCcw,
   BedDouble,
@@ -43,7 +42,6 @@ import {
   Smartphone,
   Cpu,
 } from 'lucide-react';
-import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
 
 export const SUB_CATEGORY_LABELS: Record<string, string> = {
@@ -125,7 +123,6 @@ interface DirectorySectionProps {
   onSelectPlaceForMap: (place: Place) => void;
   bookmarkedIds: string[];
   onToggleBookmark: (placeId: string) => void;
-  onOpenFarmMatrix: () => void;
   initialTownship?: Township | 'all';
 }
 
@@ -138,14 +135,12 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
   onSelectPlaceForMap,
   bookmarkedIds,
   onToggleBookmark,
-  onOpenFarmMatrix,
   initialTownship = 'all',
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTown, setSelectedTown] = useState<Township | 'all'>(initialTownship);
   const [selectedPlacePopup, setSelectedPlacePopup] = useState<Place | null>(null);
   const [scheduleModalPlace, setScheduleModalPlace] = useState<Place | null>(null);
-  const [farmTickets, setFarmTickets] = useState<FarmTicket[]>(() => firebaseService.getFarmTickets());
 
   const [currentCategory, setCurrentCategory] = useState<MainCategory>(selectedCategory || 'food');
   const [currentSubCategory, setCurrentSubCategory] = useState<SubCategory | undefined>(selectedSubCategory);
@@ -184,15 +179,6 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     };
     window.addEventListener('filter-directory-by-township', handleTownshipFilter);
     return () => window.removeEventListener('filter-directory-by-township', handleTownshipFilter);
-  }, []);
-
-  React.useEffect(() => {
-    const handleTicketUpdate = (e: any) => {
-      if (e.detail) setFarmTickets(e.detail);
-      else setFarmTickets(firebaseService.getFarmTickets());
-    };
-    window.addEventListener('farm-tickets-updated', handleTicketUpdate);
-    return () => window.removeEventListener('farm-tickets-updated', handleTicketUpdate);
   }, []);
 
   React.useEffect(() => {
@@ -383,41 +369,6 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
           />
         </div>
       </div>
-
-      {/* Farm Pass & Ticket Comparison Matrix Banner Button */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950/70 via-teal-950/60 to-stone-900 border border-emerald-500/40 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-            <Ticket className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-bold">
-                PRICING &amp; INCLUSIONS
-              </span>
-              <span className="text-[10px] text-stone-300">Flora Park • Sheep Sanctuary • Lavender • BOH Tea</span>
-            </div>
-            <h4 className="text-base sm:text-lg font-heading font-extrabold text-stone-100 tracking-tight mt-0.5">
-              {language === 'bm' ? 'Matriks Perbandingan Tiket & Pass Ladang' : 'Farm Pass & Ticket Comparison Matrix'}
-            </h4>
-            <p className="text-xs text-stone-300">
-              {language === 'bm'
-                ? 'Semak harga terus, waktu operasi, kemasukan percuma / berbayar, dan sambungkan terus ke kos bajet itinerari.'
-                : 'Direct pricing, opening hours, free vs paid status, and direct integration with itinerary cost calculator.'}
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={onOpenFarmMatrix}
-          className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95 shrink-0"
-        >
-          <Sparkles className="w-4 h-4 text-emerald-200" />
-          <span>Open Ticket Comparison Matrix</span>
-        </button>
-      </div>
-
-
 
       {/* ========================================================= */}
       {/* SECTION 1: DIRECTORY CATEGORIES (FILTER SELECTORS)       */}

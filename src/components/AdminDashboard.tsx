@@ -45,6 +45,7 @@ import { DynamicBusinessNatureFields } from './DynamicBusinessNatureFields';
 import { pruneVendorForSector, mapSubCategoryToMainCategory } from '../utils/sectorIsolation';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import { AdminChatHistoryFolders } from './AdminChatHistoryFolders';
+import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
 
 import {
   ShieldCheck,
@@ -173,6 +174,7 @@ const compressImageFile = (
   });
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  language,
   currentUser,
   onClose,
   onRefreshData,
@@ -822,6 +824,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showAddEventModal, setShowAddEventModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [showFarmTicketModal, setShowFarmTicketModal] = useState(false);
+  const [showFarmMatrixModal, setShowFarmMatrixModal] = useState(false);
   const [showParkingManagerModal, setShowParkingManagerModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportDataJson, setExportDataJson] = useState('');
@@ -2818,6 +2821,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <Car className="w-5 h-5 text-amber-400" />
                 <span>Parking & EV Hubs</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Farm Pass & Ticket Comparison Matrix (Moved from Verified Highland Directories to Admin Page) */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-emerald-950/75 via-teal-950/60 to-stone-900 border border-emerald-500/40 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                <Ticket className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-bold">
+                    ADMIN PRICING &amp; INCLUSIONS
+                  </span>
+                  <span className="text-[11px] text-stone-300">
+                    Flora Park • Sheep Sanctuary • Lavender • BOH Tea ({farmTickets.length} Entries)
+                  </span>
+                </div>
+                <h4 className="text-base sm:text-lg font-heading font-extrabold text-stone-100 tracking-tight mt-0.5">
+                  {language === 'bm' ? 'Matriks Perbandingan Tiket & Pass Ladang' : 'Farm Pass & Ticket Comparison Matrix'}
+                </h4>
+                <p className="text-xs text-stone-300">
+                  {language === 'bm'
+                    ? 'Semak harga terus, waktu operasi, kemasukan percuma / berbayar, dan bandingkan semua pass ladang dari paparan pentadbir.'
+                    : 'Inspect direct pricing, opening hours, free vs paid admission status, and compare all farm passes directly from Admin Control Room.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={() => setShowFarmTicketModal(true)}
+                className="px-4 py-3 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs flex items-center gap-2 border border-white/10 cursor-pointer transition-all active:scale-95"
+              >
+                <Edit3 className="w-4 h-4 text-rose-400" />
+                <span>Edit Tickets</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFarmMatrixModal(true)}
+                className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-200" />
+                <span>Open Ticket Comparison Matrix</span>
               </button>
             </div>
           </div>
@@ -8011,6 +8060,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
           </div>
+        )}
+
+      {/* Farm Pass & Ticket Comparison Matrix Modal (Admin View) */}
+      {showFarmMatrixModal &&
+        renderModal(
+          <FarmTicketMatrixModal
+            isOpen={showFarmMatrixModal}
+            onClose={() => setShowFarmMatrixModal(false)}
+            language={language}
+          />
         )}
     </>
   );

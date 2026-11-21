@@ -219,11 +219,13 @@ class PushNotificationService {
     const title = payload.title;
     const options: NotificationOptions & Record<string, any> = {
       body: payload.body,
-      icon: payload.icon || '/pwa-icon.svg',
-      badge: '/pwa-icon.svg',
+      icon: payload.icon || '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
       image: payload.image,
-      tag: payload.tag || `chat-${Date.now()}`,
+      tag: payload.tag || `camgo-alert-${Date.now()}`,
       renotify: true,
+      requireInteraction: true,
+      vibrate: [200, 100, 200],
       data: {
         url: payload.url || '/chat',
         threadId: payload.threadId,
@@ -271,7 +273,12 @@ class PushNotificationService {
       n.onclick = (e) => {
         e.preventDefault();
         window.focus();
-        window.location.hash = payload.url || 'chat';
+        if (payload.url && payload.url.startsWith('/')) {
+          window.history.pushState({}, '', payload.url);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else {
+          window.location.hash = payload.url || 'chat';
+        }
         n.close();
       };
       return true;
