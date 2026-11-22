@@ -45,6 +45,7 @@ import { ReloadPrompt } from './components/ReloadPrompt';
 import { MotorbikeRentalModal } from './components/MotorbikeRentalModal';
 import { MasjidSurauModal } from './components/MasjidSurauModal';
 import { OfflineTrailEngineModal } from './components/OfflineTrailEngineModal';
+import { EmergencyContactTrackerView } from './components/EmergencyContactTrackerView';
 import { EmergencySosWidget } from './components/EmergencySosWidget';
 import { VoiceLanguageManager } from './components/VoiceLanguageManager';
 import { MobileStickyFooter } from './components/MobileStickyFooter';
@@ -160,6 +161,17 @@ function checkIsMapRoute(): boolean {
   );
 }
 
+function getInitialTrailTrackParams(): { sessionId: string; token: string | null } | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('trailTrack')?.trim();
+  if (!sessionId) return null;
+  return {
+    sessionId,
+    token: params.get('token')?.trim() || null,
+  };
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>('en');
   const notificationCenter = useMultiChannelNotifications();
@@ -202,6 +214,10 @@ export default function App() {
   const [isMapModalOpen, setIsMapModalOpen] = useState<boolean>(checkIsMapRoute);
   const [isMasjidModalOpen, setIsMasjidModalOpen] = useState(false);
   const [isTrailEngineOpen, setIsTrailEngineOpen] = useState(false);
+  const [trailTrackParams, setTrailTrackParams] = useState<{
+    sessionId: string;
+    token: string | null;
+  } | null>(getInitialTrailTrackParams);
   const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState<boolean>(checkIsBeaconInvite);
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
   const [isAccommodationModalOpen, setIsAccommodationModalOpen] = useState(false);
@@ -687,6 +703,26 @@ export default function App() {
       message: 'Press back again to exit CamGo',
       handleModalClose: handleModalCloseOnBack,
     });
+
+  // Dedicated Emergency Contact Live Footprint Map view (?trailTrack=<sessionId>&token=<token>)
+  if (trailTrackParams?.sessionId) {
+    return (
+      <EmergencyContactTrackerView
+        sessionId={trailTrackParams.sessionId}
+        token={trailTrackParams.token}
+        language={language}
+        onExitTracker={() => {
+          setTrailTrackParams(null);
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('trailTrack');
+            url.searchParams.delete('token');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+          }
+        }}
+      />
+    );
+  }
 
   // If launched via shortcut (/?chat=true or standalone mode), render ONLY Chat Lounge full-screen
   if (isStandaloneChatView) {

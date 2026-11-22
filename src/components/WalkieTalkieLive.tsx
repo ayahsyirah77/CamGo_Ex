@@ -37,6 +37,7 @@ export interface WalkieTalkieLiveProps {
   language?: Language;
   onClose?: () => void;
   compactMode?: boolean;
+  variant?: 'full' | 'dockedBar';
   onTabSwitchRequested?: () => void;
   onLiveSpeakerStateChange?: (speaker: { id: string; name: string; color: string; isSpeaking: boolean } | null) => void;
 }
@@ -76,6 +77,7 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
   language = 'en',
   onClose,
   compactMode = false,
+  variant = 'full',
   onTabSwitchRequested,
   onLiveSpeakerStateChange,
 }) => {
@@ -581,6 +583,11 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
     }
     if (isTransmitting) return;
 
+    audioService
+      .unlockAudio()
+      .then(() => setSpeakerUnlocked(true))
+      .catch(() => {});
+
     setPermissionError(null);
     transmitStartTimeRef.current = Date.now();
     recordedBlobsRef.current = [];
@@ -853,6 +860,24 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
     };
   }, [isTransmitting]);
 
+  // Safety release listener so sliding finger off button stops transmission cleanly
+  useEffect(() => {
+    if (!isTransmitting) return;
+    const handleGlobalRelease = () => {
+      stopTransmission();
+    };
+    window.addEventListener('pointerup', handleGlobalRelease);
+    window.addEventListener('pointercancel', handleGlobalRelease);
+    window.addEventListener('touchend', handleGlobalRelease);
+    window.addEventListener('touchcancel', handleGlobalRelease);
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalRelease);
+      window.removeEventListener('pointercancel', handleGlobalRelease);
+      window.removeEventListener('touchend', handleGlobalRelease);
+      window.removeEventListener('touchcancel', handleGlobalRelease);
+    };
+  }, [isTransmitting]);
+
   // Volume slider update
   const handleVolumeChange = (newVol: number) => {
     setSpeakerVolume(newVol);
@@ -864,6 +889,191 @@ export const WalkieTalkieLive: React.FC<WalkieTalkieLiveProps> = ({
 
   const currentChannelObj = DEFAULT_CHANNELS.find((c) => c.id === activeChannel);
   const activeChannelTitle = activeChannel === partyChannelId ? partyChannelName : (currentChannelObj?.name || activeChannel);
+
+  if (variant === 'dockedBar') {
+    const shortChannelLabel =
+      activeChannel === partyChannelId
+        ? session?.code
+          ? `Party ${session.code}`
+          : 'Party Radio'
+        : (currentChannelObj?.name.split(':')[0] || activeChannel);
+
+    return (
+      <div
+        className="w-full bg-stone-950/98 border-t border-emerald-500/35 px-3 py-2 sm:px-5 sm:py-2.5 shrink-0 z-30 shadow-[0_-8px_30px_rgba(0,0,0,0.6)] relative select-none"
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+      >
+        {/* Minimal recovery alerts if mic permission or speaker autoplay is blocked */}
+        {(permissionError || autoplayBlockedItem) && (
+          <div className="mb-2 px-3 py-1.5 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-100 text-[11px] flex items-center justify-between gap-2">
+            <span className="truncate font-semibold">
+              {permissionError
+                ? permissionError
+                : language === 'bm'
+                ? `Suara masuk daripada ${autoplayBlockedItem?.senderName}`
+                : `Voice from ${autoplayBlockedItem?.senderName} ready`}
+            </span>
+            {autoplayBlockedItem ? (
+              <button
+                type="button"
+                onClick={handleTestSpeaker}
+                className="px-2.5 py-1 rounded-lg bg-white text-stone-950 font-bold text-[11px] whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                {language === 'bm' ? 'Mainkan' : 'Play'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPermissionError(null)}
+                className="px-2 py-0.5 rounded-lg bg-stone-800 text-stone-200 text-[11px] shrink-0 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          {/* Top/Left Meta Row: Channel Selector + Live Speaker Status + Audio Mute Toggle */}
+          <div className="flex items-center justify-between gap-2 sm:flex-1 min-w-0">
+            {/* Active Channel / Party Indicator */}
+            <div className="relative flex items-center min-w-0 max-w-[140px] sm:max-w-[190px]">
+              <Radio
+                className={`w-3.5 h-3.5 mr-1.5 shrink-0 ${
+                  isTransmitting
+                    ? 'text-amber-400'
+                    : incomingSpeaker
+                    ? 'text-cyan-400'
+                    : 'text-emerald-400'
+                }`}
+              />
+              <select
+                value={activeChannel}
+                onChange={(e) => {
+                  setActiveChannel(e.target.value);
+                  setActivePeers(new Map());
+                }}
+                aria-label="Active PTT Radio Channel"
+                className="w-full pr-5 py-1 bg-transparent text-xs font-mono font-bold text-stone-100 outline-none cursor-pointer appearance-none truncate"
+              >
+                <option value={partyChannelId} className="bg-stone-900 text-stone-100">
+                  {session?.code ? `Party #${session.code}` : 'Party Channel'}
+                </option>
+                {DEFAULT_CHANNELS.map((ch) => (
+                  <option key={ch.id} value={ch.id} className="bg-stone-900 text-stone-100">
+                    {ch.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-stone-400 absolute right-0 pointer-events-none" />
+            </div>
+
+            {/* Live Speaker Status Badge */}
+            <div
+              className={`flex-1 min-w-0 flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-bold truncate ${
+                isTransmitting
+                  ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
+                  : incomingSpeaker
+                  ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                  : 'bg-stone-900 border-white/10 text-stone-300'
+              }`}
+            >
+              {isTransmitting ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                  <span className="truncate whitespace-nowrap">
+                    {language === 'bm' ? 'LIVE TX · Bersiaran' : 'LIVE TX · Speaking'}
+                  </span>
+                </>
+              ) : incomingSpeaker ? (
+                <>
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: incomingSpeaker.color || '#22d3ee' }}
+                  />
+                  <span className="truncate whitespace-nowrap">
+                    RX · {incomingSpeaker.name}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Users className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="truncate whitespace-nowrap">
+                    {shortChannelLabel} · {activePeers.size + 1} online
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Audio Mute Toggle (44x44px minimum touch hitbox) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isMuted) {
+                  setIsMuted(false);
+                  audioService.unlockAudio().then(() => setSpeakerUnlocked(true)).catch(() => {});
+                } else {
+                  setIsMuted(true);
+                }
+              }}
+              aria-label={isMuted ? 'Unmute Radio Audio' : 'Mute Radio Audio'}
+              title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+              className={`min-w-[44px] min-h-[44px] px-2.5 rounded-xl border flex items-center justify-center gap-1 transition-colors cursor-pointer shrink-0 ${
+                isMuted
+                  ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+                  : 'bg-stone-900 hover:bg-stone-800 border-white/15 text-emerald-300'
+              }`}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {/* Primary Thumb-Zone Press & Hold to Talk (PTT) Button */}
+          <button
+            type="button"
+            onPointerDown={startTransmission}
+            onPointerUp={stopTransmission}
+            onPointerCancel={stopTransmission}
+            onContextMenu={(e) => e.preventDefault()}
+            style={{
+              touchAction: 'none',
+              WebkitUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+            }}
+            aria-label="Press and hold to talk"
+            className={`w-full sm:w-auto sm:min-w-[220px] min-h-[48px] px-5 py-2.5 rounded-2xl font-black text-sm tracking-wide flex items-center justify-center gap-2.5 cursor-pointer select-none transition-transform duration-150 active:scale-[0.98] shrink-0 shadow-lg ${
+              isTransmitting
+                ? 'bg-amber-500 text-stone-950 ring-4 ring-amber-400/40 shadow-amber-500/30'
+                : incomingSpeaker
+                ? 'bg-cyan-700 hover:bg-cyan-600 text-white border border-cyan-400/50'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 shadow-emerald-950/60'
+            }`}
+          >
+            {isTransmitting ? (
+              <Mic className="w-5 h-5 text-stone-950 shrink-0" />
+            ) : incomingSpeaker ? (
+              <Volume2 className="w-5 h-5 text-cyan-100 shrink-0" />
+            ) : (
+              <Mic className="w-5 h-5 text-white shrink-0" />
+            )}
+            <span className="whitespace-nowrap">
+              {isTransmitting
+                ? language === 'bm'
+                  ? 'Sedang Bersiaran — Lepas Hantar'
+                  : 'Transmitting — Release to Send'
+                : incomingSpeaker
+                ? language === 'bm'
+                  ? `Menerima: ${incomingSpeaker.name}`
+                  : `Receiving: ${incomingSpeaker.name}`
+                : language === 'bm'
+                ? 'Tekan & Tahan untuk Bercakap'
+                : 'Press & Hold to Talk'}
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`w-full flex flex-col bg-stone-950 text-stone-100 rounded-3xl border border-emerald-500/30 overflow-hidden shadow-2xl relative ${compactMode ? 'p-2 sm:p-3' : 'p-4 sm:p-6 space-y-4'}`}>

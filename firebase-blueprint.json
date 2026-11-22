@@ -222,6 +222,35 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "title", "type", "location", "lat", "lng", "status", "stillThereVotes", "clearedVotes", "timestamp"]
+    },
+    "SafetySession": {
+      "title": "SafetySession",
+      "description": "Hiker safety passport check-in session with live GPS breadcrumbs, device telemetry, and automated overdue tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "hikerName": { "type": "string" },
+        "trailId": { "type": "string" },
+        "trailName": { "type": "string" },
+        "groupSize": { "type": "number" },
+        "emergencyContact": { "type": "string" },
+        "expectedHours": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "overdue", "completed"] },
+        "trackingToken": { "type": "string" },
+        "manualStartAlertSent": { "type": "boolean" },
+        "autoStartAlertSent": { "type": "boolean" },
+        "lastMovementAt": { "type": "string" },
+        "inactivityAlert1Sent": { "type": "boolean" },
+        "inactivityAlert2Sent": { "type": "boolean" },
+        "lastKnownCoords": { "type": "string" },
+        "lastKnownLat": { "type": "number" },
+        "lastKnownLng": { "type": "number" },
+        "startedAt": { "type": "string" },
+        "expectedReturnAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "trailName", "emergencyContact", "expectedHours", "status", "startedAt"]
     }
   },
   "firestore": {
@@ -308,6 +337,10 @@
     "bookings/{bookingId}": {
       "schema": { "$ref": "VendorListing" },
       "description": "Unified customer rental & stay bookings linked to vendor UIDs"
+    },
+    "safety_sessions/{sessionId}": {
+      "schema": { "$ref": "SafetySession" },
+      "description": "Active hiker safety passport sessions, GPS breadcrumbs, telemetry & overdue status"
     }
   }
 }

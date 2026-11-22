@@ -139,7 +139,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members' | 'chat' | 'walkie'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'compass' | 'members' | 'chat'>('map');
   const [liveRadioSpeakerBanner, setLiveRadioSpeakerBanner] = useState<{
     id: string;
     name: string;
@@ -1018,6 +1018,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       mapInstanceRef.current = map;
     }
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && currentMapEl) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ animate: false });
+        }
+      });
+      resizeObserver.observe(currentMapEl);
+    }
+
     if (activeTab === 'map') {
       const invalidate = () => {
         if (mapInstanceRef.current) {
@@ -1028,11 +1038,16 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
       const t1 = setTimeout(invalidate, 100);
       const t2 = setTimeout(invalidate, 280);
       return () => {
+        if (resizeObserver) resizeObserver.disconnect();
         cancelAnimationFrame(raf);
         clearTimeout(t1);
         clearTimeout(t2);
       };
     }
+
+    return () => {
+      if (resizeObserver) resizeObserver.disconnect();
+    };
   }, [isOpen, session?.code, activeTab]);
 
   // Clean up map when modal closes or session clears
@@ -1345,37 +1360,55 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
   if (!isOpen) return null;
 
+  const hasJoinedActiveSession = Boolean(
+    session && session.members && session.members[memberId]
+  );
+
   return (
-    <div className="fixed inset-0 z-[125] overflow-y-auto bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="min-h-full flex items-center justify-center p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[125] overflow-hidden bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="h-full flex items-center justify-center p-0 sm:p-4" onClick={onClose}>
         <div
           ref={modalCardRef}
-          className="w-full max-w-4xl h-[92vh] sm:h-[88vh] max-h-[94vh] sm:max-h-[88vh] flex flex-col min-h-0 bg-stone-900 border-t sm:border border-emerald-500/40 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden relative my-auto shrink-0"
+          className={`w-full max-w-5xl flex flex-col min-h-0 bg-stone-900 border-t sm:border border-emerald-500/40 shadow-2xl overflow-hidden relative shrink-0 ${
+            hasJoinedActiveSession
+              ? 'h-[100dvh] sm:h-[92vh] sm:rounded-3xl'
+              : 'h-[94vh] sm:h-[88vh] rounded-t-3xl sm:rounded-3xl mt-auto sm:my-auto'
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
-        {/* Mobile Pull Handle */}
-        <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
+        {/* Mobile Pull Handle (Setup view only) */}
+        {!hasJoinedActiveSession && (
+          <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
+        )}
 
-        {/* Sticky Header Bar */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md z-30 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-emerald-950/60 shrink-0">
-              <Users className="w-5 h-5" />
+        {/* Sticky Compact Header Bar */}
+        <div className="flex items-center justify-between px-3.5 sm:px-5 py-2 sm:py-2.5 border-b border-white/10 bg-stone-950 z-30 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-md shrink-0">
+              <Users className="w-4 h-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-heading font-extrabold text-stone-100 flex items-center gap-2">
-                  <span>{language === 'bm' ? 'Cari Rakan Kumpulan' : 'Find My Party'}</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
-                    {language === 'bm' ? 'Suar GPS' : 'Live Beacon'}
-                  </span>
+                <h2 className="text-sm sm:text-base font-heading font-extrabold text-stone-100 truncate">
+                  {hasJoinedActiveSession && session ? session.name : language === 'bm' ? 'Cari Rakan Kumpulan' : 'Find My Party'}
                 </h2>
+                {hasJoinedActiveSession && session && (
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 shrink-0">
+                    {session.code}
+                  </span>
+                )}
               </div>
-              <p className="text-[11px] text-stone-400 line-clamp-1">
-                {language === 'bm'
-                  ? 'Kesan lokasi tepat anda dan semak pin designated setiap ahli yang menyertai'
-                  : 'Real-time GPS tracking with designated pins for each companion who joins'}
-              </p>
+              {!hasJoinedActiveSession ? (
+                <p className="text-[11px] text-stone-400 truncate">
+                  {language === 'bm'
+                    ? 'Kesan lokasi tepat anda dan semak pin setiap ahli'
+                    : 'Real-time GPS tracking with designated pins & live PTT radio'}
+                </p>
+              ) : (
+                <p className="text-[10px] font-mono text-stone-400 truncate">
+                  {designatedMembers.length} {designatedMembers.length === 1 ? 'member' : 'members'} · ~{remainingHours}h left
+                </p>
+              )}
             </div>
           </div>
 
@@ -1385,13 +1418,13 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
               type="button"
               onClick={handleLocateMe}
               disabled={locatingUser}
-              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/60 transition-all cursor-pointer disabled:opacity-50"
+              className="min-h-[40px] px-2.5 sm:px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
               title="Locate my exact position on map"
             >
               {locatingUser ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
               ) : (
-                <Crosshair className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+                <Crosshair className="w-3.5 h-3.5 text-emerald-100" />
               )}
               <span className="hidden xs:inline">
                 {language === 'bm' ? 'Kesan Saya' : 'Locate Me'}
@@ -1400,34 +1433,39 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
             {/* Close Button */}
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              className="min-h-[40px] min-w-[40px] p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
               aria-label="Close"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* Locate Me Floating Notification Toast */}
         {locateToast && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs px-4 py-2 rounded-full shadow-2xl animate-in fade-in slide-in-from-top duration-200 flex items-center gap-2">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 pointer-events-none">
             <span>{locateToast}</span>
           </div>
         )}
 
         {/* GPS Error alert if any */}
         {gpsError && (
-          <div className="mx-4 mt-2 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2">
+          <div className="mx-3 mt-1.5 p-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2 shrink-0">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>{gpsError}</span>
+            <span className="truncate">{gpsError}</span>
           </div>
         )}
 
-        {/* Scrollable Content Body */}
+        {/* Content Body: Setup View is scrollable; Active Party View is zero-scroll split flex */}
         <div
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 sm:px-6 py-4 pb-28 sm:pb-8 space-y-4 touch-pan-y"
-          style={{ WebkitOverflowScrolling: 'touch' }}
+          className={
+            hasJoinedActiveSession
+              ? 'flex-1 min-h-0 flex flex-col overflow-hidden'
+              : 'flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 sm:px-6 py-4 pb-24 sm:pb-8 space-y-4 touch-pan-y'
+          }
+          style={!hasJoinedActiveSession ? { WebkitOverflowScrolling: 'touch' } : undefined}
         >
         {/* Joining / Loading State for Invitation Links */}
         {(invitationCode || (loading && !session)) ? (
@@ -1759,156 +1797,12 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
               )}
             </div>
           ) : (
-            /* ACTIVE SESSION VIEW (Real Users Only) */
-            <div className="space-y-4">
-              {/* FEATURE: NAVIGATE TO BEACON CREATOR (HOST) */}
-              {!isMeCreator && creatorMember ? (
-                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/95 via-teal-950/80 to-stone-900 border-2 border-emerald-500/60 shadow-2xl flex flex-col space-y-3 animate-in fade-in duration-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center text-stone-950 shadow-lg shrink-0 font-bold">
-                        <Navigation className="w-5 h-5 text-stone-950 stroke-[2.5]" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-mono uppercase font-black px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/50">
-                            👑 BEACON HOST
-                          </span>
-                          <span className="text-xs text-stone-300 font-bold truncate">{creatorName}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-emerald-300 font-mono mt-0.5 flex-wrap">
-                          {hostDistanceMeters !== null && (
-                            <span className="font-extrabold text-white bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
-                              {formatDistance(hostDistanceMeters)}
-                            </span>
-                          )}
-                          {hostCardinal && (
-                            <span>Bearing {hostCardinal} ({hostBearingDegrees}°)</span>
-                          )}
-                          <span className="text-stone-300">• {creatorMember.nearestLandmark || 'Cameron Highlands'}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Mode Selector & One-Click Navigation Buttons to Creator */}
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      {/* Dynamic Travel Mode Selector */}
-                      <div className="flex items-center p-1 rounded-xl bg-stone-900 border border-white/10 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setRouteTravelMode('walking')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                            routeTravelMode === 'walking'
-                              ? 'bg-emerald-600 text-white shadow-md'
-                              : 'text-stone-400 hover:text-white'
-                          }`}
-                          title="Display dynamic walking path"
-                        >
-                          <Footprints className="w-3.5 h-3.5" />
-                          <span>{language === 'bm' ? 'Jalan' : 'Walk'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRouteTravelMode('driving')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                            routeTravelMode === 'driving'
-                              ? 'bg-blue-600 text-white shadow-md'
-                              : 'text-stone-400 hover:text-white'
-                          }`}
-                          title="Display dynamic driving route"
-                        >
-                          <Car className="w-3.5 h-3.5" />
-                          <span>{language === 'bm' ? 'Pandu' : 'Drive'}</span>
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleNavigateToHost('google')}
-                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all active:scale-95"
-                        title="Open Turn-by-Turn Navigation in Google Maps"
-                      >
-                        <Navigation className="w-3.5 h-3.5" />
-                        <span>Google Maps</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleNavigateToHost('waze')}
-                        className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
-                        title="Open in Waze"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Waze</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleShowRouteToHost}
-                        className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/15 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
-                        title="Center and fit visual route on map"
-                      >
-                        <Route className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{language === 'bm' ? 'Laluan Peta' : 'Fit Route'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Route ETA / Path Info Overlay */}
-                  {routeEtaInfo && (
-                    <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-stone-300 font-mono">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${routeTravelMode === 'walking' ? 'bg-emerald-400 animate-ping' : 'bg-blue-400 animate-pulse'}`} />
-                        <span>
-                          {routeTravelMode === 'walking' ? '🚶 Walking Path:' : '🚗 Driving Path:'}{' '}
-                          <span className="font-extrabold text-white">{routeEtaInfo.distanceText}</span> (~{routeEtaInfo.durationText})
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-stone-400 font-sans">
-                        {language === 'bm' ? 'Laluan Leaflet Aktif' : 'Dynamic Leaflet Polyline Overlay'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ) : isMeCreator ? (
-                <div className="p-3 sm:p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xl">👑</span>
-                    <div>
-                      <span className="font-extrabold text-amber-300 block">
-                        {language === 'bm' ? 'Anda ialah Pencipta Suar (Host)' : 'You are the Beacon Host'}
-                      </span>
-                      <span className="text-stone-400 text-[11px]">
-                        {language === 'bm'
-                          ? 'Ahli kumpulan boleh menavigasi terus ke lokasi anda melalui Google Maps & Waze.'
-                          : 'Companions can navigate directly to your real GPS location via Google Maps & Waze.'}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-xl bg-amber-400/20 text-amber-300 font-mono font-extrabold text-[10px] uppercase border border-amber-400/40 shrink-0">
-                    Pin #1 (Host)
-                  </span>
-                </div>
-              ) : null}
-              {/* Session Control Banner */}
-              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-800 via-stone-850 to-stone-800 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3 shadow-xl">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs sm:text-sm font-bold text-emerald-400 font-mono tracking-wider">
-                      {session.name}
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-stone-900 text-stone-300 border border-white/10 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-emerald-400" />
-                      <span>~{remainingHours}h remaining</span>
-                    </span>
-                  </div>
-
-                  {/* Invite Code */}
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <span className="text-xs text-stone-400">{language === 'bm' ? 'Kod Sesi:' : 'Code:'}</span>
-                    <span className="text-sm font-mono font-black text-white px-2.5 py-0.5 rounded bg-black/60 border border-emerald-500/40 select-all">
-                      {session.code}
-                    </span>
+            /* ACTIVE SESSION VIEW: Zero-Scroll Above-the-Fold Split Layout */
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {/* Compact Session Action Strip & 4-Tab Bar */}
+              <div className="px-3 sm:px-5 py-1.5 bg-stone-900 border-b border-white/10 flex flex-col gap-1.5 shrink-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <button
                       type="button"
                       onClick={() => {
@@ -1916,213 +1810,133 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                         setCopiedCode(true);
                         setTimeout(() => setCopiedCode(false), 2000);
                       }}
-                      className="p-1 rounded bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors"
-                      title="Copy code"
+                      className="px-2 py-1 rounded-lg bg-stone-950 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer"
+                      title="Copy invite code"
                     >
-                      {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{session.code}</span>
+                      {copiedCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowQrModal(true)}
+                      className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 cursor-pointer"
+                      title="Show QR Invite"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleToggleSharing}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border cursor-pointer ${
+                        isSharing
+                          ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                          : 'bg-stone-800 border-white/10 text-stone-400'
+                      }`}
+                    >
+                      {isSharing ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                      <span>{isSharing ? 'GPS On' : 'Paused'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSwitchToCreate}
+                      className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-white/10 text-[11px] font-semibold cursor-pointer"
+                    >
+                      {language === 'bm' ? 'Baharu' : 'New'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLeaveSession}
+                      className="px-2 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      <span>{language === 'bm' ? 'Keluar' : 'Leave'}</span>
                     </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Locate Me Shortcut Button in Active Session */}
-                  <button
-                    type="button"
-                    onClick={handleLocateMe}
-                    disabled={locatingUser}
-                    className="px-2.5 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-colors"
-                  >
-                    <Crosshair className="w-3.5 h-3.5 animate-pulse" />
-                    <span>{language === 'bm' ? 'Kesan Saya' : 'Locate Me'}</span>
-                  </button>
-
-                  {/* Switch to Create Another Beacon */}
-                  <button
-                    type="button"
-                    onClick={handleSwitchToCreate}
-                    className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{language === 'bm' ? 'Cipta Lain' : 'New Beacon'}</span>
-                  </button>
-
-                  {/* Switch to Join Another Beacon */}
-                  <button
-                    type="button"
-                    onClick={handleSwitchToJoin}
-                    className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <KeyRound className="w-3.5 h-3.5 text-sky-400" />
-                    <span>{language === 'bm' ? 'Sertai Lain' : 'Join Other'}</span>
-                  </button>
-
-                  {/* Leave Session */}
-                  <button
-                    type="button"
-                    onClick={handleLeaveSession}
-                    className="px-2.5 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>{language === 'bm' ? 'Keluar' : 'Leave'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* View Switcher Tabs: MAP / COMPASS BEARING / DESIGNATED PINS */}
-              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
-                <div className="flex items-center gap-1.5">
+                {/* Single-row Tab Switcher (Map primary; PTT stays permanently docked below) */}
+                <div className="grid grid-cols-4 gap-1.5">
                   <button
                     type="button"
                     onClick={() => setActiveTab('map')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    className={`min-h-[36px] px-2 py-1 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                       activeTab === 'map'
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                        : 'bg-stone-800/70 text-stone-300 hover:text-white'
                     }`}
                   >
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span>{language === 'bm' ? 'Peta Live' : 'Live Map'}</span>
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{language === 'bm' ? 'Peta' : 'Live Map'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setActiveTab('compass')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    className={`min-h-[36px] px-2 py-1 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                       activeTab === 'compass'
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                        : 'bg-stone-800/70 text-stone-300 hover:text-white'
                     }`}
                   >
-                    <Compass className="w-3.5 h-3.5" />
-                    <span>{language === 'bm' ? 'Kompas & Jarak' : 'Bearing & Distance'}</span>
+                    <Compass className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{language === 'bm' ? 'Kompas' : 'Compass'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setActiveTab('members')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    className={`min-h-[36px] px-2 py-1 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                       activeTab === 'members'
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                        : 'bg-stone-800/70 text-stone-300 hover:text-white'
                     }`}
                   >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>
-                      {language === 'bm' ? 'Ahli Designated' : 'Designated Pins'} ({designatedMembers.length})
+                    <Users className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">
+                      {language === 'bm' ? 'Ahli' : 'Pins'} ({designatedMembers.length})
                     </span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setActiveTab('chat')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                    className={`min-h-[36px] px-2 py-1 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                       activeTab === 'chat'
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-stone-800 text-stone-400 hover:text-white'
+                        : 'bg-stone-800/70 text-stone-300 hover:text-white'
                     }`}
                   >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>{language === 'bm' ? 'Sembang' : 'Party Chat'}</span>
+                    <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{language === 'bm' ? 'Sembang' : 'Chat'}</span>
                     {session?.messages && session.messages.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full bg-emerald-400 text-black text-[10px] font-mono font-bold">
+                      <span className="px-1 rounded bg-emerald-400 text-stone-950 text-[9px] font-mono font-bold">
                         {session.messages.length}
                       </span>
                     )}
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('walkie')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
-                      activeTab === 'walkie'
-                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 text-stone-950 font-black shadow-lg shadow-amber-500/25 ring-2 ring-amber-400/30'
-                        : 'bg-stone-850/90 border-amber-500/30 text-amber-300 hover:bg-stone-800 hover:text-white'
-                    }`}
-                  >
-                    <Radio className={`w-3.5 h-3.5 ${activeTab === 'walkie' ? 'text-stone-950' : 'text-amber-400'} animate-pulse`} />
-                    <span>{language === 'bm' ? 'Walkie-Talkie PTT' : 'Walkie-Talkie (PTT)'}</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  </button>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleToggleSharing}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-colors cursor-pointer ${
-                      isSharing
-                        ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
-                        : 'bg-stone-800 border-white/10 text-stone-400'
-                    }`}
-                  >
-                    {isSharing ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5" />}
-                    <span>{isSharing ? 'Broadcasting GPS' : 'GPS Paused'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Floating Live Radio Speaker Banner when a companion speaks and user is on Map/Compass/Chat tab */}
-              {activeTab !== 'walkie' && liveRadioSpeakerBanner && liveRadioSpeakerBanner.isSpeaking && (
-                <div
-                  onClick={() => setActiveTab('walkie')}
-                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-500 to-emerald-600 text-stone-950 font-bold text-xs shadow-xl cursor-pointer flex items-center justify-between gap-3 animate-pulse border border-amber-300 transition-all hover:scale-[1.01]"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Radio className="w-4 h-4 animate-bounce text-stone-950 shrink-0" />
-                    <span className="truncate">
-                      {language === 'bm'
-                        ? `📻 ${liveRadioSpeakerBanner.name} sedang bersiaran di Radio PTT...`
-                        : `📻 ${liveRadioSpeakerBanner.name} is speaking on PTT Radio...`}
-                    </span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-lg bg-stone-950/80 text-amber-300 font-mono text-[10px] uppercase font-black shrink-0">
-                    {language === 'bm' ? 'Buka PTT' : 'Open Radio'}
-                  </span>
-                </div>
-              )}
-
-              {/* Live Member Count & New Member Joined Banner */}
-              <div className="px-3.5 py-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                  <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="font-bold text-emerald-200 truncate">
-                    {language === 'bm'
-                      ? `${designatedMembers.length} pengguna sedang aktif dalam kumpulan ini`
-                      : `${designatedMembers.length} ${designatedMembers.length === 1 ? 'user' : 'users'} currently in group`}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('members')}
-                  className="text-[11px] font-mono font-bold text-emerald-300 hover:text-white px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 cursor-pointer shrink-0"
-                >
-                  {language === 'bm' ? 'Lihat Ahli' : 'View Party'}
-                </button>
               </div>
 
               {memberJoinBanner && (
-                <div className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600/95 to-teal-600/95 border border-emerald-300/60 text-white shadow-lg flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Users className="w-4 h-4 text-white shrink-0" />
-                    <div className="text-xs font-bold truncate">
-                      {language === 'bm'
-                        ? `${memberJoinBanner.joinedNames.join(', ')} telah menyertai! • ${memberJoinBanner.totalCount} ahli dalam kumpulan sekarang`
-                        : `${memberJoinBanner.joinedNames.join(', ')} joined the group! • ${memberJoinBanner.totalCount} ${memberJoinBanner.totalCount === 1 ? 'user' : 'users'} currently in group`}
-                    </div>
-                  </div>
+                <div className="mx-3 mt-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 border border-emerald-400/60 text-white shadow flex items-center justify-between gap-2 shrink-0 text-xs font-bold">
+                  <span className="truncate">
+                    {language === 'bm'
+                      ? `${memberJoinBanner.joinedNames.join(', ')} menyertai (${memberJoinBanner.totalCount} ahli)`
+                      : `${memberJoinBanner.joinedNames.join(', ')} joined (${memberJoinBanner.totalCount} active)`}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setMemberJoinBanner(null)}
-                    className="p-1 rounded-lg hover:bg-white/15 text-white/80 hover:text-white cursor-pointer shrink-0"
-                    aria-label="Dismiss banner"
+                    className="p-0.5 rounded hover:bg-white/15 cursor-pointer shrink-0"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
 
-              {/* Clickable Incoming Party Chat Pop-Up Banner Notification (Opens Chat without closing Maps) */}
               {chatPopupBanner && activeTab !== 'chat' && (
                 <div
                   role="button"
@@ -2138,81 +1952,108 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                       setActiveTab('chat');
                     }
                   }}
-                  className="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-stone-950/98 via-emerald-950/95 to-stone-950/98 border-2 border-emerald-400/80 text-white shadow-[0_12px_32px_rgba(16,185,129,0.3)] flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-200 cursor-pointer hover:border-emerald-300 transition-all"
+                  className="mx-3 mt-1.5 px-3 py-1.5 rounded-xl bg-stone-950 border border-emerald-400/70 text-white shadow flex items-center justify-between gap-2 cursor-pointer shrink-0 text-xs"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div
-                      className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border border-white/25 shadow-sm"
-                      style={{ backgroundColor: chatPopupBanner.senderColor || '#10b981' }}
-                    >
-                      <MessageSquare className="w-4 h-4 text-white animate-bounce" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
-                        <span>{language === 'bm' ? 'Mesej Sembang Baharu' : 'New Party Chat'}</span>
-                        <span className="text-stone-400">•</span>
-                        <span className="text-white truncate">{chatPopupBanner.senderName}</span>
-                      </div>
-                      <div className="text-xs font-bold text-stone-100 truncate mt-0.5">
-                        {chatPopupBanner.text}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="px-2.5 py-1 rounded-xl bg-emerald-500 text-stone-950 text-[10px] font-black">
-                      {language === 'bm' ? 'Buka Sembang' : 'Open Chat'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setChatPopupBanner(null);
-                      }}
-                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-stone-200 hover:text-white cursor-pointer"
-                      aria-label="Dismiss chat notification"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <span className="truncate">
+                    <strong className="text-emerald-300">{chatPopupBanner.senderName}:</strong> {chatPopupBanner.text}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setChatPopupBanner(null);
+                    }}
+                    className="p-0.5 rounded hover:bg-white/10 text-stone-300 cursor-pointer shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
 
-              {/* TAB 1: LIVE MAP WITH DESIGNATED PINS */}
-              <div className={activeTab === 'map' ? 'space-y-3' : 'hidden'}>
+              {/* Middle Flex-1 Container: Full-Height Map above the permanently docked PTT bar */}
+              <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
+                {/* TAB 1: LIVE MAP WITH DESIGNATED PINS */}
+                <div className={activeTab === 'map' ? 'flex-1 min-h-0 w-full relative' : 'hidden'}>
                   <div
                     ref={mapContainerRef}
-                    className="w-full rounded-2xl overflow-hidden border border-white/15 shadow-inner relative z-10"
-                    style={{ height: `${dynamicMapHeight}px` }}
+                    className="w-full h-full relative z-10"
                   />
 
-                  {/* Map overlay controls */}
-                  <div className="flex items-center justify-between text-xs text-stone-400 px-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                      <span>{designatedMembers.length} real companions active in session</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
+                  {/* Top-Right Quick Fullscreen & Route Buttons Overlaid cleanly on Map */}
+                  <div className="absolute top-2.5 right-2.5 z-[400] flex items-center gap-1.5">
+                    {!isMeCreator && creatorMember && (
                       <button
                         type="button"
-                        onClick={() => setActiveTab('walkie')}
-                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 cursor-pointer transition-colors font-semibold text-xs"
+                        onClick={handleShowRouteToHost}
+                        className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-stone-950/90 hover:bg-stone-800 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 cursor-pointer text-xs font-bold shadow-lg"
                       >
-                        <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                        <span>{language === 'bm' ? 'Walkie-Talkie PTT' : 'PTT Radio'}</span>
+                        <Route className="w-3.5 h-3.5" />
+                        <span>{language === 'bm' ? 'Laluan' : 'Fit Route'}</span>
                       </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setShowLiveMapModal(true)}
-                        className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        <span>{language === 'bm' ? 'Peta Skrin Penuh' : 'Fullscreen Map'}</span>
-                      </button>
-                    </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowLiveMapModal(true)}
+                      className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-stone-950/90 hover:bg-stone-800 text-stone-100 border border-white/15 flex items-center gap-1 cursor-pointer text-xs font-bold shadow-lg"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>{language === 'bm' ? 'Skrin Penuh' : 'Fullscreen'}</span>
+                    </button>
                   </div>
+
+                  {/* Compact Overlaid Host Distance & Navigation Bar inside bottom of Map */}
+                  {!isMeCreator && creatorMember && (
+                    <div className="absolute bottom-2 left-2 right-12 z-[400] pointer-events-none">
+                      <div className="bg-stone-950/92 backdrop-blur-md border border-emerald-500/40 rounded-2xl px-3 py-2 flex items-center justify-between gap-2 shadow-2xl pointer-events-auto max-w-md">
+                        <div className="min-w-0 leading-tight">
+                          <div className="text-[11px] font-bold text-white truncate">
+                            Host · {creatorName}
+                          </div>
+                          <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 tabular-nums">
+                            {hostDistanceMeters !== null && <span>{formatDistance(hostDistanceMeters)}</span>}
+                            {hostCardinal && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span>{hostCardinal} ({hostBearingDegrees}°)</span>
+                              </>
+                            )}
+                            {routeEtaInfo && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="text-amber-300">{routeEtaInfo.durationText}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setRouteTravelMode(routeTravelMode === 'walking' ? 'driving' : 'walking')}
+                            className="min-h-[34px] px-2 rounded-lg bg-stone-800 text-stone-200 border border-white/10 text-[11px] font-bold cursor-pointer flex items-center gap-1"
+                            title="Switch Walk / Drive"
+                          >
+                            {routeTravelMode === 'walking' ? <Footprints className="w-3.5 h-3.5 text-emerald-400" /> : <Car className="w-3.5 h-3.5 text-sky-400" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNavigateToHost('google')}
+                            className="min-h-[34px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <Navigation className="w-3.5 h-3.5" />
+                            <span>Maps</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                {activeTab !== 'map' && (
+                  <div
+                    className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-5 py-3 space-y-3 touch-pan-y"
+                    style={{ WebkitOverflowScrolling: 'touch' }}
+                  >
 
               {/* TAB 2: COMPASS & DISTANCE */}
               {activeTab === 'compass' && (
@@ -2459,16 +2300,6 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
                   {/* Message Input Box */}
                   <form onSubmit={handleSendChatMessage} className="flex items-center gap-2">
-                    {/* Walkie-Talkie PTT Button */}
-                    {/* Quick Walkie-Talkie Shortcut */}
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('walkie')}
-                      className="p-2.5 rounded-xl border border-amber-500/30 bg-stone-900 hover:bg-amber-500/20 text-amber-400 transition-all cursor-pointer flex items-center justify-center shrink-0"
-                      title={language === 'bm' ? 'Buka Walkie-Talkie Langsung' : 'Switch to Live Walkie-Talkie'}
-                    >
-                      <Radio className="w-5 h-5 animate-pulse" />
-                    </button>
                     <input
                       type="text"
                       value={chatInputText}
@@ -2488,18 +2319,22 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                 </div>
               )}
 
-              {/* TAB 5: PUSH-TO-TALK (PTT) LIVE WALKIE-TALKIE (Kept mounted for active background voice reception) */}
-              <div className={activeTab === 'walkie' ? 'space-y-3 block' : 'hidden'}>
+                  </div>
+                )}
+              </div>
+
+              {/* Permanently Docked PTT Radio Control Bar directly beneath map (avoid duplicate listener when Fullscreen LiveBeaconMapModal is open) */}
+              {!showLiveMapModal && (
                 <WalkieTalkieLive
+                  variant="dockedBar"
                   session={session}
                   memberId={memberId}
                   memberName={memberName || (language === 'bm' ? 'Pengembara Cameron' : 'Highland Companion')}
                   avatarColor={avatarColor}
                   language={language}
-                  onTabSwitchRequested={() => setActiveTab('walkie')}
                   onLiveSpeakerStateChange={setLiveRadioSpeakerBanner}
                 />
-              </div>
+              )}
             </div>
           )}
         </div>

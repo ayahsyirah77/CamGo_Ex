@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import L from 'leaflet';
 import {
   Compass,
@@ -9,13 +9,13 @@ import {
   CheckCircle2,
   AlertTriangle,
   Download,
-  Share2,
   Copy,
   Check,
   RefreshCw,
   X,
   Footprints,
   BatteryCharging,
+  Battery,
   Radio,
   Sparkles,
   Mountain,
@@ -24,14 +24,54 @@ import {
   ExternalLink,
   FileText,
   Users,
-  Info,
+  Wifi,
+  WifiOff,
+  ChevronRight,
+  ChevronDown,
+  MessageSquare,
+  PhoneCall,
+  Send,
+  Activity,
+  Wind,
+  CloudRain,
+  Thermometer,
+  Share2,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  ArrowLeft,
 } from 'lucide-react';
 import { CAMERON_TRAILS, TrailRoute } from '../data/trailsData';
 import { Language } from '../types';
 import { UserProfile, firebaseService } from '../services/firebase';
-import { db } from '../lib/firebase';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { weatherService, TrailSafetyStatus } from '../services/weather';
+import {
+  DeviceTelemetrySnapshot,
+  TrailBreadcrumbPoint,
+  TrailContactNotificationResult,
+  TrailSafetySession,
+  buildSmsLink,
+  buildTrailTrackingUrl,
+  buildWhatsAppLink,
+  flushPendingTrailSessions,
+  generateTrackingToken,
+  getCachedActiveTrailSession,
+  haversineDistanceMeters,
+  markTrailSessionCheckedOut,
+  playStillnessWarningTone,
+  readLiveDeviceTelemetry,
+  requestMotionSensorPermissionIfNeeded,
+  resolveBestSosCoordinates,
+  sendInitialTrailCheckInAlert,
+  subscribeDeviceTelemetry,
+  syncTrailSessionToCloudOrQueue,
+  triggerFiveMinuteAutoStartAlert,
+  triggerInactivityStage1Alert,
+  triggerInactivityStage2CriticalAlert,
+  triggerOverdueTrailAlert,
+  updateLastKnownMapGps,
+} from '../services/trailSafetyService';
+import { sendOrQueueEmergencySos, SosDispatchOutcome } from '../services/offlineSosQueue';
 
 interface OfflineTrailEngineModalProps {
   isOpen: boolean;
@@ -39,6 +79,22 @@ interface OfflineTrailEngineModalProps {
   language: Language;
   currentUser: UserProfile | null;
   onOpenAuth: () => void;
+}
+
+function triggerProgrammaticDeepLink(href: string, openInNewTab: boolean): void {
+  if (typeof document === 'undefined' || !href) return;
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  if (openInNewTab) {
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+  }
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  window.setTimeout(() => {
+    anchor.remove();
+  }, 180);
 }
 
 const TRAIL_COLORS: Record<number, string> = {
@@ -55,8 +111,18 @@ const TRAIL_COLORS: Record<number, string> = {
   11: '#06b6d4',
   12: '#a855f7',
   13: '#f97316',
-  14: '#4338ca',
+  14: '#7c3aed',
+  15: '#e11d48',
 };
+
+const FIVE_MINUTES_SEC = 5 * 60;
+const FIFTEEN_MINUTES_SEC = 15 * 60;
+const THIRTY_MINUTES_SEC = 30 * 60;
+
+function parseEstimatedHours(estStr: string): string {
+  const m = estStr.match(/[\d.]+/);
+  return m ? m[0] : '3';
+}
 
 export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = ({
   isOpen,
@@ -65,68 +131,441 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   currentUser,
   onOpenAuth,
 }) => {
-  const [selectedTrail, setSelectedTrail] = useState<TrailRoute | null>(null);
+  // Unlocked Map State (false: Safety Passport Form -> true: Interactive Trail Map)
+  const [passportUnlocked, setPassportUnlocked] = useState(false);
+  const [resumableSession, setResumableSession] = useState<TrailSafetySession | null>(null);
+
+  // Selected Trail & Weather / Offline Cache State
+  const [selectedTrail, setSelectedTrail] = useState<TrailRoute>(
+    () =>
+      CAMERON_TRAILS.find((t) => t.id === 'trail-11') ||
+      CAMERON_TRAILS.find((t) => t.id === 'trail-4') ||
+      CAMERON_TRAILS[0]
+  );
   const [isPreDownloading, setIsPreDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(100);
   const [cacheVerified, setCacheVerified] = useState(false);
   const [safetyStatus, setSafetyStatus] = useState<TrailSafetyStatus | null>(null);
-  const [isPermitInfoOpen, setIsPermitInfoOpen] = useState(false);
+  const [isPermitCapsuleOpen, setIsPermitCapsuleOpen] = useState(false);
+  const [isFullScreenMap, setIsFullScreenMap] = useState(false);
+  const [isElevationExpanded, setIsElevationExpanded] = useState(false);
+  const [isSafetyBriefOpen, setIsSafetyBriefOpen] = useState(false);
 
-  // Leaflet Map Ref
+  // Leaflet Map Refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const activePolylineRef = useRef<L.Polyline | null>(null);
+  const trailheadMarkerRef = useRef<L.CircleMarker | null>(null);
+  const peakMarkerRef = useRef<L.CircleMarker | null>(null);
   const gpsMarkerRef = useRef<L.Marker | null>(null);
   const breadcrumbLineRef = useRef<L.Polyline | null>(null);
 
-  // Breadcrumb Tracking State
+  // Live GPS & Breadcrumb State
   const [isRecording, setIsRecording] = useState(false);
   const [pinnedStart, setPinnedStart] = useState<{ lat: number; lng: number } | null>(null);
-  const [breadcrumbs, setBreadcrumbs] = useState<{ lat: number; lng: number; altitude: number; time: string }[]>([]);
-  const [currentGps, setCurrentGps] = useState<{ lat: number; lng: number; altitude: number; accuracy: number }>({
+  const [breadcrumbs, setBreadcrumbs] = useState<TrailBreadcrumbPoint[]>([]);
+  const [currentGps, setCurrentGps] = useState<{
+    lat: number;
+    lng: number;
+    altitude: number;
+    accuracy: number;
+    hasRealFix: boolean;
+  }>({
     lat: 4.4715,
     lng: 101.3805,
     altitude: 1440,
-    accuracy: 4,
+    accuracy: 12,
+    hasRealFix: false,
   });
   const watchIdRef = useRef<number | null>(null);
 
-  // Safety Passport State
-  const [trailNameInput, setTrailNameInput] = useState('Trail 4: Parit Waterfall Loop');
+  // Real Device Telemetry State
+  const [telemetry, setTelemetry] = useState<DeviceTelemetrySnapshot>({
+    batteryPercent: null,
+    isCharging: null,
+    batterySupported: false,
+    isOnline: typeof navigator !== 'undefined' ? navigator.onLine !== false : true,
+    connectionType: 'cellular',
+    effectiveType: '4g',
+    downlinkMbps: null,
+    rttMs: null,
+    signalLevel: 'strong',
+    signalLabel: 'Checking Signal...',
+    signalLabelBm: 'Menyemak Isyarat...',
+    signalBars: 4,
+    gpsAccuracy: null,
+    updatedAt: new Date().toISOString(),
+  });
+
+  // Safety Passport Form & Active Session State
+  const [hikerName, setHikerName] = useState('');
   const [groupSize, setGroupSize] = useState('2');
+  const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContact, setEmergencyContact] = useState('');
   const [expectedHours, setExpectedHours] = useState('3');
-  const [isCheckedIn, setIsCheckedIn] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [checkInTime, setCheckInTime] = useState<number | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmittingPassport, setIsSubmittingPassport] = useState(false);
+
+  const [activeSession, setActiveSession] = useState<TrailSafetySession | null>(null);
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
   const [isOverdue, setIsOverdue] = useState(false);
 
-  // SOS Payload State
-  const [batteryLevel, setBatteryLevel] = useState(90);
+  // Record Trail 5-Minute Start Alert Failsafe Prompt State
+  const [showStartPromptModal, setShowStartPromptModal] = useState(false);
+  const [startFailsafeRemainingSec, setStartFailsafeRemainingSec] = useState<number>(FIVE_MINUTES_SEC);
+  const [autoStartTriggeredBanner, setAutoStartTriggeredBanner] =
+    useState<TrailContactNotificationResult | null>(null);
+
+  // Phone Motion Sensor Dead-Man Switch (15m Warning / 30m Critical)
+  const [motionSensorSupported, setMotionSensorSupported] = useState<boolean>(false);
+  const [stillnessSeconds, setStillnessSeconds] = useState<number>(0);
+  const [inactivityStage1Active, setInactivityStage1Active] = useState<boolean>(false);
+  const [inactivityStage2Active, setInactivityStage2Active] = useState<boolean>(false);
+  const [copiedTrackLink, setCopiedTrackLink] = useState<boolean>(false);
+
+  // Alerts & Manual SOS Receipts
+  const [initialAlertResult, setInitialAlertResult] =
+    useState<TrailContactNotificationResult | null>(null);
+  const [overdueAlertReceipt, setOverdueAlertReceipt] = useState<{
+    triggeredAt: string;
+    smsUrl: string;
+    whatsappUrl: string;
+    alertMessage: string;
+    outcome: SosDispatchOutcome;
+  } | null>(null);
+  const [manualSosDispatching, setManualSosDispatching] = useState(false);
+  const [manualSosReceipt, setManualSosReceipt] = useState<{
+    outcome: SosDispatchOutcome;
+    coords: { lat: number; lng: number; accuracy: number | null; source: string };
+    message: string;
+    smsUrl: string;
+    whatsappUrl: string;
+    dispatchedAt: string;
+  } | null>(null);
   const [copiedSos, setCopiedSos] = useState(false);
 
-  // Fetch Safety Status & Emergency Contact
-  useEffect(() => {
-    if (isOpen) {
-      const fetchSafety = async () => {
-        const status = await weatherService.evaluateTrailSafety();
-        setSafetyStatus(status);
-      };
-      fetchSafety();
+  // Mutable Refs for async listeners without stale closures
+  const currentGpsRef = useRef(currentGps);
+  currentGpsRef.current = currentGps;
+  const telemetryRef = useRef(telemetry);
+  telemetryRef.current = telemetry;
+  const activeSessionRef = useRef(activeSession);
+  activeSessionRef.current = activeSession;
+  const selectedTrailRef = useRef(selectedTrail);
+  selectedTrailRef.current = selectedTrail;
+  const isRecordingRef = useRef(isRecording);
+  isRecordingRef.current = isRecording;
 
-      const card = firebaseService.getEmergencyCard();
-      setEmergencyContact(card.primaryContact?.phone || card.secondaryContact?.phone || '');
-    }
+  const overdueFiredRef = useRef<boolean>(false);
+  const autoStartFiredRef = useRef<boolean>(false);
+  const inactivity1FiredRef = useRef<boolean>(false);
+  const inactivity2FiredRef = useRef<boolean>(false);
+  const lastMovementMsRef = useRef<number>(Date.now());
+  const lastDisplacedGpsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastAccelSampleRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const lastCloudSyncTsRef = useRef<number>(0);
+
+  // Subscribe to real Web API device telemetry (Battery + Network)
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsubscribe = subscribeDeviceTelemetry((snap) => {
+      setTelemetry(snap);
+    });
+    return () => unsubscribe();
   }, [isOpen]);
 
-  // Initialize Leaflet Map
+  // Silent flush of queued IndexedDB trail updates when signal returns
   useEffect(() => {
-    if (!isOpen || !mapContainerRef.current) return;
+    if (!isOpen) return;
+    const handleOnline = () => {
+      flushPendingTrailSessions();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [isOpen]);
+
+  // Initialize Safety Passport defaults & restore any active session
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchSafety = async () => {
+      const status = await weatherService.evaluateTrailSafety();
+      setSafetyStatus(status);
+    };
+    fetchSafety();
+
+    const card = firebaseService.getEmergencyCard();
+    const existingSession = getCachedActiveTrailSession();
+
+    const isFreshActiveSession =
+      existingSession &&
+      existingSession.status !== 'completed' &&
+      Date.now() - new Date(existingSession.startedAt).getTime() < 24 * 3600 * 1000;
+
+    if (isFreshActiveSession && existingSession) {
+      setResumableSession(existingSession);
+      setHikerName((prev) => prev || existingSession.hikerName);
+      setGroupSize((prev) => prev || String(existingSession.groupSize));
+      setEmergencyContactName((prev) => prev || existingSession.emergencyContactName || '');
+      setEmergencyContact((prev) => prev || existingSession.emergencyContact);
+      setExpectedHours((prev) => prev || String(existingSession.expectedHours));
+
+      const matchedTrail = CAMERON_TRAILS.find((t) => t.id === existingSession.trailId);
+      if (matchedTrail) setSelectedTrail(matchedTrail);
+    } else {
+      setResumableSession(null);
+      setHikerName(
+        (prev) =>
+          prev ||
+          currentUser?.displayName ||
+          card.preferredName ||
+          card.fullLegalName ||
+          ''
+      );
+      setEmergencyContactName(
+        (prev) => prev || card.primaryContact?.name || card.secondaryContact?.name || ''
+      );
+      setEmergencyContact(
+        (prev) =>
+          prev ||
+          card.designatedSosNumber ||
+          card.primaryContact?.phone ||
+          card.secondaryContact?.phone ||
+          ''
+      );
+    }
+  }, [isOpen, currentUser]);
+
+  // Silent Firestore + IndexedDB sync helper
+  const persistSessionProgress = useCallback(
+    async (updatedSession: TrailSafetySession, forceCloudSync = false) => {
+      setActiveSession(updatedSession);
+      const now = Date.now();
+      if (!forceCloudSync && now - lastCloudSyncTsRef.current < 10000) {
+        return;
+      }
+      lastCloudSyncTsRef.current = now;
+      await syncTrailSessionToCloudOrQueue(updatedSession, false);
+    },
+    []
+  );
+
+  // DeviceMotionEvent + Accelerometer monitoring while active session is unlocked
+  useEffect(() => {
+    if (!isOpen || !passportUnlocked || !activeSession) return;
+
+    const handleDeviceMotion = (event: DeviceMotionEvent) => {
+      setMotionSensorSupported(true);
+
+      // Prefer linear acceleration if provided, otherwise delta accelerationIncludingGravity
+      const acc = event.acceleration;
+      if (
+        acc &&
+        typeof acc.x === 'number' &&
+        typeof acc.y === 'number' &&
+        typeof acc.z === 'number'
+      ) {
+        const linearMag = Math.hypot(acc.x, acc.y, acc.z);
+        if (linearMag > 1.35) {
+          lastMovementMsRef.current = Date.now();
+        }
+        return;
+      }
+
+      const accG = event.accelerationIncludingGravity;
+      if (
+        accG &&
+        typeof accG.x === 'number' &&
+        typeof accG.y === 'number' &&
+        typeof accG.z === 'number'
+      ) {
+        const prev = lastAccelSampleRef.current;
+        if (prev) {
+          const delta =
+            Math.abs(accG.x - prev.x) +
+            Math.abs(accG.y - prev.y) +
+            Math.abs(accG.z - prev.z);
+          if (delta > 1.5) {
+            lastMovementMsRef.current = Date.now();
+          }
+        }
+        lastAccelSampleRef.current = { x: accG.x, y: accG.y, z: accG.z };
+      }
+    };
+
+    if (typeof window !== 'undefined' && 'DeviceMotionEvent' in window) {
+      window.addEventListener('devicemotion', handleDeviceMotion);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined' && 'DeviceMotionEvent' in window) {
+        window.removeEventListener('devicemotion', handleDeviceMotion);
+      }
+    };
+  }, [isOpen, passportUnlocked, Boolean(activeSession)]);
+
+  // Continuous high-accuracy Geolocation watcher -> updates map GPS dot, motion displacement & active session
+  useEffect(() => {
+    if (!isOpen || !('geolocation' in navigator)) return;
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const accuracy = Math.round(pos.coords.accuracy || 10);
+        const altitude =
+          typeof pos.coords.altitude === 'number' && Number.isFinite(pos.coords.altitude)
+            ? Math.round(pos.coords.altitude)
+            : selectedTrailRef.current?.maxElevationM
+            ? Math.max(1420, selectedTrailRef.current.maxElevationM - 180)
+            : 1460;
+
+        const loc = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          altitude,
+          accuracy,
+          hasRealFix: true,
+        };
+        setCurrentGps(loc);
+
+        // GPS displacement check (>= 12m counts as real movement)
+        if (lastDisplacedGpsRef.current) {
+          const movedMeters = haversineDistanceMeters(
+            lastDisplacedGpsRef.current.lat,
+            lastDisplacedGpsRef.current.lng,
+            loc.lat,
+            loc.lng
+          );
+          if (movedMeters >= 12) {
+            lastMovementMsRef.current = Date.now();
+            lastDisplacedGpsRef.current = { lat: loc.lat, lng: loc.lng };
+          }
+        } else {
+          lastDisplacedGpsRef.current = { lat: loc.lat, lng: loc.lng };
+        }
+
+        // Update Leaflet live blue GPS dot
+        const map = mapInstanceRef.current;
+        if (map) {
+          if (!gpsMarkerRef.current) {
+            const blueDotIcon = L.divIcon({
+              className: 'custom-gps-marker',
+              html: '<div style="width: 18px; height: 18px; background: #38bdf8; border: 3px solid #ffffff; border-radius: 50%; box-shadow: 0 0 14px rgba(56,189,248,0.95);"></div>',
+              iconSize: [18, 18],
+              iconAnchor: [9, 9],
+            });
+            gpsMarkerRef.current = L.marker([loc.lat, loc.lng], { icon: blueDotIcon }).addTo(map);
+          } else {
+            gpsMarkerRef.current.setLatLng([loc.lat, loc.lng]);
+          }
+        }
+
+        const trail = selectedTrailRef.current;
+        await updateLastKnownMapGps({
+          lat: loc.lat,
+          lng: loc.lng,
+          altitude: loc.altitude,
+          accuracy: loc.accuracy,
+          timestamp: new Date().toISOString(),
+          source: 'map_watch',
+          trailId: trail?.id,
+          trailName: trail?.name,
+        });
+
+        const liveTelemetry = await readLiveDeviceTelemetry(accuracy);
+        setTelemetry(liveTelemetry);
+
+        const sess = activeSessionRef.current;
+        const lastMovedIso = new Date(lastMovementMsRef.current).toISOString();
+
+        if (isRecordingRef.current) {
+          const newPt: TrailBreadcrumbPoint = {
+            lat: loc.lat,
+            lng: loc.lng,
+            altitude: loc.altitude,
+            time: new Date().toLocaleTimeString('en-MY', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            }),
+            timestamp: new Date().toISOString(),
+            accuracy,
+          };
+
+          setBreadcrumbs((prev) => {
+            const last = prev[prev.length - 1];
+            const distMoved = last
+              ? haversineDistanceMeters(last.lat, last.lng, loc.lat, loc.lng)
+              : 50;
+            const nextList = distMoved >= 8 || prev.length === 0 ? [...prev, newPt] : prev;
+
+            if (map && nextList.length > 1) {
+              const latLngs = nextList.map((b) => [b.lat, b.lng] as [number, number]);
+              if (!breadcrumbLineRef.current) {
+                breadcrumbLineRef.current = L.polyline(latLngs, {
+                  color: '#38bdf8',
+                  weight: 4,
+                  dashArray: '5 5',
+                }).addTo(map);
+              } else {
+                breadcrumbLineRef.current.setLatLngs(latLngs);
+              }
+            }
+
+            if (sess && sess.status !== 'completed') {
+              persistSessionProgress({
+                ...sess,
+                lastKnownCoords: `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`,
+                lastKnownLat: loc.lat,
+                lastKnownLng: loc.lng,
+                currentAltitude: loc.altitude,
+                coordSource: 'map_watch',
+                lastMovementAt: lastMovedIso,
+                breadcrumbs: nextList,
+                telemetry: liveTelemetry,
+                updatedAt: new Date().toISOString(),
+              });
+            }
+
+            return nextList;
+          });
+        } else if (sess && sess.status !== 'completed') {
+          persistSessionProgress({
+            ...sess,
+            lastKnownCoords: `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`,
+            lastKnownLat: loc.lat,
+            lastKnownLng: loc.lng,
+            currentAltitude: loc.altitude,
+            coordSource: 'map_watch',
+            lastMovementAt: lastMovedIso,
+            telemetry: liveTelemetry,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      },
+      (err) => {
+        console.warn('[TrailEngine] Geolocation watch notice:', err.message);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 8000 }
+    );
+
+    return () => {
+      if (watchIdRef.current !== null && 'geolocation' in navigator) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [isOpen, persistSessionProgress]);
+
+  // Initialize / Clean up Leaflet Map when Interactive Map view is active
+  useEffect(() => {
+    if (!isOpen || !passportUnlocked || !mapContainerRef.current) {
+      return;
+    }
 
     if (!mapInstanceRef.current) {
+      const initialCenter = selectedTrailRef.current.coordinates[0] || [4.4715, 101.3805];
       const map = L.map(mapContainerRef.current, {
-        center: [4.4715, 101.3805],
+        center: initialCenter,
         zoom: 14,
         zoomControl: false,
       });
@@ -135,208 +574,804 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
-        attribution: '© OpenStreetMap contributors | CamGo Offline Engine',
+        attribution: '© OpenStreetMap | CamGo Trail Engine',
       }).addTo(map);
 
       mapInstanceRef.current = map;
+
+      const gps = currentGpsRef.current;
+      if (gps.hasRealFix) {
+        const blueDotIcon = L.divIcon({
+          className: 'custom-gps-marker',
+          html: '<div style="width: 18px; height: 18px; background: #38bdf8; border: 3px solid #ffffff; border-radius: 50%; box-shadow: 0 0 14px rgba(56,189,248,0.95);"></div>',
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+        });
+        gpsMarkerRef.current = L.marker([gps.lat, gps.lng], { icon: blueDotIcon }).addTo(map);
+      }
+
+      if (breadcrumbs.length > 1) {
+        const latLngs = breadcrumbs.map((b) => [b.lat, b.lng] as [number, number]);
+        breadcrumbLineRef.current = L.polyline(latLngs, {
+          color: '#38bdf8',
+          weight: 4,
+          dashArray: '5 5',
+        }).addTo(map);
+      }
     }
 
-    // Invalidate size on mount/resize for mobile viewports
-    setTimeout(() => {
+    const resizeTimer = setTimeout(() => {
       mapInstanceRef.current?.invalidateSize();
-    }, 250);
+    }, 200);
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      observer = new ResizeObserver(() => {
+        mapInstanceRef.current?.invalidateSize();
+      });
+      observer.observe(mapContainerRef.current);
+    }
 
     return () => {
+      clearTimeout(resizeTimer);
+      observer?.disconnect();
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
+        activePolylineRef.current = null;
+        trailheadMarkerRef.current = null;
+        peakMarkerRef.current = null;
+        gpsMarkerRef.current = null;
+        breadcrumbLineRef.current = null;
       }
     };
-  }, [isOpen]);
+  }, [isOpen, passportUnlocked]);
 
-  // Render trail when user selects it
+  // Reflow Leaflet canvas seamlessly whenever Full Screen Map mode toggles + Esc key support
+  useEffect(() => {
+    if (!isOpen || !passportUnlocked) return;
+    const t1 = window.setTimeout(() => mapInstanceRef.current?.invalidateSize(), 60);
+    const t2 = window.setTimeout(() => mapInstanceRef.current?.invalidateSize(), 260);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreenMap) {
+        setIsFullScreenMap(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isFullScreenMap, isOpen, passportUnlocked]);
+
+  // Draw / Update accurate Trail Polyline + Trailhead Start Marker + Summit Marker whenever trail changes
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map) return;
+    if (!map || !selectedTrail || !passportUnlocked) return;
 
     if (activePolylineRef.current) {
       activePolylineRef.current.remove();
       activePolylineRef.current = null;
     }
+    if (trailheadMarkerRef.current) {
+      trailheadMarkerRef.current.remove();
+      trailheadMarkerRef.current = null;
+    }
+    if (peakMarkerRef.current) {
+      peakMarkerRef.current.remove();
+      peakMarkerRef.current = null;
+    }
 
-    if (selectedTrail) {
-      const color = TRAIL_COLORS[selectedTrail.number] || '#10b981';
-      let pts = selectedTrail.coordinates;
-      if (pts.length < 6) {
-        const [startLat, startLng] = pts[0];
-        const [endLat, endLng] = pts[pts.length - 1];
-        pts = [];
-        for (let i = 0; i <= 12; i++) {
-          const t = i / 12;
-          const lat = startLat + (endLat - startLat) * t + Math.sin(t * Math.PI * 2) * 0.005;
-          const lng = startLng + (endLng - startLng) * t + Math.cos(t * Math.PI * 2) * 0.005;
-          pts.push([lat, lng]);
+    const color = TRAIL_COLORS[selectedTrail.number] || selectedTrail.color || '#10b981';
+    const pts = selectedTrail.coordinates;
+
+    const poly = L.polyline(pts, {
+      color,
+      weight: 6,
+      opacity: 0.95,
+    }).addTo(map);
+    activePolylineRef.current = poly;
+
+    // Trailhead Start Marker
+    if (pts[0]) {
+      trailheadMarkerRef.current = L.circleMarker(pts[0], {
+        radius: 6,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#10b981',
+        fillOpacity: 1,
+      })
+        .bindTooltip(`Start: ${selectedTrail.trailheadName}`, { direction: 'bottom' })
+        .addTo(map);
+    }
+
+    // Summit / Endpoint Marker
+    const peakCoord = selectedTrail.peakCoordinates || pts[pts.length - 1];
+    peakMarkerRef.current = L.circleMarker(peakCoord, {
+      radius: 7,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 1,
+    })
+      .bindTooltip(`${selectedTrail.peakName || selectedTrail.name} (${selectedTrail.maxElevationM}m)`, {
+        direction: 'top',
+      })
+      .addTo(map);
+
+    map.fitBounds(poly.getBounds(), { padding: [36, 36] });
+    setTimeout(() => map.invalidateSize(), 150);
+
+    if (!currentGpsRef.current.hasRealFix && pts[0]) {
+      updateLastKnownMapGps({
+        lat: pts[0][0],
+        lng: pts[0][1],
+        altitude: selectedTrail.elevationProfile?.[0]?.altitude || 1450,
+        accuracy: null,
+        timestamp: new Date().toISOString(),
+        source: 'trailhead',
+        trailId: selectedTrail.id,
+        trailName: selectedTrail.name,
+      });
+    }
+  }, [selectedTrail, passportUnlocked, isOpen]);
+
+  // Combined 1-Second Safety Monitor Loop:
+  // 1) Automated Overdue Return Timer
+  // 2) Automated 5-Minute Start Alert Failsafe (when user clicked Record Trail)
+  // 3) Dead-Man Switch Motion Inactivity Checks (15 min Stage 1 / 30 min Stage 2 Critical)
+  useEffect(() => {
+    if (!activeSession || activeSession.status === 'completed') return;
+
+    const buildFallbackGps = () => {
+      const gps = currentGpsRef.current;
+      const trail = selectedTrailRef.current;
+      return gps.hasRealFix
+        ? {
+            lat: gps.lat,
+            lng: gps.lng,
+            altitude: gps.altitude,
+            accuracy: gps.accuracy,
+            timestamp: new Date().toISOString(),
+            source: 'map_watch' as const,
+            trailId: trail?.id,
+            trailName: trail?.name,
+          }
+        : {
+            lat: activeSession.lastKnownLat || trail.coordinates[0][0],
+            lng: activeSession.lastKnownLng || trail.coordinates[0][1],
+            altitude: activeSession.currentAltitude || trail.maxElevationM || 1500,
+            accuracy: null,
+            timestamp: new Date().toISOString(),
+            source: 'trailhead' as const,
+            trailId: trail?.id,
+            trailName: trail?.name,
+          };
+    };
+
+    const tick = async () => {
+      const nowMs = Date.now();
+
+      // 1. Overdue Return Countdown Check
+      const deadlineMs = new Date(activeSession.expectedReturnAt).getTime();
+      const remaining = Math.floor((deadlineMs - nowMs) / 1000);
+      if (remaining <= 0) {
+        setTimeRemainingSeconds(0);
+        setIsOverdue(true);
+
+        if (!overdueFiredRef.current && !activeSession.overdueAlertSent) {
+          overdueFiredRef.current = true;
+          const latestCoord = buildFallbackGps();
+          const liveTel = await readLiveDeviceTelemetry(currentGpsRef.current.accuracy);
+          const card = firebaseService.getEmergencyCard();
+          const receipt = await triggerOverdueTrailAlert(
+            activeSession,
+            latestCoord,
+            liveTel,
+            card
+          );
+
+          setOverdueAlertReceipt({
+            triggeredAt: new Date().toISOString(),
+            smsUrl: receipt.smsUrl,
+            whatsappUrl: receipt.whatsappUrl,
+            alertMessage: receipt.alertMessage,
+            outcome: receipt.sosOutcome,
+          });
+          setActiveSession((prev) =>
+            prev ? { ...prev, status: 'overdue', overdueAlertSent: true } : prev
+          );
+        }
+      } else {
+        setTimeRemainingSeconds(remaining);
+      }
+
+      // 2. 5-Minute Record Trail Start Alert Failsafe
+      if (
+        activeSession.recordingStartedAt &&
+        !activeSession.manualStartAlertSent &&
+        !activeSession.autoStartAlertSent &&
+        !autoStartFiredRef.current
+      ) {
+        const recStartMs = new Date(activeSession.recordingStartedAt).getTime();
+        const elapsedSinceRecSec = Math.floor((nowMs - recStartMs) / 1000);
+        const failsafeLeft = Math.max(0, FIVE_MINUTES_SEC - elapsedSinceRecSec);
+        setStartFailsafeRemainingSec(failsafeLeft);
+
+        if (elapsedSinceRecSec >= FIVE_MINUTES_SEC) {
+          autoStartFiredRef.current = true;
+          const autoRes = await triggerFiveMinuteAutoStartAlert(activeSession);
+          setAutoStartTriggeredBanner(autoRes);
+          setShowStartPromptModal(false);
+          setActiveSession((prev) =>
+            prev ? { ...prev, autoStartAlertSent: true } : prev
+          );
         }
       }
 
-      const poly = L.polyline(pts, {
-        color: color,
-        weight: 6,
-        opacity: 0.95,
-      }).addTo(map);
+      // 3. Phone Motion Sensor + GPS Dead-Man Switch (15m / 30m Immobility)
+      const stillSec = Math.max(0, Math.floor((nowMs - lastMovementMsRef.current) / 1000));
+      setStillnessSeconds(stillSec);
 
-      activePolylineRef.current = poly;
-      map.fitBounds(poly.getBounds(), { padding: [30, 30] });
-    }
-  }, [selectedTrail, isOpen]);
+      if (
+        stillSec >= FIFTEEN_MINUTES_SEC &&
+        !inactivity1FiredRef.current &&
+        !activeSession.inactivityAlert1Sent
+      ) {
+        inactivity1FiredRef.current = true;
+        setInactivityStage1Active(true);
+        playStillnessWarningTone(false);
 
-  // Handle GPS watch & breadcrumbs
-  useEffect(() => {
-    if (navigator.geolocation && isOpen) {
-      const id = navigator.geolocation.watchPosition(
-        (pos) => {
-          const loc = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            altitude: pos.coords.altitude || 1440,
-            accuracy: pos.coords.accuracy,
-          };
-          setCurrentGps(loc);
+        const latestCoord = buildFallbackGps();
+        const liveTel = await readLiveDeviceTelemetry(currentGpsRef.current.accuracy);
+        await triggerInactivityStage1Alert(activeSession, latestCoord, liveTel);
+        setActiveSession((prev) =>
+          prev ? { ...prev, inactivityAlert1Sent: true } : prev
+        );
+      }
 
-          const map = mapInstanceRef.current;
-          if (map) {
-            if (!gpsMarkerRef.current) {
-              const blueDotIcon = L.divIcon({
-                className: 'custom-gps-marker',
-                html: '<div style="width: 16px; height: 16px; background: #38bdf8; border: 3px solid #ffffff; border-radius: 50%; box-shadow: 0 0 10px rgba(56,189,248,0.9);"></div>',
-                iconSize: [16, 16],
-              });
-              gpsMarkerRef.current = L.marker([loc.lat, loc.lng], { icon: blueDotIcon }).addTo(map);
-            } else {
-              gpsMarkerRef.current.setLatLng([loc.lat, loc.lng]);
-            }
-          }
+      if (
+        stillSec >= THIRTY_MINUTES_SEC &&
+        !inactivity2FiredRef.current &&
+        !activeSession.inactivityAlert2Sent
+      ) {
+        inactivity2FiredRef.current = true;
+        setInactivityStage1Active(false);
+        setInactivityStage2Active(true);
+        playStillnessWarningTone(true);
 
-          if (isRecording) {
-            setBreadcrumbs((prev) => {
-              const updated = [
-                ...prev,
-                {
-                  lat: loc.lat,
-                  lng: loc.lng,
-                  altitude: loc.altitude,
-                  time: new Date().toLocaleTimeString(),
-                },
-              ];
-              if (map && updated.length > 1) {
-                const latLngs = updated.map((b) => [b.lat, b.lng] as [number, number]);
-                if (!breadcrumbLineRef.current) {
-                  breadcrumbLineRef.current = L.polyline(latLngs, { color: '#38bdf8', weight: 4, dashArray: '4 4' }).addTo(map);
-                } else {
-                  breadcrumbLineRef.current.setLatLngs(latLngs);
-                }
-              }
-              return updated;
-            });
-          }
-        },
-        (err) => console.warn('Geolocation warning:', err.message),
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
-      );
-      watchIdRef.current = id;
-    }
-
-    return () => {
-      if (watchIdRef.current !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        const latestCoord = buildFallbackGps();
+        const liveTel = await readLiveDeviceTelemetry(currentGpsRef.current.accuracy);
+        const card = firebaseService.getEmergencyCard();
+        await triggerInactivityStage2CriticalAlert(
+          activeSession,
+          latestCoord,
+          liveTel,
+          card
+        );
+        setActiveSession((prev) =>
+          prev
+            ? { ...prev, status: 'overdue', inactivityAlert2Sent: true }
+            : prev
+        );
       }
     };
-  }, [isOpen, isRecording]);
 
-  // Overdue Timer
-  useEffect(() => {
-    let interval: any;
-    if (isCheckedIn && checkInTime) {
-      interval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - checkInTime) / 1000);
-        const totalAllowed = parseFloat(expectedHours) * 3600;
-        const remaining = totalAllowed - elapsed;
-        if (remaining <= 0) {
-          setTimeRemainingSeconds(0);
-          setIsOverdue(true);
-        } else {
-          setTimeRemainingSeconds(remaining);
-        }
-      }, 1000);
-    }
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [isCheckedIn, checkInTime, expectedHours]);
+  }, [activeSession]);
 
-  const handleStartRecording = () => {
-    setPinnedStart({ lat: currentGps.lat, lng: currentGps.lng });
-    setIsRecording(true);
-    setBreadcrumbs([
-      {
-        lat: currentGps.lat,
-        lng: currentGps.lng,
-        altitude: currentGps.altitude,
-        time: new Date().toLocaleTimeString(),
-      },
-    ]);
+  // Dismiss 15-min Stillness Warning & reset Dead-Man timer
+  const handleDismissStillnessWarning = async () => {
+    lastMovementMsRef.current = Date.now();
+    setStillnessSeconds(0);
+    setInactivityStage1Active(false);
+    inactivity1FiredRef.current = false;
+    inactivity2FiredRef.current = false;
+
+    if (activeSession) {
+      const updated: TrailSafetySession = {
+        ...activeSession,
+        lastMovementAt: new Date().toISOString(),
+        inactivityAlert1Sent: false,
+        inactivityAlert1DismissedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await persistSessionProgress(updated, true);
+    }
   };
 
-  const handleStopRecording = () => {
-    setIsRecording(false);
+  // Mark manual WhatsApp/SMS start alert sent (cancelling 5-min failsafe)
+  const handleMarkManualStartAlertSent = async () => {
+    setShowStartPromptModal(false);
+    if (activeSession) {
+      const updated: TrailSafetySession = {
+        ...activeSession,
+        manualStartAlertSent: true,
+        updatedAt: new Date().toISOString(),
+      };
+      await persistSessionProgress(updated, true);
+    }
   };
 
-  const handleCheckIn = async () => {
-    if (!currentUser) {
-      onOpenAuth();
+  const parsedGroupSize = parseInt(groupSize, 10);
+  const parsedExpectedHours = parseFloat(expectedHours);
+  const isPassportFieldsValid =
+    hikerName.trim().length > 0 &&
+    emergencyContactName.trim().length > 0 &&
+    emergencyContact.trim().length >= 6 &&
+    Number.isFinite(parsedGroupSize) &&
+    parsedGroupSize >= 1 &&
+    Number.isFinite(parsedExpectedHours) &&
+    parsedExpectedHours >= 0.5;
+
+  // Submit Safety Passport -> Initialize session & jump directly into Interactive Trail Map
+  const handleSubmitSafetyPassport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    const trimmedName = hikerName.trim();
+    const trimmedIceName = emergencyContactName.trim();
+    const trimmedPhone = emergencyContact.trim();
+    const parsedHours = parseFloat(expectedHours);
+    const parsedGroup = parseInt(groupSize, 10);
+
+    if (
+      !trimmedName ||
+      !trimmedIceName ||
+      !trimmedPhone ||
+      trimmedPhone.length < 6 ||
+      !Number.isFinite(parsedGroup) ||
+      parsedGroup < 1 ||
+      !Number.isFinite(parsedHours) ||
+      parsedHours < 0.5
+    ) {
+      setFormError(
+        language === 'bm'
+          ? 'Sila lengkapkan Nama Pendaki, Nama & Nombor Telefon Kenalan Kecemasan (ICE), Bilangan Kumpulan, dan Tempoh Jangkaan Pulang sebelum meneruskan.'
+          : 'Please complete Hiker / Lead Name, Emergency Contact Name & Phone (ICE), Group Size, and Expected Return Duration before opening the map.'
+      );
       return;
     }
 
-    const newSessionId = `session_${Date.now()}_${currentUser.uid}`;
-    setSessionId(newSessionId);
-    setIsCheckedIn(true);
-    setCheckInTime(Date.now());
-    setTimeRemainingSeconds(parseFloat(expectedHours) * 3600);
-    setIsOverdue(false);
+    setIsSubmittingPassport(true);
 
-    if (db) {
-      try {
-        await setDoc(doc(db, 'safety_sessions', newSessionId), {
-          id: newSessionId,
-          uid: currentUser.uid,
-          userEmail: currentUser.email,
-          trailName: trailNameInput,
-          groupSize: parseInt(groupSize) || 1,
-          emergencyContact,
-          expectedHours: parseFloat(expectedHours) || 3,
-          status: 'active',
-          lastKnownCoords: `${currentGps.lat}, ${currentGps.lng}`,
-          createdAt: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn('Firestore safety session write warning:', err);
+    try {
+      // Unlock motion sensors on user gesture (required on iOS Safari)
+      const motionAllowed = await requestMotionSensorPermissionIfNeeded();
+      setMotionSensorSupported(motionAllowed);
+
+      const existingCard = firebaseService.getEmergencyCard();
+      await firebaseService.saveEmergencyCard({
+        ...existingCard,
+        fullLegalName: existingCard.fullLegalName || trimmedName,
+        designatedSosNumber: trimmedPhone,
+        primaryContact: {
+          label: existingCard.primaryContact?.label || 'ICE 1',
+          name: trimmedIceName,
+          relationship: existingCard.primaryContact?.relationship || 'Emergency Contact',
+          phone: trimmedPhone,
+        },
+      });
+
+      const liveTelemetry = await readLiveDeviceTelemetry(currentGps.accuracy);
+      setTelemetry(liveTelemetry);
+
+      const startCoords = currentGps.hasRealFix
+        ? {
+            lat: currentGps.lat,
+            lng: currentGps.lng,
+            altitude: currentGps.altitude,
+            accuracy: currentGps.accuracy,
+            source: 'live_gps' as const,
+          }
+        : {
+            lat: selectedTrail.coordinates[0][0],
+            lng: selectedTrail.coordinates[0][1],
+            altitude: selectedTrail.elevationProfile[0]?.altitude || 1480,
+            accuracy: null,
+            source: 'trailhead' as const,
+          };
+
+      await updateLastKnownMapGps({
+        ...startCoords,
+        timestamp: new Date().toISOString(),
+        trailId: selectedTrail.id,
+        trailName: selectedTrail.name,
+      });
+
+      const nowMs = Date.now();
+      const startedAt = new Date(nowMs).toISOString();
+      const expectedReturnAt = new Date(nowMs + parsedHours * 3600 * 1000).toISOString();
+      const uid = currentUser?.uid || `guest-${nowMs.toString(36)}`;
+      const newSessionId = `session_${nowMs}_${uid}`;
+      const trackingToken = generateTrackingToken();
+
+      lastMovementMsRef.current = nowMs;
+
+      const newSession: TrailSafetySession = {
+        id: newSessionId,
+        uid,
+        trackingToken,
+        hikerName: trimmedName,
+        userEmail: currentUser?.email || 'guest-hiker@camgo.my',
+        trailId: selectedTrail.id,
+        trailName: selectedTrail.name,
+        groupSize: parsedGroup,
+        emergencyContactName: trimmedIceName,
+        emergencyContact: trimmedPhone,
+        expectedHours: parsedHours,
+        status: 'active',
+        startedAt,
+        expectedReturnAt,
+        overdueAlertSent: false,
+        initialContactNotified: true,
+        manualStartAlertSent: false,
+        autoStartAlertSent: false,
+        lastMovementAt: startedAt,
+        motionSensorActive: motionAllowed,
+        inactivityAlert1Sent: false,
+        inactivityAlert2Sent: false,
+        lastKnownCoords: `${startCoords.lat.toFixed(6)}, ${startCoords.lng.toFixed(6)}`,
+        lastKnownLat: startCoords.lat,
+        lastKnownLng: startCoords.lng,
+        currentAltitude: startCoords.altitude,
+        coordSource: startCoords.source,
+        breadcrumbs: [
+          {
+            lat: startCoords.lat,
+            lng: startCoords.lng,
+            altitude: startCoords.altitude,
+            time: new Date().toLocaleTimeString('en-MY', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            }),
+            timestamp: startedAt,
+            accuracy: startCoords.accuracy,
+          },
+        ],
+        telemetry: liveTelemetry,
+        updatedAt: startedAt,
+      };
+
+      await syncTrailSessionToCloudOrQueue(newSession, true);
+
+      overdueFiredRef.current = false;
+      autoStartFiredRef.current = false;
+      inactivity1FiredRef.current = false;
+      inactivity2FiredRef.current = false;
+      setIsOverdue(false);
+      setOverdueAlertReceipt(null);
+      setAutoStartTriggeredBanner(null);
+      setInactivityStage1Active(false);
+      setInactivityStage2Active(false);
+      setManualSosReceipt(null);
+      setResumableSession(null);
+      setActiveSession(newSession);
+      setBreadcrumbs(newSession.breadcrumbs);
+      setTimeRemainingSeconds(Math.round(parsedHours * 3600));
+      setPassportUnlocked(true);
+
+      const alertRes = await sendInitialTrailCheckInAlert(newSession);
+      setInitialAlertResult(alertRes);
+    } finally {
+      setIsSubmittingPassport(false);
+    }
+  };
+
+  const handleResumeCachedSession = () => {
+    if (!resumableSession) return;
+    setActiveSession(resumableSession);
+    setHikerName(resumableSession.hikerName);
+    setGroupSize(String(resumableSession.groupSize));
+    setEmergencyContactName(resumableSession.emergencyContactName || '');
+    setEmergencyContact(resumableSession.emergencyContact);
+    setExpectedHours(String(resumableSession.expectedHours));
+    setBreadcrumbs(resumableSession.breadcrumbs || []);
+    overdueFiredRef.current = Boolean(resumableSession.overdueAlertSent);
+    autoStartFiredRef.current = Boolean(resumableSession.autoStartAlertSent);
+    inactivity1FiredRef.current = Boolean(resumableSession.inactivityAlert1Sent);
+    inactivity2FiredRef.current = Boolean(resumableSession.inactivityAlert2Sent);
+    lastMovementMsRef.current = resumableSession.lastMovementAt
+      ? new Date(resumableSession.lastMovementAt).getTime()
+      : Date.now();
+    setIsOverdue(resumableSession.status === 'overdue');
+    setInactivityStage1Active(
+      Boolean(resumableSession.inactivityAlert1Sent && !resumableSession.inactivityAlert1DismissedAt)
+    );
+    setInactivityStage2Active(Boolean(resumableSession.inactivityAlert2Sent));
+    const matchedTrail = CAMERON_TRAILS.find((t) => t.id === resumableSession.trailId);
+    if (matchedTrail) setSelectedTrail(matchedTrail);
+    setPassportUnlocked(true);
+  };
+
+  // Record Trail Toggle -> Prompt WhatsApp/SMS Start Alert & Arm 5-Min Auto-Trigger Failsafe
+  const handleToggleRecording = async () => {
+    if (isRecording) {
+      setIsRecording(false);
+      if (activeSession) {
+        await persistSessionProgress(
+          {
+            ...activeSession,
+            breadcrumbs,
+            updatedAt: new Date().toISOString(),
+          },
+          true
+        );
+      }
+      return;
+    }
+
+    const motionAllowed = await requestMotionSensorPermissionIfNeeded();
+    if (motionAllowed) setMotionSensorSupported(true);
+
+    lastMovementMsRef.current = Date.now();
+
+    const fix = currentGps.hasRealFix
+      ? { lat: currentGps.lat, lng: currentGps.lng, altitude: currentGps.altitude }
+      : {
+          lat: selectedTrail.coordinates[0][0],
+          lng: selectedTrail.coordinates[0][1],
+          altitude: selectedTrail.elevationProfile?.[0]?.altitude || 1480,
+        };
+
+    setPinnedStart({ lat: fix.lat, lng: fix.lng });
+    const startPt: TrailBreadcrumbPoint = {
+      lat: fix.lat,
+      lng: fix.lng,
+      altitude: fix.altitude,
+      time: new Date().toLocaleTimeString('en-MY', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+      timestamp: new Date().toISOString(),
+      accuracy: currentGps.hasRealFix ? currentGps.accuracy : null,
+    };
+    const nextCrumbs = [...breadcrumbs, startPt];
+    setBreadcrumbs(nextCrumbs);
+    setIsRecording(true);
+
+    await updateLastKnownMapGps({
+      lat: fix.lat,
+      lng: fix.lng,
+      altitude: fix.altitude,
+      accuracy: currentGps.hasRealFix ? currentGps.accuracy : null,
+      timestamp: new Date().toISOString(),
+      source: currentGps.hasRealFix ? 'map_watch' : 'pinned_start',
+      trailId: selectedTrail.id,
+      trailName: selectedTrail.name,
+    });
+
+    if (activeSession) {
+      const recIso = activeSession.recordingStartedAt || new Date().toISOString();
+      const updated: TrailSafetySession = {
+        ...activeSession,
+        recordingStartedAt: recIso,
+        breadcrumbs: nextCrumbs,
+        lastKnownLat: fix.lat,
+        lastKnownLng: fix.lng,
+        lastKnownCoords: `${fix.lat.toFixed(6)}, ${fix.lng.toFixed(6)}`,
+        currentAltitude: fix.altitude,
+        lastMovementAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await persistSessionProgress(updated, true);
+
+      if (!updated.manualStartAlertSent && !updated.autoStartAlertSent) {
+        setStartFailsafeRemainingSec(FIVE_MINUTES_SEC);
+        setShowStartPromptModal(true);
       }
     }
   };
 
-  const handleCheckOut = async () => {
-    setIsCheckedIn(false);
+  const resetTrailUiSessionState = () => {
+    setIsRecording(false);
+    setBreadcrumbs([]);
+    setPinnedStart(null);
+    setActiveSession(null);
+    setResumableSession(null);
+    setIsFullScreenMap(false);
+    setPassportUnlocked(false);
     setIsOverdue(false);
-    if (db && sessionId) {
-      try {
-        await updateDoc(doc(db, 'safety_sessions', sessionId), {
-          status: 'completed',
-          updatedAt: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn('Firestore checkout update warning:', err);
-      }
+    setShowStartPromptModal(false);
+    setAutoStartTriggeredBanner(null);
+    setInactivityStage1Active(false);
+    setInactivityStage2Active(false);
+    setOverdueAlertReceipt(null);
+    setInitialAlertResult(null);
+    setManualSosReceipt(null);
+    setFormError(null);
+    overdueFiredRef.current = false;
+    autoStartFiredRef.current = false;
+    inactivity1FiredRef.current = false;
+    inactivity2FiredRef.current = false;
+  };
+
+  const handleCheckOutSafely = async () => {
+    if (activeSession) {
+      await markTrailSessionCheckedOut(activeSession);
     }
-    setSessionId(null);
-    setCheckInTime(null);
+    resetTrailUiSessionState();
+  };
+
+  // Reset active session & go directly back to Safety First Protocol / Safety Passport setup
+  const handleResetToSafetyPassport = async () => {
+    if (activeSession) {
+      await markTrailSessionCheckedOut(activeSession);
+    }
+    resetTrailUiSessionState();
+  };
+
+  // Automatic One-Tap Smart SOS Activation (WhatsApp + Native SMS + Backend Relay, staying on Map)
+  const handleTriggerSmartSos = async () => {
+    setManualSosDispatching(true);
+    try {
+      const card = firebaseService.getEmergencyCard();
+      const targetPhone =
+        activeSession?.emergencyContact ||
+        emergencyContact ||
+        card.designatedSosNumber ||
+        card.primaryContact?.phone ||
+        '999';
+      const sender =
+        activeSession?.hikerName ||
+        hikerName ||
+        currentUser?.displayName ||
+        card.fullLegalName ||
+        'Highland Hiker';
+
+      const trackingUrl = activeSession
+        ? buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)
+        : '';
+
+      // Synchronously prepare immediate coordinates & dispatch WhatsApp + Native SMS within user gesture
+      const syncGps = currentGpsRef.current.hasRealFix
+        ? {
+            lat: currentGpsRef.current.lat,
+            lng: currentGpsRef.current.lng,
+            accuracy: currentGpsRef.current.accuracy,
+            source: 'live_gps' as const,
+          }
+        : activeSession?.lastKnownLat && activeSession?.lastKnownLng
+        ? {
+            lat: activeSession.lastKnownLat,
+            lng: activeSession.lastKnownLng,
+            accuracy: null,
+            source: (activeSession.coordSource || 'cached_session') as string,
+          }
+        : {
+            lat: selectedTrail.coordinates[0][0],
+            lng: selectedTrail.coordinates[0][1],
+            accuracy: null,
+            source: 'trailhead' as const,
+          };
+
+      const buildPayload = (
+        lat: number,
+        lng: number,
+        accuracy: number | null,
+        source: string,
+        tel: DeviceTelemetrySnapshot
+      ) =>
+        [
+          `🚨 CAMGO SMART TRAIL SOS ALERT 🚨`,
+          `Hiker: ${sender} (Group: ${activeSession?.groupSize || groupSize})`,
+          `Trail: ${selectedTrail.name}`,
+          `📍 GPS (${source}): ${lat.toFixed(6)}, ${lng.toFixed(6)}${
+            accuracy ? ` (±${Math.round(accuracy)}m)` : ''
+          }`,
+          trackingUrl ? `🥾 Live Footprint Map: ${trackingUrl}` : null,
+          `🗺️ Live Map: https://www.google.com/maps?q=${lat},${lng}`,
+          `🔋 Battery: ${tel.batteryPercent ?? 'N/A'}%${
+            tel.isCharging ? ' (Charging)' : ''
+          } | 📶 ${tel.signalLabel}`,
+          `Pinned Start: ${
+            pinnedStart
+              ? `${pinnedStart.lat.toFixed(5)}, ${pinnedStart.lng.toFixed(5)}`
+              : 'Session trailhead'
+          }`,
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+      const immediateMsg = buildPayload(
+        syncGps.lat,
+        syncGps.lng,
+        syncGps.accuracy,
+        syncGps.source,
+        telemetryRef.current
+      );
+      const immediateWaUrl = buildWhatsAppLink(targetPhone, immediateMsg);
+      const immediateSmsUrl = buildSmsLink(targetPhone, immediateMsg);
+
+      if (targetPhone && targetPhone !== '999') {
+        triggerProgrammaticDeepLink(immediateWaUrl, true);
+        window.setTimeout(() => {
+          triggerProgrammaticDeepLink(immediateSmsUrl, false);
+        }, 250);
+      }
+
+      const bestGps = await resolveBestSosCoordinates(3500);
+      const liveTel = await readLiveDeviceTelemetry(bestGps.accuracy);
+      setTelemetry(liveTel);
+
+      const outcome = await sendOrQueueEmergencySos({
+        lat: bestGps.lat,
+        lng: bestGps.lng,
+        accuracy: bestGps.accuracy,
+        userHandle: sender,
+        sosType: 'stranded_lost',
+        severity: 'critical',
+        recipientPhone: targetPhone,
+        emergencyCard: card,
+        trailName: selectedTrail.name,
+        trailSessionId: activeSession?.id,
+        triggerSource: 'manual_smart_sos',
+        coordSource: bestGps.source,
+        telemetry: liveTel,
+      });
+
+      if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+        Promise.allSettled([
+          fetch('/api/emergency/dispatch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recipientPhone: targetPhone,
+              senderName: sender,
+              coordinates: { lat: bestGps.lat, lng: bestGps.lng },
+              emergencyCard: card,
+              trailName: selectedTrail.name,
+              triggerSource: 'manual_smart_sos',
+              telemetry: liveTel,
+            }),
+          }),
+          fetch('/api/trails/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: activeSession?.id || `sos-${Date.now()}`,
+              eventType: 'manual_smart_sos',
+              hikerName: sender,
+              trailName: selectedTrail.name,
+              emergencyContact: targetPhone,
+              coordinates: { lat: bestGps.lat, lng: bestGps.lng },
+              trackingUrl,
+              telemetry: liveTel,
+              message: immediateMsg,
+            }),
+          }),
+        ]).catch(() => {});
+      }
+
+      const finalMsg = buildPayload(
+        bestGps.lat,
+        bestGps.lng,
+        bestGps.accuracy,
+        bestGps.source,
+        liveTel
+      );
+
+      setManualSosReceipt({
+        outcome,
+        coords: {
+          lat: bestGps.lat,
+          lng: bestGps.lng,
+          accuracy: bestGps.accuracy,
+          source: bestGps.source,
+        },
+        message: finalMsg,
+        smsUrl: buildSmsLink(targetPhone, finalMsg),
+        whatsappUrl: buildWhatsAppLink(targetPhone, finalMsg),
+        dispatchedAt: new Date().toISOString(),
+      });
+    } finally {
+      setManualSosDispatching(false);
+    }
   };
 
   const handlePreDownloadOfflineCache = async () => {
@@ -366,63 +1401,119 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         }
         return prev + 25;
       });
-    }, 350);
+    }, 300);
   };
 
-  const generateSosPayload = () => {
-    return `SOS CAMGO EMERGENCY! Hiker Lost/Overdue.\nTrail: ${trailNameInput}\nGroup Size: ${groupSize}\nLast Coords: ${currentGps.lat.toFixed(6)}, ${currentGps.lng.toFixed(6)} (Alt: ${Math.round(currentGps.altitude)}m)\nBattery: ${batteryLevel}%\nPinned Start: ${pinnedStart ? `${pinnedStart.lat.toFixed(6)}, ${pinnedStart.lng.toFixed(6)}` : 'Not pinned'}\nEmergency Contact: ${emergencyContact}\nTime: ${new Date().toLocaleString()}`;
-  };
-
-  const handleCopySos = () => {
-    navigator.clipboard.writeText(generateSosPayload());
+  const handleCopySos = (textToCopy: string) => {
+    navigator.clipboard.writeText(textToCopy);
     setCopiedSos(true);
     setTimeout(() => setCopiedSos(false), 2500);
   };
 
+  const formatCountdown = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+  };
+
+  const formatMmSs = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[130] overflow-y-auto bg-black/90 backdrop-blur-xl animate-in fade-in duration-200">
-      <div className="min-h-full flex flex-col items-center justify-center p-2 sm:p-4 py-8 sm:py-12" onClick={onClose}>
-        <div
-          className="w-full max-w-7xl max-h-[96vh] bg-stone-900 border border-emerald-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative my-auto shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
+  const displayedElevationPts = selectedTrail.elevationProfile || [];
+  const minAlt = displayedElevationPts.length
+    ? Math.min(...displayedElevationPts.map((p) => p.altitude)) - 60
+    : 1400;
+  const maxAlt = displayedElevationPts.length
+    ? Math.max(...displayedElevationPts.map((p) => p.altitude))
+    : 2100;
+  const altSpan = Math.max(120, maxAlt - minAlt);
 
-        {/* Sticky Header - Mobile Optimized */}
-        <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 p-3 sm:p-5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="p-2 sm:p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-              <Compass className="w-5 h-5 sm:w-6 sm:h-6 animate-spin duration-4000" />
+  const liveTrackingUrl = activeSession
+    ? buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)
+    : '';
+
+  const startAlertText = activeSession
+    ? `CAMGO TRAIL START: ${activeSession.hikerName} (Group: ${activeSession.groupSize}) started ${selectedTrail.name} at ${new Date(
+        activeSession.recordingStartedAt || activeSession.startedAt
+      ).toLocaleTimeString('en-MY', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}. Expected return: ${activeSession.expectedHours} hours. Live Footprint Map: ${liveTrackingUrl}`
+    : '';
+
+  return (
+    <div
+      className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-xl flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="w-full h-[100dvh] sm:h-auto sm:max-h-[92dvh] sm:max-w-4xl bg-stone-900 sm:border sm:border-emerald-500/40 rounded-none sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Clean Single-Row Modal Header */}
+        <div className="shrink-0 z-30 flex items-center justify-between gap-2 px-3.5 sm:px-5 py-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+              <Compass className="w-5 h-5" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-bold">
-                  OFFLINE VECTOR ENGINE
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono font-bold text-stone-300 whitespace-normal break-words leading-tight">
+                <span className="text-emerald-400 uppercase">TRAIL SAFETY</span>
+                <span>•</span>
+                <span className="inline-flex items-center gap-1">
+                  {telemetry.isOnline ? (
+                    <Wifi className="w-3 h-3 text-emerald-400 shrink-0" />
+                  ) : (
+                    <WifiOff className="w-3 h-3 text-amber-400 shrink-0" />
+                  )}
+                  <span>{telemetry.isOnline ? telemetry.effectiveType.toUpperCase() : 'OFFLINE'}</span>
                 </span>
-                <span className="text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 hidden sm:inline-block">
-                  {cacheVerified ? '🟢 Cached' : '⚡ Ready'}
-                </span>
+                {telemetry.batteryPercent !== null && (
+                  <>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1">
+                      {telemetry.isCharging ? (
+                        <BatteryCharging className="w-3 h-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Battery className="w-3 h-3 text-amber-300 shrink-0" />
+                      )}
+                      <span>{telemetry.batteryPercent}%</span>
+                    </span>
+                  </>
+                )}
               </div>
-              <h2 className="text-base sm:text-2xl font-heading font-black text-stone-100 tracking-tight truncate">
-                {language === 'bm' ? 'Enjin Laluan Luar Talian' : 'Offline Trail Engine'}
+              <h2 className="text-sm sm:text-lg font-heading font-black text-stone-100 tracking-tight whitespace-normal break-words leading-tight mt-0.5">
+                {language === 'bm' ? 'Enjin Keselamatan & Laluan Hutan' : 'Highland Trail Safety & Map'}
               </h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
+              type="button"
               onClick={handlePreDownloadOfflineCache}
               disabled={isPreDownloading}
-              className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 border border-white/10 cursor-pointer shadow-md whitespace-nowrap"
+              className="min-h-[44px] min-w-[44px] px-2.5 sm:px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center justify-center gap-1.5 border border-white/10 cursor-pointer shadow-sm"
+              aria-label="Cache offline trail map"
             >
-              <Download className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 ${isPreDownloading ? 'animate-bounce' : ''}`} />
-              <span className="hidden xs:inline">{isPreDownloading ? `${downloadProgress}%` : 'Cache Maps'}</span>
+              <Download
+                className={`w-4 h-4 text-emerald-400 ${isPreDownloading ? 'animate-bounce' : ''}`}
+              />
+              <span className="hidden sm:inline">
+                {isPreDownloading ? `${downloadProgress}%` : cacheVerified ? 'Map Cached' : 'Cache Map'}
+              </span>
             </button>
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              className="min-h-[44px] min-w-[44px] rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 hover:border-emerald-500/50 transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
               aria-label="Close"
             >
               <X className="w-5 h-5" />
@@ -430,685 +1521,828 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
           </div>
         </div>
 
-        {/* Scrollable Workspace with Mobile Padding */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
-          {/* Automated Weather Safety Alert System */}
-          {safetyStatus && (
-            <div
-              className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center sm:items-start gap-4 transition-all animate-in slide-in-from-top-4 duration-500 ${
-                safetyStatus.severity === 'critical'
-                  ? 'bg-rose-950/40 border-rose-500/60 text-rose-100 shadow-[0_0_20px_rgba(244,63,94,0.15)]'
-                  : safetyStatus.severity === 'high'
-                  ? 'bg-orange-950/40 border-orange-500/60 text-orange-100 shadow-[0_0_20px_rgba(249,115,22,0.15)]'
-                  : safetyStatus.severity === 'moderate'
-                  ? 'bg-amber-950/40 border-amber-500/60 text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
-                  : 'bg-emerald-950/40 border-emerald-500/60 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
-              }`}
-            >
-              <div
-                className={`p-3 rounded-2xl shrink-0 ${
-                  safetyStatus.severity === 'critical'
-                    ? 'bg-rose-500/20 text-rose-400'
-                    : safetyStatus.severity === 'high'
-                    ? 'bg-orange-500/20 text-orange-400'
-                    : safetyStatus.severity === 'moderate'
-                    ? 'bg-amber-500/20 text-amber-400'
-                    : 'bg-emerald-500/20 text-emerald-400'
-                }`}
-              >
-                <ShieldAlert className={`w-6 h-6 ${safetyStatus.severity === 'critical' || safetyStatus.severity === 'high' ? 'animate-pulse' : ''}`} />
+        {/* Stage 1 & Stage 2 Motion Stillness Dead-Man Banners */}
+        {inactivityStage1Active && !inactivityStage2Active && (
+          <div className="mx-3.5 sm:mx-5 mt-3 p-3.5 rounded-2xl bg-amber-950/90 border-2 border-amber-400 text-amber-100 space-y-2 shrink-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-amber-200">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 animate-bounce" />
+                <span>ARE YOU OK? 15 MINUTES OF NO MOVEMENT DETECTED</span>
               </div>
-
-              <div className="flex-1 space-y-1 text-center sm:text-left">
-                <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <span className="text-[10px] font-mono font-black uppercase tracking-widest opacity-80">
-                    {language === 'bm' ? 'SISTEM AMARAN KESELAMATAN LALUAN' : 'TRAIL SAFETY ALERT SYSTEM'}
-                  </span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                    safetyStatus.severity === 'critical' ? 'bg-rose-500 text-white' :
-                    safetyStatus.severity === 'high' ? 'bg-orange-500 text-white' :
-                    safetyStatus.severity === 'moderate' ? 'bg-amber-500 text-black' :
-                    'bg-emerald-500 text-black'
-                  }`}>
-                    {safetyStatus.severity}
-                  </span>
-                </div>
-                <h4 className="text-sm sm:text-base font-black tracking-tight">
-                  {language === 'bm' ? safetyStatus.reasonBm : safetyStatus.reason}
-                </h4>
-                {safetyStatus.currentWeather && (
-                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mt-1.5 pt-2 border-t border-white/5">
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold opacity-80">
-                      <Sparkles className="w-3 h-3" />
-                      <span>{safetyStatus.currentWeather.temp}°C</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold opacity-80">
-                      <Radio className="w-3 h-3" />
-                      <span>{language === 'bm' ? safetyStatus.currentWeather.conditionBm : safetyStatus.currentWeather.condition}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold opacity-80">
-                      <Compass className="w-3 h-3" />
-                      <span>{safetyStatus.currentWeather.windSpeed} km/h wind</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold opacity-80">
-                      <Radio className="w-3 h-3" />
-                      <span>{safetyStatus.currentWeather.rainProbability}% rain prob.</span>
-                    </div>
-                    <div className="text-[10px] font-mono opacity-50 ml-auto hidden sm:block">
-                      Source: Open-Meteo Real-time
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="shrink-0 flex items-center gap-2">
-                <button
-                  onClick={async () => {
-                    const status = await weatherService.evaluateTrailSafety();
-                    setSafetyStatus(status);
-                  }}
-                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-all cursor-pointer"
-                  title="Refresh status"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Mandatory Forestry Permit (HSK) & Malim Gunung Disclaimer Notice */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-amber-950/35 border border-amber-500/40 text-amber-100 flex flex-col items-center text-center gap-3.5">
-            <div className="flex flex-col sm:flex-row items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div className="font-extrabold text-amber-200 uppercase tracking-wide text-xs">
-                {language === 'bm'
-                  ? 'Notis Rasmi: Permit Perhutanan (HSK) & Malim Gunung (MGP)'
-                  : 'Official Notice: Forestry Permit (HSK) & Malim Gunung (MGP)'}
-              </div>
-            </div>
-
-            <p className="text-xs text-stone-300 max-w-2xl leading-relaxed">
-              {language === 'bm'
-                ? 'Laluan di dalam Hutan Simpanan Kekal (HSK) mewajibkan permit perhutanan rasmi dan Malim Gunung Perhutanan (MGP) berdaftar (nisbah 1:7, had kuota 60 pendaki/hari). Hanya laluan berisiko rendah berhampiran pekan atau pelantar pelancong dikecualikan.'
-                : 'Trails inside a Permanent Forest Reserve (Hutan Simpanan Kekal - HSK) officially require a forestry permit and a registered Malim Gunung Perhutanan (MGP) for high-altitude peaks & deep jungle routes (1:7 ratio, 60 hikers/day cap). Only short, low-risk town trails or tourist boardwalks are exempted.'}
-            </p>
-
-            <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
               <button
                 type="button"
-                onClick={() => setIsPermitInfoOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/50 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+                onClick={handleDismissStillnessWarning}
+                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg cursor-pointer"
               >
-                <Info className="w-3.5 h-3.5 text-amber-300" />
+                I&apos;m OK — Reset Timer
+              </button>
+            </div>
+            <p className="text-xs text-amber-100/90 leading-relaxed">
+              Zero phone motion or GPS displacement detected for 15 minutes. Your Emergency Contact ({emergencyContact}) was alerted. Critical escalation runs at 30 minutes if not dismissed.
+            </p>
+          </div>
+        )}
+
+        {inactivityStage2Active && (
+          <div className="mx-3.5 sm:mx-5 mt-3 p-3.5 rounded-2xl bg-rose-950/95 border-2 border-rose-500 text-rose-100 space-y-2 shrink-0 animate-pulse">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-white">
+                <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
+                <span>CRITICAL 30-MIN IMMOBILITY ESCALATION SENT</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleDismissStillnessWarning}
+                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer"
+              >
+                I&apos;m Safe — Cancel Alarm
+              </button>
+            </div>
+            <p className="text-xs text-rose-200 leading-relaxed">
+              30 minutes of zero movement detected. Exact last GPS, battery ({telemetry.batteryPercent ?? 'N/A'}%), and telemetry were escalated to ICE ({emergencyContact}) &amp; CamGo Admin.
+            </p>
+          </div>
+        )}
+
+        {/* Overdue Automated Alert Banner */}
+        {isOverdue && (
+          <div className="mx-3.5 sm:mx-5 mt-3 p-3.5 rounded-2xl bg-rose-950/90 border-2 border-rose-500 text-rose-100 space-y-2 shrink-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-rose-200">
+                <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
                 <span>
                   {language === 'bm'
-                    ? 'Syarat & Senarai Gunung Wajib'
-                    : 'Permit & Guide Requirements'}
+                    ? 'AMARAN TAMAT MASA AUTOMATIK DIHANTAR!'
+                    : 'OVERDUE ALERT TRIGGERED TO ICE CONTACT & CAMGO ADMIN!'}
                 </span>
-              </button>
-
-              <a
-                href="https://www.facebook.com/p/Persatuan-Malim-Gunung-Cameron-Highlands-PMGCH-100088179327815/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 text-xs font-bold transition-all cursor-pointer shadow-sm"
+              </div>
+              <button
+                type="button"
+                onClick={handleCheckOutSafely}
+                className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer"
               >
-                <Users className="w-3.5 h-3.5 text-emerald-300" />
-                <span>PMGCH (Book Guide)</span>
-                <ExternalLink className="w-3 h-3 text-emerald-300" />
-              </a>
+                I Am Safe — Check Out
+              </button>
             </div>
+            <p className="text-xs text-rose-200/90 leading-relaxed">
+              Expected return duration expired. Last GPS coordinates &amp; telemetry dispatched to Rescue Admin and Emergency Contact ({activeSession?.emergencyContact}).
+            </p>
+            {overdueAlertReceipt && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <a
+                  href={overdueAlertReceipt.smsUrl}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Send Overdue SMS</span>
+                </a>
+                <a
+                  href={overdueAlertReceipt.whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>WhatsApp ICE</span>
+                </a>
+              </div>
+            )}
           </div>
+        )}
 
-          {/* Top Grid: Trail Selector & Condition Badge */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-            {/* Left Col: Trail Selector (Trails 1 - 14) */}
-            <div className="glass-panel p-3 sm:p-4 rounded-2xl border border-white/10 space-y-2 sm:space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                  <Mountain className="w-4 h-4" />
-                  <span>{language === 'bm' ? 'Pilih Laluan (1-14)' : 'Select Trail (1-14)'}</span>
-                </span>
-                <span className="text-[10px] font-mono text-stone-400">
-                  {selectedTrail ? `Trail #${selectedTrail.number}` : 'None'}
-                </span>
-              </div>
-
-              <div className="max-h-56 sm:max-h-72 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-                {CAMERON_TRAILS.map((trail) => {
-                  const color = TRAIL_COLORS[trail.number] || '#10b981';
-                  const isSelected = selectedTrail?.id === trail.id;
-                  return (
-                    <button
-                      key={trail.id}
-                      onClick={() => {
-                        setSelectedTrail(trail);
-                        setTrailNameInput(trail.name);
-                      }}
-                      className={`w-full text-left p-2.5 rounded-xl transition-all text-xs font-bold flex items-center justify-between cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
-                          : 'bg-stone-950/60 text-stone-300 hover:bg-stone-800 hover:text-white border border-white/5'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <span
-                          className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/30"
-                          style={{ backgroundColor: color }}
-                        />
-                        <span className="truncate">{trail.name}</span>
-                      </div>
-                      <span className="text-[10px] opacity-80 shrink-0 ml-2 font-mono">{trail.distanceKm} km</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Middle Col: Trail Details & Condition Badge */}
-            <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-white/10 space-y-3 sm:space-y-4 flex flex-col justify-between">
-              {selectedTrail ? (
-                <>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-mono font-bold text-emerald-300 uppercase">
-                        {selectedTrail.location}
-                      </span>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                          selectedTrail.difficulty === 'Easy'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : selectedTrail.difficulty === 'Moderate'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            : selectedTrail.difficulty === 'Hard'
-                            ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
-                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                        }`}
-                      >
-                        {selectedTrail.difficulty}
-                      </span>
+        {/* Single Clean Scrollable Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 sm:px-5 py-3.5 sm:py-5 pb-8 sm:pb-6 space-y-4">
+          {/* ==================== SAFETY PASSPORT & TRAIL UNLOCK FORM ==================== */}
+          {!passportUnlocked && (
+            <form
+              onSubmit={handleSubmitSafetyPassport}
+              className="p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl bg-stone-950/90 border border-emerald-500/40 shadow-xl space-y-4 animate-in fade-in duration-200"
+            >
+              {/* Optional Resume Active Track Banner if a live session is cached */}
+              {resumableSession && (
+                <div className="p-3 rounded-2xl bg-emerald-950/55 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-[11px] font-mono font-bold uppercase text-emerald-300">
+                      Active Session Available
                     </div>
-
-                    <h3 className="text-base sm:text-lg font-extrabold text-stone-100">{selectedTrail.name}</h3>
-                    <p className="text-xs text-stone-300 mt-1 leading-relaxed">
-                      {language === 'bm' ? selectedTrail.descriptionBm : selectedTrail.description}
-                    </p>
+                    <div className="text-xs text-stone-200 whitespace-normal break-words leading-snug">
+                      {resumableSession.trailName} • Hiker: {resumableSession.hikerName}
+                    </div>
                   </div>
-
-                  {/* Live Condition Badge Alert */}
-                  <div
-                    className={`p-2.5 sm:p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
-                      selectedTrail.conditionType === 'muddy'
-                        ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
-                        : selectedTrail.conditionType === 'slippery'
-                        ? 'bg-rose-950/40 border-rose-500/40 text-rose-200'
-                        : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                    }`}
+                  <button
+                    type="button"
+                    onClick={handleResumeCachedSession}
+                    className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <div className="flex-1 space-y-1">
-                      <div className="font-bold uppercase text-[10px] tracking-wider opacity-90">Live Trail Condition</div>
-                      <div className="font-semibold">{selectedTrail.conditionBadge}</div>
-                    </div>
-                  </div>
-
-                  {/* Stats Bar */}
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono">
-                    <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                      <div className="text-[10px] text-stone-400 uppercase">Distance</div>
-                      <div className="font-bold text-emerald-300">{selectedTrail.distanceKm} km</div>
-                    </div>
-                    <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                      <div className="text-[10px] text-stone-400 uppercase">Est. Time</div>
-                      <div className="font-bold text-teal-300">{selectedTrail.estDurationHrs}</div>
-                    </div>
-                    <div className="p-2 rounded-xl bg-stone-950 border border-white/5">
-                      <div className="text-[10px] text-stone-400 uppercase">Max Alt</div>
-                      <div className="font-bold text-amber-300">{selectedTrail.maxElevationM}m</div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="py-12 text-center space-y-2 my-auto">
-                  <Compass className="w-7 h-7 text-stone-500 mx-auto animate-pulse" />
-                  <div className="text-sm font-bold text-stone-300">No Trail Selected</div>
-                  <p className="text-xs text-stone-500 max-w-xs mx-auto">
-                    Select a trail above to view detailed metrics and condition alerts.
-                  </p>
+                    <Navigation className="w-3.5 h-3.5 shrink-0" />
+                    <span>Resume Active Map</span>
+                  </button>
                 </div>
               )}
-            </div>
 
-            {/* Right Col: Elevation Profile */}
-            <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-white/10 space-y-3 sm:space-y-4 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                  <Mountain className="w-4 h-4" />
-                  <span>Elevation Profile</span>
-                </span>
-                <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30 font-bold">
-                  {selectedTrail ? `${selectedTrail.maxElevationM}m ASL` : '---'}
-                </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-white/10 pb-3">
+                <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30 shrink-0">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 whitespace-normal break-words">
+                      Safety First Protocol
+                    </div>
+                    <h3 className="text-base sm:text-lg font-heading font-black text-white leading-tight whitespace-normal break-words">
+                      {language === 'bm'
+                        ? 'Pasport Keselamatan & Tetapan SOS Wajib'
+                        : 'Mandatory Safety Passport & SOS Setup'}
+                    </h3>
+                  </div>
+                </div>
+
+                {!currentUser ? (
+                  <button
+                    type="button"
+                    onClick={onOpenAuth}
+                    className="self-start sm:self-auto min-h-[40px] px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 text-xs font-bold text-emerald-300 flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-normal"
+                  >
+                    <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>Sign In (Optional Sync)</span>
+                  </button>
+                ) : (
+                  <div className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs text-emerald-300 font-bold max-w-full">
+                    <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span className="break-all whitespace-normal">{currentUser.email}</span>
+                  </div>
+                )}
               </div>
 
-              {selectedTrail ? (
-                <div className="p-3 rounded-xl bg-stone-950 border border-yellow-500/30 space-y-2 relative overflow-hidden shadow-inner">
-                  <div className="flex items-end justify-between h-24 sm:h-28 gap-1 pt-3">
-                    {selectedTrail.elevationProfile.map((ep, idx) => {
-                      const heightPercent = Math.round(((ep.altitude - 1400) / 750) * 100);
-                      return (
-                        <div key={idx} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
-                          <span className="text-[9px] font-mono text-yellow-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {ep.altitude}m
-                          </span>
-                          <div
-                            className="w-full rounded-t bg-gradient-to-t from-yellow-600 via-yellow-500 to-amber-300 shadow-[0_0_10px_rgba(234,179,8,0.4)]"
-                            style={{ height: `${Math.max(20, heightPercent)}%` }}
-                          />
-                          <span className="text-[9px] font-mono text-stone-400">{ep.distance}km</span>
+              <p className="text-xs text-stone-300 leading-relaxed">
+                {language === 'bm'
+                  ? 'Lengkapkan maklumat kecemasan anda terlebih dahulu sebelum membuka peta laluan. Kenalan Kecemasan anda juga akan menerima pautan Peta Jejak Langsung.'
+                  : 'Complete your Safety Passport to unlock trail selection and open the live GPS trail map. CamGo tracks breadcrumbs, motion stillness alerts, battery, and creates a Live Footprint Tracker link for your Emergency Contact.'}
+              </p>
+
+              {/* Collapsible Forestry Permit (HSK) & Malim Gunung (MGP) Rules Capsule (Collapsed by default) */}
+              <div className="rounded-2xl bg-amber-950/30 border border-amber-500/35 overflow-hidden">
+                <button
+                  type="button"
+                  aria-expanded={isPermitCapsuleOpen}
+                  onClick={() => setIsPermitCapsuleOpen((prev) => !prev)}
+                  className="w-full min-h-[48px] px-3.5 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-amber-950/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                    <FileText className="w-4 h-4 text-amber-300 shrink-0 mt-0.5 sm:mt-0" />
+                    <span className="text-xs font-bold text-amber-200 whitespace-normal leading-snug">
+                      {language === 'bm'
+                        ? 'Panduan & Syarat Permit HSK & Malim Gunung (MGP)'
+                        : 'Forestry Permit (HSK) & Malim Gunung (MGP) Rules & Guide'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-amber-300">
+                    <span>{isPermitCapsuleOpen ? 'Hide' : 'View'}</span>
+                    <ChevronDown
+                      className={`w-4 h-4 transition-transform duration-200 ${
+                        isPermitCapsuleOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </div>
+                </button>
+
+                {isPermitCapsuleOpen && (
+                  <div className="px-3.5 pb-3.5 pt-2.5 border-t border-amber-500/25 space-y-3 text-xs text-stone-200 leading-relaxed animate-in fade-in duration-150">
+                    <p className="text-amber-100 font-medium">
+                      {language === 'bm'
+                        ? 'Mana-mana laluan atau gunung dalam Hutan Simpanan Kekal (HSK) Cameron Highlands memerlukan permit perhutanan rasmi dan Malim Gunung Perhutanan (MGP) berdaftar untuk puncak altitud tinggi.'
+                        : 'Any hiking trail or mountain inside a Permanent Forest Reserve (HSK) in Cameron Highlands officially requires a forestry permit, and a registered Malim Gunung Perhutanan (MGP) guide is mandatory for high-altitude peaks.'}
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="p-2.5 rounded-xl bg-stone-950/90 border border-white/10">
+                        <div className="text-[10px] font-mono uppercase text-emerald-400 font-bold">
+                          Guide Ratio
                         </div>
-                      );
-                    })}
+                        <div className="text-sm font-black text-white">1 : 7</div>
+                        <div className="text-[11px] text-stone-400">Max 7 hikers per licensed MGP</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-stone-950/90 border border-white/10">
+                        <div className="text-[10px] font-mono uppercase text-amber-400 font-bold">
+                          Daily Quota
+                        </div>
+                        <div className="text-sm font-black text-white">~60 Hikers / Day</div>
+                        <div className="text-[11px] text-stone-400">Pahang Forestry daily cap</div>
+                      </div>
+                    </div>
+
+                    <ul className="space-y-1.5 text-[11px] text-stone-300">
+                      <li>
+                        <strong className="text-rose-300">Gunung Irau (Trail 14):</strong> Permit HSK &amp; MGP guide strictly enforced past boardwalk.
+                      </li>
+                      <li>
+                        <strong className="text-amber-300">Gunung Siku, Yong Belar &amp; Suku:</strong> Advance HSK permits &amp; registered guides required.
+                      </li>
+                      <li>
+                        <strong className="text-emerald-300">Gunung Brinchang (Trail 1):</strong> Full jungle route from Brinchang requires permit &amp; guide.
+                      </li>
+                    </ul>
+
+                    <a
+                      href="https://www.facebook.com/p/Persatuan-Malim-Gunung-Cameron-Highlands-PMGCH-100088179327815/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 w-full sm:w-auto min-h-[44px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Book Malim Gunung Guide (PMGCH)</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
                   </div>
-                </div>
-              ) : (
-                <div className="py-10 text-center text-xs text-stone-500 my-auto">
-                  Elevation chart will appear here upon trail selection.
+                )}
+              </div>
+
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/60 text-xs text-rose-200 font-semibold flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <span>{formError}</span>
                 </div>
               )}
 
-              <div className="text-[11px] text-stone-400 flex items-center justify-between">
-                <span>Vector Graph: <strong className="text-emerald-400">Synced</strong></span>
-                <span className="font-mono text-yellow-400 font-bold">Offline Ready</span>
-              </div>
-            </div>
-          </div>
+              {/* Required Fields — Clean Single-Column Stack on Mobile, 2-Column on Desktop */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
+                    Hiker / Lead Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={hikerName}
+                    onChange={(e) => setHikerName(e.target.value)}
+                    placeholder="e.g., Ahmad Faris"
+                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
 
-          {/* Bottom Section: Leaflet Map Viewport & Safety Passport / SOS */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* Left Sub-Section: Leaflet Map Viewport */}
-            <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-white/10 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                  <Navigation className="w-4 h-4" />
-                  <span>Interactive Map &amp; GPS Dot</span>
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-stone-400">
-                    {currentGps.lat.toFixed(3)}, {currentGps.lng.toFixed(3)}
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
+                    Emergency Contact Name (ICE) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={emergencyContactName}
+                    onChange={(e) => setEmergencyContactName(e.target.value)}
+                    placeholder="e.g., Siti (Spouse / Next of Kin)"
+                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
+                    Emergency Contact Phone (ICE) *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={emergencyContact}
+                    onChange={(e) => setEmergencyContact(e.target.value)}
+                    placeholder="e.g., +60123456789"
+                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
+                    Group Size (Hikers) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={30}
+                    value={groupSize}
+                    onChange={(e) => setGroupSize(e.target.value)}
+                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
+                    Expected Return Duration (Hours) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min={0.5}
+                    max={48}
+                    required
+                    value={expectedHours}
+                    onChange={(e) => setExpectedHours(e.target.value)}
+                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+              </div>
+
+              {/* Live Telemetry Sensor Readiness Strip */}
+              <div className="p-3 rounded-2xl bg-stone-900 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-stone-200">
+                  <Activity className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="font-bold">Live Sensors Ready</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-stone-300">
+                  <span>
+                    GPS:{' '}
+                    <strong className="text-emerald-400">
+                      {currentGps.hasRealFix ? `Locked (±${currentGps.accuracy}m)` : 'Acquiring...'}
+                    </strong>
+                  </span>
+                  <span>
+                    Battery:{' '}
+                    <strong className="text-amber-300">
+                      {telemetry.batteryPercent !== null ? `${telemetry.batteryPercent}%` : 'Ready'}
+                    </strong>
+                  </span>
+                  <span>
+                    Signal: <strong className="text-sky-300">{telemetry.signalLabel}</strong>
                   </span>
                 </div>
               </div>
 
-              {/* Leaflet Map Container - Mobile Optimized Height */}
-              <div className="h-60 sm:h-72 rounded-2xl bg-stone-950 border border-white/10 relative overflow-hidden shadow-2xl">
-                <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-10" />
+              {/* Gated Initial Planned Trail Selector directly above Submit Safety Passport */}
+              <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-white/15 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label
+                    htmlFor="camgo-initial-planned-trail"
+                    className="text-[11px] font-bold uppercase text-stone-200 flex items-center gap-1.5"
+                  >
+                    {isPassportFieldsValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    )}
+                    <span>Initial Planned Trail *</span>
+                  </label>
+                  <span
+                    className={`text-[10px] font-mono font-bold ${
+                      isPassportFieldsValid ? 'text-emerald-400' : 'text-amber-300'
+                    }`}
+                  >
+                    {isPassportFieldsValid ? 'Unlocked' : 'Complete all * fields to unlock'}
+                  </span>
+                </div>
 
-                {!selectedTrail && (
-                  <div className="absolute inset-0 z-20 bg-stone-950/85 backdrop-blur-xs flex items-center justify-center p-4 text-center">
-                    <div className="space-y-1.5">
-                      <Compass className="w-6 h-6 text-emerald-400 mx-auto animate-spin" />
-                      <div className="text-xs font-bold text-white">Select a trail to render its vector route on map</div>
+                <select
+                  id="camgo-initial-planned-trail"
+                  disabled={!isPassportFieldsValid}
+                  value={selectedTrail.id}
+                  onChange={(e) => {
+                    const t = CAMERON_TRAILS.find((x) => x.id === e.target.value);
+                    if (t) {
+                      setSelectedTrail(t);
+                      setExpectedHours(parseEstimatedHours(t.estDurationHrs));
+                    }
+                  }}
+                  className={`w-full max-w-full min-h-[48px] px-3 py-2.5 rounded-xl border font-semibold text-xs sm:text-sm focus:outline-none transition-colors ${
+                    isPassportFieldsValid
+                      ? 'bg-stone-950 border-emerald-500/45 text-white focus:border-emerald-400 cursor-pointer'
+                      : 'bg-stone-950/60 border-white/10 text-stone-500 cursor-not-allowed opacity-60'
+                  }`}
+                >
+                  {CAMERON_TRAILS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} — {t.difficulty} ({t.distanceKm}km • {t.estDurationHrs})
+                    </option>
+                  ))}
+                </select>
+                <div className="text-[11px] text-stone-300 whitespace-normal break-words leading-snug">
+                  <span className="font-bold text-emerald-300">{selectedTrail.name}</span>{' '}
+                  • {selectedTrail.difficulty} ({selectedTrail.distanceKm}km • {selectedTrail.estDurationHrs})
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingPassport || !isPassportFieldsValid}
+                className="w-full min-h-[52px] py-3.5 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-heading font-black text-sm sm:text-base shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
+              >
+                <ShieldAlert className="w-5 h-5 shrink-0" />
+                <span>
+                  {isSubmittingPassport
+                    ? 'Opening Interactive Trail Map...'
+                    : language === 'bm'
+                    ? 'Hantar Pasport Keselamatan'
+                    : 'Submit Safety Passport'}
+                </span>
+                <ChevronRight className="w-5 h-5 shrink-0" />
+              </button>
+            </form>
+          )}
+
+          {/* ==================== CLEANED-UP INTERACTIVE TRAIL MAP & LIVE TELEMETRY VIEW ==================== */}
+          {passportUnlocked && (
+            <div className="space-y-3 animate-in fade-in duration-200">
+              {/* Slim Compact Header Bar Directly Above Map: Countdown Timer + GPS Status */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2.5 rounded-2xl bg-stone-950 border border-white/10 text-xs font-mono">
+                <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleResetToSafetyPassport}
+                      className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/40 cursor-pointer flex items-center justify-center shrink-0"
+                      title="Reset • Back to Safety Passport"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                    </button>
+                    <div
+                      className={`px-2.5 py-1 rounded-xl border font-bold flex items-center gap-1.5 shrink-0 ${
+                        isOverdue
+                          ? 'bg-rose-950/90 border-rose-500 text-rose-200 animate-pulse'
+                          : 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      <span>{isOverdue ? 'OVERDUE' : formatCountdown(timeRemainingSeconds)}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsFullScreenMap((prev) => !prev)}
+                    className="sm:hidden p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-500/40 cursor-pointer flex items-center justify-center shrink-0"
+                    title="Toggle Full Screen Map"
+                  >
+                    {isFullScreenMap ? (
+                      <Minimize2 className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between sm:justify-end gap-2 text-stone-300 text-[11px] pt-1.5 sm:pt-0 border-t sm:border-t-0 border-white/10">
+                  <div className="flex items-center gap-1.5 min-w-0 whitespace-normal break-words">
+                    <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" />
+                    <span className="font-semibold whitespace-normal break-words">
+                      {currentGps.hasRealFix ? 'LIVE GPS LOCKED' : 'TRAILHEAD'} •{' '}
+                      {currentGps.lat.toFixed(4)}, {currentGps.lng.toFixed(4)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsFullScreenMap((prev) => !prev)}
+                    className="hidden sm:flex p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-500/40 cursor-pointer items-center justify-center shrink-0 ml-1"
+                    title="Toggle Full Screen Map"
+                  >
+                    {isFullScreenMap ? (
+                      <Minimize2 className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* 1. Top-Pinned Interactive Map with Compact Record Button Inside Map Corner */}
+              <div
+                className={
+                  isFullScreenMap
+                    ? 'fixed inset-0 z-[180] bg-stone-950 flex flex-col w-full h-[100dvh] overflow-hidden'
+                    : 'relative rounded-3xl overflow-hidden border-2 border-emerald-500/40 bg-stone-950 shadow-2xl flex flex-col h-[52vh] sm:h-[60vh]'
+                }
+              >
+                <div className="flex-1 min-h-0 w-full relative flex flex-col">
+                  <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-10" />
+
+                  {/* Full-Screen Top Exit Button (Small Round Back Icon Button) */}
+                  {isFullScreenMap && (
+                    <div className="absolute top-3 left-3 z-30">
+                      <button
+                        type="button"
+                        onClick={() => setIsFullScreenMap(false)}
+                        className="w-10 h-10 rounded-full bg-stone-900/95 hover:bg-stone-800 text-stone-200 border border-white/20 flex items-center justify-center shadow-2xl cursor-pointer backdrop-blur-md active:scale-95 transition-transform"
+                        title="Back to Normal View"
+                      >
+                        <ArrowLeft className="w-4 h-4 text-emerald-400 shrink-0" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Smaller Record Trail Button & Floating Compass Underneath */}
+                  <div className="absolute top-3 right-3 z-30 flex flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      onClick={handleToggleRecording}
+                      className={`min-h-[32px] px-3 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-md cursor-pointer shrink-0 border transition-all active:scale-95 ${
+                        isRecording
+                          ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse border-rose-300/60'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-300/60'
+                      }`}
+                    >
+                      <Footprints className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {isRecording ? `Pause (${breadcrumbs.length})` : `Record (${breadcrumbs.length})`}
+                      </span>
+                    </button>
+
+                    <div className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-950 font-mono font-black text-[10px] shadow-md flex items-center gap-1 border border-stone-300">
+                      <Compass className="w-3 h-3 text-emerald-600 shrink-0" />
+                      <span>N 012°</span>
+                    </div>
+                  </div>
+
+                  {/* Full-Screen Top-Center Telemetry Badge with GPS Signal Info (Clickable) */}
+                  {isFullScreenMap && (
+                    <button
+                      type="button"
+                      onClick={() => setIsSafetyBriefOpen(true)}
+                      className="absolute top-3 left-[48%] sm:left-1/2 -translate-x-1/2 z-30 px-2.5 py-1 rounded-xl bg-stone-950/90 backdrop-blur-md border border-emerald-500/40 font-mono text-[10px] text-stone-200 flex items-center gap-1.5 shadow-xl max-w-[46%] sm:max-w-none truncate cursor-pointer hover:bg-stone-900 transition-colors active:scale-95"
+                      title="Tap for Safety & Telemetry Brief"
+                    >
+                      <span className="text-emerald-400 font-bold shrink-0">SAFETY</span>
+                      <span className="text-white/40 shrink-0">•</span>
+                      <span className="text-sky-300 shrink-0">4G</span>
+                      <span className="text-white/40 shrink-0">•</span>
+                      <span className="text-emerald-300 truncate">GPS {currentGps.hasRealFix ? `±${currentGps.accuracy}m` : 'Acquiring'}</span>
+                      <span className="text-white/40 shrink-0">•</span>
+                      <span className="text-amber-300 shrink-0">100%</span>
+                    </button>
+                  )}
+
+                  {/* Full-Screen Bottom-Center Small Circular Floating SOS Button */}
+                  {isFullScreenMap && (
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30">
+                      <button
+                        type="button"
+                        onClick={handleTriggerSmartSos}
+                        disabled={manualSosDispatching}
+                        className="w-12 h-12 rounded-full bg-gradient-to-br from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white shadow-2xl shadow-red-950/90 border-2 border-red-300/70 flex items-center justify-center cursor-pointer active:scale-95 transition-all animate-pulse"
+                        title="SOS / Smart Alert"
+                      >
+                        <ShieldAlert className="w-5 h-5 shrink-0 text-white" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Trail Condition / Metadata Badge Outside Map */}
+              <div className="px-3 py-2 rounded-2xl bg-stone-950/90 border border-emerald-500/30 font-mono text-xs text-stone-200 flex items-center justify-between gap-2 shadow-md">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="truncate">
+                    <strong className="text-emerald-400">{selectedTrail.name}</strong> • {selectedTrail.conditionBadge}
+                  </span>
+                </div>
+              </div>
+
+              {/* 2. Dock SOS Directly Under Map */}
+              <div className="p-3 rounded-2xl bg-stone-950 border border-white/10 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-1 text-xs">
+                  <div className="flex items-start sm:items-center gap-2 font-bold text-emerald-300 min-w-0 flex-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 mt-1 sm:mt-0 animate-ping" />
+                    <span className="whitespace-normal break-words leading-snug">
+                      Active • ICE:{' '}
+                      {emergencyContactName
+                        ? `${emergencyContactName} (${emergencyContact})`
+                        : emergencyContact || '999'}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTriggerSmartSos}
+                  disabled={manualSosDispatching}
+                  className="w-full min-h-[50px] px-5 py-3 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-sm sm:text-base tracking-wide shadow-xl shadow-red-950/90 border border-red-300/40 flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99] transition-transform"
+                >
+                  <ShieldAlert className="w-5 h-5 shrink-0" />
+                  <span>
+                    {manualSosDispatching ? 'DISPATCHING SOS...' : 'SOS / SMART ALERT'}
+                  </span>
+                </button>
+
+                {manualSosReceipt && (
+                  <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-xs space-y-2">
+                    <div className="flex items-center justify-between text-emerald-300 font-bold">
+                      <span>Smart SOS Automatically Dispatched to ICE &amp; Admin</span>
+                      <button
+                        type="button"
+                        onClick={() => setManualSosReceipt(null)}
+                        className="p-1 hover:bg-white/10 rounded cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={manualSosReceipt.whatsappUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
+                      >
+                        WhatsApp ICE
+                      </a>
+                      <a
+                        href={manualSosReceipt.smsUrl}
+                        className="px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold text-xs"
+                      >
+                        Native SMS
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySos(manualSosReceipt.message)}
+                        className="px-3 py-1.5 rounded-xl bg-stone-800 text-stone-200 border border-white/15 text-xs cursor-pointer"
+                      >
+                        {copiedSos ? 'Copied' : 'Copy Text'}
+                      </button>
                     </div>
                   </div>
                 )}
-
-                <div className="absolute bottom-2 left-2 z-20 bg-stone-900/95 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-[11px] font-mono space-y-0.5 shadow-lg max-w-[200px] truncate">
-                  <div className="text-emerald-400 font-bold truncate">{selectedTrail ? selectedTrail.name : 'No Trail'}</div>
-                  <div className="text-stone-300 text-[10px]">Points: {breadcrumbs.length}</div>
-                </div>
-
-                <div className="absolute top-2 right-2 z-20">
-                  {!isRecording ? (
-                    <button
-                      onClick={handleStartRecording}
-                      className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-lg cursor-pointer"
-                    >
-                      <Footprints className="w-3.5 h-3.5" />
-                      <span>Record</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleStopRecording}
-                      className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1 shadow-lg cursor-pointer animate-pulse"
-                    >
-                      <Square className="w-3.5 h-3.5" />
-                      <span>Stop ({breadcrumbs.length})</span>
-                    </button>
-                  )}
-                </div>
               </div>
 
-              <div className="text-[11px] text-stone-400 flex items-center justify-between">
-                <span>Blue GPS dot &amp; cyan breadcrumbs active.</span>
-                <span className="font-mono text-emerald-400">±{currentGps.accuracy}m</span>
-              </div>
-            </div>
-
-            {/* Right Sub-Section: Safety Passport & SOS Dispatch */}
-            <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-emerald-500/30 space-y-3 sm:space-y-4 relative">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-rose-400" />
-                  <span>Safety Passport &amp; SOS</span>
-                </span>
-                <div className="flex items-center gap-1.5 text-xs font-mono text-stone-300">
-                  <BatteryCharging className="w-4 h-4 text-emerald-400" />
-                  <span>{batteryLevel}%</span>
-                </div>
-              </div>
-
-              {!currentUser ? (
-                <div className="py-6 px-3 text-center rounded-2xl bg-stone-950/90 border border-rose-500/30 space-y-3 my-auto">
-                  <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center mx-auto">
-                    <Lock className="w-5 h-5" />
-                  </div>
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-white">Sign In Required</h4>
-                    <p className="text-[11px] text-stone-400 max-w-xs mx-auto">
-                      Safety Passport check-ins and SOS dispatch require sign-in.
-                    </p>
-                  </div>
-                  <button
-                    onClick={onOpenAuth}
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
-                  >
-                    Sign In Now
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {!isCheckedIn ? (
-                    <div className="space-y-2.5 text-xs">
-                      <div className="flex items-center gap-2 p-2 rounded-xl bg-stone-950 border border-emerald-500/30 text-emerald-300 truncate">
-                        <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span className="truncate"><strong>{currentUser.email}</strong></span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">Trail Name</label>
-                          <input
-                            type="text"
-                            value={trailNameInput}
-                            onChange={(e) => setTrailNameInput(e.target.value)}
-                            className="w-full mt-1 p-2 rounded-xl bg-stone-950 border border-white/10 text-white font-bold text-xs"
-                          />
+              {/* 3. Weather Card with Nested Expandable Elevation Profile Toggle */}
+              {safetyStatus && (
+                <div
+                  className={`p-3.5 rounded-2xl border flex flex-col gap-2.5 ${
+                    safetyStatus.severity === 'critical'
+                      ? 'bg-rose-950/45 border-rose-500/50 text-rose-100'
+                      : safetyStatus.severity === 'high'
+                      ? 'bg-orange-950/45 border-orange-500/50 text-orange-100'
+                      : safetyStatus.severity === 'moderate'
+                      ? 'bg-amber-950/45 border-amber-500/50 text-amber-100'
+                      : 'bg-emerald-950/40 border-emerald-500/45 text-emerald-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                      <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-emerald-300" />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-[10px] font-mono uppercase font-bold text-emerald-300">
+                            Weather &amp; Microclimate Status • {safetyStatus.severity}
+                          </div>
+                          {displayedElevationPts.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setIsElevationExpanded((prev) => !prev)}
+                              className="min-h-[32px] px-2.5 py-1 rounded-xl bg-stone-900/90 hover:bg-stone-800 text-amber-300 border border-amber-500/40 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                            >
+                              <Mountain className="w-3 h-3 text-amber-300 shrink-0" />
+                              <span>{isElevationExpanded ? 'Hide Elevation' : 'Elevation Profile'}</span>
+                              <ChevronDown
+                                className={`w-3 h-3 transition-transform ${
+                                  isElevationExpanded ? 'rotate-180' : ''
+                                }`}
+                              />
+                            </button>
+                          )}
                         </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">Group Size</label>
-                          <input
-                            type="number"
-                            value={groupSize}
-                            onChange={(e) => setGroupSize(e.target.value)}
-                            className="w-full mt-1 p-2 rounded-xl bg-stone-950 border border-white/10 text-white font-bold text-xs"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">Emergency Contact</label>
-                          <input
-                            type="text"
-                            value={emergencyContact}
-                            onChange={(e) => setEmergencyContact(e.target.value)}
-                            className="w-full mt-1 p-2 rounded-xl bg-stone-950 border border-white/10 text-white font-bold text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">Expected (Hrs)</label>
-                          <input
-                            type="number"
-                            value={expectedHours}
-                            onChange={(e) => setExpectedHours(e.target.value)}
-                            className="w-full mt-1 p-2 rounded-xl bg-stone-950 border border-white/10 text-white font-bold text-xs"
-                          />
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={handleCheckIn}
-                        className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
-                      >
-                        Check-In &amp; Sync to Firestore
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className={`p-3 rounded-2xl border ${isOverdue ? 'bg-rose-950/50 border-rose-500/60 animate-pulse' : 'bg-emerald-950/40 border-emerald-500/40'}`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] font-mono font-bold uppercase text-stone-300">
-                            {isOverdue ? '⚠️ OVERDUE ALERT' : 'Active Check-In'}
-                          </span>
-                          <span className="font-mono font-bold text-xs text-emerald-300">
-                            {Math.floor(timeRemainingSeconds / 3600)}h {Math.floor((timeRemainingSeconds % 3600) / 60)}m left
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-stone-300">
-                          {isOverdue
-                            ? 'Expected return time expired! Emergency responders alerted.'
-                            : 'Timer active. Tap Check-Out when safe.'}
+                        <p className="text-xs font-bold whitespace-normal break-words leading-snug">
+                          {language === 'bm' ? safetyStatus.reasonBm : safetyStatus.reason}
                         </p>
                       </div>
+                    </div>
+                  </div>
 
-                      <button
-                        onClick={handleCheckOut}
-                        className="w-full py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs cursor-pointer"
-                      >
-                        Check-Out Safely
-                      </button>
+                  {safetyStatus.currentWeather && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 border-t border-white/10 text-[11px] font-semibold">
+                      <span className="inline-flex items-center gap-1">
+                        <Thermometer className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                        <span>{safetyStatus.currentWeather.temp}°C</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                        <span>
+                          {language === 'bm'
+                            ? safetyStatus.currentWeather.conditionBm
+                            : safetyStatus.currentWeather.condition}
+                        </span>
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Wind className="w-3.5 h-3.5 text-teal-300 shrink-0" />
+                        <span>{safetyStatus.currentWeather.windSpeed} km/h wind</span>
+                      </span>
                     </div>
                   )}
 
-                  {/* Low-Bandwidth Emergency Payload Box */}
-                  <div className="p-2.5 rounded-xl bg-stone-950 border border-white/10 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-bold text-rose-400 uppercase">
-                      <span className="flex items-center gap-1">
-                        <Radio className="w-3 h-3 animate-pulse" />
-                        <span>Emergency SMS String</span>
-                      </span>
-                      <span className="font-mono text-[9px]">2G Ready</span>
+                  {/* Expandable Elevation Chart (Collapsed by Default) */}
+                  {isElevationExpanded && displayedElevationPts.length > 0 && (
+                    <div className="pt-2.5 border-t border-white/15 space-y-2 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between text-[11px] font-mono">
+                        <span className="font-bold text-amber-300 uppercase flex items-center gap-1.5">
+                          <Mountain className="w-3.5 h-3.5 shrink-0" />
+                          <span>Elevation Profile — {selectedTrail.name}</span>
+                        </span>
+                        <span className="text-stone-200 font-bold">
+                          Peak {selectedTrail.maxElevationM}m ASL
+                        </span>
+                      </div>
+                      <div className="flex items-end justify-between h-16 gap-1.5 pt-1">
+                        {displayedElevationPts.map((ep, idx) => {
+                          const pct = Math.max(
+                            18,
+                            Math.round(((ep.altitude - minAlt) / altSpan) * 100)
+                          );
+                          return (
+                            <div
+                              key={idx}
+                              className="flex-1 flex flex-col items-center justify-end h-full gap-1"
+                            >
+                              <div
+                                className="w-full rounded-t bg-gradient-to-t from-amber-600 via-yellow-500 to-amber-300"
+                                style={{ height: `${pct}%` }}
+                                title={`${ep.altitude}m at ${ep.distance}km`}
+                              />
+                              <span className="text-[9px] font-mono text-stone-400 leading-none">
+                                {ep.distance}k
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-
-                    <div className="p-1.5 rounded-lg bg-stone-900 font-mono text-[10px] text-stone-300 select-all border border-white/5 truncate">
-                      {`SOS Hiker Overdue | Trail: ${trailNameInput} | Coords: ${currentGps.lat.toFixed(4)},${currentGps.lng.toFixed(4)} | Bat: ${batteryLevel}%`}
-                    </div>
-
-                    <button
-                      onClick={handleCopySos}
-                      className="w-full py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] flex items-center justify-center gap-1 shadow-md cursor-pointer transition-all"
-                    >
-                      {copiedSos ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-white" />
-                          <span>Copied SOS!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy SOS Payload for SMS</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </>
+                  )}
+                </div>
               )}
-              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Forestry Permit & Mandatory Malim Gunung Requirements Modal */}
-      {isPermitInfoOpen && (
+      {/* Safety & Telemetry Brief Modal */}
+      {isSafetyBriefOpen && (
         <div
-          className="fixed inset-0 z-[160] flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-5 animate-in fade-in duration-200"
-          onClick={() => setIsPermitInfoOpen(false)}
+          className="fixed inset-0 z-[220] bg-stone-950/85 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setIsSafetyBriefOpen(false)}
         >
           <div
-            className="w-full max-w-2xl max-h-[90vh] rounded-3xl bg-stone-900 border border-amber-500/40 shadow-2xl flex flex-col overflow-hidden"
+            className="w-full max-w-md p-5 rounded-3xl bg-stone-900 border border-emerald-500/50 shadow-2xl space-y-4 text-stone-100 animate-in fade-in zoom-in-95 duration-200 cursor-default"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-white/10 bg-stone-950/90">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  <ShieldAlert className="w-5 h-5" />
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Activity className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400">
-                    {language === 'bm' ? 'Jabatan Perhutanan Pahang (HSK)' : 'Pahang Forestry Department'}
-                  </span>
-                  <h3 className="text-sm sm:text-base font-heading font-black text-white">
-                    {language === 'bm'
-                      ? 'Syarat Permit HSK & Malim Gunung Perhutanan (MGP)'
-                      : 'Forestry Permit & Mandatory Malim Gunung Guide'}
-                  </h3>
+                  <div className="text-[10px] font-mono uppercase text-emerald-400 font-bold">CamGo Live Diagnostics</div>
+                  <h3 className="text-base font-heading font-black text-white">Trail Safety Brief</h3>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsPermitInfoOpen(false)}
-                className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 cursor-pointer"
-                aria-label="Close requirements"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSafetyBriefOpen(false);
+                }}
+                className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs text-stone-300 leading-relaxed">
-              {/* General Policy Notice */}
-              <div className="p-3.5 rounded-2xl bg-amber-950/35 border border-amber-500/35 space-y-1.5">
-                <p className="text-amber-100 font-semibold">
-                  {language === 'bm'
-                    ? 'Di Cameron Highlands, mana-mana laluan mendaki atau gunung yang berada di dalam Hutan Simpanan Kekal (HSK) secara rasmi memerlukan permit perhutanan, dan pengambilan Malim Gunung Perhutanan (MGP) berdaftar adalah diwajibkan untuk puncak altitud tinggi dan laluan hutan tebal. Hanya beberapa laluan pendek berisiko rendah berhampiran pekan atau pelantar pelancong dikecualikan daripada mengambil jurupandu.'
-                    : 'In Cameron Highlands, any hiking trail or mountain located inside a Permanent Forest Reserve (Hutan Simpanan Kekal - HSK) officially requires a forestry permit, and hiring a registered Malim Gunung Perhutanan (MGP) is mandatory for high-altitude peaks and deep jungle routes. Only a few short, low-risk trails near town or tourist boardwalks are exempted from hiring a guide.'}
-                </p>
-              </div>
-
-              {/* Ratio & Quota Rules */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="p-3 rounded-2xl bg-stone-950 border border-white/10">
-                  <div className="text-[10px] font-mono uppercase text-emerald-400 font-bold">
-                    {language === 'bm' ? 'Nisbah Jurupandu' : 'Guide-to-Hiker Ratio'}
-                  </div>
-                  <div className="text-base font-black text-white mt-0.5">1 : 7</div>
-                  <div className="text-[11px] text-stone-400">
-                    {language === 'bm'
-                      ? '1 Malim Gunung berlesen bagi setiap maksimum 7 pendaki.'
-                      : '1 licensed MGP guide for up to 7 hikers.'}
-                  </div>
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-2xl bg-stone-950 border border-white/10 space-y-2">
+                <div className="flex justify-between font-mono">
+                  <span className="text-stone-400">Selected Trail:</span>
+                  <span className="text-emerald-400 font-bold">{selectedTrail.name}</span>
                 </div>
-                <div className="p-3 rounded-2xl bg-stone-950 border border-white/10">
-                  <div className="text-[10px] font-mono uppercase text-amber-400 font-bold">
-                    {language === 'bm' ? 'Had Kuota Harian' : 'Daily Entry Quota'}
-                  </div>
-                  <div className="text-base font-black text-white mt-0.5">~60 Hikers / Day</div>
-                  <div className="text-[11px] text-stone-400">
-                    {language === 'bm'
-                      ? 'Dikuatkuasakan oleh Jabatan Perhutanan Negeri Pahang.'
-                      : 'Capped daily by the Pahang Forestry Department.'}
-                  </div>
+                <div className="flex justify-between font-mono">
+                  <span className="text-stone-400">GPS Signal &amp; Fix:</span>
+                  <span className="text-emerald-300 font-bold">{currentGps.hasRealFix ? `Locked (±${currentGps.accuracy}m)` : 'Acquiring (GPS Trailhead)'}</span>
+                </div>
+                <div className="flex justify-between font-mono">
+                  <span className="text-stone-400">Coordinates:</span>
+                  <span className="text-stone-200 font-semibold">{currentGps.lat.toFixed(5)}, {currentGps.lng.toFixed(5)}</span>
+                </div>
+                <div className="flex justify-between font-mono">
+                  <span className="text-stone-400">Cellular / Network:</span>
+                  <span className="text-sky-300 font-bold">{telemetry.effectiveType.toUpperCase()} ({telemetry.signalLabel})</span>
+                </div>
+                <div className="flex justify-between font-mono">
+                  <span className="text-stone-400">Battery Status:</span>
+                  <span className="text-amber-300 font-bold">{telemetry.batteryPercent !== null ? `${telemetry.batteryPercent}%` : '100% Ready'}</span>
                 </div>
               </div>
 
-              {/* Mandatory Peaks & Trails */}
-              <div className="space-y-2.5">
-                <h4 className="text-xs sm:text-sm font-heading font-black text-white uppercase tracking-wide flex items-center gap-1.5">
-                  <Mountain className="w-4 h-4 text-emerald-400" />
-                  <span>
-                    {language === 'bm'
-                      ? 'Gunung & Laluan Yang Mewajibkan Malim Gunung'
-                      : 'Mountains & Trails Where a Malim Gunung is Mandatory'}
-                  </span>
-                </h4>
-                <p className="text-[11px] text-stone-400">
-                  {language === 'bm'
-                    ? 'Untuk laluan dalam Hutan Simpanan Kekal, jurupandu berlesen adalah wajib bagi:'
-                    : 'For routes within the Permanent Forest Reserve, a licensed guide is strictly required for:'}
-                </p>
-
-                <ul className="space-y-2">
-                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
-                    <span className="font-bold text-rose-300 block">• Gunung Irau (Trail 14 via Mossy Forest)</span>
-                    <span className="text-[11px] text-stone-300">
-                      Strict enforcement. You cannot enter past the tourist boardwalk without an approved forestry permit and a licensed MGP.
-                    </span>
-                  </li>
-                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
-                    <span className="font-bold text-amber-300 block">• Gunung Siku</span>
-                    <span className="text-[11px] text-stone-300">
-                      Requires both an advance permit and a registered guide.
-                    </span>
-                  </li>
-                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
-                    <span className="font-bold text-amber-300 block">• Gunung Yong Belar &amp; Gunung Pass</span>
-                    <span className="text-[11px] text-stone-300">
-                      High-altitude trans-border peaks (Pahang-Perak/Kelantan) that strictly require a permit and guide.
-                    </span>
-                  </li>
-                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
-                    <span className="font-bold text-emerald-300 block">• Gunung Brinchang (Jungle Trail 1)</span>
-                    <span className="text-[11px] text-stone-300">
-                      While driving up to the tower or walking the paid boardwalk does not require a guide, trekking the full jungle trail from Brinchang town requires a permit and guide.
-                    </span>
-                  </li>
-                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
-                    <span className="font-bold text-amber-300 block">• Gunung Suku, Gunung Swettenham &amp; Gunung Tangga</span>
-                    <span className="text-[11px] text-stone-300">
-                      All require advance forestry permits and registered guides.
-                    </span>
-                  </li>
-                  <li className="p-3 rounded-xl bg-stone-950/90 border border-white/10">
-                    <span className="font-bold text-amber-300 block">• Coral Hill / Gunung Brinchang Barat</span>
-                    <span className="text-[11px] text-stone-300">
-                      Located within the forest reserve boundary and requires a permit and guide.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              {/* PMGCH Official Facebook Link */}
-              <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 space-y-2.5">
-                <div className="font-bold text-emerald-300 text-xs flex items-center gap-1.5">
-                  <Users className="w-4 h-4" />
-                  <span>
-                    {language === 'bm'
-                      ? 'Ingin Mendaki? Hubungi Persatuan Malim Gunung Rasmi'
-                      : 'Planning to Trek? Book a Registered Malim Gunung Guide'}
-                  </span>
+              <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 space-y-1 text-emerald-200">
+                <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Offline Safety Protocol Active</span>
                 </div>
-                <p className="text-[11px] text-stone-300">
-                  {language === 'bm'
-                    ? 'Untuk urusan permit HSK dan tempahan Malim Gunung berlesen di Cameron Highlands, sila hubungi Persatuan Malim Gunung Cameron Highlands (PMGCH):'
-                    : 'Any user wishing to trek inside HSK trails can arrange permits and certified guides through Persatuan Malim Gunung Cameron Highlands (PMGCH):'}
+                <p className="text-[11px] text-stone-300 leading-relaxed">
+                  Breadcrumbs are recording locally. Dead-Man switch monitors stillness and 5-min auto-alert safeguards your descent.
                 </p>
-                <a
-                  href="https://www.facebook.com/p/Persatuan-Malim-Gunung-Cameron-Highlands-PMGCH-100088179327815/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 transition-all"
-                >
-                  <span>Persatuan Malim Gunung Cameron Highlands (PMGCH)</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-white/10 bg-stone-950/80 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsPermitInfoOpen(false)}
-                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs cursor-pointer"
-              >
-                {language === 'bm' ? 'Tutup' : 'Close'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsSafetyBriefOpen(false);
+              }}
+              className="w-full min-h-[44px] py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-lg"
+            >
+              Close Brief
+            </button>
           </div>
         </div>
       )}
@@ -1116,8 +2350,3 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   );
 };
 
-const Square: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <rect x="6" y="6" width="12" height="12" rx="2" />
-  </svg>
-);

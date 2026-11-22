@@ -46,6 +46,7 @@ import { pruneVendorForSector, mapSubCategoryToMainCategory } from '../utils/sec
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import { AdminChatHistoryFolders } from './AdminChatHistoryFolders';
 import { FarmTicketMatrixModal } from './FarmTicketMatrixModal';
+import { TrailSafetySession } from '../services/trailSafetyService';
 
 import {
   ShieldCheck,
@@ -278,6 +279,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       })
       .catch(() => {});
+  }, []);
+
+  // Real-time Trail Safety Sessions & Overdue Hiker Alerts Listener
+  const [trailSafetySessions, setTrailSafetySessions] = useState<TrailSafetySession[]>([]);
+  useEffect(() => {
+    if (!db) return;
+    const unsub = onSnapshot(
+      collection(db, 'safety_sessions'),
+      (snap) => {
+        const items = snap.docs
+          .map((d) => ({ ...(d.data() as TrailSafetySession), id: d.id }))
+          .filter((s) => s && s.status !== 'completed')
+          .sort((a, b) => {
+            if (a.status === 'overdue' && b.status !== 'overdue') return -1;
+            if (b.status === 'overdue' && a.status !== 'overdue') return 1;
+            return new Date(b.updatedAt || b.startedAt || 0).getTime() - new Date(a.updatedAt || a.startedAt || 0).getTime();
+          });
+        setTrailSafetySessions(items);
+      },
+      (err) => {
+        console.warn('[AdminDashboard] safety_sessions listener notice:', err);
+      }
+    );
+    return () => unsub();
   }, []);
 
   const handleSaveAdminTomTomKey = async (nextKey: string, runTest = true) => {
@@ -3201,6 +3226,137 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Live Hiker Trail Safety Passports & Overdue Alert Monitor */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-stone-900/95 border border-rose-500/35 shadow-xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center shrink-0">
+                  <Navigation className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                    <span>Live Hiker Trail Passports &amp; Overdue Alerts</span>
+                    {trailSafetySessions.some((s) => s.status === 'overdue') && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono font-bold animate-pulse">
+                        {trailSafetySessions.filter((s) => s.status === 'overdue').length} OVERDUE
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-xs text-stone-400">
+                    Real-time GPS breadcrumbs, device battery &amp; ridge signal status synced from hiker trails
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-xl bg-stone-950 border border-white/10 text-xs font-mono text-stone-300">
+                Active Trails: <strong className="text-emerald-300">{trailSafetySessions.length}</strong>
+              </span>
+            </div>
+
+            {trailSafetySessions.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-stone-950/70 border border-white/5 text-xs text-stone-400 text-center">
+                No active or overdue trail safety sessions at the moment.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {trailSafetySessions.map((sess) => {
+                  const isOverdueSess = sess.status === 'overdue' || Boolean(sess.inactivityAlert2Sent);
+                  const mapsUrl = `https://www.google.com/maps?q=${sess.lastKnownLat},${sess.lastKnownLng}`;
+                  const footprintUrl = `/?trailTrack=${encodeURIComponent(sess.id)}${
+                    sess.trackingToken ? `&token=${encodeURIComponent(sess.trackingToken)}` : ''
+                  }`;
+                  return (
+                    <div
+                      key={sess.id}
+                      className={`p-3.5 rounded-2xl border space-y-2 ${
+                        isOverdueSess
+                          ? 'bg-rose-950/60 border-rose-500 text-rose-100'
+                          : sess.inactivityAlert1Sent
+                          ? 'bg-amber-950/50 border-amber-500/70 text-amber-100'
+                          : 'bg-stone-950/80 border-white/10 text-stone-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-xs truncate">
+                          {sess.hikerName} (Group {sess.groupSize})
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                            sess.inactivityAlert2Sent
+                              ? 'bg-rose-600 text-white animate-pulse'
+                              : isOverdueSess
+                              ? 'bg-rose-600 text-white animate-pulse'
+                              : sess.inactivityAlert1Sent
+                              ? 'bg-amber-600 text-white animate-pulse'
+                              : 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                          }`}
+                        >
+                          {sess.inactivityAlert2Sent
+                            ? '30M IMMOBILE'
+                            : sess.inactivityAlert1Sent
+                            ? '15M STILLNESS'
+                            : sess.status}
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] font-semibold text-emerald-300 truncate">
+                        {sess.trailName}
+                      </div>
+
+                      <div className="text-[11px] font-mono text-stone-300 space-y-0.5">
+                        <div>
+                          GPS: {sess.lastKnownCoords} ({sess.breadcrumbs?.length || 0} pts)
+                        </div>
+                        <div>
+                          Bat: {sess.telemetry?.batteryPercent ?? 'N/A'}% • Signal:{' '}
+                          {sess.telemetry?.signalLabel || 'Unknown'}
+                        </div>
+                        <div>ICE: {sess.emergencyContact}</div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                        <div className="flex items-center gap-3">
+                          <a
+                            href={mapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-400 hover:underline"
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>Locate Pin</span>
+                          </a>
+                          <a
+                            href={footprintUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 hover:underline"
+                          >
+                            <Navigation className="w-3.5 h-3.5" />
+                            <span>Live Footprint</span>
+                          </a>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!db) return;
+                            await setDoc(
+                              doc(db, 'safety_sessions', sess.id),
+                              { status: 'completed', checkedOutAt: new Date().toISOString() },
+                              { merge: true }
+                            );
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-[11px] font-bold text-stone-200 cursor-pointer"
+                        >
+                          Mark Safe / Close
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

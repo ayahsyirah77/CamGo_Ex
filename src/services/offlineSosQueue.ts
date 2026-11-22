@@ -31,6 +31,11 @@ export interface OfflineSosPacket {
   lastError?: string;
   syncedAt?: string;
   queuedOffline: boolean;
+  trailName?: string;
+  trailSessionId?: string;
+  triggerSource?: 'manual_smart_sos' | 'overdue_timer' | 'inactivity_30m' | 'widget';
+  coordSource?: string;
+  telemetry?: Record<string, any>;
 }
 
 export interface SyncedSosSummary {
@@ -51,6 +56,11 @@ export interface SosDispatchInput {
   severity: 'critical' | 'high';
   recipientPhone: string;
   emergencyCard?: EmergencyCard;
+  trailName?: string;
+  trailSessionId?: string;
+  triggerSource?: 'manual_smart_sos' | 'overdue_timer' | 'inactivity_30m' | 'widget';
+  coordSource?: string;
+  telemetry?: Record<string, any>;
 }
 
 export interface SosDispatchOutcome {
@@ -300,6 +310,11 @@ export async function sendOrQueueEmergencySos(
     severity: input.severity,
     recipientPhone: input.recipientPhone || '999',
     emergencyCard: input.emergencyCard,
+    trailName: input.trailName,
+    trailSessionId: input.trailSessionId,
+    triggerSource: input.triggerSource,
+    coordSource: input.coordSource,
+    telemetry: input.telemetry,
     status: 'queued',
     attempts: 0,
     nextRetryAt: Date.now(),

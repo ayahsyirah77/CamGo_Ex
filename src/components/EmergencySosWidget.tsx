@@ -23,11 +23,25 @@ import {
   RefreshCw,
   CheckCircle2,
   Clock,
+  BatteryCharging,
+  Battery,
+  Radio,
 } from 'lucide-react';
 import { Language, EmergencyCard } from '../types';
 import { firebaseService, DEFAULT_EMERGENCY_CARD } from '../services/firebase';
 import { useOfflineSos } from '../hooks/useOfflineSos';
 import { SosSeverityType } from '../services/offlineSosQueue';
+import {
+  DeviceTelemetrySnapshot,
+  GpsCoordSource,
+  LastKnownMapGps,
+  TrailSafetySession,
+  getCachedActiveTrailSession,
+  getCachedLastKnownMapGps,
+  readLiveDeviceTelemetry,
+  resolveBestSosCoordinates,
+  subscribeDeviceTelemetry,
+} from '../services/trailSafetyService';
 
 interface EmergencySosWidgetProps {
   language: Language;
@@ -138,9 +152,19 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
   const [bgSyncRegistered, setBgSyncRegistered] = useState<boolean>(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [coordSource, setCoordSource] = useState<GpsCoordSource | null>(null);
   const [dispatchedPayload, setDispatchedPayload] = useState<string | null>(null);
   const [copiedPayload, setCopiedPayload] = useState(false);
   const [canShare, setCanShare] = useState(false);
+
+  // Live Device Telemetry & Trail Session Sync State
+  const [telemetry, setTelemetry] = useState<DeviceTelemetrySnapshot | null>(null);
+  const [cachedMapGps, setCachedMapGps] = useState<LastKnownMapGps | null>(() =>
+    getCachedLastKnownMapGps()
+  );
+  const [activeTrailSession, setActiveTrailSession] = useState<TrailSafetySession | null>(() =>
+    getCachedActiveTrailSession()
+  );
 
   // Detect Web Share API capability
   useEffect(() => {
@@ -148,6 +172,24 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
       setCanShare(true);
     }
   }, []);
+
+  // Subscribe to device telemetry & shared map GPS updates when SOS panel is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsubTel = subscribeDeviceTelemetry((snap) => setTelemetry(snap));
+    const refreshTrailContext = () => {
+      setCachedMapGps(getCachedLastKnownMapGps());
+      setActiveTrailSession(getCachedActiveTrailSession());
+    };
+    refreshTrailContext();
+    window.addEventListener('camgo-map-gps-updated', refreshTrailContext);
+    window.addEventListener('camgo-trail-session-updated', refreshTrailContext);
+    return () => {
+      unsubTel();
+      window.removeEventListener('camgo-map-gps-updated', refreshTrailContext);
+      window.removeEventListener('camgo-trail-session-updated', refreshTrailContext);
+    };
+  }, [isOpen]);
 
   // Refresh card whenever modal opens
   useEffect(() => {
@@ -228,39 +270,30 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
     return `https://wa.me/${clean}?text=${encodeURIComponent(message)}`;
   };
 
-  const handleSendSos = () => {
+  const handleSendSos = async () => {
     setDispatchStatus('locating');
-
-    if (!('geolocation' in navigator)) {
-      // Fallback coordinates for Cameron Highlands if browser lacks geolocation
-      triggerDispatch({ lat: 4.472145, lng: 101.376829 }, 50);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude, accuracy } = position.coords;
-        triggerDispatch({ lat: latitude, lng: longitude }, accuracy);
-      },
-      (error) => {
-        console.warn('Geolocation denied/unavailable, using Cameron Highlands central pin:', error);
-        triggerDispatch({ lat: 4.472145, lng: 101.376829 }, null);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
+    const resolvedGps = await resolveBestSosCoordinates(5500);
+    await triggerDispatch(
+      { lat: resolvedGps.lat, lng: resolvedGps.lng },
+      resolvedGps.accuracy,
+      resolvedGps.source,
+      resolvedGps.trailName || activeTrailSession?.trailName
     );
   };
 
   const triggerDispatch = async (
     userCoords: { lat: number; lng: number },
-    accuracy: number | null
+    accuracy: number | null,
+    resolvedSource: GpsCoordSource = 'live_gps',
+    trailNameContext?: string
   ) => {
     setCoords(userCoords);
     setGpsAccuracy(accuracy ? Math.round(accuracy) : null);
+    setCoordSource(resolvedSource);
     setDispatchStatus('dispatching');
+
+    const liveTelemetry = await readLiveDeviceTelemetry(accuracy);
+    setTelemetry(liveTelemetry);
 
     const destinationPhone = getTargetPhoneNumber();
     const mapsLink = `https://www.google.com/maps?q=${userCoords.lat},${userCoords.lng}`;
@@ -271,11 +304,14 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
       stranded_lost: 'STRANDED / FOREST TRAIL',
     };
 
+    const activeTrailLabel = trailNameContext || activeTrailSession?.trailName || cachedMapGps?.trailName;
+
     const formattedPayload = [
       `🚨 CAMGO ${sosTypeLabels[sosType]} ALERT 🚨`,
       `Name: ${emergencyCard.fullLegalName || 'Highland Visitor'}${
         emergencyCard.preferredName ? ` (${emergencyCard.preferredName})` : ''
       }`,
+      activeTrailLabel ? `🥾 Active Trail: ${activeTrailLabel}` : null,
       `DOB: ${emergencyCard.dateOfBirth || 'N/A'} | Blood: ${
         emergencyCard.bloodType || 'Unknown'
       }`,
@@ -286,9 +322,12 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
       emergencyCard.currentMedications
         ? `💊 Current Meds: ${emergencyCard.currentMedications}`
         : null,
-      `📍 Live GPS: ${userCoords.lat.toFixed(6)}, ${userCoords.lng.toFixed(6)}${
+      `📍 GPS (${resolvedSource}): ${userCoords.lat.toFixed(6)}, ${userCoords.lng.toFixed(6)}${
         accuracy ? ` (±${Math.round(accuracy)}m)` : ''
       }`,
+      `🔋 Battery: ${liveTelemetry.batteryPercent ?? 'N/A'}%${
+        liveTelemetry.isCharging ? ' (Charging)' : ''
+      } | 📶 ${liveTelemetry.signalLabel}`,
       `🗺️ Live Map: ${mapsLink}`,
       `📞 Target ICE: ${destinationPhone || '999'}`,
       `⏱️ Dispatched: ${new Date().toLocaleTimeString('en-MY', {
@@ -302,8 +341,27 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
 
     setDispatchedPayload(formattedPayload);
 
-    // Build the native SMS URI
+    // Build native SMS & WhatsApp deep links
     const smsUrl = buildSmsUrl(destinationPhone, formattedPayload);
+    const waUrl = destinationPhone ? buildWhatsAppUrl(destinationPhone, formattedPayload) : '';
+
+    // Programmatically dispatch BOTH WhatsApp and Native SMS automatically on SOS tap
+    if (destinationPhone && typeof document !== 'undefined') {
+      const fireAnchor = (href: string, newTab: boolean) => {
+        const a = document.createElement('a');
+        a.href = href;
+        if (newTab) {
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+        }
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        window.setTimeout(() => a.remove(), 180);
+      };
+      if (waUrl) fireAnchor(waUrl, true);
+      window.setTimeout(() => fireAnchor(smsUrl, false), 250);
+    }
 
     const userHandle =
       firebaseService.getCurrentUser()?.displayName ||
@@ -321,6 +379,11 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
         severity: sosType === 'critical' || sosType === 'medical' ? 'critical' : 'high',
         recipientPhone: destinationPhone || '999',
         emergencyCard,
+        trailName: activeTrailLabel,
+        trailSessionId: activeTrailSession?.id,
+        triggerSource: 'widget',
+        coordSource: resolvedSource,
+        telemetry: liveTelemetry,
       });
 
       setBgSyncRegistered(outcome.backgroundSyncRegistered);
@@ -344,15 +407,6 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
             },
           })
         );
-      }
-
-      // Trigger device native SMS messaging app when online / cellular available
-      try {
-        if (destinationPhone) {
-          window.location.href = smsUrl;
-        }
-      } catch (err) {
-        console.warn('Native SMS protocol redirect note:', err);
       }
     } catch (e: any) {
       console.warn('SOS dispatch fallback notice:', e);
@@ -599,6 +653,41 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
                       </button>
                     </div>
 
+                    {/* Live Device Telemetry & Interactive Map GPS Sync Strip */}
+                    <div className="p-2.5 rounded-xl bg-stone-950/80 border border-white/10 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
+                      <div className="flex items-center gap-2 text-stone-300">
+                        {telemetry?.isCharging ? (
+                          <BatteryCharging className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <Battery className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                        )}
+                        <span>
+                          Bat:{' '}
+                          <strong className="text-white">
+                            {telemetry?.batteryPercent != null ? `${telemetry.batteryPercent}%` : 'Ready'}
+                          </strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-sky-300">
+                        <Radio className="w-3.5 h-3.5 shrink-0" />
+                        <span>{telemetry?.signalLabel || (isOnline ? 'Signal Ready' : 'Offline')}</span>
+                      </div>
+
+                      {(activeTrailSession || cachedMapGps) && (
+                        <div className="w-full pt-1 border-t border-white/5 text-emerald-300 truncate flex items-center justify-between gap-2">
+                          <span className="truncate">
+                            Trail Lock: {activeTrailSession?.trailName || cachedMapGps?.trailName || 'Map GPS Ready'}
+                          </span>
+                          {coordSource && (
+                            <span className="text-[9px] text-stone-400 uppercase shrink-0">
+                              {coordSource}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* SOS Severity / Emergency Category Selector */}
                     <div className="space-y-1.5">
                       <div className="text-[11px] text-stone-400 flex items-center justify-between">
@@ -783,11 +872,11 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
                       <div className="p-4 rounded-xl bg-stone-900 border border-emerald-500/50 space-y-3">
                         <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
                           <Check className="w-4 h-4 shrink-0" />
-                          <span>Native Messaging Triggered via sms: Protocol!</span>
+                          <span>Smart SOS Dispatched via WhatsApp, Native SMS &amp; Rescue Grid!</span>
                         </div>
 
                         <p className="text-[11px] text-stone-300 leading-relaxed">
-                          Your device&apos;s native SMS app has been launched with your GPS location and emergency card. If it didn&apos;t open automatically, use any of the direct native channels below:
+                          WhatsApp &amp; native SMS composers were launched automatically with your GPS coordinates and medical snapshot. Use any shortcut below to re-open:
                         </p>
 
                         {coords && (

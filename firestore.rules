@@ -321,6 +321,13 @@ service cloud.firestore {
       }
     }
 
+    match /safety_sessions/{sessionId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
     // Default deny for unmatched documents
     match /{document=**} {
       allow read, write: if false;

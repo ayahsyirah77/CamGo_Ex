@@ -24,7 +24,15 @@ async function startServer() {
   // Automated Backend API: Emergency SOS Dispatch
   app.post('/api/emergency/dispatch', async (req, res) => {
     try {
-      const { recipientPhone, senderName, coordinates, emergencyCard } = req.body;
+      const {
+        recipientPhone,
+        senderName,
+        coordinates,
+        emergencyCard,
+        trailName,
+        triggerSource,
+        telemetry,
+      } = req.body;
       const timestamp = new Date().toISOString();
       const mapsUrl = coordinates
         ? `https://www.google.com/maps?q=${coordinates.lat},${coordinates.lng}`
@@ -34,11 +42,19 @@ async function startServer() {
       console.log(`To: ${recipientPhone}`);
       console.log(`Sender: ${emergencyCard?.fullLegalName || senderName || 'Highland Visitor'}`);
       console.log(`GPS: ${coordinates?.lat}, ${coordinates?.lng}`);
+      if (trailName) console.log(`Trail: ${trailName} (${triggerSource || 'manual'})`);
 
       // Automated Gateway packaging (Twilio SMS / WhatsApp Business Cloud API format)
+      const dispatchTitle =
+        triggerSource === 'overdue_timer'
+          ? 'OVERDUE HIKER'
+          : triggerSource === 'inactivity_30m'
+          ? '30-MIN ZERO MOVEMENT'
+          : 'EMERGENCY SOS';
       const dispatchMessage = [
-        `🚨 CAMGO EMERGENCY SOS ALERT 🚨`,
+        `🚨 CAMGO ${dispatchTitle} ALERT 🚨`,
         `Name: ${emergencyCard?.fullLegalName || senderName || 'Highland Visitor'}${emergencyCard?.preferredName ? ` (${emergencyCard.preferredName})` : ''}`,
+        trailName ? `🥾 Trail: ${trailName}` : null,
         `DOB: ${emergencyCard?.dateOfBirth || 'N/A'} | Blood: ${emergencyCard?.bloodType || 'Unknown'}`,
         emergencyCard?.severeAllergies ? `⚠️ Severe Allergies: ${emergencyCard.severeAllergies}` : null,
         emergencyCard?.chronicConditions ? `🏥 Conditions: ${emergencyCard.chronicConditions}` : null,
@@ -46,6 +62,7 @@ async function startServer() {
         emergencyCard?.primaryContact ? `Primary ICE 1: ${emergencyCard.primaryContact.name} (${emergencyCard.primaryContact.relationship} - ${emergencyCard.primaryContact.phone})` : null,
         emergencyCard?.secondaryContact ? `Backup ICE 2: ${emergencyCard.secondaryContact.name} (${emergencyCard.secondaryContact.relationship} - ${emergencyCard.secondaryContact.phone})` : null,
         coordinates ? `📍 Live GPS: ${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)}` : null,
+        telemetry ? `🔋 Battery: ${telemetry.batteryPercent ?? 'N/A'}% | 📶 ${telemetry.signalLabel || telemetry.effectiveType || 'Online'}` : null,
         mapsUrl ? `🗺️ Map Route: ${mapsUrl}` : null,
         `⏱️ Sent At: ${new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' })}`,
       ]
@@ -98,11 +115,20 @@ async function startServer() {
         event: 'sos_alert',
         priority: 'critical',
         payload: {
-          title: `CRITICAL SOS: ${emergencyCard?.fullLegalName || senderName || 'Highland Visitor'}`,
-          message: `Emergency beacon activated. Location: ${coordinates ? `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}` : 'Cameron Highlands'}.`,
+          title: `${
+            triggerSource === 'overdue_timer'
+              ? 'OVERDUE HIKER ALERT'
+              : triggerSource === 'inactivity_30m'
+              ? 'CRITICAL 30M IMMOBILITY ALERT'
+              : 'CRITICAL SOS'
+          }: ${emergencyCard?.fullLegalName || senderName || 'Highland Visitor'}`,
+          message: `${trailName ? `[${trailName}] ` : ''}Emergency beacon activated. Location: ${coordinates ? `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}` : 'Cameron Highlands'}.${telemetry?.batteryPercent != null ? ` Bat: ${telemetry.batteryPercent}%` : ''}`,
           sender: emergencyCard?.fullLegalName || senderName || 'Highland Visitor',
           location: coordinates ? `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}` : 'Cameron Highlands',
           phone: recipientPhone || '999',
+          trailName: trailName || undefined,
+          triggerSource: triggerSource || 'manual_smart_sos',
+          telemetry: telemetry || undefined,
           dispatchId,
           mapsUrl
         },
@@ -231,6 +257,11 @@ async function startServer() {
       const severity = String(body.severity || 'critical');
       const recipientPhone = String(body.recipientPhone || '999');
       const emergencyCard = body.emergencyCard || undefined;
+      const trailName = body.trailName ? String(body.trailName) : undefined;
+      const trailSessionId = body.trailSessionId ? String(body.trailSessionId) : undefined;
+      const triggerSource = body.triggerSource ? String(body.triggerSource) : 'manual_smart_sos';
+      const coordSource = body.coordSource ? String(body.coordSource) : undefined;
+      const telemetry = body.telemetry || undefined;
       const queuedOffline = Boolean(body.queuedOffline);
       const attempts = Number.isFinite(Number(body.attempts)) ? Number(body.attempts) : 0;
       const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
@@ -246,11 +277,21 @@ async function startServer() {
         accuracy,
         googleMapsUrl: mapsUrl,
         emergencyCard: emergencyCard || null,
+        trailName: trailName || null,
+        trailSessionId: trailSessionId || null,
+        triggerSource,
+        coordSource: coordSource || null,
+        telemetry: telemetry || null,
         dispatchedAt: timestamp,
         syncedAt,
         queuedOffline,
         attempts,
-        status: 'dispatched',
+        status:
+          triggerSource === 'overdue_timer'
+            ? 'overdue_dispatched'
+            : triggerSource === 'inactivity_30m'
+            ? 'inactivity_critical'
+            : 'dispatched',
         channel: queuedOffline
           ? 'PWA Background Sync (Offline Outbox -> Cloud)'
           : 'CamGo Direct Cloud SOS API',
@@ -259,7 +300,7 @@ async function startServer() {
       const firestoreResult = await syncSosDispatchToFirestore(dispatchId, firestoreRecord);
 
       console.log(
-        `[CAMGO SOS API] ID=${dispatchId} | Handle=${userHandle} | Type=${sosType} (${severity}) | GPS=${lat.toFixed(5)},${lng.toFixed(5)} | OfflineQueued=${queuedOffline} | FirestoreSynced=${firestoreResult.synced}`
+        `[CAMGO SOS API] ID=${dispatchId} | Handle=${userHandle} | Trigger=${triggerSource} | Trail=${trailName || 'N/A'} | GPS=${lat.toFixed(5)},${lng.toFixed(5)} | OfflineQueued=${queuedOffline} | FirestoreSynced=${firestoreResult.synced}`
       );
 
       // Broadcast Critical SOS Alert over WebSocket Grid
@@ -268,13 +309,26 @@ async function startServer() {
         event: 'sos_alert',
         priority: 'critical',
         payload: {
-          title: `${queuedOffline ? 'OFFLINE-SYNCED SOS' : 'CRITICAL SOS'}: ${userHandle}`,
-          message: `Emergency beacon (${sosType}) synced. Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}.`,
+          title: `${
+            triggerSource === 'overdue_timer'
+              ? 'OVERDUE HIKER ALERT'
+              : triggerSource === 'inactivity_30m'
+              ? 'CRITICAL 30M IMMOBILITY'
+              : queuedOffline
+              ? 'OFFLINE-SYNCED SOS'
+              : 'CRITICAL SOS'
+          }: ${userHandle}`,
+          message: `${trailName ? `[${trailName}] ` : ''}Emergency beacon (${sosType}) synced. Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}.${
+            telemetry?.batteryPercent != null ? ` Bat: ${telemetry.batteryPercent}%` : ''
+          }`,
           sender: userHandle,
           sosType,
           severity,
           location: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
           phone: recipientPhone,
+          trailName,
+          triggerSource,
+          telemetry,
           dispatchId,
           mapsUrl,
           queuedOffline,
@@ -303,6 +357,116 @@ async function startServer() {
     } catch (err: any) {
       console.error('[CAMGO /api/sos ERROR]', err);
       return res.status(500).json({ success: false, error: err?.message || 'SOS sync failure' });
+    }
+  });
+
+  // Trail Check-In, 5-Min Auto-Start Fallback & 15m/30m Inactivity Notification Endpoint
+  app.post('/api/trails/notify', async (req, res) => {
+    try {
+      const {
+        sessionId,
+        eventType,
+        hikerName,
+        trailName,
+        expectedHours,
+        expectedReturnAt,
+        groupSize,
+        emergencyContact,
+        coordinates,
+        trackingUrl,
+        stillnessMinutes,
+        telemetry,
+        message,
+      } = req.body || {};
+
+      let channel = 'Cloud Trail Alert + Live Footprint Tracker';
+      let realSmsDelivered = false;
+
+      const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+      const twilioAuth = process.env.TWILIO_AUTH_TOKEN;
+      const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+
+      if (twilioSid && twilioAuth && twilioFrom && emergencyContact && message) {
+        try {
+          const authHeader = 'Basic ' + Buffer.from(`${twilioSid}:${twilioAuth}`).toString('base64');
+          const twilioResp = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: authHeader,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: new URLSearchParams({
+                To: emergencyContact,
+                From: twilioFrom,
+                Body: message,
+              }).toString(),
+            }
+          );
+          if (twilioResp.ok) {
+            channel = 'Live Twilio Carrier SMS Gateway';
+            realSmsDelivered = true;
+          }
+        } catch (twilioErr) {
+          console.warn('[TRAIL NOTIFY] Twilio notice:', twilioErr);
+        }
+      }
+
+      console.log(
+        `[TRAIL NOTIFY] Event=${eventType || 'trail_checkin_started'} | Session=${sessionId} | Hiker=${hikerName} | Trail=${trailName} | ICE=${emergencyContact}`
+      );
+
+      const priority =
+        eventType === 'inactivity_critical_30m'
+          ? 'critical'
+          : eventType === 'inactivity_warning_15m' || eventType === 'trail_auto_start_5m'
+          ? 'high'
+          : 'low';
+
+      const wsEventName =
+        eventType === 'inactivity_critical_30m' ? 'sos_alert' : 'service_update';
+
+      const checkInEvent = JSON.stringify({
+        id: `${sessionId || 'trail'}-${eventType || 'start'}-${Date.now()}`,
+        event: wsEventName,
+        priority,
+        payload: {
+          title:
+            eventType === 'trail_auto_start_5m'
+              ? `Auto Start Alert (5m): ${trailName || 'Highland Trail'}`
+              : eventType === 'inactivity_warning_15m'
+              ? `15m Stillness Warning: ${hikerName || 'Hiker'}`
+              : eventType === 'inactivity_critical_30m'
+              ? `CRITICAL 30m NO MOVEMENT: ${hikerName || 'Hiker'}`
+              : `Trail Passport Started: ${trailName || 'Highland Trail'}`,
+          message:
+            message ||
+            `${hikerName || 'Hiker'} (Group of ${groupSize || 1}) started hiking. Expected return: ${expectedHours || 3}h.`,
+          sender: hikerName || 'Highland Hiker',
+          coordinates,
+          trackingUrl,
+          stillnessMinutes,
+          telemetry,
+          expectedReturnAt,
+        },
+        timestamp: new Date().toISOString(),
+      });
+      for (const client of connectedClients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(checkInEvent);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        channel,
+        realSmsDelivered,
+        sessionId,
+        eventType: eventType || 'trail_checkin_started',
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Trail notify failure' });
     }
   });
   // Local Knowledge Fallback Engine for Cameron Highlands & Website Search
