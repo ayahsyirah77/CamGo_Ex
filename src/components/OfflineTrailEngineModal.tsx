@@ -40,6 +40,7 @@ import {
   Minimize2,
   RotateCcw,
   ArrowLeft,
+  Crosshair,
 } from 'lucide-react';
 import { CAMERON_TRAILS, TrailRoute } from '../data/trailsData';
 import { Language } from '../types';
@@ -893,6 +894,28 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         updatedAt: new Date().toISOString(),
       };
       await persistSessionProgress(updated, true);
+    }
+  };
+
+  const handleCopyTrackingLink = async (url: string) => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setCopiedTrackLink(true);
+        setTimeout(() => setCopiedTrackLink(false), 2500);
+      }
+    } catch {
+      // fallback
+    }
+  };
+
+  const handleRecenterTrailGps = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    if (currentGpsRef.current.hasRealFix) {
+      map.setView([currentGpsRef.current.lat, currentGpsRef.current.lng], 16, { animate: true });
+    } else if (selectedTrailRef.current?.coordinates?.[0]) {
+      map.setView(selectedTrailRef.current.coordinates[0], 15, { animate: true });
     }
   };
 
@@ -1938,6 +1961,186 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
           {/* ==================== CLEANED-UP INTERACTIVE TRAIL MAP & LIVE TELEMETRY VIEW ==================== */}
           {passportUnlocked && (
             <div className="space-y-3 animate-in fade-in duration-200">
+              {/* Trail Check-In Notification & ICE Alert Card */}
+              {initialAlertResult && (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950 via-stone-900 to-stone-950 border-2 border-emerald-400 text-stone-100 shadow-2xl space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                        <Send className="w-4 h-4 animate-pulse" />
+                      </span>
+                      <div>
+                        <span className="text-[10px] font-mono font-black uppercase text-emerald-400 tracking-wider">
+                          {language === 'bm' ? 'Pemberitahuan Kecemasan ICE' : 'ICE Emergency Notification'}
+                        </span>
+                        <h4 className="text-xs font-bold text-white">
+                          {language === 'bm'
+                            ? `Amaran Daftar Jejak Sedia Untuk: ${activeSession?.emergencyContactName || emergencyContactName} (${activeSession?.emergencyContact || emergencyContact})`
+                            : `Trail Check-In Alert Ready For: ${activeSession?.emergencyContactName || emergencyContactName} (${activeSession?.emergencyContact || emergencyContact})`}
+                        </h4>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInitialAlertResult(null)}
+                      className="p-1 rounded-lg hover:bg-white/10 text-stone-400 hover:text-white cursor-pointer"
+                      title="Dismiss alert card"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-stone-300 leading-snug">
+                    {language === 'bm'
+                      ? 'Pautan jejak langsung dan koordinat mula telah dijana. Tekan WhatsApp atau SMS di bawah untuk menghantar amaran segera kepada kenalan kecemasan anda:'
+                      : 'Live footprint tracker link and trailhead coordinates generated. Tap WhatsApp or SMS below to dispatch your departure alert to your emergency contact:'}
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    <a
+                      href={initialAlertResult.whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={handleMarkManualStartAlertSent}
+                      className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                      <span>{language === 'bm' ? 'Hantar WhatsApp ke ICE' : 'Send WhatsApp to ICE'}</span>
+                    </a>
+                    <a
+                      href={initialAlertResult.smsUrl}
+                      onClick={handleMarkManualStartAlertSent}
+                      className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                      <span>{language === 'bm' ? 'Hantar SMS ke ICE' : 'Send SMS to ICE'}</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyTrackingLink(initialAlertResult.trackingUrl)}
+                      className="min-h-[40px] px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-500/40 font-bold text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer active:scale-95 transition-all shrink-0"
+                    >
+                      <Share2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>{copiedTrackLink ? (language === 'bm' ? 'Disalin!' : 'Copied!') : (language === 'bm' ? 'Salin Pautan' : 'Copy Link')}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 5-Minute Record Trail Start Alert Card / Failsafe */}
+              {showStartPromptModal && activeSession && (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-teal-950 via-stone-900 to-stone-950 border-2 border-teal-400 text-stone-100 shadow-2xl space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1.5 rounded-lg bg-teal-500/20 text-teal-400 border border-teal-500/40">
+                        <Footprints className="w-4 h-4 animate-bounce" />
+                      </span>
+                      <div>
+                        <span className="text-[10px] font-mono font-black uppercase text-teal-400 tracking-wider">
+                          {language === 'bm' ? 'Amaran Mula Jejak (Failsafe 5-Minit)' : 'Trail Start Alert (5-Min Failsafe)'}
+                        </span>
+                        <h4 className="text-xs font-bold text-white">
+                          {language === 'bm'
+                            ? `Rakaman Bermula • Beritahu ${activeSession.emergencyContactName || emergencyContactName}`
+                            : `Trail Recording Active • Notify ${activeSession.emergencyContactName || emergencyContactName}`}
+                        </h4>
+                      </div>
+                    </div>
+                    <div className="text-[11px] font-mono font-bold text-amber-300 px-2 py-0.5 rounded-lg bg-amber-950/80 border border-amber-500/40 shrink-0">
+                      {Math.floor(startFailsafeRemainingSec / 60)}:{(startFailsafeRemainingSec % 60).toString().padStart(2, '0')}
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-stone-300 leading-snug">
+                    {language === 'bm'
+                      ? `Hantar pautan jejak langsung anda kepada ${activeSession.emergencyContactName} (${activeSession.emergencyContact}). Failsafe akan menghantar amaran automatik sekiranya tidak dihantar.`
+                      : `Send your live footprint tracking link to ${activeSession.emergencyContactName} (${activeSession.emergencyContact}). Automated failsafe will alert ICE if not sent within 5 minutes.`}
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    <a
+                      href={buildWhatsAppLink(
+                        activeSession.emergencyContact,
+                        `CAMGO TRAIL START: ${activeSession.hikerName} started recording ${activeSession.trailName}. Live Footprint: ${buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)} | GPS: https://www.google.com/maps?q=${activeSession.lastKnownLat},${activeSession.lastKnownLng}`
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={handleMarkManualStartAlertSent}
+                      className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                      <span>WhatsApp ICE</span>
+                    </a>
+                    <a
+                      href={buildSmsLink(
+                        activeSession.emergencyContact,
+                        `CAMGO TRAIL START: ${activeSession.hikerName} started recording ${activeSession.trailName}. Live Footprint: ${buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)} | GPS: https://www.google.com/maps?q=${activeSession.lastKnownLat},${activeSession.lastKnownLng}`
+                      )}
+                      onClick={handleMarkManualStartAlertSent}
+                      className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                      <span>SMS ICE</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleMarkManualStartAlertSent}
+                      className="min-h-[40px] px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs cursor-pointer shrink-0"
+                    >
+                      {language === 'bm' ? 'Tutup / Selesai' : 'Dismiss / Done'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 5-Minute Auto-Start Failsafe Triggered Banner */}
+              {autoStartTriggeredBanner && (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-950/90 border-2 border-amber-400 text-amber-100 shadow-2xl space-y-2 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 font-bold text-xs text-amber-200">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>
+                        {language === 'bm'
+                          ? '5-MINIT FAILSAFE: AMARAN MULA JEJAK TELAH DIHANTAR'
+                          : '5-MINUTE FAILSAFE: START ALERT DISPATCHED TO ICE'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAutoStartTriggeredBanner(null)}
+                      className="p-1 rounded-lg hover:bg-white/10 text-stone-300 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-100/90 leading-snug">
+                    {autoStartTriggeredBanner.message}
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {autoStartTriggeredBanner.whatsappUrl && (
+                      <a
+                        href={autoStartTriggeredBanner.whatsappUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>WhatsApp ICE</span>
+                      </a>
+                    )}
+                    {autoStartTriggeredBanner.smsUrl && (
+                      <a
+                        href={autoStartTriggeredBanner.smsUrl}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>SMS ICE</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Slim Compact Header Bar Directly Above Map: Countdown Timer + GPS Status */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2.5 rounded-2xl bg-stone-950 border border-white/10 text-xs font-mono">
                 <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
@@ -2010,56 +2213,105 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 <div className="flex-1 min-h-0 w-full relative flex flex-col">
                   <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-10" />
 
-                  {/* Full-Screen Top Exit Button (Small Round Back Icon Button) */}
-                  {isFullScreenMap && (
-                    <div className="absolute top-3 left-3 z-30">
+                  {/* Top Left Corner: Back Button (in Fullscreen), Floating Compass underneath, and Center GPS */}
+                  <div className="absolute top-3 left-3 z-30 flex flex-col items-start gap-1.5">
+                    {isFullScreenMap && (
                       <button
                         type="button"
                         onClick={() => setIsFullScreenMap(false)}
-                        className="w-10 h-10 rounded-full bg-stone-900/95 hover:bg-stone-800 text-stone-200 border border-white/20 flex items-center justify-center shadow-2xl cursor-pointer backdrop-blur-md active:scale-95 transition-transform"
+                        className="w-8 h-8 rounded-full bg-stone-900/95 hover:bg-stone-800 text-stone-200 border border-white/20 flex items-center justify-center shadow-2xl cursor-pointer backdrop-blur-md active:scale-95 transition-transform"
                         title="Back to Normal View"
                       >
-                        <ArrowLeft className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                       </button>
+                    )}
+
+                    <div className="h-[22px] px-2 py-0.5 rounded-md bg-stone-100 text-stone-950 font-mono font-black text-[10px] shadow-md flex items-center gap-1 border border-stone-300">
+                      <Compass className="w-3 h-3 text-emerald-600 shrink-0" />
+                      <span>N 012°</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRecenterTrailGps}
+                      className="h-[22px] px-2 py-0.5 rounded-md bg-stone-900/90 hover:bg-stone-800 text-emerald-400 font-mono font-bold text-[10px] shadow-md flex items-center gap-1 border border-emerald-500/30 cursor-pointer active:scale-95"
+                      title="Center map on current GPS / Trailhead"
+                    >
+                      <Crosshair className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <span>Center</span>
+                    </button>
+                  </div>
+
+                  {/* Full-Screen Floating ICE Start Alert Prompt Banner if active */}
+                  {isFullScreenMap && initialAlertResult && (
+                    <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-sm p-2 rounded-2xl bg-stone-950/95 border border-emerald-400 text-white shadow-2xl backdrop-blur-md space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center justify-between gap-1 text-[10px] font-bold text-emerald-300">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Send className="w-3 h-3 text-emerald-400 shrink-0 animate-pulse" />
+                          <span className="truncate">ICE: {activeSession?.emergencyContactName || emergencyContactName} ({activeSession?.emergencyContact || emergencyContact})</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setInitialAlertResult(null)}
+                          className="p-0.5 hover:bg-white/10 rounded cursor-pointer shrink-0 text-stone-300"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={initialAlertResult.whatsappUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={handleMarkManualStartAlertSent}
+                          className="flex-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center justify-center gap-1 shadow active:scale-95"
+                        >
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                          <span>WhatsApp ICE</span>
+                        </a>
+                        <a
+                          href={initialAlertResult.smsUrl}
+                          onClick={handleMarkManualStartAlertSent}
+                          className="flex-1 py-1 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] flex items-center justify-center gap-1 shadow active:scale-95"
+                        >
+                          <MessageSquare className="w-3 h-3 shrink-0" />
+                          <span>SMS ICE</span>
+                        </a>
+                      </div>
                     </div>
                   )}
 
-                  {/* Smaller Record Trail Button & Floating Compass Underneath */}
-                  <div className="absolute top-3 right-3 z-30 flex flex-col items-end gap-1">
+                  {/* Top-Right: Adjusted Record Trail Button (Non-overlapping with Telemetry Badge) */}
+                  <div className="absolute top-3 right-3 z-30">
                     <button
                       type="button"
                       onClick={handleToggleRecording}
-                      className={`min-h-[32px] px-3 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-md cursor-pointer shrink-0 border transition-all active:scale-95 ${
+                      className={`h-[26px] px-2 sm:px-2.5 py-1 rounded-xl font-bold text-[10px] flex items-center gap-1 shadow-md cursor-pointer shrink-0 border transition-all active:scale-95 ${
                         isRecording
                           ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse border-rose-300/60'
                           : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-300/60'
                       }`}
                     >
-                      <Footprints className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {isRecording ? `Pause (${breadcrumbs.length})` : `Record (${breadcrumbs.length})`}
+                      <Footprints className="w-3 h-3 shrink-0" />
+                      <span className="tabular-nums whitespace-nowrap">
+                        {isRecording ? `Pause (${breadcrumbs.length})` : `Rec (${breadcrumbs.length})`}
                       </span>
                     </button>
-
-                    <div className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-950 font-mono font-black text-[10px] shadow-md flex items-center gap-1 border border-stone-300">
-                      <Compass className="w-3 h-3 text-emerald-600 shrink-0" />
-                      <span>N 012°</span>
-                    </div>
                   </div>
 
-                  {/* Full-Screen Top-Center Telemetry Badge with GPS Signal Info (Clickable) */}
+                  {/* Full-Screen Top-Center Telemetry Badge with GPS Signal Info (Clickable, Off-center to guarantee zero overlap) */}
                   {isFullScreenMap && (
                     <button
                       type="button"
                       onClick={() => setIsSafetyBriefOpen(true)}
-                      className="absolute top-3 left-[48%] sm:left-1/2 -translate-x-1/2 z-30 px-2.5 py-1 rounded-xl bg-stone-950/90 backdrop-blur-md border border-emerald-500/40 font-mono text-[10px] text-stone-200 flex items-center gap-1.5 shadow-xl max-w-[46%] sm:max-w-none truncate cursor-pointer hover:bg-stone-900 transition-colors active:scale-95"
+                      className="absolute top-3 left-[44%] sm:left-1/2 -translate-x-1/2 z-30 h-[26px] px-2 py-0.5 rounded-xl bg-stone-950/90 backdrop-blur-md border border-emerald-500/40 font-mono text-[9px] xs:text-[10px] text-stone-200 flex items-center gap-1 shadow-xl max-w-[145px] xs:max-w-[170px] sm:max-w-none truncate cursor-pointer hover:bg-stone-900 transition-colors active:scale-95"
                       title="Tap for Safety & Telemetry Brief"
                     >
                       <span className="text-emerald-400 font-bold shrink-0">SAFETY</span>
                       <span className="text-white/40 shrink-0">•</span>
                       <span className="text-sky-300 shrink-0">4G</span>
                       <span className="text-white/40 shrink-0">•</span>
-                      <span className="text-emerald-300 truncate">GPS {currentGps.hasRealFix ? `±${currentGps.accuracy}m` : 'Acquiring'}</span>
+                      <span className="text-emerald-300 truncate">GPS {currentGps.hasRealFix ? `±${currentGps.accuracy}m` : 'Acq'}</span>
                       <span className="text-white/40 shrink-0">•</span>
                       <span className="text-amber-300 shrink-0">100%</span>
                     </button>

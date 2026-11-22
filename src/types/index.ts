@@ -960,7 +960,7 @@ export interface BeaconSession {
   createdByName?: string;
   createdAt: string;
   expiresAt: string;
-  durationHours: 2 | 8 | 24;
+  durationHours: number;
   status: 'active' | 'ended';
   members?: Record<string, BeaconMember>;
   messages?: BeaconChatMessage[];

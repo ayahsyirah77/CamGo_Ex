@@ -41,7 +41,7 @@ class BeaconService {
     rawCode: string,
     creatorMember: BeaconMember,
     sessionName?: string,
-    durationHours: 2 | 8 | 24 = 8
+    durationHours: number = 8
   ): Promise<BeaconSession> {
     const code = rawCode.trim().toUpperCase().replace(/\s+/g, '');
     const sessionRef = doc(db, 'beacon_sessions', code);

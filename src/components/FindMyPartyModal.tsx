@@ -114,7 +114,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   const [session, setSession] = useState<BeaconSession | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState<string>('');
   const [newSessionName, setNewSessionName] = useState<string>('Cameron Highlands Group');
-  const [expiryHours, setExpiryHours] = useState<2 | 8 | 24>(8);
+  const [expiryHours, setExpiryHours] = useState<number>(8);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
@@ -1685,22 +1685,17 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                     <label className="block text-xs font-semibold text-stone-400 mb-1">
                       {language === 'bm' ? 'Tempoh Hayat Sesi' : 'Session Duration'}
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {([2, 8, 24] as const).map((hrs) => (
-                        <button
-                          key={hrs}
-                          type="button"
-                          onClick={() => setExpiryHours(hrs)}
-                          className={`py-2 text-xs font-mono font-bold rounded-xl border transition-all cursor-pointer ${
-                            expiryHours === hrs
-                              ? 'bg-emerald-600 text-white border-emerald-400 shadow-md'
-                              : 'bg-stone-900 text-stone-400 border-white/10 hover:text-white'
-                          }`}
-                        >
-                          {hrs} {language === 'bm' ? 'Jam' : 'Hours'}
-                        </button>
+                    <select
+                      value={expiryHours}
+                      onChange={(e) => setExpiryHours(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/10 text-xs text-stone-100 focus:outline-none focus:border-emerald-500 font-mono cursor-pointer"
+                    >
+                      {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
+                        <option key={h} value={h}>
+                          {h} {h === 1 ? (language === 'bm' ? 'Jam' : 'Hour') : (language === 'bm' ? 'Jam' : 'Hours')}
+                        </option>
                       ))}
-                    </div>
+                    </select>
                   </div>
 
                   <button
@@ -1979,24 +1974,24 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                     className="w-full h-full relative z-10"
                   />
 
-                  {/* Top-Right Quick Fullscreen & Route Buttons Overlaid cleanly on Map */}
-                  <div className="absolute top-2.5 right-2.5 z-[400] flex items-center gap-1.5">
+                  {/* Top-Right Quick Map Controls (Fit Route, Fullscreen) Overlaid cleanly on Map */}
+                  <div className="absolute top-2.5 right-2.5 z-[400] flex items-center gap-1.5 flex-wrap justify-end max-w-[70%]">
                     {!isMeCreator && creatorMember && (
                       <button
                         type="button"
                         onClick={handleShowRouteToHost}
-                        className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-stone-950/90 hover:bg-stone-800 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 cursor-pointer text-xs font-bold shadow-lg"
+                        className="min-h-[34px] px-2.5 py-1.5 rounded-xl bg-stone-950/90 hover:bg-stone-800 text-teal-300 border border-teal-500/40 flex items-center gap-1 cursor-pointer text-xs font-bold shadow-lg active:scale-95 transition-all"
                       >
-                        <Route className="w-3.5 h-3.5" />
+                        <Route className="w-3.5 h-3.5 shrink-0" />
                         <span>{language === 'bm' ? 'Laluan' : 'Fit Route'}</span>
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => setShowLiveMapModal(true)}
-                      className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-stone-950/90 hover:bg-stone-800 text-stone-100 border border-white/15 flex items-center gap-1 cursor-pointer text-xs font-bold shadow-lg"
+                      className="min-h-[34px] px-2.5 py-1.5 rounded-xl bg-stone-950/90 hover:bg-stone-800 text-stone-100 border border-white/20 flex items-center gap-1 cursor-pointer text-xs font-bold shadow-lg active:scale-95 transition-all"
                     >
-                      <Maximize2 className="w-3.5 h-3.5" />
+                      <Maximize2 className="w-3.5 h-3.5 shrink-0" />
                       <span>{language === 'bm' ? 'Skrin Penuh' : 'Fullscreen'}</span>
                     </button>
                   </div>

@@ -1086,7 +1086,7 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
             <div ref={mapContainerRef} className="w-full h-full z-10" />
 
             {/* Overlaid Top-Left Landmark Pill */}
-            <div className="absolute top-2.5 left-2.5 z-[400] max-w-[58%] px-2.5 py-1.5 rounded-xl bg-stone-950/90 backdrop-blur-md border border-white/15 text-[11px] font-mono text-stone-200 flex items-center gap-1.5 shadow-lg pointer-events-none">
+            <div className="absolute top-2.5 left-2.5 z-[400] max-w-[calc(100%-115px)] sm:max-w-[60%] px-2.5 py-1.5 rounded-xl bg-stone-950/90 backdrop-blur-md border border-white/15 text-[11px] font-mono text-stone-200 flex items-center gap-1.5 shadow-lg pointer-events-none">
               <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="truncate font-bold text-emerald-300">{myLandmark}</span>
             </div>
@@ -1096,20 +1096,11 @@ export const LiveBeaconMapModal: React.FC<LiveBeaconMapModalProps> = ({
               <button
                 type="button"
                 onClick={handleRecenter}
-                className="min-h-[40px] px-2.5 py-1.5 rounded-xl bg-emerald-600/95 hover:bg-emerald-500 text-white border border-emerald-400/40 shadow-lg backdrop-blur-md text-xs font-bold flex items-center gap-1 cursor-pointer active:scale-95"
+                className="min-h-[36px] px-2.5 py-1 rounded-xl bg-emerald-600/95 hover:bg-emerald-500 text-white border border-emerald-400/40 shadow-lg backdrop-blur-md text-xs font-bold flex items-center gap-1 cursor-pointer active:scale-95 shrink-0"
                 title="Center on my GPS location"
               >
                 <Crosshair className="w-3.5 h-3.5" />
                 <span>{language === 'bm' ? 'Pusat' : 'Center'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleFitAll}
-                className="min-h-[40px] px-2.5 py-1.5 rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-white/15 shadow-lg backdrop-blur-md text-xs font-bold flex items-center gap-1 cursor-pointer active:scale-95"
-                title="Fit all companions in view"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>{language === 'bm' ? 'Semua' : 'All'}</span>
               </button>
             </div>
 
