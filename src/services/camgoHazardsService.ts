@@ -40,13 +40,44 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   console.warn('[Firestore camgo_hazards]', JSON.stringify(errInfo));
 }
 
+function isHazardActive(h: any, nowMs = Date.now()): boolean {
+  if (!h) return false;
+  if (h.status === 'cleared' || h.active === false) return false;
+  if (h.status !== 'active' && h.active !== true) return false;
+  if (h.expiresAt) {
+    const expMs = new Date(h.expiresAt).getTime();
+    if (Number.isFinite(expMs) && expMs <= nowMs) return false;
+  }
+  return true;
+}
+
+function normalizeHazardRecord(raw: any, id?: string): CamgoHazard {
+  const status: 'active' | 'cleared' | 'pending' =
+    raw.status || (raw.active === true ? 'active' : 'cleared');
+  return {
+    ...raw,
+    id: id || raw.id,
+    description: raw.description || raw.summary || raw.title || '',
+    summary: raw.summary || raw.description || '',
+    location: raw.location || raw.corridor || 'Cameron Highlands',
+    status,
+    active: raw.active !== undefined ? Boolean(raw.active) : status === 'active',
+    stillThereVotes: typeof raw.stillThereVotes === 'number' ? raw.stillThereVotes : 0,
+    clearedVotes: typeof raw.clearedVotes === 'number' ? raw.clearedVotes : 0,
+    timestamp: raw.timestamp || raw.updatedAt || new Date().toISOString(),
+  } as CamgoHazard;
+}
+
 function readLocalHazards(): CamgoHazard[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_HAZARDS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((h) => h && h.status === 'active') : [];
+    const nowMs = Date.now();
+    return Array.isArray(parsed)
+      ? parsed.filter((h) => isHazardActive(h, nowMs)).map((h) => normalizeHazardRecord(h))
+      : [];
   } catch {
     return [];
   }
@@ -91,8 +122,9 @@ class CamgoHazardsService {
   }
 
   public getCachedActiveHazards(): CamgoHazard[] {
+    const nowMs = Date.now();
     if (this.memoryCache.length > 0) {
-      return this.memoryCache.filter((h) => h.status === 'active');
+      return this.memoryCache.filter((h) => isHazardActive(h, nowMs));
     }
     return readLocalHazards();
   }
@@ -101,34 +133,75 @@ class CamgoHazardsService {
     const initial = this.getCachedActiveHazards();
     onUpdate(initial);
 
-    let unsubFirestore: (() => void) | null = null;
+    let unsubStatusQuery: (() => void) | null = null;
+    let unsubActiveQuery: (() => void) | null = null;
+    const statusMap = new Map<string, CamgoHazard>();
+    const activeMap = new Map<string, CamgoHazard>();
+
+    const emitMerged = () => {
+      const nowMs = Date.now();
+      const mergedById = new Map<string, CamgoHazard>();
+
+      statusMap.forEach((h, id) => {
+        if (isHazardActive(h, nowMs)) mergedById.set(id, h);
+      });
+      activeMap.forEach((h, id) => {
+        if (isHazardActive(h, nowMs)) mergedById.set(id, h);
+      });
+
+      const localPending = readLocalHazards().filter(
+        (l) =>
+          isHazardActive(l, nowMs) &&
+          !mergedById.has(l.id) &&
+          (l.id.startsWith('local-') || l.verifiedBy === 'web_search')
+      );
+      localPending.forEach((l) => mergedById.set(l.id, l));
+
+      const merged = Array.from(mergedById.values()).sort(
+        (a, b) =>
+          new Date(b.updatedAt || b.timestamp).getTime() -
+          new Date(a.updatedAt || a.timestamp).getTime()
+      );
+
+      this.memoryCache = merged;
+      writeLocalHazards(merged);
+      onUpdate(merged);
+    };
+
     if (db) {
       try {
-        const q = query(
+        const statusQ = query(
           collection(db, CAMGO_HAZARDS_COLLECTION),
           where('status', '==', 'active')
         );
-        unsubFirestore = onSnapshot(
-          q,
+        unsubStatusQuery = onSnapshot(
+          statusQ,
           (snapshot) => {
-            const remoteHazards: CamgoHazard[] = snapshot.docs.map((d) => ({
-              id: d.id,
-              ...(d.data() as any),
-            })) as CamgoHazard[];
+            statusMap.clear();
+            snapshot.docs.forEach((d) => {
+              const norm = normalizeHazardRecord(d.data(), d.id);
+              if (isHazardActive(norm)) statusMap.set(d.id, norm);
+            });
+            emitMerged();
+          },
+          (err) => {
+            handleFirestoreError(err, OperationType.LIST, CAMGO_HAZARDS_COLLECTION);
+          }
+        );
 
-            const localPending = readLocalHazards().filter(
-              (l) =>
-                l.status === 'active' &&
-                l.id.startsWith('local-') &&
-                !remoteHazards.some((r) => r.id === l.id)
-            );
-            const merged = [...remoteHazards, ...localPending].sort(
-              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            );
-
-            this.memoryCache = merged;
-            writeLocalHazards(merged);
-            onUpdate(merged);
+        const activeQ = query(
+          collection(db, CAMGO_HAZARDS_COLLECTION),
+          where('active', '==', true)
+        );
+        unsubActiveQuery = onSnapshot(
+          activeQ,
+          (snapshot) => {
+            activeMap.clear();
+            snapshot.docs.forEach((d) => {
+              const norm = normalizeHazardRecord(d.data(), d.id);
+              if (isHazardActive(norm)) activeMap.set(d.id, norm);
+            });
+            emitMerged();
           },
           (err) => {
             handleFirestoreError(err, OperationType.LIST, CAMGO_HAZARDS_COLLECTION);
@@ -142,7 +215,8 @@ class CamgoHazardsService {
     const handleLocalEvent = (e: Event) => {
       const custom = e as CustomEvent<CamgoHazard[]>;
       if (Array.isArray(custom.detail)) {
-        const activeOnly = custom.detail.filter((h) => h.status === 'active');
+        const nowMs = Date.now();
+        const activeOnly = custom.detail.filter((h) => isHazardActive(h, nowMs));
         this.memoryCache = activeOnly;
         onUpdate(activeOnly);
       }
@@ -153,7 +227,8 @@ class CamgoHazardsService {
     }
 
     return () => {
-      if (unsubFirestore) unsubFirestore();
+      if (unsubStatusQuery) unsubStatusQuery();
+      if (unsubActiveQuery) unsubActiveQuery();
       if (typeof window !== 'undefined') {
         window.removeEventListener('camgo-hazards-updated', handleLocalEvent);
       }
@@ -161,9 +236,12 @@ class CamgoHazardsService {
   }
 
   public async upsertActiveHazard(hazard: CamgoHazard): Promise<CamgoHazard> {
+    const status = hazard.status || 'active';
     const normalized: CamgoHazard = {
       ...hazard,
-      status: hazard.status || 'active',
+      description: hazard.description || hazard.summary || hazard.title,
+      status,
+      active: status === 'active',
       stillThereVotes: typeof hazard.stillThereVotes === 'number' ? hazard.stillThereVotes : 0,
       clearedVotes: typeof hazard.clearedVotes === 'number' ? hazard.clearedVotes : 0,
       updatedAt: new Date().toISOString(),
@@ -217,12 +295,14 @@ class CamgoHazardsService {
           await updateDoc(ref, {
             stillThereVotes: increment(1),
             status: 'active',
+            active: true,
             updatedAt: updated.updatedAt,
           });
         } else if (expired) {
           await updateDoc(ref, {
             clearedVotes: updated.clearedVotes,
             status: 'cleared',
+            active: false,
             clearedAt: updated.clearedAt,
             updatedAt: updated.updatedAt,
           });
@@ -324,6 +404,7 @@ class CamgoHazardsService {
     const updatedAt = new Date().toISOString();
     const updateData: Partial<CamgoHazard> = {
       status,
+      active: status === 'active',
       updatedAt,
       ...(status === 'cleared' ? { clearedAt: updatedAt } : {}),
     };
@@ -364,6 +445,7 @@ class CamgoHazardsService {
         try {
           await updateDoc(ref, {
             status: 'cleared',
+            active: false,
             clearedAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });

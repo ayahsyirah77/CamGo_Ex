@@ -316,6 +316,8 @@ export interface HazardAlert {
 export type CamgoHazardType =
   | 'landslide'
   | 'accident'
+  | 'closure'
+  | 'weather'
   | 'roadblock'
   | 'fallen_tree'
   | 'flood'
@@ -325,10 +327,11 @@ export interface CamgoHazard {
   id: string;
   title: string;
   titleBm?: string;
+  summary?: string;
   description: string;
   descriptionBm?: string;
   type: CamgoHazardType;
-  severity: 'low' | 'moderate' | 'high' | 'critical';
+  severity: 'low' | 'medium' | 'moderate' | 'high' | 'critical';
   location: string;
   corridor?: string;
   milestoneKm?: number | null;
@@ -336,7 +339,9 @@ export interface CamgoHazard {
   lng: number;
   source: string;
   sourceChannel?: string;
+  verifiedBy?: string;
   rawText?: string;
+  active?: boolean;
   status: 'active' | 'cleared' | 'pending';
   stillThereVotes: number;
   clearedVotes: number;
@@ -346,9 +351,10 @@ export interface CamgoHazard {
   baselineSpeedKmh?: number;
   liveSpeedKmh?: number;
   speedDropPercent?: number;
-  extractionMethod?: 'gemini_multimodal' | 'deterministic_nlp_fallback' | 'telemetry_anomaly';
+  extractionMethod?: 'gemini_multimodal' | 'deterministic_nlp_fallback' | 'telemetry_anomaly' | 'web_search_grounding';
   timestamp: string;
   updatedAt?: string;
+  expiresAt?: string;
   clearedAt?: string;
 }
 

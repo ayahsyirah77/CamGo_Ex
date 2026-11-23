@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Megaphone, PlusCircle, MapPin, Sparkles } from 'lucide-react';
+import { Megaphone, PlusCircle, MapPin, Sparkles, Globe } from 'lucide-react';
 import { Language, CamgoHazard } from '../types';
 import { camgoHazardsService } from '../services/camgoHazardsService';
 
@@ -20,7 +20,12 @@ interface CommunityTickerProps {
 
 function isTickerAlertFresh(hazard: CamgoHazard | null | undefined, nowMs: number): boolean {
   if (!hazard) return false;
-  if (hazard.status === 'cleared') return false;
+  if (hazard.status === 'cleared' || hazard.active === false) return false;
+
+  if (hazard.expiresAt) {
+    const expMs = new Date(hazard.expiresAt).getTime();
+    if (Number.isFinite(expMs) && expMs <= nowMs) return false;
+  }
 
   const refTimestamp = hazard.updatedAt || hazard.timestamp;
   if (!refTimestamp) return false;
@@ -43,7 +48,7 @@ export const CommunityTicker: React.FC<CommunityTickerProps> = ({
   useEffect(() => {
     const unsubscribe = camgoHazardsService.subscribeActiveHazards((updated) => {
       if (Array.isArray(updated)) {
-        setHazards(updated.filter((h) => h && h.status !== 'cleared'));
+        setHazards(updated.filter((h) => h && h.status !== 'cleared' && h.active !== false));
       }
     });
     const expiryTicker = window.setInterval(() => {
@@ -143,6 +148,12 @@ export const CommunityTicker: React.FC<CommunityTickerProps> = ({
                   item.isPlaceholder
                 )}`}
               />
+              {!item.isPlaceholder && item.verifiedBy === 'web_search' && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-[9px] font-mono font-black uppercase text-sky-300 shrink-0">
+                  <Globe className="w-2.5 h-2.5" />
+                  <span>{item.source || 'WEB'}</span>
+                </span>
+              )}
               <span className="font-bold text-white group-hover:text-emerald-300 transition-colors">
                 [{item.location || 'Highlands'}]
               </span>

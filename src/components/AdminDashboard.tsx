@@ -37,6 +37,7 @@ import {
   DEFAULT_PAYMENT_GATEWAY_NOTICE,
 } from '../services/firebase';
 import { camgoHazardsService } from '../services/camgoHazardsService';
+import { fetchLiveWebHazards } from '../services/webHazardFetcher';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
 import { formatTimeTo12Hour } from '../utils/highlandLogic';
 import { CamLogo } from './CamLogo';
@@ -975,6 +976,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [hazardSearchQuery, setHazardSearchQuery] = useState('');
   const [moderationLoadingId, setModerationLoadingId] = useState<string | null>(null);
   const [selectedHazardModal, setSelectedHazardModal] = useState<CamgoHazard | null>(null);
+  const [isRefreshingWebAlerts, setIsRefreshingWebAlerts] = useState(false);
+  const [webAlertToast, setWebAlertToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     const unsub = camgoHazardsService.subscribeAllHazards((list) => {
@@ -982,6 +985,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     return () => unsub();
   }, []);
+
+  const handleRefreshWebAlerts = async () => {
+    setIsRefreshingWebAlerts(true);
+    setWebAlertToast(null);
+    try {
+      const res = await fetchLiveWebHazards();
+      if (res.hazards.length > 0) {
+        setCommunityHazards((prev) => {
+          const byId = new Map<string, CamgoHazard>(prev.map((h) => [h.id, h]));
+          res.hazards.forEach((h) => byId.set(h.id, h));
+          return Array.from(byId.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+        });
+      }
+      setWebAlertToast({
+        type: 'success',
+        message: `Synced ${res.syncedCount} live web hazard alert${res.syncedCount === 1 ? '' : 's'} to camgo_hazards.`,
+      });
+      addActivity(`Refreshed ${res.syncedCount} live web hazard alerts via Google Search Grounding`);
+    } catch (err: any) {
+      setWebAlertToast({
+        type: 'error',
+        message: err?.message || 'Failed to refresh live web hazard alerts.',
+      });
+    } finally {
+      setIsRefreshingWebAlerts(false);
+      window.setTimeout(() => setWebAlertToast(null), 6000);
+    }
+  };
 
   const handleRemoveHazardBroadcast = async (hazard: CamgoHazard) => {
     setModerationLoadingId(hazard.id);
@@ -3382,8 +3415,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Counts Quick Badges */}
+              {/* Counts Quick Badges + Refresh Web Alerts */}
               <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleRefreshWebAlerts}
+                  disabled={isRefreshingWebAlerts}
+                  className="px-3.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-stone-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition-all active:scale-95 disabled:opacity-60"
+                >
+                  {isRefreshingWebAlerts ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  ) : (
+                    <Globe className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span>{isRefreshingWebAlerts ? 'Refreshing...' : 'Refresh Web Alerts'}</span>
+                </button>
                 <span className="px-3 py-1 rounded-xl bg-stone-950 border border-white/10 text-xs font-mono font-bold text-stone-300">
                   Total: <strong className="text-white">{communityHazards.length}</strong>
                 </span>
@@ -3395,6 +3441,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </span>
               </div>
             </div>
+
+            {webAlertToast && (
+              <div
+                className={`p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in ${
+                  webAlertToast.type === 'success'
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                    : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  {webAlertToast.type === 'success' ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  )}
+                  <span>{webAlertToast.message}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWebAlertToast(null)}
+                  className="p-1 hover:bg-white/10 rounded cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Filter & Search Bar */}
             <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
@@ -3435,6 +3507,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <option value="all">All Categories</option>
                   <option value="landslide">⛰️ Landslide</option>
                   <option value="accident">💥 Accident</option>
+                  <option value="closure">🚧 Road Closure</option>
+                  <option value="weather">🌧️ Weather / Storm</option>
                   <option value="fallen_tree">🌳 Fallen Tree</option>
                   <option value="roadblock">🚧 Roadblock</option>
                   <option value="flood">🌊 Flood</option>
@@ -3482,13 +3556,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                       : item.severity === 'high'
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                      : item.severity === 'moderate'
+                      : item.severity === 'moderate' || item.severity === 'medium'
                       ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
                       : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
 
                   const typeEmoji: Record<string, string> = {
                     landslide: '⛰️',
                     accident: '💥',
+                    closure: '🚧',
+                    weather: '🌧️',
                     roadblock: '🚧',
                     fallen_tree: '🌳',
                     flood: '🌊',
@@ -3547,6 +3623,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${severityColor} uppercase`}>
                                 {item.severity}
                               </span>
+
+                              {item.verifiedBy === 'web_search' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-400/40 uppercase">
+                                  🌐 Web Search
+                                </span>
+                              )}
 
                               <span className="text-[11px] font-bold text-stone-300 uppercase">
                                 {typeEmoji[item.type] || '⚠️'} {item.type.replace('_', ' ')}
