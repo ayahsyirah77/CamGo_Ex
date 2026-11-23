@@ -57,7 +57,7 @@ service cloud.firestore {
                     && request.resource.data.lng is number
                     && request.resource.data.lat >= 4.0 && request.resource.data.lat <= 5.0
                     && request.resource.data.lng >= 101.0 && request.resource.data.lng <= 102.0
-                    && request.resource.data.type in ['landslide', 'accident', 'roadblock', 'fallen_tree', 'flood', 'sudden_congestion']
+                    && request.resource.data.type in ['landslide', 'accident', 'closure', 'weather', 'roadblock', 'fallen_tree', 'flood', 'sudden_congestion']
                     && request.resource.data.status in ['active', 'cleared']
                     && request.resource.data.stillThereVotes is number
                     && request.resource.data.clearedVotes is number;

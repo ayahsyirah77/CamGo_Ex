@@ -62,6 +62,9 @@ export interface TrailSafetyStatus {
   reason: string;
   reasonBm: string;
   severity: 'low' | 'moderate' | 'high' | 'critical';
+  sunrise?: string;
+  sunset?: string;
+  forecast?: (WeatherForecastDay & { rainProbability?: number })[];
   currentWeather?: {
     temp: number;
     condition: string;
@@ -70,6 +73,19 @@ export interface TrailSafetyStatus {
     rainProbability: number;
     weatherCode: number;
   };
+}
+
+function formatOpenMeteoClock(isoLocal: string | undefined, fallback: string): string {
+  if (!isoLocal) return fallback;
+  const timePart = isoLocal.split('T')[1];
+  if (!timePart) return fallback;
+  const [hStr, mStr] = timePart.split(':');
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return fallback;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 export const weatherService = {
@@ -131,7 +147,7 @@ export const weatherService = {
     // Default coordinates for Cameron Highlands (Tanah Rata area)
     const lat = 4.4692;
     const lng = 101.3761;
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m&daily=precipitation_probability_max&timezone=Asia%2FKuala_Lumpur`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m&daily=sunrise,sunset,weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FKuala_Lumpur`;
 
     try {
       const response = await fetch(url);
@@ -144,6 +160,25 @@ export const weatherService = {
       const temp = current.temperature_2m;
 
       const mappedCondition = WMO_MAPPING[weatherCode] || { condition: 'Clear', conditionBm: 'Cerah' };
+
+      const sunrise = formatOpenMeteoClock(daily?.sunrise?.[0], '07:04 AM');
+      const sunset = formatOpenMeteoClock(daily?.sunset?.[0], '07:10 PM');
+
+      const forecast: (WeatherForecastDay & { rainProbability?: number })[] = Array.isArray(daily?.time)
+        ? daily.time.slice(0, 5).map((time: string, i: number) => {
+            const code = daily.weather_code?.[i] ?? weatherCode;
+            const dayCondition = WMO_MAPPING[code] || { condition: 'Clear', conditionBm: 'Cerah' };
+            return {
+              day: getDayName(time, 'en'),
+              dayBm: getDayName(time, 'bm'),
+              tempHigh: Math.round(daily.temperature_2m_max?.[i] ?? 22),
+              tempLow: Math.round(daily.temperature_2m_min?.[i] ?? 15),
+              condition: dayCondition.condition,
+              conditionBm: dayCondition.conditionBm,
+              rainProbability: daily.precipitation_probability_max?.[i] ?? rainProb,
+            };
+          })
+        : [];
 
       let isSafe = true;
       let reason = 'Weather conditions are stable for trekking.';
@@ -177,6 +212,9 @@ export const weatherService = {
         reason,
         reasonBm,
         severity,
+        sunrise,
+        sunset,
+        forecast,
         currentWeather: {
           temp: Math.round(temp),
           condition: mappedCondition.condition,
@@ -193,6 +231,8 @@ export const weatherService = {
         reason: 'Unable to fetch real-time weather. Exercise general caution.',
         reasonBm: 'Gagal mendapatkan data cuaca. Sila berwaspada.',
         severity: 'low',
+        sunrise: '07:04 AM',
+        sunset: '07:10 PM',
       };
     }
   }

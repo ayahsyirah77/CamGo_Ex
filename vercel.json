@@ -1,5 +1,12 @@
 {
   "version": 2,
+  "trailingSlash": false,
+  "crons": [
+    {
+      "path": "/api/cron/fetch-hazards",
+      "schedule": "0 */6 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/notifications/broadcast",

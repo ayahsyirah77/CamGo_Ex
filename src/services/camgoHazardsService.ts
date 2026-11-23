@@ -40,13 +40,45 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   console.warn('[Firestore camgo_hazards]', JSON.stringify(errInfo));
 }
 
+function isHazardActive(h: any, nowMs = Date.now()): boolean {
+  if (!h) return false;
+  if (h.status === 'cleared' || h.active === false) return false;
+  const hasActiveFlag = h.active === true || h.status === 'active';
+  if (!hasActiveFlag) return false;
+  if (h.expiresAt) {
+    const expMs = new Date(h.expiresAt).getTime();
+    if (Number.isFinite(expMs) && expMs <= nowMs) return false;
+  }
+  return true;
+}
+
+function normalizeHazardRecord(raw: any, id?: string): CamgoHazard {
+  const status: 'active' | 'cleared' | 'pending' =
+    raw.status || (raw.active === true ? 'active' : 'cleared');
+  return {
+    ...raw,
+    id: id || raw.id,
+    description: raw.description || raw.summary || raw.title || '',
+    summary: raw.summary || raw.description || '',
+    location: raw.location || raw.corridor || 'Cameron Highlands',
+    status,
+    active: raw.active !== undefined ? Boolean(raw.active) : status === 'active',
+    stillThereVotes: typeof raw.stillThereVotes === 'number' ? raw.stillThereVotes : 0,
+    clearedVotes: typeof raw.clearedVotes === 'number' ? raw.clearedVotes : 0,
+    timestamp: raw.timestamp || raw.updatedAt || new Date().toISOString(),
+  } as CamgoHazard;
+}
+
 function readLocalHazards(): CamgoHazard[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_HAZARDS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((h) => h && h.status === 'active') : [];
+    const nowMs = Date.now();
+    return Array.isArray(parsed)
+      ? parsed.filter((h) => isHazardActive(h, nowMs)).map((h) => normalizeHazardRecord(h))
+      : [];
   } catch {
     return [];
   }
@@ -91,8 +123,9 @@ class CamgoHazardsService {
   }
 
   public getCachedActiveHazards(): CamgoHazard[] {
+    const nowMs = Date.now();
     if (this.memoryCache.length > 0) {
-      return this.memoryCache.filter((h) => h.status === 'active');
+      return this.memoryCache.filter((h) => isHazardActive(h, nowMs));
     }
     return readLocalHazards();
   }
@@ -101,33 +134,76 @@ class CamgoHazardsService {
     const initial = this.getCachedActiveHazards();
     onUpdate(initial);
 
-    let unsubFirestore: (() => void) | null = null;
+    let unsubActiveFlag: (() => void) | null = null;
+    let unsubLegacyStatus: (() => void) | null = null;
+    const activeFlagMap = new Map<string, CamgoHazard>();
+    const legacyStatusMap = new Map<string, CamgoHazard>();
+
+    const emitMerged = () => {
+      const nowMs = Date.now();
+      const mergedById = new Map<string, CamgoHazard>();
+
+      legacyStatusMap.forEach((h, id) => {
+        if (isHazardActive(h, nowMs)) mergedById.set(id, h);
+      });
+      activeFlagMap.forEach((h, id) => {
+        if (isHazardActive(h, nowMs)) mergedById.set(id, h);
+      });
+
+      const localPending = readLocalHazards().filter(
+        (l) => isHazardActive(l, nowMs) && !mergedById.has(l.id) && (l.id.startsWith('local-') || l.verifiedBy === 'auto_news_feed')
+      );
+      localPending.forEach((l) => mergedById.set(l.id, l));
+
+      const merged = Array.from(mergedById.values()).sort(
+        (a, b) =>
+          new Date(b.updatedAt || b.timestamp).getTime() -
+          new Date(a.updatedAt || a.timestamp).getTime()
+      );
+
+      this.memoryCache = merged;
+      writeLocalHazards(merged);
+      onUpdate(merged);
+    };
+
     if (db) {
       try {
-        const q = query(
+        const activeQuery = query(
+          collection(db, CAMGO_HAZARDS_COLLECTION),
+          where('active', '==', true)
+        );
+        unsubActiveFlag = onSnapshot(
+          activeQuery,
+          (snapshot) => {
+            activeFlagMap.clear();
+            snapshot.docs.forEach((d) => {
+              const norm = normalizeHazardRecord(d.data(), d.id);
+              if (isHazardActive(norm)) {
+                activeFlagMap.set(d.id, norm);
+              }
+            });
+            emitMerged();
+          },
+          (err) => {
+            handleFirestoreError(err, OperationType.LIST, CAMGO_HAZARDS_COLLECTION);
+          }
+        );
+
+        const legacyQuery = query(
           collection(db, CAMGO_HAZARDS_COLLECTION),
           where('status', '==', 'active')
         );
-        unsubFirestore = onSnapshot(
-          q,
+        unsubLegacyStatus = onSnapshot(
+          legacyQuery,
           (snapshot) => {
-            const cloudHazards: CamgoHazard[] = snapshot.docs
-              .map((d) => ({ id: d.id, ...(d.data() as any) }) as CamgoHazard)
-              .filter((h) => h.status === 'active');
-
-            // Preserve any locally promoted provisional telemetry hazards not yet flushed
-            const cloudIds = new Set(cloudHazards.map((c) => c.id));
-            const localPending = readLocalHazards().filter(
-              (l) => l.status === 'active' && !cloudIds.has(l.id) && l.id.startsWith('local-')
-            );
-
-            const merged = [...cloudHazards, ...localPending].sort(
-              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            );
-
-            this.memoryCache = merged;
-            writeLocalHazards(merged);
-            onUpdate(merged);
+            legacyStatusMap.clear();
+            snapshot.docs.forEach((d) => {
+              const norm = normalizeHazardRecord(d.data(), d.id);
+              if (isHazardActive(norm)) {
+                legacyStatusMap.set(d.id, norm);
+              }
+            });
+            emitMerged();
           },
           (err) => {
             handleFirestoreError(err, OperationType.LIST, CAMGO_HAZARDS_COLLECTION);
@@ -141,7 +217,8 @@ class CamgoHazardsService {
     const handleLocalEvent = (e: Event) => {
       const custom = e as CustomEvent<CamgoHazard[]>;
       if (Array.isArray(custom.detail)) {
-        const activeOnly = custom.detail.filter((h) => h.status === 'active');
+        const nowMs = Date.now();
+        const activeOnly = custom.detail.filter((h) => isHazardActive(h, nowMs));
         this.memoryCache = activeOnly;
         onUpdate(activeOnly);
       }
@@ -152,7 +229,8 @@ class CamgoHazardsService {
     }
 
     return () => {
-      if (unsubFirestore) unsubFirestore();
+      if (unsubActiveFlag) unsubActiveFlag();
+      if (unsubLegacyStatus) unsubLegacyStatus();
       if (typeof window !== 'undefined') {
         window.removeEventListener('camgo-hazards-updated', handleLocalEvent);
       }
@@ -160,9 +238,12 @@ class CamgoHazardsService {
   }
 
   public async upsertActiveHazard(hazard: CamgoHazard): Promise<CamgoHazard> {
+    const status = hazard.status || 'active';
     const normalized: CamgoHazard = {
       ...hazard,
-      status: hazard.status || 'active',
+      description: hazard.description || hazard.summary || hazard.title,
+      status,
+      active: status === 'active',
       stillThereVotes: typeof hazard.stillThereVotes === 'number' ? hazard.stillThereVotes : 0,
       clearedVotes: typeof hazard.clearedVotes === 'number' ? hazard.clearedVotes : 0,
       updatedAt: new Date().toISOString(),
@@ -199,8 +280,12 @@ class CamgoHazardsService {
     hazard: CamgoHazard,
     vote: 'still_there' | 'cleared'
   ): Promise<{ updated: CamgoHazard; expired: boolean }> {
-    const updated = applyHazardConsensusVote(hazard, vote, CLEARED_VOTE_EXPIRY_THRESHOLD);
-    const expired = updated.status === 'cleared';
+    const updatedRaw = applyHazardConsensusVote(hazard, vote, CLEARED_VOTE_EXPIRY_THRESHOLD);
+    const expired = updatedRaw.status === 'cleared';
+    const updated: CamgoHazard = {
+      ...updatedRaw,
+      active: !expired,
+    };
     recordUserVote(hazard.id, vote);
 
     // Update local cache immediately
@@ -219,12 +304,14 @@ class CamgoHazardsService {
           await updateDoc(ref, {
             stillThereVotes: increment(1),
             status: 'active',
+            active: true,
             updatedAt: updated.updatedAt,
           });
         } else if (expired) {
           await updateDoc(ref, {
             clearedVotes: updated.clearedVotes,
             status: 'cleared',
+            active: false,
             clearedAt: updated.clearedAt,
             updatedAt: updated.updatedAt,
           });
@@ -327,6 +414,7 @@ class CamgoHazardsService {
     const updatedAt = new Date().toISOString();
     const updateData: Partial<CamgoHazard> = {
       status,
+      active: status === 'active',
       updatedAt,
       ...(status === 'cleared' ? { clearedAt: updatedAt } : {}),
     };
@@ -356,6 +444,45 @@ class CamgoHazardsService {
   }
 
   /**
+   * Administrative & Live Notice Manual Sync: Trigger /api/cron/fetch-hazards
+   * and merge any returned alerts into client Firestore/cache if server Admin key was absent.
+   */
+  public async syncLiveNewsAlerts(): Promise<{
+    success: boolean;
+    syncedCount: number;
+    hazards: CamgoHazard[];
+    error?: string;
+  }> {
+    const resp = await fetch('/api/cron/fetch-hazards', {
+      method: 'GET',
+      headers: {
+        'X-CamGo-Manual-Sync': 'true',
+      },
+    });
+
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data?.success === false) {
+      throw new Error(data?.error || `Sync failed (HTTP ${resp.status})`);
+    }
+
+    const hazards: CamgoHazard[] = Array.isArray(data?.hazards)
+      ? data.hazards.map((h: any) => normalizeHazardRecord(h, h.id))
+      : [];
+
+    if (!data?.firestoreAdminSynced && hazards.length > 0) {
+      for (const h of hazards) {
+        await this.upsertActiveHazard(h);
+      }
+    }
+
+    return {
+      success: true,
+      syncedCount: typeof data?.syncedCount === 'number' ? data.syncedCount : hazards.length,
+      hazards,
+    };
+  }
+
+  /**
    * Administrative Moderation: Delete hazard document completely from Firestore (with cleared fallback).
    */
   public async deleteHazard(hazardId: string): Promise<void> {
@@ -368,6 +495,7 @@ class CamgoHazardsService {
         try {
           await updateDoc(ref, {
             status: 'cleared',
+            active: false,
             clearedAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });

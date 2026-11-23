@@ -3337,8 +3337,27 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       hazardLayerRef.current.clearLayers();
     }
 
+    const escapeHtml = (str: unknown) =>
+      String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const safeHttpHref = (url?: string): string | null => {
+      if (!url) return null;
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return parsed.toString();
+      } catch {
+        // ignore invalid url
+      }
+      return null;
+    };
+
     combinedActiveHazards.forEach((hazard) => {
-      if (hazard.status !== 'active') return;
+      if (hazard.status !== 'active' || hazard.active === false) return;
       const lat = Number(hazard.lat);
       const lng = Number(hazard.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -3346,6 +3365,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const emojiByType: Record<string, string> = {
         landslide: '⛰️',
         accident: '💥',
+        closure: '🚧',
+        weather: '🌧️',
         roadblock: '🚧',
         fallen_tree: '🌳',
         flood: '🌊',
@@ -3354,15 +3375,35 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const colorByType: Record<string, string> = {
         landslide: '#dc2626',
         accident: '#ea580c',
+        closure: '#dc2626',
+        weather: '#0284c7',
         roadblock: '#d97706',
         fallen_tree: '#b45309',
         flood: '#0284c7',
         sudden_congestion: '#e11d48',
       };
+      const severityColorByLevel: Record<string, string> = {
+        critical: '#dc2626',
+        high: '#ea580c',
+        medium: '#d97706',
+        moderate: '#d97706',
+        low: '#059669',
+      };
 
       const badgeEmoji = emojiByType[hazard.type] || '⚠️';
       const pinColor = colorByType[hazard.type] || '#dc2626';
+      const sevColor = severityColorByLevel[hazard.severity] || '#d97706';
+      const isAutoNews = hazard.verifiedBy === 'auto_news_feed';
       const remainingToClear = Math.max(1, CLEARED_VOTE_EXPIRY_THRESHOLD - (hazard.clearedVotes || 0));
+      const titleText = escapeHtml(language === 'bm' ? hazard.titleBm || hazard.title : hazard.title);
+      const descText = escapeHtml(
+        language === 'bm'
+          ? hazard.descriptionBm || hazard.description || hazard.summary
+          : hazard.description || hazard.summary
+      );
+      const locText = escapeHtml(hazard.location || hazard.corridor || 'Cameron Highlands');
+      const sourceText = escapeHtml(hazard.source || 'CamGo Live');
+      const safeSourceLink = safeHttpHref(hazard.sourceUrl);
 
       const hazardIcon = L.divIcon({
         className: 'camgo-hazard-marker',
@@ -3373,7 +3414,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               <span style="font-size: 14px; line-height: 1;">${badgeEmoji}</span>
             </div>
             <div style="position: absolute; top: -16px; background: ${pinColor}; color: white; font-size: 8.5px; font-weight: 900; padding: 1px 5px; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.5); white-space: nowrap; text-transform: uppercase;">
-              ${hazard.isProvisional ? 'TELEMETRY -' + (hazard.speedDropPercent || 70) + '%' : hazard.type.replace('_', ' ')}
+              ${hazard.isProvisional ? 'TELEMETRY -' + (hazard.speedDropPercent || 70) + '%' : isAutoNews ? 'NEWS • ' + escapeHtml(hazard.type) : escapeHtml(hazard.type.replace('_', ' '))}
             </div>
           </div>
         `,
@@ -3389,30 +3430,30 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       const popupHtml = `
         <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 280px; max-width: 82vw; padding: 4px; color: #1c1917;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px; flex-wrap: wrap;">
             <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; background: ${pinColor}1a; color: ${pinColor}; padding: 2px 7px; border-radius: 6px; border: 1px solid ${pinColor}40;">
-              ${badgeEmoji} ${hazard.isProvisional ? 'PROVISIONAL TELEMETRY ANOMALY' : hazard.type.replace('_', ' ').toUpperCase()}
+              ${badgeEmoji} ${hazard.isProvisional ? 'PROVISIONAL TELEMETRY ANOMALY' : isAutoNews ? 'LIVE NEWS FEED • ' + escapeHtml(hazard.type).toUpperCase() : escapeHtml(hazard.type.replace('_', ' ')).toUpperCase()}
             </span>
-            <span style="font-size: 9.5px; font-weight: 700; color: #64748b;">
-              ${hazard.severity.toUpperCase()}
+            <span style="font-size: 9px; font-weight: 800; color: ${sevColor}; background: ${sevColor}18; border: 1px solid ${sevColor}40; padding: 1px 6px; border-radius: 9999px; text-transform: uppercase;">
+              ${escapeHtml(hazard.severity)}
             </span>
           </div>
 
           <h4 style="font-size: 13.5px; font-weight: 900; color: #0f172a; margin: 0 0 4px 0; line-height: 1.3;">
-            ${language === 'bm' ? hazard.titleBm || hazard.title : hazard.title}
+            ${titleText}
           </h4>
 
           <div style="font-size: 10.5px; font-weight: 700; color: #475569; margin-bottom: 6px;">
-            📍 ${hazard.location}${hazard.milestoneKm ? ` (KM ${hazard.milestoneKm})` : ''}
+            📍 ${locText}${hazard.milestoneKm ? ` (KM ${escapeHtml(hazard.milestoneKm)})` : ''}
           </div>
 
           <p style="font-size: 11px; color: #334155; line-height: 1.4; margin: 0 0 8px 0;">
-            ${language === 'bm' ? hazard.descriptionBm || hazard.description : hazard.description}
+            ${descText}
           </p>
 
           ${
-            hazard.imageUrl
-              ? `<div style="margin: 6px 0 8px 0; border-radius: 8px; overflow: hidden; max-height: 120px; border: 1px solid #cbd5e1;"><img src="${hazard.imageUrl}" alt="Visual Evidence" style="width: 100%; height: 110px; object-fit: cover; display: block;" /></div>`
+            hazard.imageUrl && safeHttpHref(hazard.imageUrl)
+              ? `<div style="margin: 6px 0 8px 0; border-radius: 8px; overflow: hidden; max-height: 120px; border: 1px solid #cbd5e1;"><img src="${escapeHtml(hazard.imageUrl)}" alt="Visual Evidence" style="width: 100%; height: 110px; object-fit: cover; display: block;" /></div>`
               : ''
           }
 
@@ -3429,14 +3470,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
             <button
               type="button"
-              onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${hazard.id}', vote: 'still_there' } }))"
+              onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${escapeHtml(hazard.id)}', vote: 'still_there' } }))"
               style="background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
             >
               👍 Still There (+1)
             </button>
             <button
               type="button"
-              onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${hazard.id}', vote: 'cleared' } }))"
+              onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${escapeHtml(hazard.id)}', vote: 'cleared' } }))"
               style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
             >
               ✅ Cleared (-1)
@@ -3444,13 +3485,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           </div>
           <button
             type="button"
-            onclick="window.dispatchEvent(new CustomEvent('camgo-inspect-hazard', { detail: { id: '${hazard.id}' } }))"
+            onclick="window.dispatchEvent(new CustomEvent('camgo-inspect-hazard', { detail: { id: '${escapeHtml(hazard.id)}' } }))"
             style="width: 100%; background: #0f172a; color: #34d399; border: 1px solid #10b981; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
           >
             ✨ AI Traffic Flow Prediction
           </button>
-          <div style="font-size: 9px; color: #94a3b8; margin-top: 6px; text-align: right;">
-            Source: ${hazard.source}
+          <div style="font-size: 9px; color: #64748b; margin-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <span>Source: <strong>${sourceText}</strong></span>
+            ${
+              safeSourceLink
+                ? `<a href="${escapeHtml(safeSourceLink)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; font-weight: 700; text-decoration: underline;">Read Report</a>`
+                : ''
+            }
           </div>
         </div>
       `;
@@ -6978,7 +7024,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       ? `🚨 TELEMETRY (-${selectedHazardModal.speedDropPercent || 70}%)`
                       : `⚠️ ${selectedHazardModal.type.replace('_', ' ').toUpperCase()}`}
                   </span>
-                  <span className="text-[10px] font-mono font-bold uppercase text-amber-300">
+                  {selectedHazardModal.verifiedBy === 'auto_news_feed' && (
+                    <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-300">
+                      📰 LIVE NEWS FEED
+                    </span>
+                  )}
+                  <span
+                    className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border ${
+                      selectedHazardModal.severity === 'critical' || selectedHazardModal.severity === 'high'
+                        ? 'bg-rose-500/20 border-rose-400/40 text-rose-300'
+                        : selectedHazardModal.severity === 'medium' || selectedHazardModal.severity === 'moderate'
+                        ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                        : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
+                    }`}
+                  >
                     {selectedHazardModal.severity}
                   </span>
                 </div>
@@ -6993,6 +7052,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     ({resolveHazardCoords(selectedHazardModal).lat.toFixed(4)},{' '}
                     {resolveHazardCoords(selectedHazardModal).lng.toFixed(4)})
                   </span>
+                </div>
+                <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-2 flex-wrap">
+                  <span>Source: <strong className="text-stone-200">{selectedHazardModal.source}</strong></span>
+                  {selectedHazardModal.sourceUrl && /^https?:\/\//i.test(selectedHazardModal.sourceUrl) && (
+                    <a
+                      href={selectedHazardModal.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sky-400 hover:text-sky-300 underline font-semibold"
+                    >
+                      Read Article ↗
+                    </a>
+                  )}
                 </div>
               </div>
               <button
@@ -7011,8 +7083,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
             <p className="text-xs text-stone-300 leading-relaxed">
               {language === 'bm'
-                ? selectedHazardModal.descriptionBm || selectedHazardModal.description
-                : selectedHazardModal.description}
+                ? selectedHazardModal.descriptionBm || selectedHazardModal.description || selectedHazardModal.summary
+                : selectedHazardModal.description || selectedHazardModal.summary}
             </p>
 
             {/* Smart Algorithm + AI Traffic Flow Prediction (Single-Spine FT59 + Lagged Inflow + 4-Block Advisory) */}

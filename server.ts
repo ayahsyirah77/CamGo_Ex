@@ -7,6 +7,7 @@ import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
 import { WebSocketServer, WebSocket } from 'ws';
 import { processAndIngestHazard } from './server/hazardIngestion';
+import fetchHazardsHandler from './api/cron/fetch-hazards';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1324,6 +1325,11 @@ If no breaking closure or emergency notice is found in recent PDRM Cameron Highl
         error: err?.message || 'Failed to ingest hazard alert',
       });
     }
+  });
+
+  // Cron / On-Demand Live News & JKR/Bomba Hazard Feed Ingestion (/api/cron/fetch-hazards)
+  app.all('/api/cron/fetch-hazards', (req, res) => {
+    return fetchHazardsHandler(req as any, res as any);
   });
 
   // Backwards compatibility endpoint: Alerts API
