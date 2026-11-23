@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { HazardAlert, Language, CamgoHazard } from '../types';
+import React, { useState, useEffect } from 'react';
+import { HazardAlert, Language } from '../types';
 import { getTranslation } from '../services/i18n';
 import { hazardFeedService, OFFICIAL_AGENCIES } from '../services/hazardFeedService';
-import { camgoHazardsService } from '../services/camgoHazardsService';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -19,8 +18,6 @@ import {
   Radio,
   FileCheck2,
   ShieldCheck,
-  Newspaper,
-  Loader2,
 } from 'lucide-react';
 
 interface HazardWidgetProps {
@@ -28,33 +25,14 @@ interface HazardWidgetProps {
   language: Language;
 }
 
-function safeExternalUrl(url?: string, fallback = 'https://bencanaalam.jkr.gov.my'): string {
-  if (!url) return fallback;
-  try {
-    const u = new URL(url);
-    if (u.protocol === 'https:' || u.protocol === 'http:') {
-      return u.toString();
-    }
-  } catch {
-    // ignore invalid URL
-  }
-  return fallback;
-}
-
 export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language }) => {
-  const [filterAgency, setFilterAgency] = useState<
-    'ALL' | 'NEWS' | 'PDRM' | 'JKR' | 'MDCH' | 'CRITICAL'
-  >('ALL');
+  const [filterAgency, setFilterAgency] = useState<'ALL' | 'PDRM' | 'JKR' | 'MDCH' | 'CRITICAL'>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSyncingNews, setIsSyncingNews] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
-  const [liveCamgoHazards, setLiveCamgoHazards] = useState<CamgoHazard[]>(() =>
-    camgoHazardsService.getCachedActiveHazards()
-  );
 
   const isBm = language === 'bm';
 
-  // Fetch live PDRM Cameron Highlands + JKR + MDCH notices and subscribe to Firestore camgo_hazards
+  // Fetch live PDRM Cameron Highlands + JKR + MDCH notices on mount
   useEffect(() => {
     let active = true;
     hazardFeedService.fetchLiveFeed(false).catch(() => {
@@ -62,16 +40,8 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         // Fallback already handled inside service
       }
     });
-
-    const unsubCamgoHazards = camgoHazardsService.subscribeActiveHazards((list) => {
-      if (active && Array.isArray(list)) {
-        setLiveCamgoHazards(list);
-      }
-    });
-
     return () => {
       active = false;
-      unsubCamgoHazards();
     };
   }, []);
 
@@ -101,80 +71,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
     }
   };
 
-  const handleSyncNewsAlerts = async () => {
-    setIsSyncingNews(true);
-    setSyncFeedback(
-      isBm
-        ? 'Menarik laporan berita & JKR/Bomba terkini merentasi 4 koridor Cameron Highlands...'
-        : 'Scanning live Malaysian news & JKR/Bomba RSS feeds across 4 Cameron Highlands corridors...'
-    );
-    try {
-      const res = await camgoHazardsService.syncLiveNewsAlerts();
-      setSyncFeedback(
-        isBm
-          ? `Disegerakkan: ${res.syncedCount} amaran bahaya berita langsung ke paparan Notis/Bahaya & Peta.`
-          : `Synced ${res.syncedCount} live news hazard alert${res.syncedCount === 1 ? '' : 's'} into Live Notice/Hazard & Map.`
-      );
-    } catch (err: any) {
-      setSyncFeedback(
-        err?.message ||
-          (isBm ? 'Gagal menarik suapan berita langsung.' : 'Unable to sync live news hazard feeds.')
-      );
-    } finally {
-      setIsSyncingNews(false);
-      setTimeout(() => setSyncFeedback(null), 5500);
-    }
-  };
-
-  // Merge active camgo_hazards (auto_news_feed + community reports) with agency HazardAlerts
-  const mergedHazards = useMemo<Array<HazardAlert & { isNewsFeed?: boolean; corridor?: string }>>(() => {
-    const convertedCamgo = liveCamgoHazards
-      .filter((h) => h && h.status !== 'cleared' && h.active !== false)
-      .map((h) => {
-        const isAutoNews = h.verifiedBy === 'auto_news_feed';
-        const normalizedSeverity: HazardAlert['severity'] =
-          h.severity === 'critical'
-            ? 'critical'
-            : h.severity === 'high'
-            ? 'high'
-            : h.severity === 'medium' || h.severity === 'moderate'
-            ? 'moderate'
-            : 'low';
-
-        return {
-          id: `camgo-${h.id}`,
-          title: h.title,
-          titleBm: h.titleBm || h.title,
-          severity: normalizedSeverity,
-          location: h.location || h.corridor || 'Cameron Highlands',
-          description: h.summary || h.description || h.title,
-          descriptionBm: h.descriptionBm || h.summary || h.description || h.title,
-          type: h.type === 'closure' ? 'road_closure' : h.type === 'weather' ? 'fog' : h.type,
-          reportedTime: h.reportedDate || (h.updatedAt ? new Date(h.updatedAt).toLocaleString() : undefined),
-          reportedAt: h.reportedDate
-            ? `${h.reportedDate} • ${isAutoNews ? 'News RSS' : 'Live Pin'}`
-            : h.timestamp
-            ? new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : 'Live',
-          status: isAutoNews ? 'Verified News Feed' : 'Active Community Pin',
-          source: h.source || (isAutoNews ? 'Malaysian News Feed' : 'CamGo Live'),
-          sourceUrl: safeExternalUrl(h.sourceUrl, 'https://news.google.com'),
-          roadRoute: h.corridor || h.location,
-          referenceNo: isAutoNews ? 'AUTO_NEWS_FEED' : 'COMMUNITY_PIN',
-          isVerifiedAgency: isAutoNews,
-          isNewsFeed: isAutoNews,
-          corridor: h.corridor,
-          timestamp: h.updatedAt || h.timestamp,
-        } as HazardAlert & { isNewsFeed?: boolean; corridor?: string };
-      });
-
-    return [...convertedCamgo, ...hazards];
-  }, [liveCamgoHazards, hazards]);
-
-  const getHazardIcon = (type: HazardAlert['type'], isPdrm?: boolean, isNews?: boolean) => {
-    if (isNews) {
-      return <Newspaper className="w-5 h-5 text-amber-400" />;
-    }
+  const getHazardIcon = (type: HazardAlert['type'], isPdrm?: boolean) => {
     if (isPdrm) {
       return <ShieldAlert className="w-5 h-5 text-sky-400" />;
     }
@@ -198,10 +95,9 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         return (
           <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-            {sev === 'high' ? (isBm ? 'Risiko Tinggi' : 'High Severity') : isBm ? 'Bahaya Kritikal' : 'Critical Alert'}
+            {isBm ? 'Bahaya Kritikal' : 'Critical Alert'}
           </span>
         );
-      case 'medium':
       case 'moderate':
         return (
           <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
@@ -226,20 +122,18 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
     h.agencyName?.toLowerCase().includes('pdrm') ||
     h.source?.toLowerCase().includes('polis');
 
-  const filteredHazards = mergedHazards.filter((h) => {
+  const filteredHazards = hazards.filter((h) => {
     if (filterAgency === 'CRITICAL') return h.severity === 'critical' || h.severity === 'high';
-    if (filterAgency === 'NEWS') return Boolean(h.isNewsFeed || h.id.startsWith('camgo-'));
     if (filterAgency === 'PDRM') return isPdrmAlert(h);
     if (filterAgency === 'JKR') return h.agency === 'JKR' || h.source?.toLowerCase().includes('jkr');
     if (filterAgency === 'MDCH') return h.agency === 'MDCH' || h.source?.toLowerCase().includes('mdch');
     return true;
   });
 
-  const newsCount = mergedHazards.filter((h) => h.isNewsFeed || h.id.startsWith('camgo-')).length;
-  const pdrmCount = mergedHazards.filter(isPdrmAlert).length;
-  const jkrCount = mergedHazards.filter((h) => h.agency === 'JKR' || h.source?.toLowerCase().includes('jkr')).length;
-  const mdchCount = mergedHazards.filter((h) => h.agency === 'MDCH' || h.source?.toLowerCase().includes('mdch')).length;
-  const criticalCount = mergedHazards.filter((h) => h.severity === 'critical' || h.severity === 'high').length;
+  const pdrmCount = hazards.filter(isPdrmAlert).length;
+  const jkrCount = hazards.filter((h) => h.agency === 'JKR' || h.source?.toLowerCase().includes('jkr')).length;
+  const mdchCount = hazards.filter((h) => h.agency === 'MDCH' || h.source?.toLowerCase().includes('mdch')).length;
+  const criticalCount = hazards.filter((h) => h.severity === 'critical' || h.severity === 'high').length;
 
   return (
     <div className="glass-panel rounded-3xl p-5 sm:p-7 border border-amber-500/25 shadow-2xl relative overflow-hidden group">
@@ -249,11 +143,11 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
           <div className="flex items-center gap-2 mb-1">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400">
               <Radio className="w-3 h-3 animate-pulse text-rose-400" />
-              {isBm ? 'Suapan Rasmi PDRM, JKR, MDCH & Berita' : 'Live PDRM, JKR, MDCH & News Feeds'}
+              {isBm ? 'Suapan Rasmi PDRM, JKR & MDCH' : 'Live PDRM, JKR & MDCH Feeds'}
             </span>
             <span className="text-[10px] text-stone-400 hidden sm:inline-flex items-center gap-1">
               <ShieldCheck className="w-3 h-3 text-emerald-400" />
-              {isBm ? 'Disahkan Agensi & Berita Tempatan' : 'Official Agency & Verified News'}
+              {isBm ? 'Disahkan Agensi Kerajaan' : 'Official Government Verified'}
             </span>
           </div>
 
@@ -262,50 +156,26 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
           </h3>
           <p className="text-xs text-stone-300 mt-1 max-w-2xl leading-relaxed">
             {isBm
-              ? 'Notis langsung PDRM Cameron Highlands, makluman cerun JKR eBencana, MDCH serta amaran berita Malaysia automatik merentasi laluan FT059, FT185 & FT102.'
-              : 'Live PDRM Cameron Highlands notices, JKR eBencana slope alerts, MDCH municipal bulletins, and automated Malaysian news hazard alerts across FT059, FT185 & FT102.'}
+              ? 'Notis langsung dari PDRM Cameron Highlands, makluman cerun JKR eBencana dan pengumuman perbandaran MDCH sepanjang FT059, FT185 & laluan utama.'
+              : 'Live notices from PDRM Cameron Highlands, JKR eBencana slope alerts, and MDCH municipal bulletins across FT059, FT185 & interior arteries.'}
           </p>
         </div>
 
-        {/* Sync Controls & Hotline */}
+        {/* Sync & Hotline Actions */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
-            type="button"
-            onClick={handleSyncNewsAlerts}
-            disabled={isSyncingNews}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-extrabold transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-60"
-            title="Sync live Malaysian news & JKR/Bomba RSS hazard alerts"
-          >
-            {isSyncingNews ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-            ) : (
-              <Newspaper className="w-3.5 h-3.5 shrink-0" />
-            )}
-            <span>
-              {isSyncingNews
-                ? isBm
-                  ? 'Menyegerak Berita...'
-                  : 'Syncing News...'
-                : isBm
-                ? 'Segerak Amaran Berita'
-                : 'Sync Live News Alerts'}
-            </span>
-          </button>
-
-          <button
-            type="button"
             onClick={handleManualSync}
             disabled={isRefreshing}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
             title="Fetch live updates from PDRM Cameron Highlands, JKR eBencana and MDCH"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>{isRefreshing ? (isBm ? 'Menyelaras...' : 'Syncing...') : isBm ? 'Kemaskini Agensi' : 'Sync Agencies'}</span>
+            <span>{isRefreshing ? (isBm ? 'Menyelaras...' : 'Syncing...') : isBm ? 'Kemaskini Suapan' : 'Sync Live Feed'}</span>
           </button>
 
           <a
             href="tel:999"
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 text-xs font-bold transition-colors"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-stone-300 text-xs font-bold transition-colors"
           >
             <PhoneCall className="w-3.5 h-3.5 animate-bounce" />
             <span>Highland SOS: 999</span>
@@ -313,7 +183,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         </div>
       </div>
 
-      {/* Sync Feedback Toast Banner */}
+      {/* Sync Feedback Toast */}
       {syncFeedback && (
         <div className="mb-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between gap-2 animate-in fade-in">
           <div className="flex items-center gap-2">
@@ -405,7 +275,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         ))}
       </div>
 
-      {/* Agency & News Filter Tabs */}
+      {/* Agency Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
         <button
           onClick={() => setFilterAgency('ALL')}
@@ -415,20 +285,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
               : 'bg-stone-800/80 hover:bg-stone-800 text-stone-300 border border-white/5'
           }`}
         >
-          {isBm ? 'Semua Notis' : 'All Notices'} ({mergedHazards.length})
-        </button>
-
-        <button
-          onClick={() => setFilterAgency('NEWS')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-            filterAgency === 'NEWS'
-              ? 'bg-amber-500 text-stone-950 shadow-md font-extrabold'
-              : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30'
-          }`}
-        >
-          <Newspaper className="w-3.5 h-3.5" />
-          <span>{isBm ? 'Berita & Koridor' : 'News & Corridors'}</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-stone-900/50 text-[10px]">{newsCount}</span>
+          {isBm ? 'Semua Notis' : 'All Notices'} ({hazards.length})
         </button>
 
         <button
@@ -478,7 +335,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             }`}
           >
             <AlertTriangle className="w-3 h-3 text-rose-400" />
-            <span>{isBm ? 'Kritikal / Tinggi' : 'High & Critical'}</span>
+            <span>{isBm ? 'Kritikal' : 'Critical Only'}</span>
             <span className="px-1.5 py-0.2 rounded-full bg-rose-950/80 text-[10px]">{criticalCount}</span>
           </button>
         )}
@@ -501,43 +358,37 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
         ) : (
           filteredHazards.map((hazard) => {
             const isPdrm = isPdrmAlert(hazard);
-            const isNews = Boolean(hazard.isNewsFeed);
             const isJkr = hazard.agency === 'JKR' || hazard.source?.toLowerCase().includes('jkr');
-            const officialUrl = safeExternalUrl(
-              hazard.sourceUrl,
-              isPdrm
+            const officialUrl =
+              hazard.sourceUrl ||
+              (isPdrm
                 ? 'https://www.facebook.com/PolisDaerahCameronHighlands'
                 : isJkr
                 ? 'https://bencanaalam.jkr.gov.my'
-                : 'https://mdcameron.gov.my'
-            );
+                : 'https://mdcameron.gov.my');
 
             return (
               <div
                 key={hazard.id}
                 className={`glass-card-hover rounded-2xl p-4 sm:p-5 bg-stone-900/85 border transition-all space-y-3 ${
-                  isNews
-                    ? 'border-amber-500/35 hover:border-amber-400/60'
-                    : isPdrm
+                  isPdrm
                     ? 'border-sky-500/30 hover:border-sky-400/60'
                     : 'border-white/10 hover:border-amber-500/30'
                 }`}
               >
-                {/* Card Top: Agency/News Badge, Ref/Corridor, Severity */}
+                {/* Card Top: Agency Badge, Ref, Severity */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold tracking-wide uppercase ${
-                        isNews
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          : isPdrm
+                        isPdrm
                           ? 'bg-sky-500/20 text-sky-300 border border-sky-500/35'
                           : isJkr
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                           : 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
                       }`}
                     >
-                      {isNews ? <Newspaper className="w-3 h-3" /> : <FileCheck2 className="w-3 h-3" />}
+                      <FileCheck2 className="w-3 h-3" />
                       {hazard.agencyName ||
                         hazard.source ||
                         (isPdrm
@@ -547,9 +398,9 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                           : 'MDCH Cameron Highlands')}
                     </span>
 
-                    {(hazard.corridor || hazard.referenceNo) && (
-                      <span className="text-[10px] font-mono text-stone-300 bg-stone-800/80 px-2 py-0.5 rounded border border-white/10">
-                        {hazard.corridor || hazard.referenceNo}
+                    {hazard.referenceNo && (
+                      <span className="text-[10px] font-mono text-stone-400 bg-stone-800/80 px-2 py-0.5 rounded border border-white/5">
+                        Ref: {hazard.referenceNo}
                       </span>
                     )}
                   </div>
@@ -560,7 +411,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                 {/* Title & Location */}
                 <div className="flex items-start gap-3">
                   <div className="p-2.5 rounded-xl bg-stone-800 border border-white/10 shrink-0 mt-0.5">
-                    {getHazardIcon(hazard.type, isPdrm, isNews)}
+                    {getHazardIcon(hazard.type, isPdrm)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="text-sm sm:text-base font-bold text-stone-100 leading-snug">
@@ -623,7 +474,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 hover:underline font-semibold"
                     >
-                      <span>{isBm ? 'Lihat Sumber' : isNews ? 'Read Source' : 'View Official Notice'}</span>
+                      <span>{isBm ? 'Lihat Notis Rasmi' : 'View Official Notice'}</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>

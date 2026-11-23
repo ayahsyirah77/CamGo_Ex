@@ -101,7 +101,6 @@ import {
   Store,
   FolderOpen,
   CreditCard,
-  Newspaper,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -976,8 +975,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [hazardSearchQuery, setHazardSearchQuery] = useState('');
   const [moderationLoadingId, setModerationLoadingId] = useState<string | null>(null);
   const [selectedHazardModal, setSelectedHazardModal] = useState<CamgoHazard | null>(null);
-  const [isSyncingNewsHazards, setIsSyncingNewsHazards] = useState(false);
-  const [newsSyncToast, setNewsSyncToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     const unsub = camgoHazardsService.subscribeAllHazards((list) => {
@@ -985,36 +982,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     return () => unsub();
   }, []);
-
-  const handleSyncLiveNewsHazards = async () => {
-    setIsSyncingNewsHazards(true);
-    setNewsSyncToast(null);
-    try {
-      const res = await camgoHazardsService.syncLiveNewsAlerts();
-      if (res.hazards.length > 0) {
-        setCommunityHazards((prev) => {
-          const byId = new Map<string, CamgoHazard>(prev.map((h) => [h.id, h]));
-          res.hazards.forEach((h) => byId.set(h.id, h));
-          return Array.from(byId.values()).sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          );
-        });
-      }
-      setNewsSyncToast({
-        type: 'success',
-        message: `Synced ${res.syncedCount} live news hazard alert${res.syncedCount === 1 ? '' : 's'} into camgo_hazards & Live Notice.`,
-      });
-      addActivity(`Synced ${res.syncedCount} live news hazard alerts via /api/cron/fetch-hazards`);
-    } catch (err: any) {
-      setNewsSyncToast({
-        type: 'error',
-        message: err?.message || 'Failed to sync live news hazard alerts.',
-      });
-    } finally {
-      setIsSyncingNewsHazards(false);
-      window.setTimeout(() => setNewsSyncToast(null), 6000);
-    }
-  };
 
   const handleRemoveHazardBroadcast = async (hazard: CamgoHazard) => {
     setModerationLoadingId(hazard.id);
@@ -3415,21 +3382,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Counts Quick Badges + Sync Live News Alerts */}
+              {/* Counts Quick Badges */}
               <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleSyncLiveNewsHazards}
-                  disabled={isSyncingNewsHazards}
-                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition-all active:scale-95 disabled:opacity-60"
-                >
-                  {isSyncingNewsHazards ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                  ) : (
-                    <Newspaper className="w-3.5 h-3.5 shrink-0" />
-                  )}
-                  <span>{isSyncingNewsHazards ? 'Syncing News...' : 'Sync Live News Alerts'}</span>
-                </button>
                 <span className="px-3 py-1 rounded-xl bg-stone-950 border border-white/10 text-xs font-mono font-bold text-stone-300">
                   Total: <strong className="text-white">{communityHazards.length}</strong>
                 </span>
@@ -3441,32 +3395,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </span>
               </div>
             </div>
-
-            {newsSyncToast && (
-              <div
-                className={`p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in ${
-                  newsSyncToast.type === 'success'
-                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
-                    : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  {newsSyncToast.type === 'success' ? (
-                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                  )}
-                  <span>{newsSyncToast.message}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setNewsSyncToast(null)}
-                  className="p-1 hover:bg-white/10 rounded cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
 
             {/* Filter & Search Bar */}
             <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
@@ -3507,8 +3435,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <option value="all">All Categories</option>
                   <option value="landslide">⛰️ Landslide</option>
                   <option value="accident">💥 Accident</option>
-                  <option value="closure">🚧 Road Closure</option>
-                  <option value="weather">🌧️ Weather / Storm</option>
                   <option value="fallen_tree">🌳 Fallen Tree</option>
                   <option value="roadblock">🚧 Roadblock</option>
                   <option value="flood">🌊 Flood</option>
@@ -3556,15 +3482,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                       : item.severity === 'high'
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                      : item.severity === 'moderate' || item.severity === 'medium'
+                      : item.severity === 'moderate'
                       ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
                       : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
 
                   const typeEmoji: Record<string, string> = {
                     landslide: '⛰️',
                     accident: '💥',
-                    closure: '🚧',
-                    weather: '🌧️',
                     roadblock: '🚧',
                     fallen_tree: '🌳',
                     flood: '🌊',
@@ -3623,12 +3547,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${severityColor} uppercase`}>
                                 {item.severity}
                               </span>
-
-                              {item.verifiedBy === 'auto_news_feed' && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 uppercase">
-                                  📰 Auto News
-                                </span>
-                              )}
 
                               <span className="text-[11px] font-bold text-stone-300 uppercase">
                                 {typeEmoji[item.type] || '⚠️'} {item.type.replace('_', ' ')}
@@ -8258,27 +8176,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="grid grid-cols-2 gap-2 text-xs text-stone-400">
                   <div className="p-2.5 rounded-xl bg-stone-950/60 border border-white/5">
                     <span className="text-[10px] block text-stone-500">Author / Source:</span>
-                    <div className="flex items-center flex-wrap gap-1.5">
-                      <span className="font-semibold text-stone-200">
-                        {selectedHazardModal.source || selectedHazardModal.author || 'Community Driver'}
-                      </span>
-                      {selectedHazardModal.verifiedBy === 'auto_news_feed' && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/30 text-[9px] font-mono font-bold text-amber-300 uppercase">
-                          Auto News
-                        </span>
-                      )}
-                    </div>
-                    {selectedHazardModal.sourceUrl && /^https?:\/\//i.test(selectedHazardModal.sourceUrl) && (
-                      <a
-                        href={selectedHazardModal.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-sky-400 hover:underline"
-                      >
-                        <span>Read Source Article</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
+                    <span className="font-semibold text-stone-200">
+                      {selectedHazardModal.source || selectedHazardModal.author || 'Community Driver'}
+                    </span>
                   </div>
                   <div className="p-2.5 rounded-xl bg-stone-950/60 border border-white/5">
                     <span className="text-[10px] block text-stone-500">Submitted:</span>

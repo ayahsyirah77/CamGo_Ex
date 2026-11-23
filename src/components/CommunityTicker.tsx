@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Megaphone, PlusCircle, MapPin, Sparkles, Newspaper } from 'lucide-react';
+import { Megaphone, PlusCircle, MapPin, Sparkles } from 'lucide-react';
 import { Language, CamgoHazard } from '../types';
 import { camgoHazardsService } from '../services/camgoHazardsService';
 
@@ -20,12 +20,7 @@ interface CommunityTickerProps {
 
 function isTickerAlertFresh(hazard: CamgoHazard | null | undefined, nowMs: number): boolean {
   if (!hazard) return false;
-  if (hazard.status === 'cleared' || hazard.active === false) return false;
-
-  if (hazard.expiresAt) {
-    const expMs = new Date(hazard.expiresAt).getTime();
-    if (Number.isFinite(expMs) && expMs <= nowMs) return false;
-  }
+  if (hazard.status === 'cleared') return false;
 
   const refTimestamp = hazard.updatedAt || hazard.timestamp;
   if (!refTimestamp) return false;
@@ -48,7 +43,7 @@ export const CommunityTicker: React.FC<CommunityTickerProps> = ({
   useEffect(() => {
     const unsubscribe = camgoHazardsService.subscribeActiveHazards((updated) => {
       if (Array.isArray(updated)) {
-        setHazards(updated.filter((h) => h && h.status !== 'cleared' && h.active !== false));
+        setHazards(updated.filter((h) => h && h.status !== 'cleared'));
       }
     });
     const expiryTicker = window.setInterval(() => {
@@ -120,48 +115,40 @@ export const CommunityTicker: React.FC<CommunityTickerProps> = ({
       {/* Rolling Marquee Container */}
       <div className="flex-1 overflow-hidden relative flex items-center px-2">
         <div className="animate-marquee hover:[animation-play-state:paused] flex items-center gap-4 whitespace-nowrap">
-          {[...tickerItems, ...tickerItems, ...tickerItems].map((item, index) => {
-            const isNewsFeed = !item.isPlaceholder && item.verifiedBy === 'auto_news_feed';
-            return (
-              <button
-                key={`${item.id}-${index}`}
-                type="button"
-                onClick={() => {
-                  if (item.isPlaceholder) {
-                    onOpenReportModal();
-                  } else if (onSelectHazard) {
-                    onSelectHazard(item);
-                  }
-                }}
-                title={
-                  item.isPlaceholder
-                    ? language === 'bm'
-                      ? 'Klik untuk hantar laporan komuniti'
-                      : 'Click to submit a community incident report'
-                    : language === 'bm'
-                    ? 'Klik untuk buka lokasi di peta & ramalan aliran trafik AI'
-                    : 'Click to open location on map & AI traffic flow prediction'
+          {[...tickerItems, ...tickerItems, ...tickerItems].map((item, index) => (
+            <button
+              key={`${item.id}-${index}`}
+              type="button"
+              onClick={() => {
+                if (item.isPlaceholder) {
+                  onOpenReportModal();
+                } else if (onSelectHazard) {
+                  onSelectHazard(item);
                 }
-                className="group inline-flex items-center gap-2 px-2.5 py-1 rounded-full hover:bg-emerald-500/15 border border-transparent hover:border-emerald-400/40 text-stone-200 transition-all cursor-pointer"
-              >
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${getSeverityDotClass(
-                    item.severity,
-                    item.isPlaceholder
-                  )}`}
-                />
-                {isNewsFeed && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-[9px] font-mono font-black uppercase text-amber-300 shrink-0">
-                    <Newspaper className="w-2.5 h-2.5" />
-                    <span>{item.source || 'NEWS'}</span>
-                  </span>
-                )}
-                <span className="font-bold text-white group-hover:text-emerald-300 transition-colors">
-                  [{(!item.isPlaceholder && item.corridor) || item.location || 'Highlands'}]
-                </span>
-                <span className="text-stone-300 font-medium group-hover:text-white group-hover:underline underline-offset-2 transition-colors">
-                  {language === 'bm' && !item.isPlaceholder ? item.titleBm || item.title : item.title}
-                </span>
+              }}
+              title={
+                item.isPlaceholder
+                  ? language === 'bm'
+                    ? 'Klik untuk hantar laporan komuniti'
+                    : 'Click to submit a community incident report'
+                  : language === 'bm'
+                  ? 'Klik untuk buka lokasi di peta & ramalan aliran trafik AI'
+                  : 'Click to open location on map & AI traffic flow prediction'
+              }
+              className="group inline-flex items-center gap-2 px-2.5 py-1 rounded-full hover:bg-emerald-500/15 border border-transparent hover:border-emerald-400/40 text-stone-200 transition-all cursor-pointer"
+            >
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${getSeverityDotClass(
+                  item.severity,
+                  item.isPlaceholder
+                )}`}
+              />
+              <span className="font-bold text-white group-hover:text-emerald-300 transition-colors">
+                [{item.location || 'Highlands'}]
+              </span>
+              <span className="text-stone-300 font-medium group-hover:text-white group-hover:underline underline-offset-2 transition-colors">
+                {language === 'bm' && !item.isPlaceholder ? item.titleBm || item.title : item.title}
+              </span>
                 {!item.isPlaceholder && (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[9.5px] font-mono font-bold text-emerald-300 group-hover:bg-emerald-500/30">
                     <MapPin className="w-2.5 h-2.5" />
@@ -169,10 +156,9 @@ export const CommunityTicker: React.FC<CommunityTickerProps> = ({
                     <span>{language === 'bm' ? 'Peta & AI' : 'Map & AI'}</span>
                   </span>
                 )}
-                <span className="text-stone-600 pl-1">•</span>
-              </button>
-            );
-          })}
+              <span className="text-stone-600 pl-1">•</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>
