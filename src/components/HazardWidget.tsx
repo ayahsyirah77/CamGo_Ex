@@ -91,15 +91,21 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
     setIsRefreshingWeb(true);
     setSyncFeedback(
       isBm
-        ? 'Mencari laporan web & JKR terkini (48 jam) melalui Google Search Grounding...'
-        : 'Searching live Malaysian news & JKR updates (last 48h) via Google Search Grounding...'
+        ? 'Mencari amaran laluan JKR & berita Malaysia (72 jam) sepanjang FT185, FT59 & FT102...'
+        : 'Searching live JKR & Malaysian news (last 72h) across FT185, FT59 & FT102...'
     );
     try {
-      const res = await fetchLiveWebHazards();
+      const res = await fetchLiveWebHazards({ force: true });
+      const viaLabel =
+        res.sourceUsed === 'google_news_rss_fallback'
+          ? isBm
+            ? 'Google News MY RSS'
+            : 'Google News MY RSS fallback'
+          : 'Gemini Search Grounding';
       setSyncFeedback(
         isBm
-          ? `Disegerakkan: ${res.syncedCount} amaran web langsung ke camgo_hazards & Peta.`
-          : `Synced ${res.syncedCount} live web hazard alert${res.syncedCount === 1 ? '' : 's'} to camgo_hazards & Map.`
+          ? `Disegerakkan (${viaLabel}): ${res.syncedCount} amaran web langsung ke camgo_hazards & Peta.`
+          : `Synced ${res.syncedCount} live web hazard alert${res.syncedCount === 1 ? '' : 's'} via ${viaLabel}.`
       );
     } catch (err: any) {
       setSyncFeedback(
@@ -128,22 +134,30 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
 
         return {
           id: `camgo-${h.id}`,
-          title: h.title,
-          titleBm: h.titleBm || h.title,
+          title: h.titleEn || h.title,
+          titleBm: h.titleMs || h.titleBm || h.title,
           severity,
-          location: h.location || h.corridor || 'Cameron Highlands',
-          description: h.summary || h.description || h.title,
-          descriptionBm: h.descriptionBm || h.summary || h.description || h.title,
-          type: h.type === 'closure' ? 'road_closure' : h.type === 'weather' ? 'fog' : h.type,
-          reportedAt: h.updatedAt
-            ? new Date(h.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          location: h.landmark || h.location || h.corridor || 'Cameron Highlands',
+          description: h.summaryEn || h.summary || h.description || h.title,
+          descriptionBm: h.summaryMs || h.descriptionBm || h.summary || h.description || h.title,
+          type:
+            h.type === 'closure' || h.type === 'road_closure'
+              ? 'road_closure'
+              : h.type === 'weather' || h.type === 'flood_or_fallen_tree'
+              ? 'fog'
+              : h.type,
+          reportedAt: h.reportedAt || h.updatedAt
+            ? new Date(h.reportedAt || h.updatedAt || '').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
             : 'Live',
-          status: isWeb ? 'Verified Web Search' : 'Active Community Pin',
-          source: h.source || (isWeb ? 'Google Search Grounding' : 'CamGo Live'),
-          referenceNo: isWeb ? 'WEB_SEARCH' : 'COMMUNITY_PIN',
+          status: h.passableStatus || (isWeb ? 'Verified Web Search' : 'Active Community Pin'),
+          source: h.sourceName || h.source || (isWeb ? 'Google Search Grounding' : 'CamGo Live'),
+          sourceUrl: h.sourceUrl,
+          actionTaken: h.alternativeRoute,
+          actionTakenBm: h.alternativeRoute,
+          referenceNo: h.corridor || (isWeb ? 'WEB_SEARCH' : 'COMMUNITY_PIN'),
           isVerifiedAgency: isWeb,
           isWebSearch: isWeb,
-          timestamp: h.updatedAt || h.timestamp,
+          timestamp: h.reportedAt || h.updatedAt || h.timestamp,
         } as HazardAlert & { isWebSearch?: boolean };
       });
 

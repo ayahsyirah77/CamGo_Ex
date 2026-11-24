@@ -3365,6 +3365,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const emojiByType: Record<string, string> = {
         landslide: '⛰️',
         accident: '💥',
+        road_closure: '🚧',
+        flood_or_fallen_tree: '🌊',
         closure: '🚧',
         weather: '🌧️',
         roadblock: '🚧',
@@ -3375,6 +3377,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const colorByType: Record<string, string> = {
         landslide: '#dc2626',
         accident: '#ea580c',
+        road_closure: '#dc2626',
+        flood_or_fallen_tree: '#0284c7',
         closure: '#dc2626',
         weather: '#0284c7',
         roadblock: '#d97706',
@@ -3387,6 +3391,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         high: '#ea580c',
         medium: '#d97706',
         moderate: '#d97706',
+        advisory: '#0284c7',
         low: '#059669',
       };
 
@@ -3395,14 +3400,21 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const sevColor = severityColorByLevel[hazard.severity] || '#d97706';
       const isWebSearch = hazard.verifiedBy === 'web_search';
       const remainingToClear = Math.max(1, CLEARED_VOTE_EXPIRY_THRESHOLD - (hazard.clearedVotes || 0));
-      const titleText = escapeHtml(language === 'bm' ? hazard.titleBm || hazard.title : hazard.title);
+      const titleText = escapeHtml(
+        language === 'bm'
+          ? hazard.titleMs || hazard.titleBm || hazard.title
+          : hazard.titleEn || hazard.title
+      );
       const descText = escapeHtml(
         language === 'bm'
-          ? hazard.descriptionBm || hazard.description || hazard.summary
-          : hazard.description || hazard.summary
+          ? hazard.summaryMs || hazard.descriptionBm || hazard.description || hazard.summary
+          : hazard.summaryEn || hazard.description || hazard.summary
       );
-      const locText = escapeHtml(hazard.location || 'Cameron Highlands');
-      const sourceText = escapeHtml(hazard.source || 'CamGo Live');
+      const locText = escapeHtml(hazard.landmark || hazard.location || 'Cameron Highlands');
+      const sourceText = escapeHtml(hazard.sourceName || hazard.source || 'CamGo Live');
+      const safeSourceUrl = safeHttpHref(hazard.sourceUrl);
+      const passableText = hazard.passableStatus ? escapeHtml(hazard.passableStatus) : '';
+      const altRouteText = hazard.alternativeRoute ? escapeHtml(hazard.alternativeRoute) : '';
 
       const hazardIcon = L.divIcon({
         className: 'camgo-hazard-marker',
@@ -3413,7 +3425,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               <span style="font-size: 14px; line-height: 1;">${badgeEmoji}</span>
             </div>
             <div style="position: absolute; top: -16px; background: ${pinColor}; color: white; font-size: 8.5px; font-weight: 900; padding: 1px 5px; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.5); white-space: nowrap; text-transform: uppercase;">
-              ${hazard.isProvisional ? 'TELEMETRY -' + (hazard.speedDropPercent || 70) + '%' : isWebSearch ? 'WEB • ' + escapeHtml(hazard.type) : escapeHtml(hazard.type.replace('_', ' '))}
+              ${hazard.isProvisional ? 'TELEMETRY -' + (hazard.speedDropPercent || 70) + '%' : isWebSearch ? 'WEB • ' + escapeHtml(hazard.type.replace(/_/g, ' ')) : escapeHtml(hazard.type.replace(/_/g, ' '))}
             </div>
           </div>
         `,
@@ -3431,7 +3443,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 280px; max-width: 82vw; padding: 4px; color: #1c1917;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px; flex-wrap: wrap;">
             <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; background: ${pinColor}1a; color: ${pinColor}; padding: 2px 7px; border-radius: 6px; border: 1px solid ${pinColor}40;">
-              ${badgeEmoji} ${hazard.isProvisional ? 'PROVISIONAL TELEMETRY ANOMALY' : isWebSearch ? 'WEB SEARCH • ' + escapeHtml(hazard.type).toUpperCase() : escapeHtml(hazard.type.replace('_', ' ')).toUpperCase()}
+              ${badgeEmoji} ${hazard.isProvisional ? 'PROVISIONAL TELEMETRY ANOMALY' : isWebSearch ? 'WEB SEARCH • ' + escapeHtml(hazard.type.replace(/_/g, ' ')).toUpperCase() : escapeHtml(hazard.type.replace(/_/g, ' ')).toUpperCase()}
             </span>
             <span style="font-size: 9px; font-weight: 800; color: ${sevColor}; background: ${sevColor}18; border: 1px solid ${sevColor}40; padding: 1px 6px; border-radius: 9999px; text-transform: uppercase;">
               ${escapeHtml(hazard.severity)}
@@ -3449,6 +3461,15 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           <p style="font-size: 11px; color: #334155; line-height: 1.4; margin: 0 0 8px 0;">
             ${descText}
           </p>
+
+          ${
+            passableText || altRouteText
+              ? `<div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 8px; margin-bottom: 8px; font-size: 10px; color: #0f172a; line-height: 1.35;">
+                  ${passableText ? `<div><strong>Lane Status:</strong> ${passableText}</div>` : ''}
+                  ${altRouteText ? `<div style="margin-top: 2px;"><strong>Alt Route:</strong> ${altRouteText}</div>` : ''}
+                </div>`
+              : ''
+          }
 
           ${
             hazard.imageUrl && safeHttpHref(hazard.imageUrl)
@@ -3489,8 +3510,13 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           >
             ✨ AI Traffic Flow Prediction
           </button>
-          <div style="font-size: 9px; color: #64748b; margin-top: 6px; text-align: right;">
-            Source: ${sourceText}
+          <div style="font-size: 9px; color: #64748b; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+            <span>Source: ${sourceText}</span>
+            ${
+              safeSourceUrl
+                ? `<a href="${escapeHtml(safeSourceUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; font-weight: 700; text-decoration: underline;">Read Report ↗</a>`
+                : ''
+            }
           </div>
         </div>
       `;
@@ -7037,11 +7063,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 </div>
                 <h4 className="text-sm sm:text-base font-black text-white mt-1 leading-snug">
                   {language === 'bm'
-                    ? selectedHazardModal.titleBm || selectedHazardModal.title
-                    : selectedHazardModal.title}
+                    ? selectedHazardModal.titleMs || selectedHazardModal.titleBm || selectedHazardModal.title
+                    : selectedHazardModal.titleEn || selectedHazardModal.title}
                 </h4>
                 <div className="text-xs text-emerald-300 font-semibold mt-0.5 flex items-center gap-1.5 flex-wrap">
-                  <span>📍 {selectedHazardModal.location}</span>
+                  <span>📍 {selectedHazardModal.landmark || selectedHazardModal.location}</span>
                   <span className="text-[10px] font-mono text-stone-400">
                     ({resolveHazardCoords(selectedHazardModal).lat.toFixed(4)},{' '}
                     {resolveHazardCoords(selectedHazardModal).lng.toFixed(4)})
@@ -7064,9 +7090,39 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
             <p className="text-xs text-stone-300 leading-relaxed">
               {language === 'bm'
-                ? selectedHazardModal.descriptionBm || selectedHazardModal.description || selectedHazardModal.summary
-                : selectedHazardModal.description || selectedHazardModal.summary}
+                ? selectedHazardModal.summaryMs || selectedHazardModal.descriptionBm || selectedHazardModal.description || selectedHazardModal.summary
+                : selectedHazardModal.summaryEn || selectedHazardModal.description || selectedHazardModal.summary}
             </p>
+
+            {(selectedHazardModal.passableStatus || selectedHazardModal.alternativeRoute || selectedHazardModal.sourceUrl) && (
+              <div className="rounded-xl bg-stone-900/90 border border-sky-500/30 p-2.5 text-[11px] space-y-1 text-stone-200">
+                {selectedHazardModal.passableStatus && (
+                  <div>
+                    <span className="font-bold text-amber-300">{language === 'bm' ? 'Status Laluan: ' : 'Passable Status: '}</span>
+                    <span>{selectedHazardModal.passableStatus}</span>
+                  </div>
+                )}
+                {selectedHazardModal.alternativeRoute && (
+                  <div>
+                    <span className="font-bold text-emerald-300">{language === 'bm' ? 'Laluan Alternatif: ' : 'Alt Route: '}</span>
+                    <span>{selectedHazardModal.alternativeRoute}</span>
+                  </div>
+                )}
+                {selectedHazardModal.sourceUrl && /^https?:\/\//i.test(selectedHazardModal.sourceUrl) && (
+                  <div className="pt-0.5">
+                    <a
+                      href={selectedHazardModal.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 underline font-semibold"
+                    >
+                      <span>{selectedHazardModal.sourceName || selectedHazardModal.source || 'Source Report'}</span>
+                      <span>↗</span>
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Smart Algorithm + AI Traffic Flow Prediction (Single-Spine FT59 + Lagged Inflow + 4-Block Advisory) */}
             {selectedHazardImpact && (

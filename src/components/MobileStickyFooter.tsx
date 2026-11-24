@@ -1,14 +1,15 @@
 // MobileStickyFooter.tsx
 import React, { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Home, Compass, MessageSquare, Sparkles, ShieldAlert, BookOpen } from 'lucide-react';
+import { Home, MessageSquare, Sparkles, ShieldAlert, BookOpen, Languages } from 'lucide-react';
 import { Language } from '../types';
 
 interface MobileStickyFooterProps {
   onGoHome: () => void;
-  onOpenTrailEngine: () => void;
+  onOpenTrailEngine?: () => void;
   onOpenDirectories: () => void;
   onOpenChat: () => void;
+  onOpenTranslator?: () => void;
   onOpenAi: () => void;
   onOpenSos: () => void;
   activeModal?: string | null;
@@ -18,9 +19,9 @@ interface MobileStickyFooterProps {
 
 export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
   onGoHome,
-  onOpenTrailEngine,
   onOpenDirectories,
   onOpenChat,
+  onOpenTranslator,
   onOpenAi,
   onOpenSos,
   activeModal,
@@ -54,18 +55,6 @@ export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
       orbColor: 'bg-emerald-500/35 border-emerald-400/75 shadow-[0_0_18px_rgba(52,211,153,0.55)]',
     },
     {
-      key: 'trail',
-      onClick: () => {
-        setSosActive(false);
-        onOpenTrailEngine();
-      },
-      label: language === 'bm' ? 'Laluan' : 'Trail',
-      ariaLabel: 'Offline Trail Engine',
-      icon: Compass,
-      activeText: 'text-cyan-300',
-      orbColor: 'bg-cyan-500/35 border-cyan-400/75 shadow-[0_0_18px_rgba(34,211,238,0.55)]',
-    },
-    {
       key: 'directories',
       onClick: () => {
         setSosActive(false);
@@ -89,6 +78,18 @@ export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
       activeText: 'text-indigo-300',
       orbColor: 'bg-indigo-500/35 border-indigo-400/75 shadow-[0_0_18px_rgba(129,140,248,0.55)]',
       hasBadge: hasNewChat,
+    },
+    {
+      key: 'translator',
+      onClick: () => {
+        setSosActive(false);
+        onOpenTranslator && onOpenTranslator();
+      },
+      label: 'Translator',
+      ariaLabel: 'AI Menu & Signboard Translator',
+      icon: Languages,
+      activeText: 'text-amber-300',
+      orbColor: 'bg-amber-500/35 border-amber-400/75 shadow-[0_0_18px_rgba(251,191,36,0.55)]',
     },
     {
       key: 'ai',
@@ -126,7 +127,7 @@ export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 320, damping: 28 }}
       onMouseLeave={() => setHoveredKey(null)}
-      className="fixed bottom-0 left-0 right-0 z-40 block sm:hidden bg-stone-950/95 backdrop-blur-2xl border-t border-white/15 shadow-[0_-8px_25px_rgba(0,0,0,0.8)] px-1.5 h-16 pb-safe overflow-hidden"
+      className="fixed bottom-0 left-0 right-0 z-40 block sm:hidden bg-stone-950/95 backdrop-blur-2xl border-t border-white/15 shadow-[0_-8px_25px_rgba(0,0,0,0.8)] px-1 h-16 pb-safe overflow-hidden"
     >
       <div className="grid grid-cols-6 items-center h-full max-w-lg mx-auto relative">
         {items.map((item) => {
@@ -214,7 +215,7 @@ export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
                   opacity: isHighlighted ? 1 : 0.78,
                 }}
                 transition={{ duration: 0.18, ease: 'easeOut' }}
-                className={`relative z-10 text-[9.5px] leading-none tracking-tight mt-0.5 truncate max-w-[52px] ${
+                className={`relative z-10 text-[8.5px] min-[375px]:text-[9px] leading-none tracking-tight mt-0.5 truncate max-w-[54px] ${
                   isHighlighted
                     ? `font-extrabold ${item.activeText}`
                     : item.isSos

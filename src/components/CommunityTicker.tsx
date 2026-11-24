@@ -22,12 +22,17 @@ function isTickerAlertFresh(hazard: CamgoHazard | null | undefined, nowMs: numbe
   if (!hazard) return false;
   if (hazard.status === 'cleared' || hazard.active === false) return false;
 
-  if (hazard.expiresAt) {
-    const expMs = new Date(hazard.expiresAt).getTime();
+  if (hazard.expiresAt !== undefined && hazard.expiresAt !== null) {
+    const expMs =
+      typeof hazard.expiresAt === 'number'
+        ? hazard.expiresAt < 1e12
+          ? hazard.expiresAt * 1000
+          : hazard.expiresAt
+        : new Date(hazard.expiresAt).getTime();
     if (Number.isFinite(expMs) && expMs <= nowMs) return false;
   }
 
-  const refTimestamp = hazard.updatedAt || hazard.timestamp;
+  const refTimestamp = hazard.updatedAt || hazard.reportedAt || hazard.timestamp;
   if (!refTimestamp) return false;
   const alertMs = new Date(refTimestamp).getTime();
   if (!Number.isFinite(alertMs)) return false;
@@ -151,14 +156,18 @@ export const CommunityTicker: React.FC<CommunityTickerProps> = ({
               {!item.isPlaceholder && item.verifiedBy === 'web_search' && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-[9px] font-mono font-black uppercase text-sky-300 shrink-0">
                   <Globe className="w-2.5 h-2.5" />
-                  <span>{item.source || 'WEB'}</span>
+                  <span>{item.sourceName || item.source || 'WEB'}</span>
                 </span>
               )}
               <span className="font-bold text-white group-hover:text-emerald-300 transition-colors">
-                [{item.location || 'Highlands'}]
+                [{(!item.isPlaceholder && item.landmark) || item.location || 'Highlands'}]
               </span>
               <span className="text-stone-300 font-medium group-hover:text-white group-hover:underline underline-offset-2 transition-colors">
-                {language === 'bm' && !item.isPlaceholder ? item.titleBm || item.title : item.title}
+                {language === 'bm' && !item.isPlaceholder
+                  ? item.titleMs || item.titleBm || item.title
+                  : !item.isPlaceholder
+                  ? item.titleEn || item.title
+                  : item.title}
               </span>
                 {!item.isPlaceholder && (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[9.5px] font-mono font-bold text-emerald-300 group-hover:bg-emerald-500/30">

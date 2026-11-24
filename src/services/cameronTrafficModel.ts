@@ -324,6 +324,9 @@ function matchesFeederCorridorHazard(
     type === 'landslide' ||
     type === 'fallen_tree' ||
     type === 'roadblock' ||
+    type === 'road_closure' ||
+    type === 'closure' ||
+    type === 'flood_or_fallen_tree' ||
     text.includes('accident') ||
     text.includes('kemalangan') ||
     text.includes('landslide') ||

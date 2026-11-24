@@ -1006,7 +1006,13 @@ function getHazardImpactProfile(hazard: CamgoHazard): {
   const sev = hazard.severity || 'moderate';
   const type = hazard.type;
 
-  const isBlocking = type === 'landslide' || type === 'roadblock' || type === 'fallen_tree';
+  const isBlocking =
+    type === 'landslide' ||
+    type === 'roadblock' ||
+    type === 'fallen_tree' ||
+    type === 'road_closure' ||
+    type === 'closure' ||
+    type === 'flood_or_fallen_tree';
 
   if (sev === 'critical') {
     return {

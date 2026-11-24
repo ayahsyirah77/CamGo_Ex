@@ -990,7 +990,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsRefreshingWebAlerts(true);
     setWebAlertToast(null);
     try {
-      const res = await fetchLiveWebHazards();
+      const res = await fetchLiveWebHazards({ force: true });
       if (res.hazards.length > 0) {
         setCommunityHazards((prev) => {
           const byId = new Map<string, CamgoHazard>(prev.map((h) => [h.id, h]));
@@ -1000,11 +1000,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           );
         });
       }
+      const viaLabel =
+        res.sourceUsed === 'google_news_rss_fallback'
+          ? 'Google News MY RSS fallback'
+          : 'Gemini Search Grounding';
       setWebAlertToast({
         type: 'success',
-        message: `Synced ${res.syncedCount} live web hazard alert${res.syncedCount === 1 ? '' : 's'} to camgo_hazards.`,
+        message: `Synced ${res.syncedCount} live web hazard alert${res.syncedCount === 1 ? '' : 's'} to camgo_hazards via ${viaLabel}.`,
       });
-      addActivity(`Refreshed ${res.syncedCount} live web hazard alerts via Google Search Grounding`);
+      addActivity(`Refreshed ${res.syncedCount} live web hazard alerts via ${viaLabel}`);
     } catch (err: any) {
       setWebAlertToast({
         type: 'error',
@@ -3507,7 +3511,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <option value="all">All Categories</option>
                   <option value="landslide">⛰️ Landslide</option>
                   <option value="accident">💥 Accident</option>
-                  <option value="closure">🚧 Road Closure</option>
+                  <option value="road_closure">🚧 Road Closure</option>
+                  <option value="flood_or_fallen_tree">🌊 Flood / Fallen Tree</option>
+                  <option value="closure">🚧 Closure (Legacy)</option>
                   <option value="weather">🌧️ Weather / Storm</option>
                   <option value="fallen_tree">🌳 Fallen Tree</option>
                   <option value="roadblock">🚧 Roadblock</option>
@@ -3563,6 +3569,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   const typeEmoji: Record<string, string> = {
                     landslide: '⛰️',
                     accident: '💥',
+                    road_closure: '🚧',
+                    flood_or_fallen_tree: '🌊',
                     closure: '🚧',
                     weather: '🌧️',
                     roadblock: '🚧',

@@ -125,11 +125,6 @@ const FIVE_MINUTES_SEC = 5 * 60;
 const FIFTEEN_MINUTES_SEC = 15 * 60;
 const THIRTY_MINUTES_SEC = 30 * 60;
 
-function parseEstimatedHours(estStr: string): string {
-  const m = estStr.match(/[\d.]+/);
-  return m ? m[0] : '3';
-}
-
 export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = ({
   isOpen,
   onClose,
@@ -142,12 +137,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   const [resumableSession, setResumableSession] = useState<TrailSafetySession | null>(null);
 
   // Selected Trail & Weather / Offline Cache State
-  const [selectedTrail, setSelectedTrail] = useState<TrailRoute>(
-    () =>
-      CAMERON_TRAILS.find((t) => t.id === 'trail-11') ||
-      CAMERON_TRAILS.find((t) => t.id === 'trail-4') ||
-      CAMERON_TRAILS[0]
-  );
+  const [selectedTrail, setSelectedTrail] = useState<TrailRoute>(() => CAMERON_TRAILS[0]);
+  const [selectedTrailId, setSelectedTrailId] = useState<string>('');
+  const [isPlannedTrailEnabled, setIsPlannedTrailEnabled] = useState<boolean>(false);
   const [isPreDownloading, setIsPreDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(100);
   const [cacheVerified, setCacheVerified] = useState(false);
@@ -218,12 +210,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     updatedAt: new Date().toISOString(),
   });
 
-  // Safety Passport Form & Active Session State
+  // Safety Passport Form & Active Session State (Strict manual entry: all blank by default)
   const [hikerName, setHikerName] = useState('');
-  const [groupSize, setGroupSize] = useState('2');
+  const [groupSize, setGroupSize] = useState('');
   const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContact, setEmergencyContact] = useState('');
-  const [expectedHours, setExpectedHours] = useState('3');
+  const [expectedHours, setExpectedHours] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmittingPassport, setIsSubmittingPassport] = useState(false);
 
@@ -254,6 +246,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     alertMessage: string;
     outcome: SosDispatchOutcome;
   } | null>(null);
+  const [sosActive, setSosActive] = useState(false);
   const [manualSosDispatching, setManualSosDispatching] = useState(false);
   const [manualSosReceipt, setManualSosReceipt] = useState<{
     outcome: SosDispatchOutcome;
@@ -267,6 +260,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   const [isIceCardExpandedMobile, setIsIceCardExpandedMobile] = useState(false);
 
   // Mutable Refs for async listeners without stale closures
+  const sosCancelTokenRef = useRef<number>(0);
   const currentGpsRef = useRef(currentGps);
   currentGpsRef.current = currentGps;
   const telemetryRef = useRef(telemetry);
@@ -381,7 +375,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     }
   }, [isOpen]);
 
-  // Initialize Safety Passport defaults & restore any active session
+  // Fetch trail weather safety status & check resumable session on open (NO form auto-fill / pre-fill)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -391,47 +385,14 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     };
     fetchSafety();
 
-    const card = firebaseService.getEmergencyCard();
     const existingSession = getCachedActiveTrailSession();
-
     const isFreshActiveSession =
       existingSession &&
       existingSession.status !== 'completed' &&
       Date.now() - new Date(existingSession.startedAt).getTime() < 24 * 3600 * 1000;
 
-    if (isFreshActiveSession && existingSession) {
-      setResumableSession(existingSession);
-      setHikerName((prev) => prev || existingSession.hikerName);
-      setGroupSize((prev) => prev || String(existingSession.groupSize));
-      setEmergencyContactName((prev) => prev || existingSession.emergencyContactName || '');
-      setEmergencyContact((prev) => prev || existingSession.emergencyContact);
-      setExpectedHours((prev) => prev || String(existingSession.expectedHours));
-
-      const matchedTrail = CAMERON_TRAILS.find((t) => t.id === existingSession.trailId);
-      if (matchedTrail) setSelectedTrail(matchedTrail);
-    } else {
-      setResumableSession(null);
-      setHikerName(
-        (prev) =>
-          prev ||
-          currentUser?.displayName ||
-          card.preferredName ||
-          card.fullLegalName ||
-          ''
-      );
-      setEmergencyContactName(
-        (prev) => prev || card.primaryContact?.name || card.secondaryContact?.name || ''
-      );
-      setEmergencyContact(
-        (prev) =>
-          prev ||
-          card.designatedSosNumber ||
-          card.primaryContact?.phone ||
-          card.secondaryContact?.phone ||
-          ''
-      );
-    }
-  }, [isOpen, currentUser]);
+    setResumableSession(isFreshActiveSession && existingSession ? existingSession : null);
+  }, [isOpen]);
 
   // Silent Firestore + IndexedDB sync helper
   const persistSessionProgress = useCallback(
@@ -1172,6 +1133,15 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     Number.isFinite(parsedExpectedHours) &&
     parsedExpectedHours >= 0.5;
 
+  const canSubmitPassport =
+    isPassportFieldsValid && (!isPlannedTrailEnabled || Boolean(selectedTrailId));
+
+  useEffect(() => {
+    if (!isPassportFieldsValid && isPlannedTrailEnabled) {
+      setIsPlannedTrailEnabled(false);
+    }
+  }, [isPassportFieldsValid, isPlannedTrailEnabled]);
+
   // Submit Safety Passport -> Initialize session & jump directly into Interactive Trail Map
   const handleSubmitSafetyPassport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1349,7 +1319,11 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     );
     setInactivityStage2Active(Boolean(resumableSession.inactivityAlert2Sent));
     const matchedTrail = CAMERON_TRAILS.find((t) => t.id === resumableSession.trailId);
-    if (matchedTrail) setSelectedTrail(matchedTrail);
+    if (matchedTrail) {
+      setSelectedTrail(matchedTrail);
+      setSelectedTrailId(matchedTrail.id);
+      setIsPlannedTrailEnabled(true);
+    }
     setPassportUnlocked(true);
   };
 
@@ -1434,6 +1408,36 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   };
 
   const resetTrailUiSessionState = () => {
+    sosCancelTokenRef.current += 1;
+    setSosActive(false);
+    setManualSosDispatching(false);
+    setManualSosReceipt(null);
+    setOverdueAlertReceipt(null);
+    setIsOverdue(false);
+    setShowStartPromptModal(false);
+    setStartFailsafeRemainingSec(FIVE_MINUTES_SEC);
+    setAutoStartTriggeredBanner(null);
+    setInactivityStage1Active(false);
+    setInactivityStage2Active(false);
+    setStillnessSeconds(0);
+    setTimeRemainingSeconds(0);
+    setInitialAlertResult(null);
+    setIsIceCardExpandedMobile(false);
+    setCopiedSos(false);
+    setCopiedTrackLink(false);
+
+    // Clear all Safety Passport form fields & turn Initial Planned Trail OFF
+    setHikerName('');
+    setGroupSize('');
+    setEmergencyContactName('');
+    setEmergencyContact('');
+    setExpectedHours('');
+    setSelectedTrailId('');
+    setSelectedTrail(CAMERON_TRAILS[0]);
+    setIsPlannedTrailEnabled(false);
+    setFormError(null);
+
+    // Reset map & active monitoring state
     setIsRecording(false);
     setBreadcrumbs([]);
     setPinnedStart(null);
@@ -1441,15 +1445,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     setResumableSession(null);
     setIsFullScreenMap(false);
     setPassportUnlocked(false);
-    setIsOverdue(false);
-    setShowStartPromptModal(false);
-    setAutoStartTriggeredBanner(null);
-    setInactivityStage1Active(false);
-    setInactivityStage2Active(false);
-    setOverdueAlertReceipt(null);
-    setInitialAlertResult(null);
-    setManualSosReceipt(null);
-    setFormError(null);
     overdueFiredRef.current = false;
     autoStartFiredRef.current = false;
     inactivity1FiredRef.current = false;
@@ -1463,16 +1458,19 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     resetTrailUiSessionState();
   };
 
-  // Reset active session & go directly back to Safety First Protocol / Safety Passport setup
+  // Reset active session, switch off SOS Alert & timers, and clear Safety Passport setup
   const handleResetToSafetyPassport = async () => {
-    if (activeSession) {
-      await markTrailSessionCheckedOut(activeSession);
-    }
+    const cached = activeSession || getCachedActiveTrailSession();
     resetTrailUiSessionState();
+    if (cached) {
+      await markTrailSessionCheckedOut(cached).catch(() => {});
+    }
   };
 
   // Automatic One-Tap Smart SOS Activation (WhatsApp + Native SMS + Backend Relay, staying on Map)
   const handleTriggerSmartSos = async () => {
+    const mySosToken = ++sosCancelTokenRef.current;
+    setSosActive(true);
     setManualSosDispatching(true);
     try {
       const card = firebaseService.getEmergencyCard();
@@ -1561,7 +1559,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
       }
 
       const bestGps = await resolveBestSosCoordinates(3500);
+      if (sosCancelTokenRef.current !== mySosToken) return;
       const liveTel = await readLiveDeviceTelemetry(bestGps.accuracy);
+      if (sosCancelTokenRef.current !== mySosToken) return;
       setTelemetry(liveTel);
 
       const outcome = await sendOrQueueEmergencySos({
@@ -1579,6 +1579,8 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         coordSource: bestGps.source,
         telemetry: liveTel,
       });
+
+      if (sosCancelTokenRef.current !== mySosToken) return;
 
       if (typeof navigator === 'undefined' || navigator.onLine !== false) {
         Promise.allSettled([
@@ -1635,7 +1637,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         dispatchedAt: new Date().toISOString(),
       });
     } finally {
-      setManualSosDispatching(false);
+      if (sosCancelTokenRef.current === mySosToken) {
+        setManualSosDispatching(false);
+      }
     }
   };
 
@@ -2082,6 +2086,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     required
                     min={1}
                     max={30}
+                    placeholder="e.g., 2"
                     value={groupSize}
                     onChange={(e) => setGroupSize(e.target.value)}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
@@ -2098,6 +2103,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     min={0.5}
                     max={48}
                     required
+                    placeholder="e.g., 3"
                     value={expectedHours}
                     onChange={(e) => setExpectedHours(e.target.value)}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
@@ -2130,73 +2136,139 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 </div>
               </div>
 
-              {/* Gated Initial Planned Trail Selector directly above Submit Safety Passport */}
-              <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-white/15 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Gated Initial Planned Trail Toggle (OFF by default) & Selector */}
+              <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-white/15 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
                   <label
                     htmlFor="camgo-initial-planned-trail"
                     className="text-[11px] font-bold uppercase text-stone-200 flex items-center gap-1.5"
                   >
-                    {isPassportFieldsValid ? (
+                    {isPassportFieldsValid && isPlannedTrailEnabled ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     ) : (
                       <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     )}
-                    <span>Initial Planned Trail *</span>
+                    <span>Initial Planned Trail</span>
                   </label>
-                  <span
-                    className={`text-[10px] font-mono font-bold ${
-                      isPassportFieldsValid ? 'text-emerald-400' : 'text-amber-300'
-                    }`}
-                  >
-                    {isPassportFieldsValid ? 'Unlocked' : 'Complete all * fields to unlock'}
-                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-mono font-bold ${
+                        !isPassportFieldsValid
+                          ? 'text-amber-300'
+                          : isPlannedTrailEnabled
+                          ? 'text-emerald-400'
+                          : 'text-stone-400'
+                      }`}
+                    >
+                      {!isPassportFieldsValid
+                        ? 'Fill * fields first'
+                        : isPlannedTrailEnabled
+                        ? 'ON'
+                        : 'OFF'}
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isPlannedTrailEnabled}
+                      aria-label="Toggle Initial Planned Trail"
+                      disabled={!isPassportFieldsValid}
+                      onClick={() => {
+                        if (!isPassportFieldsValid) return;
+                        setIsPlannedTrailEnabled((prev) => {
+                          const next = !prev;
+                          if (!next) {
+                            setSelectedTrailId('');
+                            setSelectedTrail(CAMERON_TRAILS[0]);
+                          }
+                          return next;
+                        });
+                      }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+                        !isPassportFieldsValid
+                          ? 'bg-stone-800 border-white/10 opacity-50 cursor-not-allowed'
+                          : isPlannedTrailEnabled
+                          ? 'bg-emerald-500 border-emerald-300 cursor-pointer'
+                          : 'bg-stone-800 border-white/20 cursor-pointer'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                          isPlannedTrailEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
 
-                <select
-                  id="camgo-initial-planned-trail"
-                  disabled={!isPassportFieldsValid}
-                  value={selectedTrail.id}
-                  onChange={(e) => {
-                    const t = CAMERON_TRAILS.find((x) => x.id === e.target.value);
-                    if (t) {
-                      setSelectedTrail(t);
-                      setExpectedHours(parseEstimatedHours(t.estDurationHrs));
-                    }
-                  }}
-                  className={`w-full max-w-full min-h-[48px] px-3 py-2.5 rounded-xl border font-semibold text-xs sm:text-sm focus:outline-none transition-colors ${
-                    isPassportFieldsValid
-                      ? 'bg-stone-950 border-emerald-500/45 text-white focus:border-emerald-400 cursor-pointer'
-                      : 'bg-stone-950/60 border-white/10 text-stone-500 cursor-not-allowed opacity-60'
-                  }`}
-                >
-                  {CAMERON_TRAILS.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} — {t.difficulty} ({t.distanceKm}km • {t.estDurationHrs})
-                    </option>
-                  ))}
-                </select>
-                <div className="text-[11px] text-stone-300 whitespace-normal break-words leading-snug">
-                  <span className="font-bold text-emerald-300">{selectedTrail.name}</span>{' '}
-                  • {selectedTrail.difficulty} ({selectedTrail.distanceKm}km • {selectedTrail.estDurationHrs})
-                </div>
+                {isPlannedTrailEnabled && isPassportFieldsValid ? (
+                  <>
+                    <select
+                      id="camgo-initial-planned-trail"
+                      value={selectedTrailId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedTrailId(val);
+                        const t = CAMERON_TRAILS.find((x) => x.id === val);
+                        if (t) {
+                          setSelectedTrail(t);
+                        }
+                      }}
+                      className="w-full max-w-full min-h-[48px] px-3 py-2.5 rounded-xl border bg-stone-950 border-emerald-500/45 text-white font-semibold text-xs sm:text-sm focus:outline-none focus:border-emerald-400 cursor-pointer transition-colors"
+                    >
+                      <option value="">
+                        {language === 'bm'
+                          ? '-- Pilih laluan yang dirancang --'
+                          : '-- Select planned trail --'}
+                      </option>
+                      {CAMERON_TRAILS.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} — {t.difficulty} ({t.distanceKm}km • {t.estDurationHrs})
+                        </option>
+                      ))}
+                    </select>
+                    {selectedTrailId && (
+                      <div className="text-[11px] text-stone-300 whitespace-normal break-words leading-snug">
+                        <span className="font-bold text-emerald-300">{selectedTrail.name}</span>{' '}
+                        • {selectedTrail.difficulty} ({selectedTrail.distanceKm}km • {selectedTrail.estDurationHrs})
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[11px] text-stone-400 leading-snug">
+                    {language === 'bm'
+                      ? 'Pilihan laluan awal dimatikan secara lalai. Lengkapkan butiran wajib di atas untuk mengaktifkannya.'
+                      : 'Initial Planned Trail is OFF by default. Complete the mandatory fields above and toggle ON to choose a specific trail.'}
+                  </p>
+                )}
               </div>
 
-              <button
-                type="submit"
-                disabled={isSubmittingPassport || !isPassportFieldsValid}
-                className="w-full min-h-[52px] py-3.5 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-heading font-black text-sm sm:text-base shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
-              >
-                <ShieldAlert className="w-5 h-5 shrink-0" />
-                <span>
-                  {isSubmittingPassport
-                    ? 'Opening Interactive Trail Map...'
-                    : language === 'bm'
-                    ? 'Hantar Pasport Keselamatan'
-                    : 'Submit Safety Passport'}
-                </span>
-                <ChevronRight className="w-5 h-5 shrink-0" />
-              </button>
+              <div className="flex items-center gap-1.5 sm:gap-2.5 w-full min-w-0">
+                <button
+                  type="button"
+                  onClick={handleResetToSafetyPassport}
+                  className="no-mobile-clamp min-h-[42px] sm:min-h-[52px] px-2.5 sm:px-4 py-2 sm:py-3.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/40 font-heading font-bold text-[10px] sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span>{language === 'bm' ? 'Set Semula' : 'Reset'}</span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingPassport || !canSubmitPassport}
+                  className="no-mobile-clamp flex-1 min-w-0 min-h-[42px] sm:min-h-[52px] py-2 sm:py-3.5 px-2.5 sm:px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-heading font-black text-[10.5px] min-[380px]:text-[11px] sm:text-base shadow-xl shadow-emerald-950 flex items-center justify-center gap-1 sm:gap-2 cursor-pointer transition-all active:scale-[0.99]"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 sm:w-5 sm:h-5 shrink-0" />
+                  <span className="truncate whitespace-nowrap">
+                    {isSubmittingPassport
+                      ? 'Opening...'
+                      : language === 'bm'
+                      ? 'Hantar Pasport Keselamatan'
+                      : 'Submit Safety Passport'}
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 sm:w-5 sm:h-5 shrink-0" />
+                </button>
+              </div>
             </form>
           )}
 
@@ -2846,12 +2918,15 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         type="button"
                         onClick={handleTriggerSmartSos}
                         disabled={manualSosDispatching}
-                        className="no-mobile-clamp min-w-0 w-full min-h-[32px] sm:min-h-[44px] px-1.5 sm:px-3 py-1 sm:py-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-extrabold sm:font-black text-[9px] sm:text-xs shadow-2xl shadow-red-950/90 border border-red-300/60 flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer active:scale-95 transition-all"
+                        aria-pressed={sosActive}
+                        className={`no-mobile-clamp min-w-0 w-full min-h-[32px] sm:min-h-[44px] px-1.5 sm:px-3 py-1 sm:py-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-extrabold sm:font-black text-[9px] sm:text-xs shadow-2xl shadow-red-950/90 border border-red-300/60 flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                          sosActive ? 'ring-2 ring-rose-300 animate-pulse' : ''
+                        }`}
                         title="SOS / Smart Alert"
                       >
                         <ShieldAlert className="w-2.5 h-2.5 sm:w-4 sm:h-4 shrink-0" />
                         <span className="leading-tight text-center">
-                          {manualSosDispatching ? 'SENDING...' : 'SOS / SMS ALERT'}
+                          {manualSosDispatching ? 'SENDING...' : sosActive ? 'SOS ACTIVE' : 'SOS / SMS ALERT'}
                         </span>
                       </button>
                     </div>
@@ -2909,11 +2984,14 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     type="button"
                     onClick={handleTriggerSmartSos}
                     disabled={manualSosDispatching}
-                    className="no-mobile-clamp min-w-0 w-full min-h-[34px] sm:min-h-[48px] px-2 sm:px-4 py-1.5 sm:py-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-extrabold sm:font-black text-[9.5px] sm:text-sm tracking-normal sm:tracking-wide shadow-xl shadow-red-950/90 border border-red-300/40 flex items-center justify-center gap-1 sm:gap-2 cursor-pointer active:scale-[0.99] transition-transform"
+                    aria-pressed={sosActive}
+                    className={`no-mobile-clamp min-w-0 w-full min-h-[34px] sm:min-h-[48px] px-2 sm:px-4 py-1.5 sm:py-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-extrabold sm:font-black text-[9.5px] sm:text-sm tracking-normal sm:tracking-wide shadow-xl shadow-red-950/90 border border-red-300/40 flex items-center justify-center gap-1 sm:gap-2 cursor-pointer active:scale-[0.99] transition-transform ${
+                      sosActive ? 'ring-2 ring-rose-300 animate-pulse' : ''
+                    }`}
                   >
                     <ShieldAlert className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
                     <span className="leading-tight text-center">
-                      {manualSosDispatching ? 'SENDING...' : 'SOS / SMS ALERT'}
+                      {manualSosDispatching ? 'SENDING...' : sosActive ? 'SOS ACTIVE' : 'SOS / SMS ALERT'}
                     </span>
                   </button>
                 </div>

@@ -40,13 +40,28 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   console.warn('[Firestore camgo_hazards]', JSON.stringify(errInfo));
 }
 
+function parseExpiryMs(expiresAt: unknown): number | null {
+  if (typeof expiresAt === 'number' && Number.isFinite(expiresAt)) {
+    return expiresAt < 1e12 ? expiresAt * 1000 : expiresAt;
+  }
+  if (typeof expiresAt === 'string' && expiresAt.trim()) {
+    const asNum = Number(expiresAt);
+    if (Number.isFinite(asNum)) {
+      return asNum < 1e12 ? asNum * 1000 : asNum;
+    }
+    const parsed = new Date(expiresAt).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function isHazardActive(h: any, nowMs = Date.now()): boolean {
   if (!h) return false;
   if (h.status === 'cleared' || h.active === false) return false;
   if (h.status !== 'active' && h.active !== true) return false;
-  if (h.expiresAt) {
-    const expMs = new Date(h.expiresAt).getTime();
-    if (Number.isFinite(expMs) && expMs <= nowMs) return false;
+  if (h.expiresAt !== undefined && h.expiresAt !== null) {
+    const expMs = parseExpiryMs(h.expiresAt);
+    if (expMs !== null && expMs <= nowMs) return false;
   }
   return true;
 }
@@ -54,17 +69,32 @@ function isHazardActive(h: any, nowMs = Date.now()): boolean {
 function normalizeHazardRecord(raw: any, id?: string): CamgoHazard {
   const status: 'active' | 'cleared' | 'pending' =
     raw.status || (raw.active === true ? 'active' : 'cleared');
+  const titleEn = raw.titleEn || raw.title || raw.titleMs || raw.titleBm || '';
+  const titleMs = raw.titleMs || raw.titleBm || raw.title || raw.titleEn || '';
+  const summaryEn = raw.summaryEn || raw.summary || raw.description || titleEn;
+  const summaryMs = raw.summaryMs || raw.descriptionBm || raw.description || raw.summary || titleMs;
+
   return {
     ...raw,
     id: id || raw.id,
-    description: raw.description || raw.summary || raw.title || '',
-    summary: raw.summary || raw.description || '',
-    location: raw.location || raw.corridor || 'Cameron Highlands',
+    title: raw.title || titleEn,
+    titleBm: raw.titleBm || titleMs,
+    titleEn,
+    titleMs,
+    description: raw.description || summaryEn,
+    descriptionBm: raw.descriptionBm || summaryMs,
+    summary: raw.summary || summaryEn,
+    summaryEn,
+    summaryMs,
+    location: raw.location || raw.landmark || raw.corridor || 'Cameron Highlands',
+    landmark: raw.landmark || raw.location || '',
+    source: raw.source || raw.sourceName || 'CamGo Live',
+    sourceName: raw.sourceName || raw.source || 'CamGo Live',
     status,
     active: raw.active !== undefined ? Boolean(raw.active) : status === 'active',
     stillThereVotes: typeof raw.stillThereVotes === 'number' ? raw.stillThereVotes : 0,
     clearedVotes: typeof raw.clearedVotes === 'number' ? raw.clearedVotes : 0,
-    timestamp: raw.timestamp || raw.updatedAt || new Date().toISOString(),
+    timestamp: raw.timestamp || raw.reportedAt || raw.updatedAt || new Date().toISOString(),
   } as CamgoHazard;
 }
 

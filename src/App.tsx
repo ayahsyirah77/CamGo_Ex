@@ -22,6 +22,7 @@ import {
 import { weatherService } from './services/weather';
 import { firebaseService, UserProfile } from './services/firebase';
 import { hazardFeedService } from './services/hazardFeedService';
+import { fetchLiveWebHazards } from './services/webHazardFetcher';
 import { pushNotificationService } from './services/pushNotificationService';
 import { getTranslation } from './services/i18n';
 
@@ -62,6 +63,7 @@ import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
 import { ForeignerMedicalChargesModal } from './components/ForeignerMedicalChargesModal';
+import { VisualTranslator } from './components/VisualTranslator';
 import { VendorBookingAlertModal } from './components/VendorBookingAlertModal';
 import { WeatherWidget } from './components/WeatherWidget';
 import { TrafficWidget } from './components/TrafficWidget';
@@ -234,6 +236,7 @@ export default function App() {
   const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
   const [isForeignerMedicalOpen, setIsForeignerMedicalOpen] = useState(false);
+  const [isVisualTranslatorOpen, setIsVisualTranslatorOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('food');
   const [selectedSubCategory, setSelectedSubCategory] = useState<SubCategory | undefined>(undefined);
 
@@ -412,6 +415,7 @@ export default function App() {
         setHazards(liveAlerts);
       }
     }).catch(() => {});
+    fetchLiveWebHazards({ force: false }).catch(() => {});
     weatherService.fetchLiveWeather().then((res) => {
       if (res.length > 0) setWeatherList(res);
     });
@@ -630,6 +634,10 @@ export default function App() {
       setIsAccommodationModalOpen(false);
       return true;
     }
+    if (isVisualTranslatorOpen) {
+      setIsVisualTranslatorOpen(false);
+      return true;
+    }
     if (isGalleryOpen) {
       setIsGalleryOpen(false);
       return true;
@@ -690,6 +698,7 @@ export default function App() {
     isVendorPortalOpen,
     isFarmMatrixOpen,
     isParkingEvOpen,
+    isVisualTranslatorOpen,
     isUserDashboardOpen,
     isAdminOpen,
     isAdminLoginOpen,
@@ -962,6 +971,7 @@ export default function App() {
           onOpenParkingEv={() => setIsParkingEvOpen(true)}
           onOpenCurrency={() => setIsCurrencyOpen(true)}
           onOpenClassifieds={() => setIsClassifiedsModalOpen(true)}
+          onOpenVisualTranslator={() => setIsVisualTranslatorOpen(true)}
           onSelectTownshipOnMap={(town) => {
             const match = places.find((p) => p.township === town);
             if (match) setSelectedPlaceForMap(match);
@@ -1244,16 +1254,16 @@ export default function App() {
         onClose={() => setIsCommunityReportOpen(false)}
       />
 
-      {/* Bottom Sticky Footer for Mobile: Home, Trail, Directories, Chat, CamGo AI, SOS */}
+      {/* Bottom Sticky Footer for Mobile: Home, Directories, Chat, Translator, CamGo AI, SOS */}
       <MobileStickyFooter
         language={language}
         activeModal={
-          isTrailEngineOpen
-            ? 'trail'
-            : isDirectoriesModalOpen
+          isDirectoriesModalOpen
             ? 'directories'
             : isChatOpen
             ? 'chat'
+            : isVisualTranslatorOpen
+            ? 'translator'
             : isAiOpen
             ? 'ai'
             : null
@@ -1262,33 +1272,38 @@ export default function App() {
           setIsMapModalOpen(false);
           setIsItineraryOpen(false);
           setIsChatOpen(false);
+          setIsVisualTranslatorOpen(false);
           setIsAiOpen(false);
           setIsTrailEngineOpen(false);
           setIsDirectoriesModalOpen(false);
           setIsPortalsModalOpen(false);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
-        onOpenTrailEngine={() => {
-          setIsChatOpen(false);
-          setIsAiOpen(false);
-          setIsDirectoriesModalOpen(false);
-          setIsTrailEngineOpen(true);
-        }}
         onOpenDirectories={() => {
           setIsChatOpen(false);
+          setIsVisualTranslatorOpen(false);
           setIsAiOpen(false);
           setIsTrailEngineOpen(false);
           setIsDirectoriesModalOpen(true);
         }}
         onOpenChat={() => {
           setIsTrailEngineOpen(false);
+          setIsVisualTranslatorOpen(false);
           setIsAiOpen(false);
           setIsDirectoriesModalOpen(false);
           setIsChatOpen(true);
         }}
+        onOpenTranslator={() => {
+          setIsTrailEngineOpen(false);
+          setIsChatOpen(false);
+          setIsAiOpen(false);
+          setIsDirectoriesModalOpen(false);
+          setIsVisualTranslatorOpen(true);
+        }}
         onOpenAi={() => {
           setIsTrailEngineOpen(false);
           setIsChatOpen(false);
+          setIsVisualTranslatorOpen(false);
           setIsDirectoriesModalOpen(false);
           setIsAiOpen(true);
         }}
@@ -1447,6 +1462,12 @@ export default function App() {
       <ForeignerMedicalChargesModal
         isOpen={isForeignerMedicalOpen}
         onClose={() => setIsForeignerMedicalOpen(false)}
+        language={language}
+      />
+
+      <VisualTranslator
+        isOpen={isVisualTranslatorOpen}
+        onClose={() => setIsVisualTranslatorOpen(false)}
         language={language}
       />
 

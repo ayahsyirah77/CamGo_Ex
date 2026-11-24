@@ -316,6 +316,8 @@ export interface HazardAlert {
 export type CamgoHazardType =
   | 'landslide'
   | 'accident'
+  | 'road_closure'
+  | 'flood_or_fallen_tree'
   | 'closure'
   | 'weather'
   | 'roadblock'
@@ -323,21 +325,56 @@ export type CamgoHazardType =
   | 'flood'
   | 'sudden_congestion';
 
+export type CamGoCorridor =
+  | 'FT185_SIMPANG_PULAI'
+  | 'FT185_GUA_MUSANG_LOJING'
+  | 'FT59_TAPAH'
+  | 'FT102_SUNGAI_KOYAN';
+
+export interface CamGoHazard {
+  id: string; // deterministic slug e.g. "ft185-sec84-15-landslide" to prevent duplicate pins
+  corridor: CamGoCorridor;
+  type: 'landslide' | 'accident' | 'road_closure' | 'flood_or_fallen_tree';
+  severity: 'critical' | 'moderate' | 'advisory';
+  titleEn: string;
+  titleMs: string;
+  summaryEn: string;
+  summaryMs: string;
+  landmark: string;
+  passableStatus: string; // e.g., "1 lane open / diversion active" or "Closed to all vehicles"
+  alternativeRoute: string; // e.g., "Use FT102 Sungai Koyan - Ringlet if heading from Kelantan"
+  lat: number;
+  lng: number;
+  sourceName: string;
+  sourceUrl: string;
+  reportedAt: string; // ISO date string
+  expiresAt: number; // Unix timestamp (auto-expire accidents after 12h, landslides after 7d unless refreshed)
+}
+
 export interface CamgoHazard {
   id: string;
+  corridor?: CamGoCorridor | string;
   title: string;
   titleBm?: string;
+  titleEn?: string;
+  titleMs?: string;
   summary?: string;
+  summaryEn?: string;
+  summaryMs?: string;
   description: string;
   descriptionBm?: string;
   type: CamgoHazardType;
-  severity: 'low' | 'medium' | 'moderate' | 'high' | 'critical';
+  severity: 'low' | 'advisory' | 'medium' | 'moderate' | 'high' | 'critical';
   location: string;
-  corridor?: string;
+  landmark?: string;
+  passableStatus?: string;
+  alternativeRoute?: string;
   milestoneKm?: number | null;
   lat: number;
   lng: number;
   source: string;
+  sourceName?: string;
+  sourceUrl?: string;
   sourceChannel?: string;
   verifiedBy?: string;
   rawText?: string;
@@ -351,10 +388,16 @@ export interface CamgoHazard {
   baselineSpeedKmh?: number;
   liveSpeedKmh?: number;
   speedDropPercent?: number;
-  extractionMethod?: 'gemini_multimodal' | 'deterministic_nlp_fallback' | 'telemetry_anomaly' | 'web_search_grounding';
+  extractionMethod?:
+    | 'gemini_multimodal'
+    | 'deterministic_nlp_fallback'
+    | 'telemetry_anomaly'
+    | 'web_search_grounding'
+    | 'google_news_rss_fallback';
+  reportedAt?: string;
   timestamp: string;
   updatedAt?: string;
-  expiresAt?: string;
+  expiresAt?: string | number;
   clearedAt?: string;
 }
 
