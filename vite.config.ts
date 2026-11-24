@@ -10,7 +10,7 @@ export default defineConfig(() => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: 'prompt',
+        registerType: 'autoUpdate',
         devOptions: {
           enabled: false,
         },
@@ -67,6 +67,8 @@ export default defineConfig(() => {
           importScripts: ['/sw-custom.js', '/sw-sos-sync.js'],
           skipWaiting: true,
           clientsClaim: true,
+          cleanupOutdatedCaches: true,
+          navigateFallbackDenylist: [/^\/api\//],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,woff,woff2}'],
           runtimeCaching: [

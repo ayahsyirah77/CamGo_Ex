@@ -24,7 +24,6 @@ import {
   ChevronRight,
   Droplets,
   Wind,
-  Languages,
 } from 'lucide-react';
 import {
   MobileHomeCard,
@@ -58,7 +57,6 @@ interface MobileHomeCardsProps {
   onOpenParkingEv?: () => void;
   onOpenCurrency?: () => void;
   onOpenClassifieds?: () => void;
-  onOpenVisualTranslator?: () => void;
   onSelectTownshipOnMap?: (town: Township) => void;
   weatherList?: WeatherData[];
   trafficAlerts?: TrafficAlert[];
@@ -83,7 +81,6 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
   onOpenParkingEv,
   onOpenCurrency,
   onOpenClassifieds,
-  onOpenVisualTranslator,
   onSelectTownshipOnMap,
   weatherList = [],
   hazards = [],
@@ -268,12 +265,6 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
       label: 'Parking & EV',
       icon: <Zap className="w-5 h-5 text-cyan-400" />,
       onClick: () => onOpenParkingEv && onOpenParkingEv(),
-    },
-    {
-      id: 'translator',
-      label: language === 'bm' ? 'Terjemah' : 'Translator',
-      icon: <Languages className="w-5 h-5 text-amber-300" />,
-      onClick: () => onOpenVisualTranslator && onOpenVisualTranslator(),
     },
     {
       id: 'ai',
@@ -780,7 +771,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
          ===================================================================== */}
       <div className="hidden sm:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 space-y-6">
         {/* PC Quick-Launch Utility Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
           {quickDockItems.map((item) => (
             <button
               key={item.id}

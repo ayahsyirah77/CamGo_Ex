@@ -1,12 +1,13 @@
 /**
  * usePwaAutoUpdate Hook
- * Manages seamless, automatic background updates for the CamGo PWA.
- * Automatically checks for updates on visibility changes, online events,
- * and app focus, activating updates smoothly in the background without
- * intrusive manual reload popups.
+ * Manages seamless, instant background updates for the CamGo PWA on Vercel.
+ * Uses vite-plugin-pwa autoUpdate without intrusive reload popups.
  */
 
 import { useEffect, useRef } from 'react';
+import { registerSW } from 'virtual:pwa-register';
+
+const SW_RELOAD_GUARD_KEY = 'camgo_sw_auto_reloaded_at';
 
 export function usePwaAutoUpdate() {
   const lastCheckTimeRef = useRef<number>(Date.now());
@@ -16,41 +17,70 @@ export function usePwaAutoUpdate() {
       return;
     }
 
-    // Function to trigger background service worker update check
+    const hadControllerAtBoot = Boolean(navigator.serviceWorker.controller);
+    let activeRegistration: ServiceWorkerRegistration | undefined;
+    let isRefreshing = false;
+
+    const updateSW = registerSW({
+      immediate: true,
+      onRegisteredSW(_swUrl, registration) {
+        activeRegistration = registration;
+        if (registration) {
+          registration.update().catch(() => {});
+        }
+      },
+      onNeedRefresh() {
+        // Auto-activate any waiting worker immediately without showing a reload popup
+        updateSW(true).catch(() => {});
+      },
+      onRegisterError(error) {
+        console.warn('[PWA AutoUpdate] Service Worker registration note:', error);
+      },
+    });
+
     const checkForUpdates = async () => {
       const now = Date.now();
-      // Throttle update checks to at most once every 30 seconds
       if (now - lastCheckTimeRef.current < 30000) {
         return;
       }
       lastCheckTimeRef.current = now;
 
       try {
-        const reg = await navigator.serviceWorker.getRegistration();
+        const reg = activeRegistration || (await navigator.serviceWorker.getRegistration());
         if (reg) {
-          console.log('[PWA AutoUpdate] Checking for updates in background...');
           await reg.update();
         }
-      } catch (err) {
-        console.warn('[PWA AutoUpdate] Background check notice:', err);
+      } catch {
+        // Ignore offline/network check errors
       }
     };
 
-    // 1. Check for updates on visibility change (when user returns to PWA shortcut)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         checkForUpdates();
       }
     };
 
-    // 2. Check for updates when device regains internet connection or gains focus
     const handleFocusOrOnline = () => {
       checkForUpdates();
     };
 
-    // 3. Listen for Service Worker controllerchange for silent activation
+    // If a new SW replaces an existing controller mid-session, reload cleanly once (never loop)
     const handleControllerChange = () => {
-      console.log('[PWA AutoUpdate] New Service Worker activated smoothly in background.');
+      if (!hadControllerAtBoot || isRefreshing) {
+        return;
+      }
+      try {
+        const lastReload = Number(sessionStorage.getItem(SW_RELOAD_GUARD_KEY) || '0');
+        if (Date.now() - lastReload < 15000) {
+          return;
+        }
+        sessionStorage.setItem(SW_RELOAD_GUARD_KEY, String(Date.now()));
+      } catch {
+        // ignore storage errors
+      }
+      isRefreshing = true;
+      window.location.reload();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -58,11 +88,7 @@ export function usePwaAutoUpdate() {
     window.addEventListener('online', handleFocusOrOnline);
     navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
 
-    // Initial check after 5 seconds of idle app launch
-    const initialTimer = setTimeout(checkForUpdates, 5000);
-
     return () => {
-      clearTimeout(initialTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocusOrOnline);
       window.removeEventListener('online', handleFocusOrOnline);
