@@ -11,8 +11,6 @@ import {
   Umbrella,
   AlertTriangle,
   Upload,
-  ChevronDown,
-  ChevronUp,
   Lock,
   QrCode,
   Shield,
@@ -31,6 +29,7 @@ import { pushNotificationService } from '../services/pushNotificationService';
 import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
+import { VerticalSwipeCarousel } from './VerticalSwipeCarousel';
 
 interface MotorbikeRentalModalProps {
   isOpen: boolean;
@@ -832,15 +831,12 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[130] flex items-start justify-center bg-black/90 backdrop-blur-md p-2 sm:p-4 overflow-y-auto"
-      onClick={onClose}
+      className="fixed inset-0 z-[130] bg-stone-950 overflow-y-auto overscroll-contain touch-pan-y text-stone-100 animate-in fade-in duration-200"
+      style={{ WebkitOverflowScrolling: 'touch' }}
     >
-      <div
-        className="glass-panel w-full max-w-6xl mt-6 sm:mt-10 mb-16 rounded-3xl p-4 sm:p-8 bg-stone-950 border border-emerald-500/30 shadow-2xl relative text-stone-100"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="w-full max-w-6xl mx-auto px-3.5 sm:px-6 pb-20">
         {/* Sticky Top Header */}
-        <div className="flex items-center justify-between pb-4 mb-5 border-b border-stone-800 sticky top-0 bg-stone-950/95 backdrop-blur-xl z-30 pt-1">
+        <div className="flex items-center justify-between -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 py-3.5 mb-5 border-b border-stone-800 sticky top-0 bg-stone-950/95 backdrop-blur-xl z-30">
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
               <Bike className="w-6 h-6" />
@@ -849,7 +845,7 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
               <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest block truncate">
                 Cameron Highlands Two-Wheel Mobility
               </span>
-              <h2 className="text-lg sm:text-2xl font-heading font-black text-white truncate">
+              <h2 className="no-mobile-clamp text-base sm:text-2xl font-heading font-black text-white truncate">
                 Motorbike &amp; Scooter Rentals
               </h2>
             </div>
@@ -918,264 +914,279 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredPartners.map((partner) => {
-              const fleet = getFleetBreakdown(partner);
-              const activeHourPkgs = (partner.customHourPackages || []).filter((c) => c.enabled);
-              const minPkgDaily =
-                partner.packages && partner.packages.length > 0
-                  ? Math.min(...partner.packages.map((p) => p.dailyRateRm || 75))
-                  : undefined;
-              const displayDailyRate = partner.dailyRateRm || minPkgDaily || 75;
-              const displayHourlyRate = partner.hourlyRateRm || partner.packages?.[0]?.hourlyRateRm || 18;
-              const hasDeposit = partner.depositRequired !== false && (partner.depositAmountRm ?? 100) > 0;
-              const depositDisplay = hasDeposit
-                ? `RM ${partner.depositAmountRm ?? 100} Deposit`
-                : 'No Deposit Required';
-              const rulesText = (partner.vendorRulesNotice || partner.vendorTerms || '').trim();
-              const isRulesExpanded = Boolean(expandedRules[partner.id]);
+          <div className="max-w-xl mx-auto">
+            <VerticalSwipeCarousel
+              items={filteredPartners}
+              keyExtractor={(partner) => partner.id}
+              heightClassName="h-[540px] sm:h-[580px]"
+              accentColor="cyan"
+              showNavArrows={true}
+              renderItem={(partner) => {
+                const fleet = getFleetBreakdown(partner);
+                const activeHourPkgs = (partner.customHourPackages || []).filter((c) => c.enabled);
+                const minPkgDaily =
+                  partner.packages && partner.packages.length > 0
+                    ? Math.min(...partner.packages.map((p) => p.dailyRateRm || 75))
+                    : undefined;
+                const displayDailyRate = partner.dailyRateRm || minPkgDaily || 75;
+                const displayHourlyRate = partner.hourlyRateRm || partner.packages?.[0]?.hourlyRateRm || 18;
+                const hasDeposit = partner.depositRequired !== false && (partner.depositAmountRm ?? 100) > 0;
+                const depositDisplay = hasDeposit
+                  ? `RM ${partner.depositAmountRm ?? 100} Deposit`
+                  : 'No Deposit Required';
+                const rulesText = (partner.vendorRulesNotice || partner.vendorTerms || '').trim();
+                const isRulesExpanded = Boolean(expandedRules[partner.id]);
 
-              return (
-                <div
-                  key={partner.id}
-                  className="rounded-2xl bg-stone-900 border border-stone-800 overflow-hidden shadow-xl hover:border-emerald-500/40 transition-all flex flex-col"
-                >
-                  {/* Card Cover Image + Live Status Overlay */}
-                  <div className="relative h-44 w-full overflow-hidden bg-stone-950">
-                    <img
-                      src={safeSrc(partner.imageUrl, DEFAULT_PLACE_IMAGE)}
-                      alt={partner.businessName}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/20 to-transparent" />
-                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
-                          partner.operatingStatus === 'open'
-                            ? 'bg-emerald-500 text-stone-950'
-                            : 'bg-rose-500 text-white'
-                        }`}
-                      >
-                        {partner.operatingStatus === 'open' ? 'Open Now' : 'Closed'}
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-stone-950/85 text-teal-300 border border-teal-500/30">
-                        {partner.township}
-                      </span>
-                    </div>
-
-                    {/* Deposit Badge Top Right */}
-                    <div
-                      className={`absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md ${
-                        hasDeposit
-                          ? 'bg-amber-500/20 text-amber-200 border-amber-400/50'
-                          : 'bg-emerald-500/25 text-emerald-200 border-emerald-400/50'
-                      }`}
-                    >
-                      {depositDisplay}
-                    </div>
-
-                    {/* Live Fleet Availability Strip Bottom */}
-                    <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between gap-2">
-                      <span
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold backdrop-blur-md border truncate ${
-                          fleet.isFullyBooked
-                            ? 'bg-rose-950/90 text-rose-200 border-rose-500/50'
-                            : 'bg-stone-950/85 text-emerald-300 border-emerald-500/40'
-                        }`}
-                      >
-                        {fleet.summaryLabel}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Card Body */}
-                  <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                    <div className="space-y-3">
-                      {/* Title & Location */}
-                      <div>
-                        <h4 className="text-base font-black text-white leading-snug">
-                          {partner.businessName}
-                        </h4>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-400 mt-1">
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
-                            <span>{partner.township}, Cameron Highlands</span>
-                          </span>
-                          <span className="flex items-center gap-1 text-stone-300">
-                            <Phone className="w-3 h-3 text-teal-400 shrink-0" />
-                            <span>{partner.contactPhone}</span>
-                          </span>
-                        </div>
+                return (
+                  <div className="h-full rounded-3xl bg-stone-900 border border-stone-800 hover:border-cyan-500/40 shadow-xl transition-all flex flex-col justify-between overflow-hidden relative">
+                    {/* Card Cover Image + Live Status Overlay */}
+                    <div className="relative h-36 sm:h-40 shrink-0 w-full overflow-hidden bg-stone-950">
+                      <img
+                        src={safeSrc(partner.imageUrl, DEFAULT_PLACE_IMAGE)}
+                        alt={partner.businessName}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/20 to-transparent" />
+                      <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                            partner.operatingStatus === 'open'
+                              ? 'bg-emerald-500 text-stone-950'
+                              : 'bg-rose-500 text-white'
+                          }`}
+                        >
+                          {partner.operatingStatus === 'open' ? 'Open Now' : 'Closed'}
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-stone-950/85 text-teal-300 border border-teal-500/30">
+                          {partner.township}
+                        </span>
                       </div>
 
-                      {/* Pricing Breakdown */}
-                      <div className="p-3 rounded-xl bg-stone-950/90 border border-stone-800 space-y-2">
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
-                            <span className="text-[9px] text-stone-400 uppercase block">Per Hour</span>
-                            <span className="text-xs font-black font-mono text-cyan-300">
-                              RM {displayHourlyRate}
+                      {/* Deposit Badge Top Right */}
+                      <div
+                        className={`absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md ${
+                          hasDeposit
+                            ? 'bg-amber-500/20 text-amber-200 border-amber-400/50'
+                            : 'bg-emerald-500/25 text-emerald-200 border-emerald-400/50'
+                        }`}
+                      >
+                        {depositDisplay}
+                      </div>
+
+                      {/* Live Fleet Availability Strip Bottom */}
+                      <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between gap-2">
+                        <span
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold backdrop-blur-md border truncate ${
+                            fleet.isFullyBooked
+                              ? 'bg-rose-950/90 text-rose-200 border-rose-500/50'
+                              : 'bg-stone-950/85 text-emerald-300 border-emerald-500/40'
+                          }`}
+                        >
+                          {fleet.summaryLabel}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card Body */}
+                    <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between space-y-2 min-h-0">
+                      <div className="space-y-2 min-h-0">
+                        {/* Title & Location */}
+                        <div>
+                          <h4 className="text-base font-black text-white leading-snug line-clamp-1">
+                            {partner.businessName}
+                          </h4>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-stone-400 mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+                              <span>{partner.township}, Cameron Highlands</span>
                             </span>
-                          </div>
-                          <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
-                            <span className="text-[9px] text-stone-400 uppercase block">Per Day</span>
-                            <span className="text-xs font-black font-mono text-emerald-300">
-                              RM {displayDailyRate}
-                            </span>
-                          </div>
-                          <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
-                            <span className="text-[9px] text-stone-400 uppercase block">Deposit</span>
-                            <span
-                              className={`text-xs font-black font-mono ${
-                                hasDeposit ? 'text-amber-300' : 'text-emerald-300'
-                              }`}
-                            >
-                              {hasDeposit ? `RM ${partner.depositAmountRm ?? 100}` : 'RM 0'}
+                            <span className="flex items-center gap-1 text-stone-300">
+                              <Phone className="w-3 h-3 text-teal-400 shrink-0" />
+                              <span>{partner.contactPhone}</span>
                             </span>
                           </div>
                         </div>
 
-                        {activeHourPkgs.length > 0 && (
-                          <div className="pt-1 border-t border-stone-800/80 space-y-1">
-                            <span className="text-[10px] font-bold text-cyan-300 block">
-                              Custom Hour Packages:
-                            </span>
-                            <div className="flex flex-wrap gap-1.5">
-                              {activeHourPkgs.map((pkg) => (
+                        {/* Pricing Breakdown */}
+                        <div className="p-2.5 rounded-xl bg-stone-950/90 border border-stone-800 space-y-1.5">
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
+                              <span className="text-[9px] text-stone-400 uppercase block">Per Hour</span>
+                              <span className="text-xs font-black font-mono text-cyan-300 tabular-nums">
+                                RM {displayHourlyRate}
+                              </span>
+                            </div>
+                            <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
+                              <span className="text-[9px] text-stone-400 uppercase block">Per Day</span>
+                              <span className="text-xs font-black font-mono text-emerald-300 tabular-nums">
+                                RM {displayDailyRate}
+                              </span>
+                            </div>
+                            <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
+                              <span className="text-[9px] text-stone-400 uppercase block">Deposit</span>
+                              <span
+                                className={`text-xs font-black font-mono tabular-nums ${
+                                  hasDeposit ? 'text-amber-300' : 'text-emerald-300'
+                                }`}
+                              >
+                                {hasDeposit ? `RM ${partner.depositAmountRm ?? 100}` : 'RM 0'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {activeHourPkgs.length > 0 && (
+                            <div className="pt-1 border-t border-stone-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                              {activeHourPkgs.slice(0, 3).map((pkg) => (
                                 <span
                                   key={pkg.id}
-                                  className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-semibold text-cyan-200"
+                                  className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-semibold text-cyan-200 whitespace-nowrap shrink-0"
                                 >
                                   {pkg.label} ({pkg.hours}h · RM{pkg.priceRm})
                                 </span>
                               ))}
                             </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Included Add-ons & Fuel Policy Badges */}
-                      <div className="flex flex-wrap gap-1.5">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                            partner.fuelPolicy === 'full_tank'
-                              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                              : partner.fuelPolicy === 'half_tank'
-                              ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-                              : 'bg-stone-800 text-stone-400 border-stone-700'
-                          }`}
-                        >
-                          <Fuel className="w-3 h-3" />
-                          <span>
-                            {partner.fuelPolicy === 'full_tank'
-                              ? 'Full Tank Fuel Included'
-                              : partner.fuelPolicy === 'half_tank'
-                              ? 'Half Tank Fuel Included'
-                              : 'Fuel Not Included'}
-                          </span>
-                        </span>
-
-                        {partner.freeRaincoat && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30">
-                            <Umbrella className="w-3 h-3" />
-                            <span>Free Waterproof Raincoat</span>
-                          </span>
-                        )}
-
-                        {partner.childrenHelmet && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-200 border border-amber-500/30">
-                            <Shield className="w-3 h-3" />
-                            <span>Children&apos;s Helmet Available</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Models Quick List (if packages exist) */}
-                      {partner.packages && partner.packages.length > 0 && (
-                        <div className="space-y-1.5 pt-1">
-                          <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">
-                            Available Models:
-                          </span>
-                          <div className="space-y-1">
-                            {partner.packages.slice(0, 3).map((pkg) => (
-                              <div
-                                key={pkg.id}
-                                className="px-2.5 py-1.5 rounded-xl bg-stone-950/70 border border-stone-800 flex items-center justify-between gap-2 text-xs"
-                              >
-                                <div className="min-w-0">
-                                  <span className="font-bold text-white truncate block">
-                                    {pkg.name}
-                                  </span>
-                                  <span className="text-[10px] text-stone-400">
-                                    {pkg.cc} • {pkg.helmetsIncluded} Helmets
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-[11px] font-mono font-bold text-emerald-400">
-                                    RM {pkg.dailyRateRm}/d
-                                  </span>
-                                  <button
-                                    type="button"
-                                    disabled={fleet.isFullyBooked}
-                                    onClick={() => handleOpenBooking(partner, pkg)}
-                                    className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-emerald-600 text-stone-200 hover:text-white text-[10px] font-bold transition-colors cursor-pointer disabled:opacity-40"
-                                  >
-                                    Select
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          )}
                         </div>
-                      )}
 
-                      {/* Vendor Rules & Notice Collapsible Preview */}
-                      {rulesText && (
-                        <div className="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-1 text-xs">
+                        {/* Included Add-ons & Fuel Policy Badges */}
+                        <div className="flex flex-wrap gap-1.5">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              partner.fuelPolicy === 'full_tank'
+                                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                : partner.fuelPolicy === 'half_tank'
+                                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                                : 'bg-stone-800 text-stone-400 border-stone-700'
+                            }`}
+                          >
+                            <Fuel className="w-3 h-3" />
+                            <span>
+                              {partner.fuelPolicy === 'full_tank'
+                                ? 'Full Tank Fuel'
+                                : partner.fuelPolicy === 'half_tank'
+                                ? 'Half Tank Fuel'
+                                : 'Fuel Not Included'}
+                            </span>
+                          </span>
+
+                          {partner.freeRaincoat && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30">
+                              <Umbrella className="w-3 h-3" />
+                              <span>Free Raincoat</span>
+                            </span>
+                          )}
+
+                          {partner.childrenHelmet && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-200 border border-amber-500/30">
+                              <Shield className="w-3 h-3" />
+                              <span>Kids Helmet</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Models Quick List (compact 2 rows so full card fits cleanly without scroll trap) */}
+                        {partner.packages && partner.packages.length > 0 && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider">
+                                Available Models
+                              </span>
+                              {partner.packages.length > 2 && (
+                                <span className="text-[10px] font-mono text-cyan-300">
+                                  +{partner.packages.length - 2} more in booking
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              {partner.packages.slice(0, 2).map((pkg) => (
+                                <div
+                                  key={pkg.id}
+                                  className="px-2.5 py-1.5 rounded-xl bg-stone-950/70 border border-stone-800 flex items-center justify-between gap-2 text-xs"
+                                >
+                                  <div className="min-w-0">
+                                    <span className="font-bold text-white truncate block">
+                                      {pkg.name}
+                                    </span>
+                                    <span className="text-[10px] text-stone-400">
+                                      {pkg.cc} • {pkg.helmetsIncluded} Helmets
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-[11px] font-mono font-bold text-emerald-400 tabular-nums">
+                                      RM {pkg.dailyRateRm}/d
+                                    </span>
+                                    <button
+                                      type="button"
+                                      disabled={fleet.isFullyBooked}
+                                      onClick={() => handleOpenBooking(partner, pkg)}
+                                      className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-emerald-600 text-stone-200 hover:text-white text-[10px] font-bold transition-colors cursor-pointer disabled:opacity-40"
+                                    >
+                                      Select
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Vendor Rules & Notice Toggle */}
+                        {rulesText && (
                           <button
                             type="button"
                             onClick={() =>
                               setExpandedRules((prev) => ({ ...prev, [partner.id]: !prev[partner.id] }))
                             }
-                            className="w-full flex items-center justify-between text-[11px] font-bold text-amber-300 cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
                           >
-                            <span className="flex items-center gap-1.5">
-                              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                              <span>Vendor Rules &amp; Notice</span>
-                            </span>
-                            {isRulesExpanded ? (
-                              <ChevronUp className="w-3.5 h-3.5" />
-                            ) : (
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            )}
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            <span>{isRulesExpanded ? 'Hide Vendor Rules & Notice' : 'View Vendor Rules & Notice'}</span>
                           </button>
-                          <p
-                            className={`text-[11px] text-stone-300 whitespace-pre-line leading-relaxed ${
-                              isRulesExpanded ? '' : 'line-clamp-2'
-                            }`}
-                          >
-                            {rulesText}
-                          </p>
-                        </div>
-                      )}
+                        )}
+                      </div>
+
+                      {/* Primary CTA Button */}
+                      <div className="pt-2 border-t border-stone-800 shrink-0">
+                        <button
+                          type="button"
+                          disabled={fleet.isFullyBooked}
+                          onClick={() => handleOpenBooking(partner)}
+                          className="w-full min-h-[42px] py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-black text-xs transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
+                        >
+                          <Bike className="w-4 h-4" />
+                          <span>{fleet.isFullyBooked ? 'Currently Fully Booked' : 'Book Now'}</span>
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Primary CTA Button */}
-                    <div className="pt-2 border-t border-stone-800">
-                      <button
-                        type="button"
-                        disabled={fleet.isFullyBooked}
-                        onClick={() => handleOpenBooking(partner)}
-                        className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-black text-xs transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
-                      >
-                        <Bike className="w-4 h-4" />
-                        <span>{fleet.isFullyBooked ? 'Currently Fully Booked' : 'Book Now'}</span>
-                      </button>
-                    </div>
+                    {/* Internal Vendor Rules Overlay Drawer (prevents card scroll trapping) */}
+                    {rulesText && isRulesExpanded && (
+                      <div className="absolute inset-x-3 bottom-16 top-28 z-20 rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-amber-500/40 p-3.5 flex flex-col justify-between shadow-2xl">
+                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-800 shrink-0">
+                          <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span>Vendor Rules &amp; Notice</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedRules((prev) => ({ ...prev, [partner.id]: false }))
+                            }
+                            className="p-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white cursor-pointer"
+                            aria-label="Close rules"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto no-scrollbar py-2 text-[11px] text-stone-300 whitespace-pre-line leading-relaxed">
+                          {rulesText}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              }}
+            />
           </div>
         )}
       </div>

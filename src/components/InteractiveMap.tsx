@@ -63,7 +63,7 @@ import {
   Volume2,
   VolumeX,
   ZoomOut,
-  Menu,
+  SlidersHorizontal,
   Minimize2,
   Fuel,
   Moon,
@@ -826,7 +826,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState<boolean>(false);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
-  const mobileFilterMenuRef = useRef<HTMLDivElement | null>(null);
   
   // AI States
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -836,9 +835,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node;
-      const inDesktop = filterMenuRef.current?.contains(target) ?? false;
-      const inMobile = mobileFilterMenuRef.current?.contains(target) ?? false;
-      if (!inDesktop && !inMobile) {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(target)) {
         setIsFilterMenuOpen(false);
       }
     };
@@ -4334,6 +4331,34 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   }, [nearbyAttractionsSignature, isVoiceNavEnabled, language, mapVoiceLang]);
 
+  useEffect(() => {
+    const isAnyDirectoryPopupExpanded = Boolean(
+      (selectedPlace && (!isPlaceCardMinimized || is3dDriverMode)) || selectedTownshipHubModal
+    );
+    const isVisible =
+      mapToolsVisibility.alertBanners &&
+      !activeGeofenceBanner &&
+      !isAnyDirectoryPopupExpanded &&
+      nearbyAttractions.length > 0 &&
+      dismissedNearbySig !== nearbyAttractionsSignature;
+
+    if (!isVisible) return;
+    const timer = window.setTimeout(() => {
+      setDismissedNearbySig(nearbyAttractionsSignature);
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [
+    mapToolsVisibility.alertBanners,
+    activeGeofenceBanner,
+    selectedPlace,
+    isPlaceCardMinimized,
+    is3dDriverMode,
+    selectedTownshipHubModal,
+    nearbyAttractions.length,
+    nearbyAttractionsSignature,
+    dismissedNearbySig,
+  ]);
+
   const handleAddReview = (placeId: string) => {
     if (!newReviewComment.trim()) return;
     const review: PlaceReview = {
@@ -4772,258 +4797,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       className="flex flex-col h-full w-full relative min-h-0"
       onPointerDown={() => unlockAudioEngine(false)}
     >
-      {/* UNIFIED TOP BAR: Replaces mobile title header cleanly at top; floats centered on desktop */}
-      <div className="relative z-50 shrink-0 w-full bg-stone-900 border-b border-stone-800 px-1.5 py-2 sm:p-0 sm:bg-transparent sm:border-b-0 sm:absolute sm:top-3 sm:left-4 sm:right-4 sm:max-w-3xl sm:mx-auto sm:pointer-events-none flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-2">
-        {/* Top Row on Mobile: Hamburger Tools Menu + Search Bar (or Nav HUD) + Mobile Close X */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto sm:flex-1 min-w-0">
-          {/* Little Hamburger Button for Hiding/Showing Map Tools */}
-          <div className="relative pointer-events-auto shrink-0" ref={toolsMenuRef}>
-            <button
-              type="button"
-              onClick={() => setIsToolsMenuOpen(!isToolsMenuOpen)}
-              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl backdrop-blur-xl border shadow-xl flex items-center justify-center transition-all active:scale-95 cursor-pointer relative ${
-                isToolsMenuOpen
-                  ? 'bg-emerald-600 text-white border-emerald-400/60'
-                  : 'bg-stone-950/90 sm:bg-stone-900/95 hover:bg-stone-800 text-stone-100 border-white/15'
-              }`}
-              title={language === 'bm' ? 'Tunjuk / Sembunyi Alatan Peta' : 'Show / Hide Map Tools'}
-              aria-label="Map Tools Visibility Menu"
-            >
-              <Menu className="w-4 h-4 text-emerald-400" />
-              {Object.values(mapToolsVisibility).some((v) => !v) || !isTrafficOverlayActive ? (
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
-              ) : null}
-            </button>
-
-            {isToolsMenuOpen && (
-              <div className="absolute left-0 top-11 z-[75] w-60 rounded-2xl bg-stone-950/96 backdrop-blur-2xl border border-emerald-500/35 shadow-2xl p-2.5 space-y-1.5 text-stone-100 animate-in fade-in duration-150">
-                <div className="flex items-center justify-between px-1.5 pb-1.5 border-b border-white/10">
-                  <span className="text-[10.5px] font-mono font-black text-emerald-400 uppercase tracking-wider">
-                    {language === 'bm' ? 'Alatan Peta' : 'Map Tools'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={resetMapToolsVisibility}
-                    className="text-[10px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
-                  >
-                    {language === 'bm' ? 'Papar Semua' : 'Show All'}
-                  </button>
-                </div>
-
-                {/* Voice Guidance Language Selector */}
-                <div className="pb-2 border-b border-white/10 mb-1">
-                  <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono mb-1.5 px-0.5">
-                    <span>{language === 'bm' ? 'Bahasa Suara Panduan' : 'Voice Guidance Language'}</span>
-                    <span className="text-[9px] font-bold text-emerald-400">
-                      {mapVoiceLang === 'bm' ? 'Bahasa Malaysia' : 'English'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleSetMapVoiceLang('bm')}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
-                        mapVoiceLang === 'bm'
-                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
-                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
-                      }`}
-                    >
-                      <span>🇲🇾 BM</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSetMapVoiceLang('en')}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
-                        mapVoiceLang === 'en'
-                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-900/40'
-                          : 'bg-stone-900/80 text-stone-300 hover:bg-stone-850 border-white/10'
-                      }`}
-                    >
-                      <span>🇬🇧 EN</span>
-                    </button>
-                  </div>
-                </div>
-
-                {[
-                  { key: 'searchBar' as const, label: language === 'bm' ? 'Bar Carian & Penapis' : 'Search & Filter Bar' },
-                  { key: 'viewSwitcher' as const, label: language === 'bm' ? 'Peta / Satelit / Terrain' : 'Map / Sat / Terrain' },
-                  { key: 'zoomControls' as const, label: language === 'bm' ? 'Butang Zum (+/-)' : 'Zoom +/- Controls' },
-                  { key: 'alertBanners' as const, label: language === 'bm' ? 'Sepanduk Geofence & Tarikan' : 'Nearby & Geofence Banners' },
-                  { key: 'audioButton' as const, label: language === 'bm' ? 'Butang Suara PWA' : 'PWA Audio Button' },
-                  { key: 'locateButton' as const, label: language === 'bm' ? 'Butang Lokasi GPS' : 'GPS Locate Button' },
-                  { key: 'navHud' as const, label: language === 'bm' ? 'HUD Navigasi Atas' : 'Navigation Top HUD' },
-                ].map((item) => {
-                  const enabled = mapToolsVisibility[item.key];
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => toggleMapToolVisibility(item.key)}
-                      className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
-                        enabled
-                          ? 'bg-emerald-600/20 text-emerald-100 border border-emerald-500/30'
-                          : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
-                      }`}
-                    >
-                      <span className="truncate pr-2">{item.label}</span>
-                      <span
-                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                          enabled ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
-                        }`}
-                      >
-                        {enabled ? '✓' : ''}
-                      </span>
-                    </button>
-                  );
-                })}
-
-                {/* Smart Traffic / Predictive Flow Mode & Time-of-Day Pattern Selector */}
-                <div className="pt-1.5 mt-1 border-t border-white/10 space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setIsTrafficOverlayActive(!isTrafficOverlayActive)}
-                    className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
-                      isTrafficOverlayActive
-                        ? 'bg-emerald-600/20 text-emerald-100 border border-emerald-500/30'
-                        : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
-                    }`}
-                  >
-                    <span className="truncate pr-2">
-                      {language === 'bm' ? 'Trafik Pintar / Aliran Ramalan' : 'Smart Traffic / Predictive Flow'}
-                    </span>
-                    <span
-                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                        isTrafficOverlayActive ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
-                      }`}
-                    >
-                      {isTrafficOverlayActive ? '✓' : ''}
-                    </span>
-                  </button>
-
-                  {isTrafficOverlayActive && (
-                    <div className="px-1 space-y-1">
-                      <div className="flex items-center justify-between text-[9.5px] font-mono text-stone-400">
-                        <span>{language === 'bm' ? 'Profil Masa:' : 'Flow Pattern:'}</span>
-                        <button
-                          type="button"
-                          onClick={() => setTrafficLegendOpen(!trafficLegendOpen)}
-                          className="text-emerald-400 hover:text-emerald-300 font-bold cursor-pointer"
-                        >
-                          {trafficLegendOpen
-                            ? language === 'bm' ? 'Tutup Legenda' : 'Hide Legend'
-                            : language === 'bm' ? 'Legenda Kelajuan' : 'Speed Legend'}
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-1">
-                        {([
-                          { id: 'live' as const, label: language === 'bm' ? 'Sekarang' : 'Live / Auto' },
-                          { id: 'weekend_peak' as const, label: language === 'bm' ? 'Puncak Hujung Mgg' : 'Wknd Peak' },
-                          { id: 'evening_market' as const, label: language === 'bm' ? 'Pasar Malam' : 'Night Mkt' },
-                          { id: 'night_clear' as const, label: language === 'bm' ? 'Malam Lancar' : 'Night Clear' },
-                        ]).map((opt) => (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => setPredictiveDepartureProfile(opt.id)}
-                            className={`px-1.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer border ${
-                              predictiveDepartureProfile === opt.id
-                                ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
-                                : 'bg-stone-900/80 border-white/10 text-stone-400 hover:text-stone-200'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Muslim Prayer Times ("Coming Soon") Alert Controls */}
-                <div className="pt-1.5 mt-1 border-t border-white/10 space-y-1">
-                  <button
-                    type="button"
-                    onClick={toggleMuslimPrayerAlerts}
-                    className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer ${
-                      isMuslimPrayerAlertsEnabled
-                        ? 'bg-amber-500/20 text-amber-100 border border-amber-400/40'
-                        : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
-                    }`}
-                  >
-                    <span className="truncate pr-2">
-                      🕌 {language === 'bm' ? 'Peringatan Waktu Solat' : 'Muslim Prayer Alerts'}
-                    </span>
-                    <span
-                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                        isMuslimPrayerAlertsEnabled ? 'bg-amber-400 text-stone-950' : 'bg-stone-700 text-stone-400'
-                      }`}
-                    >
-                      {isMuslimPrayerAlertsEnabled ? '✓' : ''}
-                    </span>
-                  </button>
-                  {nextPrayerInfo && (
-                    <div className="px-2 py-1 rounded-lg bg-stone-900/90 border border-white/5 flex items-center justify-between text-[10px] text-stone-300">
-                      <span className="truncate">
-                        {language === 'bm' ? 'Seterusnya:' : 'Next:'}{' '}
-                        <strong className="text-amber-300">{nextPrayerInfo.prayerName}</strong> ({nextPrayerInfo.time12h})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsToolsMenuOpen(false);
-                          triggerPreviewPrayerAlert();
-                        }}
-                        className="px-1.5 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 font-bold cursor-pointer shrink-0 ml-1"
-                        title={language === 'bm' ? 'Uji Peringatan Solat' : 'Preview Prayer Alert'}
-                      >
-                        <Bell className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Quick Ingest Hazard Alert (Telegram / JKR / Image OCR -> camgo_hazards) */}
-                  <div className="pt-1.5 mt-1 border-t border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsToolsMenuOpen(false);
-                        setIngestFeedback(null);
-                        setIsHazardIngestModalOpen(true);
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/35 transition-colors cursor-pointer"
-                    >
-                      <span className="truncate pr-2">
-                        ⚠️ {language === 'bm' ? 'Lapor / Ingat Bahaya AI' : 'Report / Ingest Hazard'}
-                      </span>
-                      <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300">
-                        {combinedActiveHazards.length}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsToolsMenuOpen(false);
-                        window.dispatchEvent(new CustomEvent('open-community-report'));
-                      }}
-                      className="w-full mt-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between bg-emerald-600/25 hover:bg-emerald-600/35 text-emerald-200 border border-emerald-500/35 transition-colors cursor-pointer"
-                    >
-                      <span className="truncate pr-2">
-                        📢 {language === 'bm' ? 'Lapor Insiden Komuniti (GPS & Foto)' : 'Report Incident (GPS & Evidence)'}
-                      </span>
-                      <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300">
-                        NEW
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Search Pill (when not navigating) OR Navigation HUD */}
+      {/* SLEEK SINGLE-ROW TRANSLUCENT FLOATING HUD BAR */}
+      <div className="pointer-events-none absolute top-3 inset-x-2.5 sm:inset-x-4 z-50 flex justify-center">
+        <div className="w-full max-w-3xl relative">
           {!activeRoute && !isCalculatingRoute ? (
-            <div className="pointer-events-auto flex-1 min-w-0 rounded-xl sm:rounded-2xl bg-stone-950/90 sm:bg-stone-900/95 backdrop-blur-xl border border-white/15 shadow-xl sm:shadow-2xl px-2 py-1.5 sm:p-1.5 flex items-center gap-1.5 sm:gap-2">
+            <div className="pointer-events-auto relative rounded-2xl bg-stone-950/78 backdrop-blur-xl border border-white/15 shadow-[0_12px_36px_rgba(0,0,0,0.42)] px-2 sm:px-2.5 py-1.5 flex items-center gap-1.5">
+              {/* Search Bar or Map Title */}
               {mapToolsVisibility.searchBar ? (
                 <MapSearchBar
                   mapRef={mapInstanceRef}
@@ -5036,148 +4815,175 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   onSelectCorridor={handleSelectTrafficNav}
                   onAiSearchSubmit={handleAiSearchSubmit}
                   onNavigateGeocodedResult={handleNavigateGeocodedPin}
+                  anchorToParent={true}
                 />
               ) : (
-                <span className="text-xs font-bold text-emerald-400 px-1 truncate flex-1">
+                <span className="text-xs font-semibold text-emerald-300 px-2 truncate flex-1">
                   Cameron Highlands Map
                 </span>
               )}
 
-              {/* Desktop inline controls inside the unified floating pill */}
-              <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-                {mapToolsVisibility.viewSwitcher && (
-                  <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-stone-950/80 border border-white/10 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setActiveMapType('osm')}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
-                        activeMapType === 'osm' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                      }`}
-                    >
-                      Map
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveMapType('satellite')}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
-                        activeMapType === 'satellite' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                      }`}
-                    >
-                      Sat
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveMapType('terrain')}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
-                        activeMapType === 'terrain' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                      }`}
-                    >
-                      Terrain
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStreetViewOpen(true)}
-                      className="p-1 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-white/5 transition-all cursor-pointer"
-                      title="360° Street View"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
+              {/* Compact Right Actions: Filter, Collapsible Tools & Close */}
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Filter Popover Button */}
                 <div className="relative" ref={filterMenuRef}>
                   <button
                     type="button"
-                    onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
-                    className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5 whitespace-nowrap ${
-                      isFilterMenuOpen || proximityRadius !== 'all' || activeTownship !== 'all'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-stone-800 hover:bg-stone-700 text-stone-200'
+                    onClick={() => {
+                      setIsToolsMenuOpen(false);
+                      setIsFilterMenuOpen((prev) => !prev);
+                    }}
+                    className={`min-h-[36px] px-2 sm:px-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shrink-0 whitespace-nowrap ${
+                      isFilterMenuOpen ||
+                      proximityRadius !== 'all' ||
+                      activeTownship !== 'all' ||
+                      activeCategory !== 'all'
+                        ? 'bg-emerald-600/90 text-white border-emerald-400/60 shadow-sm'
+                        : 'bg-white/10 hover:bg-white/15 text-stone-100 border-white/15'
                     }`}
-                    title="Filter Menu"
+                    title={language === 'bm' ? 'Tapis Peta' : 'Filter Map'}
+                    aria-expanded={isFilterMenuOpen}
                   >
-                    <Layers className="w-4 h-4 text-emerald-400" />
-                    <span className="text-[10px] font-bold">{language === 'bm' ? 'Tapis' : 'Filter'}</span>
+                    <Layers className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">{language === 'bm' ? 'Tapis' : 'Filter'}</span>
                   </button>
 
                   {isFilterMenuOpen && (
-                    <div className="hidden sm:block absolute right-0 top-11 z-[75] w-64 max-h-[65vh] overflow-y-auto rounded-2xl bg-stone-900/95 backdrop-blur-xl border border-emerald-500/30 shadow-2xl p-3 space-y-4 text-stone-100 animate-in fade-in duration-200">
-                      <div className="space-y-1">
-                        <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Proximity Radius</div>
-                        {(['all', '5', '10', '25'] as const).map((rad) => (
+                    <div className="fixed inset-x-2.5 top-[64px] sm:inset-x-auto sm:absolute sm:right-0 sm:top-11 z-[75] sm:w-72 max-h-[68vh] overflow-y-auto rounded-2xl bg-stone-950/92 backdrop-blur-2xl border border-white/15 shadow-2xl p-3 space-y-3.5 text-stone-100 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[11px] font-bold text-stone-200 tracking-wide">
+                          {language === 'bm' ? 'Tapis Direktori & Jarak' : 'Map Filters'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {(activeCategory !== 'all' || proximityRadius !== 'all' || activeTownship !== 'all') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleResetFilters();
+                                setProximityRadius('all');
+                              }}
+                              className="text-[10.5px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
+                            >
+                              {language === 'bm' ? 'Set Semula' : 'Reset'}
+                            </button>
+                          )}
                           <button
-                            key={rad}
                             type="button"
-                            onClick={() => {
-                              if (rad !== 'all' && !userGpsCoords) handleLocateMe();
-                              setProximityRadius(rad);
-                            }}
-                            className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-between ${
-                              proximityRadius === rad ? 'bg-emerald-600 text-white' : 'hover:bg-stone-800 text-stone-300'
-                            }`}
+                            onClick={() => setIsFilterMenuOpen(false)}
+                            className="p-1 rounded-lg bg-white/10 hover:bg-white/15 text-stone-300 hover:text-white cursor-pointer"
+                            aria-label="Close filter menu"
                           >
-                            <span>{rad === 'all' ? 'All Range' : `Within ${rad} km`}</span>
-                            {proximityRadius === rad && <span className="text-[10px]">✓</span>}
+                            <X className="w-3.5 h-3.5" />
                           </button>
-                        ))}
+                        </div>
                       </div>
 
-                      <div className="space-y-1 pt-2 border-t border-white/10">
-                        <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Categories</div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 px-1">
+                          {language === 'bm' ? 'Radius Berhampiran' : 'Proximity Radius'}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {(['all', '5', '10', '25'] as const).map((rad) => (
+                            <button
+                              key={rad}
+                              type="button"
+                              onClick={() => {
+                                if (rad !== 'all' && !userGpsCoords) handleLocateMe();
+                                setProximityRadius(rad);
+                              }}
+                              className={`text-left px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-between border ${
+                                proximityRadius === rad
+                                  ? 'bg-emerald-600 text-white border-emerald-400/50'
+                                  : 'bg-stone-900/75 hover:bg-stone-800 text-stone-300 border-white/10'
+                              }`}
+                            >
+                              <span>{rad === 'all' ? (language === 'bm' ? 'Semua Jarak' : 'All Range') : `${rad} km`}</span>
+                              {proximityRadius === rad && <span className="text-[10px]">✓</span>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 pt-2 border-t border-white/10">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 px-1">
+                          {language === 'bm' ? 'Kategori' : 'Categories'}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCategory('all', 'all')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left cursor-pointer ${
+                            activeCategory === 'all'
+                              ? 'bg-emerald-600/30 border-emerald-400/70 text-emerald-100 font-bold'
+                              : 'bg-stone-900/65 hover:bg-stone-800 border-white/10 text-stone-200'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold">
+                            {language === 'bm' ? 'Semua Kategori' : 'All Highland Spots'}
+                          </span>
+                          {activeCategory === 'all' && <span className="text-[10px] text-emerald-300">✓</span>}
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleSelectCategory('travel_tourism', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left cursor-pointer ${
                             activeCategory === 'travel_tourism' || activeCategory === 'attraction'
-                              ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                              ? 'bg-emerald-600/30 border-emerald-400/70 text-emerald-100 font-bold'
+                              : 'bg-stone-900/65 hover:bg-stone-800 border-white/10 text-stone-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🌴</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">🌴</span>
+                            <span className="text-xs font-semibold">
+                              {language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}
+                            </span>
                           </div>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSelectCategory('accommodation', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left cursor-pointer ${
                             activeCategory === 'accommodation'
-                              ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                              ? 'bg-teal-600/30 border-teal-400/70 text-teal-100 font-bold'
+                              : 'bg-stone-900/65 hover:bg-stone-800 border-white/10 text-stone-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🏨</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">🏨</span>
+                            <span className="text-xs font-semibold">
+                              {language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}
+                            </span>
                           </div>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSelectCategory('services_utilities', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left cursor-pointer ${
                             activeCategory === 'services_utilities' || activeCategory === 'local_services'
-                              ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                              ? 'bg-blue-600/30 border-blue-400/70 text-blue-100 font-bold'
+                              : 'bg-stone-900/65 hover:bg-stone-800 border-white/10 text-stone-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🔧</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">🔧</span>
+                            <span className="text-xs font-semibold">
+                              {language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}
+                            </span>
                           </div>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSelectCategory('shopping', 'all')}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left cursor-pointer ${
                             activeCategory === 'shopping' || activeCategory === 'business'
-                              ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
-                              : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
+                              ? 'bg-pink-600/30 border-pink-400/70 text-pink-100 font-bold'
+                              : 'bg-stone-900/65 hover:bg-stone-800 border-white/10 text-stone-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base">🛍️</span>
-                            <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">🛍️</span>
+                            <span className="text-xs font-semibold">
+                              {language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}
+                            </span>
                           </div>
                         </button>
                       </div>
@@ -5185,67 +4991,362 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   )}
                 </div>
 
-                {mapToolsVisibility.audioButton && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => togglePwaAudioAlerts()}
-                      className={`p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                        isVoiceNavEnabled
-                          ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-stone-800/80 hover:bg-stone-700 text-stone-500 border border-white/10'
-                      }`}
-                      title={
-                        isVoiceNavEnabled
-                          ? (language === 'bm' ? 'Makluman Suara PWA: Aktif' : 'PWA Audio Alerts: Enabled')
-                          : (language === 'bm' ? 'Makluman Suara PWA: Disenyapkan' : 'PWA Audio Alerts: Muted')
-                      }
-                      aria-label="Toggle PWA Voice Alerts"
-                    >
-                      {isVoiceNavEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={toggleMapVoiceLang}
-                      className={`px-2 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0 text-[11px] font-bold whitespace-nowrap flex items-center gap-1 border ${
-                        mapVoiceLang === 'bm'
-                          ? 'bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border-emerald-500/40 shadow-emerald-900/20'
-                          : 'bg-stone-800 hover:bg-stone-700 text-sky-300 border-sky-500/30'
-                      }`}
-                      title={
-                        mapVoiceLang === 'bm'
-                          ? 'Suara Peta: Bahasa Malaysia (Klik untuk English)'
-                          : 'Map Voice: English (Click for Bahasa Malaysia)'
-                      }
-                      aria-label="Toggle Map Voice Language"
-                    >
-                      <span>{mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}</span>
-                    </button>
-                  </div>
-                )}
-
-                {mapToolsVisibility.locateButton && (
+                {/* Collapsible Floating Glass Tools Drawer Trigger */}
+                <div className="relative" ref={toolsMenuRef}>
                   <button
                     type="button"
-                    onClick={handleLocateMe}
-                    disabled={isLocatingUser}
-                    className={`p-2 rounded-xl text-white transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                      isLocatingUser
-                        ? 'bg-amber-600 animate-pulse'
-                        : 'bg-emerald-600 hover:bg-emerald-500'
+                    onClick={() => {
+                      setIsFilterMenuOpen(false);
+                      setIsToolsMenuOpen((prev) => !prev);
+                    }}
+                    className={`min-h-[36px] px-2 sm:px-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer shrink-0 relative ${
+                      isToolsMenuOpen
+                        ? 'bg-white text-stone-950 border-white shadow-md'
+                        : 'bg-white/10 hover:bg-white/15 text-stone-100 border-white/15'
                     }`}
-                    title={language === 'bm' ? 'Kesan Lokasi GPS Anda' : 'Locate My GPS Position'}
+                    title={language === 'bm' ? 'Alatan & Tetapan Peta' : 'Map Tools & Layers'}
+                    aria-expanded={isToolsMenuOpen}
                   >
-                    <LocateFixed className={`w-4 h-4 ${isLocatingUser ? 'animate-spin' : ''}`} />
+                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">{language === 'bm' ? 'Alatan' : 'Tools'}</span>
+                    <ChevronDown
+                      className={`w-3 h-3 transition-transform ${
+                        isToolsMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isToolsMenuOpen && (
+                    <div className="fixed inset-x-2.5 top-[64px] sm:inset-x-auto sm:absolute sm:right-0 sm:top-11 z-[75] sm:w-80 max-h-[75vh] overflow-y-auto rounded-2xl bg-stone-950/92 backdrop-blur-2xl border border-white/15 shadow-2xl p-3 space-y-3 text-stone-100 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between px-0.5">
+                        <span className="text-[11px] font-bold text-stone-200 tracking-wide">
+                          {language === 'bm' ? 'Alatan & Lapisan Peta' : 'Map Layers & Utilities'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsToolsMenuOpen(false)}
+                          className="p-1 rounded-lg bg-white/10 hover:bg-white/15 text-stone-300 hover:text-white cursor-pointer"
+                          aria-label="Close tools menu"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* 1. Map Layer Style + 360° Street View */}
+                      {mapToolsVisibility.viewSwitcher && (
+                        <div className="space-y-1.5">
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 px-0.5">
+                            {language === 'bm' ? 'Gaya Peta & 360°' : 'Map Style & Street View'}
+                          </div>
+                          <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-stone-900/90 border border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => setActiveMapType('osm')}
+                              className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                activeMapType === 'osm'
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'text-stone-300 hover:text-white hover:bg-white/5'
+                              }`}
+                            >
+                              Map
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActiveMapType('satellite')}
+                              className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                activeMapType === 'satellite'
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'text-stone-300 hover:text-white hover:bg-white/5'
+                              }`}
+                            >
+                              Sat
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActiveMapType('terrain')}
+                              className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                activeMapType === 'terrain'
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'text-stone-300 hover:text-white hover:bg-white/5'
+                              }`}
+                            >
+                              Terrain
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsToolsMenuOpen(false);
+                                setStreetViewOpen(true);
+                              }}
+                              className="py-1.5 rounded-lg text-[11px] font-bold text-amber-300 hover:bg-white/5 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                              title="360° Street View"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>360°</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 2. Primary Utility Actions Grid */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {mapToolsVisibility.audioButton && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => togglePwaAudioAlerts()}
+                              className={`min-h-[40px] px-2.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors ${
+                                isVoiceNavEnabled
+                                  ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-100'
+                                  : 'bg-stone-900/80 border-white/10 text-stone-400 hover:bg-stone-800'
+                              }`}
+                            >
+                              {isVoiceNavEnabled ? (
+                                <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              ) : (
+                                <VolumeX className="w-4 h-4 text-stone-400 shrink-0" />
+                              )}
+                              <span className="truncate">
+                                {isVoiceNavEnabled
+                                  ? language === 'bm' ? 'Suara Aktif' : 'Voice On'
+                                  : language === 'bm' ? 'Suara Senyap' : 'Voice Off'}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={toggleMapVoiceLang}
+                              className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/80 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors"
+                            >
+                              <span className="truncate">
+                                {language === 'bm' ? 'Bahasa Suara' : 'Voice Lang'}
+                              </span>
+                              <span className="text-[11px] font-bold text-emerald-300 shrink-0">
+                                {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                              </span>
+                            </button>
+                          </>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setIsTrafficOverlayActive(!isTrafficOverlayActive)}
+                          className={`min-h-[40px] px-2.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors ${
+                            isTrafficOverlayActive
+                              ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-100'
+                              : 'bg-stone-900/80 border-white/10 text-stone-400 hover:bg-stone-800'
+                          }`}
+                        >
+                          <Activity className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span className="truncate">
+                            {language === 'bm' ? 'Trafik Pintar' : 'Smart Traffic'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsToolsMenuOpen(false);
+                            handleScrollToForecaster();
+                          }}
+                          className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/80 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors"
+                        >
+                          <Car className="w-4 h-4 text-cyan-400 shrink-0" />
+                          <span className="truncate">
+                            {language === 'bm' ? 'Ramalan Koridor' : 'Forecaster'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={toggleMuslimPrayerAlerts}
+                          className={`min-h-[40px] px-2.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors ${
+                            isMuslimPrayerAlertsEnabled
+                              ? 'bg-amber-500/20 border-amber-400/45 text-amber-100'
+                              : 'bg-stone-900/80 border-white/10 text-stone-400 hover:bg-stone-800'
+                          }`}
+                        >
+                          <Moon className="w-4 h-4 text-amber-300 shrink-0" />
+                          <span className="truncate">
+                            {language === 'bm' ? 'Waktu Solat' : 'Prayer Alerts'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsToolsMenuOpen(false);
+                            setIngestFeedback(null);
+                            setIsHazardIngestModalOpen(true);
+                          }}
+                          className="min-h-[40px] px-2.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-200 text-xs font-semibold flex items-center justify-between gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <span className="flex items-center gap-1.5 truncate">
+                            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="truncate">{language === 'bm' ? 'Bahaya AI' : 'Hazards'}</span>
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-rose-300 tabular-nums shrink-0">
+                            {combinedActiveHazards.length}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Community Incident Report + Next Prayer Quick Preview */}
+                      <div className="space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsToolsMenuOpen(false);
+                            window.dispatchEvent(new CustomEvent('open-community-report'));
+                          }}
+                          className="w-full min-h-[40px] px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/35 text-emerald-100 text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors"
+                        >
+                          <span className="flex items-center gap-2 truncate">
+                            <Megaphone className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span className="truncate">
+                              {language === 'bm' ? 'Lapor Insiden Komuniti (GPS & Foto)' : 'Report Community Incident'}
+                            </span>
+                          </span>
+                        </button>
+
+                        {nextPrayerInfo && (
+                          <div className="px-2.5 py-1.5 rounded-xl bg-stone-900/90 border border-white/10 flex items-center justify-between text-[11px] text-stone-300">
+                            <span className="truncate">
+                              {language === 'bm' ? 'Solat seterusnya:' : 'Next prayer:'}{' '}
+                              <strong className="text-amber-300">{nextPrayerInfo.prayerName}</strong> ({nextPrayerInfo.time12h})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsToolsMenuOpen(false);
+                                triggerPreviewPrayerAlert();
+                              }}
+                              className="p-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/45 text-emerald-200 cursor-pointer shrink-0 ml-2"
+                              title={language === 'bm' ? 'Uji Peringatan Solat' : 'Preview Prayer Alert'}
+                            >
+                              <Bell className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. Traffic Flow Profile (when Smart Traffic is active) */}
+                      {isTrafficOverlayActive && (
+                        <div className="pt-2 border-t border-white/10 space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] font-semibold text-stone-400 px-0.5">
+                            <span>{language === 'bm' ? 'Corak Aliran Masa' : 'Traffic Flow Pattern'}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTrafficLegendOpen(!trafficLegendOpen);
+                                setIsToolsMenuOpen(false);
+                              }}
+                              className="text-emerald-400 hover:text-emerald-300 font-bold cursor-pointer"
+                            >
+                              {trafficLegendOpen
+                                ? language === 'bm' ? 'Tutup Legenda' : 'Hide Legend'
+                                : language === 'bm' ? 'Lihat Legenda' : 'Speed Legend'}
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {([
+                              { id: 'live' as const, label: language === 'bm' ? 'Sekarang' : 'Live / Auto' },
+                              { id: 'weekend_peak' as const, label: language === 'bm' ? 'Puncak Hujung Mgg' : 'Wknd Peak' },
+                              { id: 'evening_market' as const, label: language === 'bm' ? 'Pasar Malam' : 'Night Mkt' },
+                              { id: 'night_clear' as const, label: language === 'bm' ? 'Malam Lancar' : 'Night Clear' },
+                            ]).map((opt) => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => setPredictiveDepartureProfile(opt.id)}
+                                className={`px-2 py-1.5 rounded-xl text-[10.5px] font-bold transition-colors cursor-pointer border ${
+                                  predictiveDepartureProfile === opt.id
+                                    ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
+                                    : 'bg-stone-900/80 border-white/10 text-stone-400 hover:text-stone-200'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 4. Collapsible Overlay Visibility Preferences */}
+                      <details className="pt-2 border-t border-white/10 group">
+                        <summary className="list-none flex items-center justify-between text-[10.5px] font-semibold text-stone-400 hover:text-stone-200 cursor-pointer select-none px-0.5">
+                          <span>{language === 'bm' ? 'Tetapan Paparan HUD' : 'Customize HUD Overlays'}</span>
+                          <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div className="mt-2 space-y-1">
+                          <div className="flex justify-end pb-1">
+                            <button
+                              type="button"
+                              onClick={resetMapToolsVisibility}
+                              className="text-[10px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
+                            >
+                              {language === 'bm' ? 'Papar Semua' : 'Show All'}
+                            </button>
+                          </div>
+                          {[
+                            { key: 'searchBar' as const, label: language === 'bm' ? 'Bar Carian' : 'Search Bar' },
+                            { key: 'viewSwitcher' as const, label: language === 'bm' ? 'Peta / Satelit / Terrain' : 'Map / Sat / Terrain' },
+                            { key: 'zoomControls' as const, label: language === 'bm' ? 'Butang Zum (+/-)' : 'Zoom +/- Controls' },
+                            { key: 'alertBanners' as const, label: language === 'bm' ? 'Sepanduk Geofence & Tarikan' : 'Nearby & Geofence Banners' },
+                            { key: 'audioButton' as const, label: language === 'bm' ? 'Kawalan Suara PWA' : 'PWA Audio Controls' },
+                            { key: 'locateButton' as const, label: language === 'bm' ? 'Butang Lokasi GPS' : 'GPS Locate Button' },
+                            { key: 'navHud' as const, label: language === 'bm' ? 'HUD Navigasi Atas' : 'Navigation Top HUD' },
+                          ].map((item) => {
+                            const enabled = mapToolsVisibility[item.key];
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => toggleMapToolVisibility(item.key)}
+                                className={`w-full px-2.5 py-1.5 rounded-xl text-[11px] font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                                  enabled
+                                    ? 'bg-emerald-600/15 text-emerald-100 border border-emerald-500/25'
+                                    : 'bg-stone-900/70 text-stone-400 border border-white/5 hover:bg-stone-800'
+                                }`}
+                              >
+                                <span className="truncate pr-2">{item.label}</span>
+                                <span
+                                  className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                                    enabled ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
+                                  }`}
+                                >
+                                  {enabled ? '✓' : ''}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    </div>
+                  )}
+                </div>
+
+                {/* Unified Close Map Button (Mobile & Desktop) */}
+                {onClose && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopAllVoiceAlerts();
+                      onClose();
+                    }}
+                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-stone-200 hover:text-white border border-white/15 flex items-center justify-center shrink-0 cursor-pointer transition-colors active:scale-95"
+                    title={language === 'bm' ? 'Tutup Peta' : 'Close Map'}
+                    aria-label="Close Map"
+                  >
+                    <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
             </div>
           ) : activeRoute && mapToolsVisibility.navHud ? (
             /* TOP NAVIGATION HUD BANNER (Waze / Google Maps Style): Active during navigation */
-            <div className="flex-1 min-w-0 pointer-events-auto select-none animate-in slide-in-from-top duration-300">
-              <div className="rounded-2xl sm:rounded-3xl bg-emerald-700/95 backdrop-blur-2xl border border-emerald-400/40 shadow-2xl p-2 sm:p-4 text-white flex items-center justify-between gap-2 sm:gap-3">
+            <div className="pointer-events-auto select-none animate-in slide-in-from-top duration-300">
+              <div className="rounded-2xl sm:rounded-3xl bg-emerald-700/92 backdrop-blur-2xl border border-emerald-400/40 shadow-2xl p-2.5 sm:p-4 text-white flex items-center justify-between gap-2 sm:gap-3">
                 <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white text-emerald-800 flex items-center justify-center shrink-0 shadow-md">
                   <span className="text-lg sm:text-2xl font-black leading-none">
                     {activeRoute.steps[0]?.icon || '⬆️'}
@@ -5301,252 +5402,30 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex-1 min-w-0 sm:hidden text-xs font-bold text-emerald-400 px-1 truncate">
-              {language === 'bm' ? 'Mengira laluan...' : 'Calculating route...'}
-            </div>
-          )}
-
-          {/* Mobile Close Map Button (replaces removed mobile header X button) */}
-          {onClose && (
-            <button
-              type="button"
-              onClick={() => {
-                stopAllVoiceAlerts();
-                onClose();
-              }}
-              className="sm:hidden w-9 h-9 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-white/15 flex items-center justify-center shrink-0 cursor-pointer transition-colors"
-              title={language === 'bm' ? 'Tutup Peta' : 'Close Map'}
-              aria-label="Close Map"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Mobile Row 2 (in the removed header spot): Strictly 1 row — Terrain Toggle, Filter, Audio Language, Locate Me */}
-        {!activeRoute && !isCalculatingRoute && (
-          <div className="sm:hidden flex flex-nowrap items-center justify-between gap-1 w-full pointer-events-auto">
-            {/* Terrain / Map / Satellite + 360° */}
-            {mapToolsVisibility.viewSwitcher && (
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-stone-950 border border-white/10 shrink-0">
+            <div className="pointer-events-auto rounded-2xl bg-stone-950/82 backdrop-blur-xl border border-white/15 shadow-xl px-3 py-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-emerald-300 truncate">
+                {language === 'bm' ? 'Mengira laluan...' : 'Calculating route...'}
+              </span>
+              {onClose && (
                 <button
                   type="button"
-                  onClick={() => setActiveMapType('osm')}
-                  className={`px-1.5 py-1 rounded-md text-[10px] leading-none font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    activeMapType === 'osm' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                  }`}
+                  onClick={() => {
+                    stopAllVoiceAlerts();
+                    onClose();
+                  }}
+                  className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-stone-200 flex items-center justify-center shrink-0 cursor-pointer"
+                  aria-label="Close Map"
                 >
-                  Map
+                  <X className="w-4 h-4" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveMapType('satellite')}
-                  className={`px-1.5 py-1 rounded-md text-[10px] leading-none font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    activeMapType === 'satellite' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                  }`}
-                >
-                  Sat
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveMapType('terrain')}
-                  className={`px-1.5 py-1 rounded-md text-[10px] leading-none font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    activeMapType === 'terrain' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-300 hover:text-white'
-                  }`}
-                >
-                  Terrain
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStreetViewOpen(true)}
-                  className="p-1 rounded-md text-amber-400 hover:text-amber-300 hover:bg-white/5 transition-all cursor-pointer shrink-0"
-                  title="360° Street View"
-                  aria-label="360 Street View"
-                >
-                  <Eye className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-
-            {/* Filter Button */}
-            <div className="relative shrink-0" ref={mobileFilterMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
-                className={`px-1.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 flex items-center gap-0.5 whitespace-nowrap text-[10px] leading-none font-bold ${
-                  isFilterMenuOpen || proximityRadius !== 'all' || activeTownship !== 'all'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border border-white/10'
-                }`}
-                title="Filter Menu"
-              >
-                <Layers className="w-3 h-3 text-emerald-400 shrink-0" />
-                <span>{language === 'bm' ? 'Tapis' : 'Filter'}</span>
-              </button>
-
-              {isFilterMenuOpen && (
-                <div className="fixed inset-x-3 top-[102px] z-[75] max-h-[65vh] overflow-y-auto rounded-2xl bg-stone-900/98 backdrop-blur-xl border border-emerald-500/35 shadow-2xl p-3 space-y-4 text-stone-100 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-[10.5px] font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                      {language === 'bm' ? 'Tapis Peta' : 'Map Filters'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsFilterMenuOpen(false)}
-                      className="p-1 rounded-lg bg-stone-800 text-stone-300 hover:text-white cursor-pointer"
-                      aria-label="Close filter menu"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Proximity Radius</div>
-                    {(['all', '5', '10', '25'] as const).map((rad) => (
-                      <button
-                        key={rad}
-                        type="button"
-                        onClick={() => {
-                          if (rad !== 'all' && !userGpsCoords) handleLocateMe();
-                          setProximityRadius(rad);
-                        }}
-                        className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-between ${
-                          proximityRadius === rad ? 'bg-emerald-600 text-white' : 'hover:bg-stone-800 text-stone-300'
-                        }`}
-                      >
-                        <span>{rad === 'all' ? 'All Range' : `Within ${rad} km`}</span>
-                        {proximityRadius === rad && <span className="text-[10px]">✓</span>}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="space-y-1 pt-2 border-t border-white/10">
-                    <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Categories</div>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectCategory('travel_tourism', 'all')}
-                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                        activeCategory === 'travel_tourism' || activeCategory === 'attraction'
-                          ? 'bg-emerald-600/30 border-emerald-400/80 text-emerald-200 font-bold'
-                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">🌴</span>
-                        <div className="text-xs font-bold">{language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}</div>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectCategory('accommodation', 'all')}
-                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                        activeCategory === 'accommodation'
-                          ? 'bg-teal-600/30 border-teal-400/80 text-teal-200 font-bold'
-                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">🏨</span>
-                        <div className="text-xs font-bold">{language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}</div>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectCategory('services_utilities', 'all')}
-                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                        activeCategory === 'services_utilities' || activeCategory === 'local_services'
-                          ? 'bg-blue-600/30 border-blue-400/80 text-blue-200 font-bold'
-                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">🔧</span>
-                        <div className="text-xs font-bold">{language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}</div>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectCategory('shopping', 'all')}
-                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
-                        activeCategory === 'shopping' || activeCategory === 'business'
-                          ? 'bg-pink-600/30 border-pink-400/80 text-pink-200 font-bold'
-                          : 'bg-stone-900/60 hover:bg-stone-850 border-white/10 text-stone-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">🛍️</span>
-                        <div className="text-xs font-bold">{language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}</div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
               )}
             </div>
-
-            {/* Audio Mute & Voice Language Toggle */}
-            {mapToolsVisibility.audioButton && (
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => togglePwaAudioAlerts()}
-                  className={`p-1 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 ${
-                    isVoiceNavEnabled
-                      ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-stone-800/80 hover:bg-stone-700 text-stone-500 border border-white/10'
-                  }`}
-                  title={
-                    isVoiceNavEnabled
-                      ? (language === 'bm' ? 'Makluman Suara PWA: Aktif' : 'PWA Audio Alerts: Enabled')
-                      : (language === 'bm' ? 'Makluman Suara PWA: Disenyapkan' : 'PWA Audio Alerts: Muted')
-                  }
-                  aria-label="Toggle PWA Voice Alerts"
-                >
-                  {isVoiceNavEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={toggleMapVoiceLang}
-                  className={`px-1.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 text-[10px] leading-none font-bold whitespace-nowrap flex items-center gap-0.5 border ${
-                    mapVoiceLang === 'bm'
-                      ? 'bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border-emerald-500/40'
-                      : 'bg-stone-800 hover:bg-stone-700 text-sky-300 border-sky-500/30'
-                  }`}
-                  title={
-                    mapVoiceLang === 'bm'
-                      ? 'Suara Peta: Bahasa Malaysia (Klik untuk English)'
-                      : 'Map Voice: English (Click for Bahasa Malaysia)'
-                  }
-                  aria-label="Toggle Map Voice Language"
-                >
-                  <span>{mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}</span>
-                </button>
-              </div>
-            )}
-
-            {/* Locate Me Button */}
-            {mapToolsVisibility.locateButton && (
-              <button
-                type="button"
-                onClick={handleLocateMe}
-                disabled={isLocatingUser}
-                className={`px-1.5 py-1 rounded-lg text-white transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 flex items-center gap-0.5 whitespace-nowrap text-[10px] leading-none font-bold ${
-                  isLocatingUser
-                    ? 'bg-amber-600 animate-pulse'
-                    : 'bg-emerald-600 hover:bg-emerald-500'
-                }`}
-                title={language === 'bm' ? 'Kesan Lokasi GPS Anda' : 'Locate My GPS Position'}
-              >
-                <LocateFixed className={`w-3 h-3 shrink-0 ${isLocatingUser ? 'animate-spin' : ''}`} />
-                <span>{language === 'bm' ? 'Lokasi' : 'Locate'}</span>
-              </button>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Map Container with Automatic 3D Driver's Perspective Navigation Rig (50-65° pitch + heading-up) */}
-      <div className="map-wrapper relative isolate z-0 w-full h-full flex-1 min-h-0 rounded-none sm:rounded-2xl overflow-hidden border-0 sm:border border-white/10 shadow-2xl glass-panel select-none">
+      {/* Primary Focus: Full-Viewport Interactive Map Container with Automatic 3D Driver Rig */}
+      <div className="map-wrapper relative isolate z-0 w-full h-full flex-1 min-h-0 overflow-hidden select-none">
         {/* 3D Perspective Positioning & Heading-Up Camera Rig */}
         <div
           className={
@@ -5577,54 +5456,73 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           <div className="pointer-events-none absolute top-0 left-0 right-0 h-28 z-20 bg-gradient-to-b from-stone-950/90 via-stone-950/45 to-transparent transition-opacity duration-500" />
         )}
 
-        {/* Zoom Controls (Bottom-Right) - toggled via Hamburger Tools Menu */}
-        {mapToolsVisibility.zoomControls && (
+        {/* Bottom-Right Frosted Map Thumb Controls: GPS Locate + Zoom (+/-) */}
+        {(mapToolsVisibility.locateButton || mapToolsVisibility.zoomControls) && (
           <div
-            className={`absolute right-3 z-30 flex flex-col items-end gap-2 pointer-events-auto transition-all duration-300 ${
+            className={`absolute right-3 z-30 flex flex-col items-center gap-2 pointer-events-auto transition-all duration-300 ${
               activeRoute || selectedPlace
                 ? (isNavCardMinimized || isPlaceCardMinimized ? 'bottom-16 sm:bottom-6' : 'bottom-44 sm:bottom-6')
                 : 'bottom-4 sm:bottom-6'
             }`}
           >
-            <div className="flex flex-col rounded-xl overflow-hidden bg-stone-900/90 backdrop-blur-xl border border-white/15 shadow-xl">
+            {mapToolsVisibility.locateButton && (
               <button
                 type="button"
-                onClick={() => mapInstanceRef.current?.zoomIn(0.5)}
-                className="p-2 hover:bg-stone-800 text-stone-100 transition-colors cursor-pointer border-b border-white/10"
-                title="Zoom In"
-                aria-label="Zoom In"
+                onClick={handleLocateMe}
+                disabled={isLocatingUser}
+                className={`w-10 h-10 rounded-full border backdrop-blur-xl shadow-[0_6px_18px_rgba(0,0,0,0.3)] flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                  isLocatingUser
+                    ? 'bg-amber-500/90 border-amber-300/70 text-stone-950 animate-pulse'
+                    : 'bg-stone-950/80 hover:bg-stone-900 border-white/15 text-emerald-400'
+                }`}
+                title={language === 'bm' ? 'Kesan Lokasi GPS Anda' : 'Locate My GPS Position'}
+                aria-label="Locate My GPS Position"
               >
-                <ZoomIn className="w-4 h-4" />
+                <LocateFixed className={`w-4 h-4 ${isLocatingUser ? 'animate-spin' : ''}`} />
               </button>
-              <button
-                type="button"
-                onClick={() => mapInstanceRef.current?.zoomOut(0.5)}
-                className="p-2 hover:bg-stone-800 text-stone-100 transition-colors cursor-pointer"
-                title="Zoom Out"
-                aria-label="Zoom Out"
-              >
-                <ZoomOut className="w-4 h-4" />
-              </button>
-            </div>
+            )}
+
+            {mapToolsVisibility.zoomControls && (
+              <div className="flex flex-col rounded-2xl overflow-hidden bg-stone-950/80 backdrop-blur-xl border border-white/15 shadow-[0_6px_18px_rgba(0,0,0,0.3)]">
+                <button
+                  type="button"
+                  onClick={() => mapInstanceRef.current?.zoomIn(0.5)}
+                  className="w-10 h-9 hover:bg-white/10 text-stone-100 flex items-center justify-center transition-colors cursor-pointer border-b border-white/10"
+                  title="Zoom In"
+                  aria-label="Zoom In"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => mapInstanceRef.current?.zoomOut(0.5)}
+                  className="w-10 h-9 hover:bg-white/10 text-stone-100 flex items-center justify-center transition-colors cursor-pointer"
+                  title="Zoom Out"
+                  aria-label="Zoom Out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Smart Traffic / Predictive Flow Compact Status Pill & Expandable Speed Legend (Bottom-Left) */}
-        {isTrafficOverlayActive && !activeRoute && !selectedPlace && !selectedTownshipHubModal && !selectedHazardModal && (
+        {/* Bottom-Left Sleek Translucent Traffic & Forecaster Pill */}
+        {!activeRoute && !selectedPlace && !selectedTownshipHubModal && !selectedHazardModal && (
           <div className="absolute bottom-3 left-2.5 sm:bottom-4 sm:left-4 z-[35] pointer-events-auto max-w-[calc(100vw-72px)] sm:max-w-xs">
-            {trafficLegendOpen ? (
-              <div className="rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-emerald-500/35 shadow-2xl p-2.5 text-stone-100 space-y-2 animate-in fade-in duration-150">
+            {isTrafficOverlayActive && trafficLegendOpen ? (
+              <div className="rounded-2xl bg-stone-950/88 backdrop-blur-2xl border border-white/15 shadow-2xl p-3 text-stone-100 space-y-2.5 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Activity className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span className="text-[10.5px] font-black uppercase tracking-wider text-emerald-300 truncate">
-                      {language === 'bm' ? 'Trafik Pintar / Aliran Ramalan' : 'Smart Traffic / Predictive Flow'}
+                    <span className="text-[11px] font-bold text-stone-100 truncate">
+                      {language === 'bm' ? 'Aliran Trafik Pintar' : 'Smart Traffic Flow'}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setTrafficLegendOpen(false)}
-                    className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white cursor-pointer"
+                    className="p-1 rounded-lg bg-white/10 hover:bg-white/15 text-stone-300 hover:text-white cursor-pointer"
                     aria-label="Close speed legend"
                   >
                     <X className="w-3 h-3" />
@@ -5632,22 +5530,22 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 </div>
 
                 {/* Color-coded speed bands */}
-                <div className="grid grid-cols-2 gap-1 text-[9.5px] font-bold">
-                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shrink-0" />
+                <div className="grid grid-cols-2 gap-1 text-[10px] font-semibold">
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
+                    <span className="w-2 h-2 rounded-full bg-[#10b981] shrink-0" />
                     <span>≥44 km/h Clear</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] shrink-0" />
-                    <span>28–43 km/h Moderate</span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
+                    <span className="w-2 h-2 rounded-full bg-[#f59e0b] shrink-0" />
+                    <span>28–43 Moderate</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0" />
-                    <span>15–27 km/h Heavy</span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
+                    <span className="w-2 h-2 rounded-full bg-[#ef4444] shrink-0" />
+                    <span>15–27 Heavy</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg bg-stone-900/90 border border-white/5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#dc2626] shrink-0" />
-                    <span>&lt;15 km/h Gridlock</span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
+                    <span className="w-2 h-2 rounded-full bg-[#dc2626] shrink-0" />
+                    <span>&lt;15 Gridlock</span>
                   </div>
                 </div>
 
@@ -5663,7 +5561,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       key={opt.id}
                       type="button"
                       onClick={() => setPredictiveDepartureProfile(opt.id)}
-                      className={`py-1 rounded-lg text-[9.5px] font-bold transition-colors cursor-pointer border ${
+                      className={`py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer border ${
                         predictiveDepartureProfile === opt.id
                           ? 'bg-emerald-600/35 border-emerald-400 text-emerald-200'
                           : 'bg-stone-900/80 border-white/10 text-stone-400 hover:text-stone-200'
@@ -5674,46 +5572,72 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   ))}
                 </div>
 
-                {predictiveFlowStats && (
-                  <div className="flex items-center justify-between text-[9.5px] font-mono text-stone-400 pt-1 border-t border-white/10">
-                    <span>
-                      Live: <strong className="text-emerald-300">{predictiveFlowStats.liveVerifiedCount}</strong> • Hist:{' '}
-                      <strong className="text-amber-300">{predictiveFlowStats.historicalFallbackCount}</strong>
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/10 text-[10px]">
+                  {predictiveFlowStats ? (
+                    <span className="font-mono text-stone-400 tabular-nums">
+                      Avg <strong className="text-stone-200">{predictiveFlowStats.avgSpeedKmh} km/h</strong>
                     </span>
-                    <span className="text-stone-300 font-bold">Avg {predictiveFlowStats.avgSpeedKmh} km/h</span>
-                  </div>
-                )}
+                  ) : (
+                    <span />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrafficLegendOpen(false);
+                      handleScrollToForecaster();
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-200 font-bold cursor-pointer flex items-center gap-1"
+                  >
+                    <Car className="w-3 h-3" />
+                    <span>{language === 'bm' ? 'Buka Ramalan' : 'Forecaster'}</span>
+                  </button>
+                </div>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setTrafficLegendOpen(true)}
-                className="px-2.5 py-1.5 rounded-xl bg-stone-900/92 hover:bg-stone-800 backdrop-blur-xl border border-emerald-500/35 shadow-xl text-[10px] font-bold text-stone-100 flex items-center gap-1.5 cursor-pointer transition-colors"
-                title={
-                  language === 'bm'
-                    ? 'Trafik Pintar & Aliran Ramalan (Klik untuk Legenda)'
-                    : 'Smart Traffic / Predictive Flow (Click for Speed Legend)'
-                }
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="truncate">
-                  {language === 'bm' ? 'Trafik Pintar' : 'Smart Traffic'}
-                  {predictiveDepartureProfile !== 'live'
-                    ? predictiveDepartureProfile === 'weekend_peak'
-                      ? ' • Wknd Peak'
-                      : predictiveDepartureProfile === 'evening_market'
-                        ? ' • Night Mkt'
-                        : ' • Night'
-                    : tomTomKeyPresent
-                      ? ' • Live+Hist'
-                      : ' • Predictive'}
-                </span>
-                {predictiveFlowStats && (
-                  <span className="font-mono text-amber-300 shrink-0">
-                    {predictiveFlowStats.avgSpeedKmh} km/h
-                  </span>
+              <div className="rounded-full bg-stone-950/78 backdrop-blur-xl border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.35)] p-1 flex items-center gap-1">
+                {isTrafficOverlayActive && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setTrafficLegendOpen(true)}
+                      className="px-2.5 py-1.5 rounded-full hover:bg-white/10 text-[10.5px] font-semibold text-stone-100 flex items-center gap-1.5 cursor-pointer transition-colors"
+                      title={
+                        language === 'bm'
+                          ? 'Trafik Pintar & Legenda Kelajuan'
+                          : 'Smart Traffic & Speed Legend'
+                      }
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      <span className="truncate">
+                        {language === 'bm' ? 'Trafik' : 'Traffic'}
+                        {predictiveDepartureProfile !== 'live'
+                          ? predictiveDepartureProfile === 'weekend_peak'
+                            ? ' · Wknd'
+                            : predictiveDepartureProfile === 'evening_market'
+                              ? ' · Mkt'
+                              : ' · Night'
+                          : ''}
+                      </span>
+                      {predictiveFlowStats && (
+                        <span className="no-mobile-clamp font-mono text-amber-300 tabular-nums shrink-0">
+                          {predictiveFlowStats.avgSpeedKmh} km/h
+                        </span>
+                      )}
+                    </button>
+                    <span className="h-3.5 w-px bg-white/15 shrink-0" aria-hidden="true" />
+                  </>
                 )}
-              </button>
+
+                <button
+                  type="button"
+                  onClick={handleScrollToForecaster}
+                  className="px-2.5 py-1.5 rounded-full hover:bg-white/10 text-[10.5px] font-semibold text-emerald-300 flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
+                  title={language === 'bm' ? 'Ramalan Koridor Lebuh Raya' : 'Highway Corridor Forecaster'}
+                >
+                  <Car className="w-3.5 h-3.5 shrink-0" />
+                  <span>{language === 'bm' ? 'Ramalan' : 'Forecaster'}</span>
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -5733,12 +5657,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
           return (
             <div
-              className={`absolute inset-x-2 bottom-2 sm:inset-x-5 sm:bottom-4 z-40 pointer-events-none flex flex-col justify-between gap-2 min-h-0 top-2.5 ${
+              className={`absolute inset-x-2.5 bottom-2.5 sm:inset-x-5 sm:bottom-4 z-40 pointer-events-none flex flex-col justify-between gap-2 min-h-0 ${
                 activeRoute
-                  ? 'sm:top-[96px]'
-                  : mapToolsVisibility.searchBar
-                    ? 'sm:top-[66px]'
-                    : 'sm:top-[66px]'
+                  ? 'top-[86px] sm:top-[104px]'
+                  : 'top-[64px] sm:top-[68px]'
               }`}
             >
               {/* TOP ALERT ZONE: Prayer Popup + Geofence/Nearby Banner stacked cleanly with zero overlap */}
@@ -6938,15 +6860,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       </div>
 
-      {/* Real-Time & Predictive Traffic Forecasting Module for Long-Distance Drivers */}
-      <div className="mt-1.5 shrink-0">
-        <TrafficForecastingModule
-          language={language}
-          selectedCorridorId={selectedCorridorId}
-          onCorridorChange={setSelectedCorridorId}
-          onSelectCorridorOnMap={handleSelectCorridorOnMap}
-        />
-      </div>
+      {/* Real-Time & Predictive Traffic Forecasting Modal (Triggered from Floating HUD / Forecaster Pill) */}
+      <TrafficForecastingModule
+        language={language}
+        selectedCorridorId={selectedCorridorId}
+        onCorridorChange={setSelectedCorridorId}
+        onSelectCorridorOnMap={handleSelectCorridorOnMap}
+        hideMinimizedBar={true}
+      />
 
       {/* Street View 360° Panorama Simulator Modal */}
       {streetViewOpen && (

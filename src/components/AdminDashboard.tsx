@@ -102,6 +102,7 @@ import {
   Store,
   FolderOpen,
   CreditCard,
+  ChevronRight,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -2261,143 +2262,683 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const renderModal = (node: React.ReactNode) => createPortal(node, document.body);
 
+  type AdminSectionId =
+    | 'overview'
+    | 'visitors'
+    | 'trails'
+    | 'incidents'
+    | 'broadcast'
+    | 'tomtom'
+    | 'users'
+    | 'vendors'
+    | 'onboarding'
+    | 'chats'
+    | 'places'
+    | 'stays'
+    | 'bikes'
+    | 'townships'
+    | 'gallery'
+    | 'appearance'
+    | 'payments'
+    | 'tickets';
+
+  const [activeAdminSection, setActiveAdminSection] = useState<AdminSectionId>('overview');
+  const [isSectionFullPage, setIsSectionFullPage] = useState<boolean>(false);
+
+  const openAdminSection = (sectionId: AdminSectionId) => {
+    setActiveAdminSection(sectionId);
+    setIsSectionFullPage(true);
+  };
+
+  const pendingVendorCount = vendorListingsState.filter((v) => v.verificationStatus === 'pending').length;
+  const activeIncidentCount = communityHazards.filter((h) => h.status !== 'cleared' && h.active !== false).length;
+  const overdueTrailCount = trailSafetySessions.filter((s) => s.status === 'overdue' || Boolean(s.inactivityAlert2Sent)).length;
+
+  const adminNavGroups: Array<{
+    groupTitle: string;
+    items: Array<{
+      id: string;
+      label: string;
+      subtitle: string;
+      icon: React.ComponentType<{ className?: string }>;
+      iconClass: string;
+      badge?: string | number;
+      badgeTone?: string;
+      onClick: () => void;
+      isActive?: boolean;
+    }>;
+  }> = [
+    {
+      groupTitle: 'Analytics & System',
+      items: [
+        {
+          id: 'overview',
+          label: 'Overview & KPI Stats',
+          subtitle: 'KPI summary & quick actions',
+          icon: BarChart3,
+          iconClass: 'text-emerald-400',
+          onClick: () => openAdminSection('overview'),
+          isActive: activeAdminSection === 'overview',
+        },
+        {
+          id: 'visitors',
+          label: 'Visitor Counter & Analytics',
+          subtitle: 'Live site entries & 7-day trend',
+          icon: Globe,
+          iconClass: 'text-cyan-400',
+          badge: visitorStats.totalVisits,
+          badgeTone: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+          onClick: () => openAdminSection('visitors'),
+          isActive: activeAdminSection === 'visitors',
+        },
+        {
+          id: 'appearance',
+          label: 'Main Page Background',
+          subtitle: 'Live theme & backdrop image',
+          icon: ImageIcon,
+          iconClass: 'text-purple-400',
+          onClick: () => openAdminSection('appearance'),
+          isActive: activeAdminSection === 'appearance',
+        },
+        {
+          id: 'payments',
+          label: 'RM30 Payment Gateway Notice',
+          subtitle: 'Deposit notice & WhatsApp copy',
+          icon: CreditCard,
+          iconClass: 'text-amber-400',
+          onClick: () => openAdminSection('payments'),
+          isActive: activeAdminSection === 'payments',
+        },
+      ],
+    },
+    {
+      groupTitle: 'Safety, Traffic & Alerts',
+      items: [
+        {
+          id: 'trails',
+          label: 'Trail Safety Passports',
+          subtitle: 'Live hikers & overdue monitor',
+          icon: Navigation,
+          iconClass: 'text-rose-400',
+          badge: overdueTrailCount > 0 ? `${overdueTrailCount} OVERDUE` : trailSafetySessions.length,
+          badgeTone:
+            overdueTrailCount > 0
+              ? 'bg-rose-600 text-white border-rose-400 animate-pulse'
+              : 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+          onClick: () => openAdminSection('trails'),
+          isActive: activeAdminSection === 'trails',
+        },
+        {
+          id: 'incidents',
+          label: 'Incident & Hazard Moderation',
+          subtitle: 'Road alerts & web feed sync',
+          icon: ShieldAlert,
+          iconClass: 'text-emerald-400',
+          badge: activeIncidentCount,
+          badgeTone: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+          onClick: () => openAdminSection('incidents'),
+          isActive: activeAdminSection === 'incidents',
+        },
+        {
+          id: 'broadcast',
+          label: 'Live Broadcast Center',
+          subtitle: 'Push SOS, weather & notices',
+          icon: Activity,
+          iconClass: 'text-emerald-400',
+          onClick: () => openAdminSection('broadcast'),
+          isActive: activeAdminSection === 'broadcast',
+        },
+        {
+          id: 'tomtom',
+          label: 'TomTom Traffic Engine',
+          subtitle: 'API key & flow telemetry',
+          icon: Key,
+          iconClass: 'text-emerald-400',
+          onClick: () => openAdminSection('tomtom'),
+          isActive: activeAdminSection === 'tomtom',
+        },
+      ],
+    },
+    {
+      groupTitle: 'Users, Vendors & Chats',
+      items: [
+        {
+          id: 'users',
+          label: 'Registered App Users',
+          subtitle: 'Profiles, roles & account edit',
+          icon: Users,
+          iconClass: 'text-purple-400',
+          badge: liveUsers.length,
+          badgeTone: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+          onClick: () => openAdminSection('users'),
+          isActive: activeAdminSection === 'users',
+        },
+        {
+          id: 'vendors',
+          label: 'Vendor Control Panel',
+          subtitle: 'Commission, status & overrides',
+          icon: ShieldCheck,
+          iconClass: 'text-emerald-400',
+          badge: vendorListingsState.length,
+          badgeTone: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+          onClick: () => openAdminSection('vendors'),
+          isActive: activeAdminSection === 'vendors',
+        },
+        {
+          id: 'onboarding',
+          label: 'SSM Business Verification',
+          subtitle: 'Approve badges & bookings',
+          icon: Building2,
+          iconClass: 'text-emerald-400',
+          badge: pendingVendorCount > 0 ? `${pendingVendorCount} pending` : vendorListingsState.length,
+          badgeTone:
+            pendingVendorCount > 0
+              ? 'bg-amber-500/25 text-amber-200 border-amber-400/50'
+              : 'bg-stone-800 text-stone-300 border-white/10',
+          onClick: () => openAdminSection('onboarding'),
+          isActive: activeAdminSection === 'onboarding',
+        },
+        {
+          id: 'chats',
+          label: 'Chat History Folders',
+          subtitle: 'Date-organized message logs',
+          icon: FolderOpen,
+          iconClass: 'text-cyan-400',
+          onClick: () => openAdminSection('chats'),
+          isActive: activeAdminSection === 'chats',
+        },
+      ],
+    },
+    {
+      groupTitle: 'Directory & Listings',
+      items: [
+        {
+          id: 'places',
+          label: 'Directory Places',
+          subtitle: 'Farms, dining & attractions',
+          icon: MapPin,
+          iconClass: 'text-emerald-400',
+          badge: places.length,
+          badgeTone: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+          onClick: () => openAdminSection('places'),
+          isActive: activeAdminSection === 'places',
+        },
+        {
+          id: 'stays',
+          label: 'Homestays & Stays',
+          subtitle: 'Rates, hosts & room status',
+          icon: BedDouble,
+          iconClass: 'text-emerald-400',
+          badge: accommodationListings.length,
+          badgeTone: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+          onClick: () => openAdminSection('stays'),
+          isActive: activeAdminSection === 'stays',
+        },
+        {
+          id: 'bikes',
+          label: 'Motorbike & Scooter Rentals',
+          subtitle: 'Fleets, packages & WhatsApp',
+          icon: Bike,
+          iconClass: 'text-cyan-400',
+          badge: motorbikePartners.length,
+          badgeTone: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+          onClick: () => openAdminSection('bikes'),
+          isActive: activeAdminSection === 'bikes',
+        },
+        {
+          id: 'townships',
+          label: 'Township Hubs (9)',
+          subtitle: 'Clinics, police, restrooms & gas',
+          icon: Building2,
+          iconClass: 'text-blue-400',
+          badge: 9,
+          badgeTone: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+          onClick: () => openAdminSection('townships'),
+          isActive: activeAdminSection === 'townships',
+        },
+        {
+          id: 'gallery',
+          label: 'Photo Gallery',
+          subtitle: 'Scenic highlights & uploads',
+          icon: ImageIcon,
+          iconClass: 'text-cyan-400',
+          badge: gallery.length,
+          badgeTone: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+          onClick: () => openAdminSection('gallery'),
+          isActive: activeAdminSection === 'gallery',
+        },
+        {
+          id: 'tickets',
+          label: 'Farm Pass & Ticket Matrix',
+          subtitle: 'Pricing & pass comparisons',
+          icon: Ticket,
+          iconClass: 'text-rose-400',
+          badge: farmTickets.length,
+          badgeTone: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+          onClick: () => openAdminSection('tickets'),
+          isActive: activeAdminSection === 'tickets',
+        },
+      ],
+    },
+    {
+      groupTitle: 'Quick Tools & Creators',
+      items: [
+        {
+          id: 'tool-cards',
+          label: 'Mobile Glass Cards',
+          subtitle: 'Home bento layout editor',
+          icon: Smartphone,
+          iconClass: 'text-indigo-400',
+          onClick: () => setShowHomeCardsModal(true),
+        },
+        {
+          id: 'tool-parking',
+          label: 'Parking & EV Hubs',
+          subtitle: 'Live bays & EV chargers',
+          icon: Car,
+          iconClass: 'text-amber-400',
+          onClick: () => setShowParkingManagerModal(true),
+        },
+        {
+          id: 'tool-add-place',
+          label: 'Add New Place',
+          subtitle: 'Create directory listing',
+          icon: Plus,
+          iconClass: 'text-emerald-400',
+          onClick: handleOpenAddPlace,
+        },
+        {
+          id: 'tool-add-gallery',
+          label: 'Add Gallery Photo',
+          subtitle: 'Upload highland photo',
+          icon: Upload,
+          iconClass: 'text-cyan-400',
+          onClick: handleOpenAddGallery,
+        },
+        {
+          id: 'tool-add-event',
+          label: 'Add Event',
+          subtitle: 'Post festival or notice',
+          icon: Calendar,
+          iconClass: 'text-amber-400',
+          onClick: () => setShowAddEventModal(true),
+        },
+        {
+          id: 'tool-add-user',
+          label: 'Add User',
+          subtitle: 'Provision account profile',
+          icon: UserPlus,
+          iconClass: 'text-purple-400',
+          onClick: () => setShowAddUserModal(true),
+        },
+      ],
+    },
+  ];
+
+  const activeNavMeta =
+    adminNavGroups.flatMap((g) => g.items).find((item) => item.id === activeAdminSection) ||
+    adminNavGroups[0].items[0];
+
+  const overviewStatsBlock = (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
+        <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
+          <span>Total Active Users</span>
+          <Users className="w-4 h-4 text-emerald-400" />
+        </div>
+        <div className="text-3xl font-heading font-black text-stone-50">
+          {stats.totalUsers.toLocaleString()}
+        </div>
+      </div>
+
+      <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
+        <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
+          <span>Highland Page Views</span>
+          <Eye className="w-4 h-4 text-cyan-400" />
+        </div>
+        <div className="text-3xl font-heading font-black text-stone-50">
+          {stats.pageViews.toLocaleString()}
+        </div>
+      </div>
+
+      <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
+        <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
+          <span>New Signups</span>
+          <UserPlus className="w-4 h-4 text-teal-400" />
+        </div>
+        <div className="text-3xl font-heading font-black text-stone-50">
+          +{stats.newSignups}
+        </div>
+      </div>
+
+      <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
+        <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
+          <span>Support Tickets</span>
+          <Ticket className="w-4 h-4 text-amber-400" />
+        </div>
+        <div className="text-3xl font-heading font-black text-stone-50">
+          {stats.supportTickets}
+        </div>
+      </div>
+    </div>
+  );
+
+  const overviewActionsBlock = (
+    <div className="p-6 rounded-3xl bg-stone-900/90 border border-emerald-500/20">
+      <h4 className="text-base font-bold text-stone-100 mb-4 flex items-center gap-2">
+        <Layers className="w-4 h-4 text-emerald-400" />
+        <span>Quick Actions &amp; Tools</span>
+      </h4>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <button
+          onClick={handleOpenAddPlace}
+          className="p-4 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
+        >
+          <Plus className="w-5 h-5" />
+          <span>Add New Place</span>
+        </button>
+
+        <button
+          onClick={handleOpenAddGallery}
+          className="p-4 rounded-2xl bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/30 text-cyan-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
+        >
+          <ImageIcon className="w-5 h-5" />
+          <span>Add Gallery Photo</span>
+        </button>
+
+        <button
+          onClick={() => openAdminSection('townships')}
+          className="p-4 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
+        >
+          <Building2 className="w-5 h-5" />
+          <span>Township Hubs (9)</span>
+        </button>
+
+        <button
+          onClick={() => setShowAddEventModal(true)}
+          className="p-4 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
+        >
+          <Calendar className="w-5 h-5" />
+          <span>Add Event</span>
+        </button>
+
+        <button
+          onClick={() => setShowAddUserModal(true)}
+          className="p-4 rounded-2xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
+        >
+          <Users className="w-5 h-5" />
+          <span>Add User</span>
+        </button>
+
+        <button
+          onClick={() => setShowHomeCardsModal(true)}
+          className="p-4 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer shadow-lg"
+        >
+          <Smartphone className="w-5 h-5 text-indigo-400" />
+          <span>Mobile Glass Cards</span>
+        </button>
+
+        <button
+          onClick={() => setShowFarmTicketModal(true)}
+          className="p-4 rounded-2xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
+        >
+          <Ticket className="w-5 h-5" />
+          <span>Manage Farm Tickets</span>
+        </button>
+
+        <button
+          onClick={() => setShowParkingManagerModal(true)}
+          className="p-4 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer shadow-lg"
+        >
+          <Car className="w-5 h-5 text-amber-400" />
+          <span>Parking &amp; EV Hubs</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  const overviewActivityBlock = (
+    <div className="p-5 rounded-3xl bg-stone-900/80 border border-white/5 space-y-4">
+      <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
+        <Activity className="w-4 h-4 text-emerald-400" />
+        <span>Recent Activity Feed</span>
+      </h4>
+      <div className="space-y-2.5">
+        {recentActivities.length === 0 ? (
+          <div className="text-xs text-stone-500 italic p-4 text-center bg-stone-950/40 rounded-2xl border border-white/5">
+            No recent activity yet. Add places, gallery photos, or events to see live entries here.
+          </div>
+        ) : (
+          recentActivities.map((act, i) => (
+            <div
+              key={i}
+              className="p-3 rounded-2xl bg-stone-950/60 border border-white/5 text-xs flex items-center justify-between gap-2"
+            >
+              <div className="text-stone-200 font-medium">{act.title}</div>
+              <div className="text-[10px] text-stone-500 font-mono shrink-0">{act.time}</div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
       <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
-        <div className="min-h-full flex flex-col items-center justify-start p-3 sm:p-6 py-10 sm:py-16" onClick={onClose}>
-          <div className="w-full max-w-7xl space-y-6 pb-12 relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+        {!isSectionFullPage ? (
+          <div className="min-h-full flex flex-col items-center justify-start p-3 sm:p-6 py-6 sm:py-10" onClick={onClose}>
+            <div className="w-full max-w-7xl space-y-5 pb-12 relative shrink-0" onClick={(e) => e.stopPropagation()}>
 
-          {/* Top Navbar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-3xl glass-panel bg-stone-900/90 border border-emerald-500/30">
-            <div className="flex items-center gap-3">
-              <CamLogo size="md" variant="light" showTagline={false} />
-              <div className="h-6 w-px bg-white/10 hidden sm:block" />
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                <span className="font-heading font-bold text-stone-100 text-lg">
-                  Admin Control Room
-                </span>
+              {/* Top Navbar */}
+              <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-3xl glass-panel bg-stone-900/90 border border-emerald-500/30">
+                <div className="flex items-center gap-3">
+                  <CamLogo size="md" variant="light" showTagline={false} />
+                  <div className="h-6 w-px bg-white/10 hidden sm:block" />
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                    <span className="font-heading font-bold text-stone-100 text-lg">
+                      Admin Control Room
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => openAdminSection('chats')}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 text-xs font-bold text-cyan-300 border border-cyan-500/30 transition-colors cursor-pointer"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Chat History Folders</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportData}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 border border-white/10 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>GitHub / Firebase Sync</span>
+                  </button>
+
+                  <a
+                    href="/camgo_user_manual.pdf"
+                    download="CamGo_User_Manual.pdf"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 border border-white/10 transition-colors cursor-pointer"
+                    title="Download Official CamGo System & User Manual (PDF)"
+                  >
+                    <Download className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>System Manual (PDF)</span>
+                  </a>
+
+                  {!isAdmin ? (
+                    <button
+                      onClick={async () => {
+                        await firebaseService.signInWithGoogle(true);
+                        onRefreshData();
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-md shadow-emerald-950 cursor-pointer"
+                    >
+                      <span>Sign in with Google (Admin)</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        if (auth) await auth.signOut();
+                        onClose();
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-rose-900/40 text-stone-300 hover:text-rose-300 text-xs transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Exit Admin</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={onClose}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-emerald-900/40 text-emerald-300 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Website</span>
+                  </button>
+
+                  <button
+                    onClick={onClose}
+                    className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Organized 2-Column Layout: Left Functions & Tools Links + Right Overview */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* Left Column: Categorized Links to All Functions & Tools */}
+                <aside className="lg:col-span-4 xl:col-span-3 rounded-3xl bg-stone-900/90 border border-white/10 p-3.5 sm:p-4 space-y-4 shadow-2xl">
+                  <div className="px-1.5 pb-2 border-b border-white/10">
+                    <div className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 font-bold">
+                      Admin Directory
+                    </div>
+                    <h3 className="text-sm font-heading font-extrabold text-white mt-0.5">
+                      Functions &amp; Tools
+                    </h3>
+                    <p className="text-[11px] text-stone-400 mt-0.5">
+                      Tap any link below to open it in full page.
+                    </p>
+                  </div>
+
+                  {adminNavGroups.map((group) => (
+                    <div key={group.groupTitle} className="space-y-1.5">
+                      <div className="px-2 text-[10px] font-mono font-bold uppercase tracking-wider text-stone-500">
+                        {group.groupTitle}
+                      </div>
+                      <div className="space-y-1">
+                        {group.items.map((item) => {
+                          const IconComp = item.icon;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={item.onClick}
+                              className={`w-full px-3 py-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all cursor-pointer group ${
+                                item.isActive
+                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-white'
+                                  : 'bg-stone-950/60 hover:bg-stone-800/80 border-white/5 hover:border-emerald-500/30 text-stone-200'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="w-8 h-8 rounded-xl bg-stone-900 border border-white/10 flex items-center justify-center shrink-0">
+                                  <IconComp className={`w-4 h-4 ${item.iconClass}`} />
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-stone-100 truncate">
+                                    {item.label}
+                                  </div>
+                                  <div className="text-[10px] text-stone-400 truncate">
+                                    {item.subtitle}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {item.badge !== undefined && (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                                      item.badgeTone || 'bg-stone-800 text-stone-300 border-white/10'
+                                    }`}
+                                  >
+                                    {item.badge}
+                                  </span>
+                                )}
+                                <ChevronRight className="w-3.5 h-3.5 text-stone-500 group-hover:text-emerald-400 transition-colors" />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </aside>
+
+                {/* Right Column: Clean Overview Summary */}
+                <div className="lg:col-span-8 xl:col-span-9 space-y-5">
+                  {overviewStatsBlock}
+                  {overviewActionsBlock}
+                  {overviewActivityBlock}
+                </div>
               </div>
             </div>
+          </div>
+        ) : (
+          <div className="fixed inset-0 z-[55] bg-stone-950 flex flex-col overflow-hidden">
+            {/* Full-Page Tool Header */}
+            <div className="shrink-0 z-20 flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setIsSectionFullPage(false)}
+                  className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>All Functions &amp; Tools</span>
+                </button>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 font-bold">
+                    Admin Full-Page Workspace
+                  </div>
+                  <h3 className="text-sm sm:text-lg font-heading font-black text-white truncate">
+                    {activeNavMeta.label}
+                  </h3>
+                </div>
+              </div>
 
-            <div className="flex items-center gap-3 flex-wrap">
               <button
                 type="button"
-                onClick={() =>
-                  document.getElementById('admin-chat-history-folders')?.scrollIntoView({ behavior: 'smooth' })
-                }
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 text-xs font-bold text-cyan-300 border border-cyan-500/30 transition-colors cursor-pointer"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Chat History Folders</span>
-              </button>
-
-              <button
-                onClick={handleExportData}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 border border-white/10 transition-colors cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-400" />
-                <span>GitHub / Firebase Sync</span>
-              </button>
-
-              <a
-                href="/camgo_user_manual.pdf"
-                download="CamGo_User_Manual.pdf"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 border border-white/10 transition-colors cursor-pointer"
-                title="Download Official CamGo System & User Manual (PDF)"
-              >
-                <Download className="w-3.5 h-3.5 text-cyan-400" />
-                <span>System Manual (PDF)</span>
-              </a>
-
-              {!isAdmin ? (
-                <button
-                  onClick={async () => {
-                    await firebaseService.signInWithGoogle(true);
-                    onRefreshData();
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-md shadow-emerald-950 cursor-pointer"
-                >
-                  <span>Sign in with Google (Admin)</span>
-                </button>
-              ) : (
-                <button
-                  onClick={async () => {
-                    if (auth) await auth.signOut();
-                    onClose();
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-rose-900/40 text-stone-300 hover:text-rose-300 text-xs transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Exit Admin</span>
-                </button>
-              )}
-
-              <button
                 onClick={onClose}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-emerald-900/40 text-emerald-300 text-xs font-bold transition-colors cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back to Website</span>
-              </button>
-
-              <button
-                onClick={onClose}
-                className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Close Admin"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-          </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
-              <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
-                <span>Total Active Users</span>
-                <Users className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div className="text-3xl font-heading font-black text-stone-50">
-                {stats.totalUsers.toLocaleString()}
-              </div>
-            </div>
+            {/* Scrollable Full-Page Body for Active Link */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-6 pb-20">
+              <div className="max-w-7xl mx-auto space-y-6">
+                {activeAdminSection === 'overview' && (
+                  <div className="space-y-6">
+                    {overviewStatsBlock}
+                    {overviewActionsBlock}
+                    {overviewActivityBlock}
+                  </div>
+                )}
 
-            <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
-              <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
-                <span>Highland Page Views</span>
-                <Eye className="w-4 h-4 text-cyan-400" />
-              </div>
-              <div className="text-3xl font-heading font-black text-stone-50">
-                {stats.pageViews.toLocaleString()}
-              </div>
-            </div>
-
-            <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
-              <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
-                <span>New Signups</span>
-                <UserPlus className="w-4 h-4 text-teal-400" />
-              </div>
-              <div className="text-3xl font-heading font-black text-stone-50">
-                +{stats.newSignups}
-              </div>
-            </div>
-
-            <div className="rounded-3xl p-5 bg-stone-900/80 border border-white/5">
-              <div className="flex items-center justify-between text-stone-400 text-xs mb-2">
-                <span>Support Tickets</span>
-                <Ticket className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="text-3xl font-heading font-black text-stone-50">
-                {stats.supportTickets}
-              </div>
-            </div>
-          </div>
-
-          {/* Website Visitor Counter & Live Entry Analytics */}
-          <div className="p-6 rounded-3xl bg-stone-900/95 border border-cyan-500/30 shadow-2xl space-y-5">
+                {activeAdminSection === 'visitors' && (
+                  /* Website Visitor Counter & Live Entry Analytics */
+                  <div className="p-6 rounded-3xl bg-stone-900/95 border border-cyan-500/30 shadow-2xl space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center">
@@ -2598,8 +3139,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
           </div>
+          )}
 
-          {/* Main Page Background Customizer */}
+          {activeAdminSection === 'appearance' && (
+          /* Main Page Background Customizer */
           <div className="p-6 rounded-3xl bg-stone-900/95 border border-purple-500/30 shadow-2xl space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -2700,8 +3243,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </form>
           </div>
+          )}
 
-          {/* RM30 Deposit Payment Gateway Notice Toggle */}
+          {activeAdminSection === 'payments' && (
+          /* RM30 Deposit Payment Gateway Notice Toggle */
           <div className="p-6 rounded-3xl bg-stone-900/95 border border-amber-500/35 shadow-2xl space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -2809,85 +3354,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </form>
           </div>
+          )}
 
-          {/* Actions Grid */}
-          <div className="p-6 rounded-3xl bg-stone-900/90 border border-emerald-500/20">
-            <h4 className="text-base font-bold text-stone-100 mb-4 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-emerald-400" />
-              <span>Management Actions</span>
-            </h4>
-
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <button
-                onClick={handleOpenAddPlace}
-                className="p-4 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
-              >
-                <Plus className="w-5 h-5" />
-                <span>Add New Place</span>
-              </button>
-
-              <button
-                onClick={handleOpenAddGallery}
-                className="p-4 rounded-2xl bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/30 text-cyan-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
-              >
-                <ImageIcon className="w-5 h-5" />
-                <span>Add Gallery Photo</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  const el = document.getElementById('admin-townships-section');
-                  el?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                className="p-4 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
-              >
-                <Building2 className="w-5 h-5" />
-                <span>Township Hubs (9)</span>
-              </button>
-
-              <button
-                onClick={() => setShowAddEventModal(true)}
-                className="p-4 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
-              >
-                <Calendar className="w-5 h-5" />
-                <span>Add Event</span>
-              </button>
-
-              <button
-                onClick={() => setShowAddUserModal(true)}
-                className="p-4 rounded-2xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
-              >
-                <Users className="w-5 h-5" />
-                <span>Add User</span>
-              </button>
-
-              <button
-                onClick={() => setShowHomeCardsModal(true)}
-                className="p-4 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer shadow-lg"
-              >
-                <Smartphone className="w-5 h-5 text-indigo-400" />
-                <span>Mobile Glass Cards</span>
-              </button>
-
-              <button
-                onClick={() => setShowFarmTicketModal(true)}
-                className="p-4 rounded-2xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer"
-              >
-                <Ticket className="w-5 h-5" />
-                <span>Manage Farm Tickets</span>
-              </button>
-
-              <button
-                onClick={() => setShowParkingManagerModal(true)}
-                className="p-4 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-xs flex flex-col items-center gap-2 transition-all cursor-pointer shadow-lg"
-              >
-                <Car className="w-5 h-5 text-amber-400" />
-                <span>Parking & EV Hubs</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Farm Pass & Ticket Comparison Matrix (Moved from Verified Highland Directories to Admin Page) */}
+          {activeAdminSection === 'tickets' && (
+          /* Farm Pass & Ticket Comparison Matrix */
           <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-emerald-950/75 via-teal-950/60 to-stone-900 border border-emerald-500/40 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
               <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
@@ -2932,8 +3402,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </div>
+          )}
 
-          {/* Admin-Only TomTom Smart Engine & Live Traffic API Configuration */}
+          {activeAdminSection === 'tomtom' && (
+          /* Admin-Only TomTom Smart Engine & Live Traffic API Configuration */
           <div className="p-6 rounded-3xl bg-stone-900/95 border border-emerald-500/30 shadow-2xl space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -3014,8 +3486,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               Free tier includes 2,500 daily requests. Built-in highland telemetry fallback operates automatically when no key is saved.
             </p>
           </div>
+          )}
 
-          {/* Real-Time WebSocket Notification & Broadcast Center */}
+          {activeAdminSection === 'broadcast' && (
+          /* Real-Time WebSocket Notification & Broadcast Center */
           <div className="p-6 rounded-3xl bg-stone-900/95 border border-emerald-500/40 shadow-2xl space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
@@ -3266,8 +3740,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
           </div>
+          )}
 
-          {/* Live Hiker Trail Safety Passports & Overdue Alert Monitor */}
+          {activeAdminSection === 'trails' && (
+          /* Live Hiker Trail Safety Passports & Overdue Alert Monitor */
           <div className="p-5 sm:p-6 rounded-3xl bg-stone-900/95 border border-rose-500/35 shadow-xl space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
               <div className="flex items-center gap-3">
@@ -3397,8 +3873,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
           </div>
+          )}
 
-          {/* Administrative Incident Reporting & Broadcast Moderation Control Panel */}
+          {activeAdminSection === 'incidents' && (
+          /* Administrative Incident Reporting & Broadcast Moderation Control Panel */
           <div className="p-6 rounded-3xl bg-stone-900/95 border-2 border-emerald-500/40 shadow-2xl space-y-5">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
@@ -3726,8 +4204,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
           </div>
+          )}
 
-          {/* Real-Time Registered Users Management Table */}
+          {activeAdminSection === 'users' && (
+          /* Real-Time Registered Users Management Table */
           <div className="p-5 rounded-3xl bg-stone-900/80 border border-purple-500/30 space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
@@ -3846,11 +4326,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </table>
             </div>
           </div>
+          )}
 
-          {/* Admin Chat History Archive (Organized in Folders by Date) */}
+          {activeAdminSection === 'chats' && (
+          /* Admin Chat History Archive (Organized in Folders by Date) */
           <AdminChatHistoryFolders addActivity={addActivity} />
+          )}
 
-          {/* Admin Portal: Centralized Vendor Management Control Panel (Requirement 2) */}
+          {activeAdminSection === 'vendors' && (
+          /* Admin Portal: Centralized Vendor Management Control Panel (Requirement 2) */
           <div id="admin-manage-vendors-section" className="p-5 rounded-3xl bg-stone-900/90 border border-emerald-500/40 space-y-5 shadow-2xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3">
               <div>
@@ -4178,8 +4662,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
           </div>
+          )}
 
-          {/* Vendor Onboarding & SSM Business Verification Queue */}
+          {activeAdminSection === 'onboarding' && (
+          /* Vendor Onboarding & SSM Business Verification Queue */
           <div className="p-5 rounded-3xl bg-stone-900/80 border border-emerald-500/30 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -4342,8 +4828,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </table>
             </div>
           </div>
+          )}
 
-          {/* Section: Cameron Highlands Verified Homestays & Stays Management */}
+          {activeAdminSection === 'stays' && (
+          /* Section: Cameron Highlands Verified Homestays & Stays Management */
           <div className="p-5 sm:p-6 rounded-3xl bg-stone-900/80 border border-emerald-500/20 space-y-4 shadow-xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-800">
               <div>
@@ -4483,8 +4971,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </table>
             </div>
           </div>
+          )}
 
-          {/* Section: Cameron Highlands Verified Motorbike & Scooter Rentals Management */}
+          {activeAdminSection === 'bikes' && (
+          /* Section: Cameron Highlands Verified Motorbike & Scooter Rentals Management */
           <div className="p-5 sm:p-6 rounded-3xl bg-stone-900/80 border border-cyan-500/25 space-y-4 shadow-xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-800">
               <div>
@@ -4684,9 +5174,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   type="button"
                                   onClick={() => {
                                     setSelectedVendorForAdmin(linkedVendor);
-                                    document
-                                      .getElementById('admin-manage-vendors-section')
-                                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                    openAdminSection('vendors');
                                   }}
                                   className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold transition-colors cursor-pointer"
                                   title="Edit full vendor profile, commission & sector rules"
@@ -4720,34 +5208,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </table>
             </div>
           </div>
+          )}
 
-          {/* Section 1: Directory Places Table */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-4 p-5 rounded-3xl bg-stone-900/80 border border-white/5 space-y-4">
-              <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-emerald-400" />
-                <span>Recent Activity Feed</span>
-              </h4>
-              <div className="space-y-3">
-                {recentActivities.length === 0 ? (
-                  <div className="text-xs text-stone-500 italic p-4 text-center bg-stone-950/40 rounded-2xl border border-white/5">
-                    No recent activity yet. Add places, gallery photos, or events to see live entries here.
-                  </div>
-                ) : (
-                  recentActivities.map((act, i) => (
-                    <div
-                      key={i}
-                      className="p-3 rounded-2xl bg-stone-950/60 border border-white/5 text-xs"
-                    >
-                      <div className="text-stone-200 font-medium">{act.title}</div>
-                      <div className="text-[10px] text-stone-500 font-mono mt-1">{act.time}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="lg:col-span-8 p-5 rounded-3xl bg-stone-900/80 border border-white/5 space-y-4">
+          {activeAdminSection === 'places' && (
+            <div className="p-5 rounded-3xl bg-stone-900/80 border border-white/5 space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-bold text-stone-100">
                   Directory Places ({places.length} active listings)
@@ -4809,9 +5273,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </table>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Section 2: Gallery Management Table */}
+          {activeAdminSection === 'gallery' && (
+          /* Section 2: Gallery Management Table */
           <div className="p-5 rounded-3xl bg-stone-900/80 border border-cyan-500/20 space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
@@ -4887,8 +5352,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </table>
             </div>
           </div>
+          )}
 
-          {/* Section 3: Dedicated Township Hubs & Facilities Management (9 Townships) */}
+          {activeAdminSection === 'townships' && (
+          /* Section 3: Dedicated Township Hubs & Facilities Management (9 Townships) */
           <div
             id="admin-townships-section"
             className="p-5 sm:p-6 rounded-3xl bg-stone-900/80 border border-blue-500/30 space-y-5"
@@ -5047,9 +5514,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               })}
             </div>
           </div>
-        </div>
+          )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
 
       {/* ============================ MODALS ============================ */}
 

@@ -401,13 +401,13 @@ export const ChatLoungeModal: React.FC<ChatLoungeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center p-0 sm:p-3 md:p-6 bg-stone-950/85 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[500] flex flex-col bg-stone-950 overflow-hidden">
       <motion.div
-        initial={{ opacity: 0, scale: 0.98, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.98, y: 10 }}
-        transition={{ duration: 0.2 }}
-        className="relative w-full max-w-6xl h-full sm:h-[94vh] max-h-[950px] bg-stone-900 border-0 sm:border border-emerald-500/30 rounded-none sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-stone-100"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
+        transition={{ duration: 0.18 }}
+        className="relative w-full h-[100dvh] bg-stone-950 flex flex-col overflow-hidden text-stone-100"
       >
         {/* TOP MESSENGER NAVIGATION BAR */}
         <header className="h-12 sm:h-16 px-1.5 sm:px-5 bg-stone-950/90 border-b border-stone-800 flex items-center justify-between shrink-0 z-30 gap-1 sm:gap-3">

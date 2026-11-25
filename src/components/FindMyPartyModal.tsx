@@ -1365,31 +1365,22 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[125] overflow-hidden bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="h-full flex items-center justify-center p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[125] overflow-hidden bg-stone-950 animate-in fade-in duration-200">
+      <div className="h-[100dvh] w-full flex flex-col">
         <div
           ref={modalCardRef}
-          className={`w-full max-w-5xl flex flex-col min-h-0 bg-stone-900 border-t sm:border border-emerald-500/40 shadow-2xl overflow-hidden relative shrink-0 ${
-            hasJoinedActiveSession
-              ? 'h-[100dvh] sm:h-[92vh] sm:rounded-3xl'
-              : 'h-[94vh] sm:h-[88vh] rounded-t-3xl sm:rounded-3xl mt-auto sm:my-auto'
-          }`}
-          onClick={(e) => e.stopPropagation()}
+          className="w-full h-[100dvh] flex flex-col min-h-0 bg-stone-950 overflow-hidden relative"
         >
-        {/* Mobile Pull Handle (Setup view only) */}
-        {!hasJoinedActiveSession && (
-          <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
-        )}
 
         {/* Sticky Compact Header Bar */}
-        <div className="flex items-center justify-between px-3.5 sm:px-5 py-2 sm:py-2.5 border-b border-white/10 bg-stone-950 z-30 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-md shrink-0">
+        <div className="flex items-start sm:items-center justify-between gap-2.5 px-3.5 sm:px-5 py-2.5 sm:py-3 border-b border-white/10 bg-stone-950 z-30 shrink-0">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-md shrink-0 mt-0.5 sm:mt-0">
               <Users className="w-4 h-4" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm sm:text-base font-heading font-extrabold text-stone-100 truncate">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-heading font-extrabold text-stone-100 whitespace-normal break-words leading-tight">
                   {hasJoinedActiveSession && session ? session.name : language === 'bm' ? 'Cari Rakan Kumpulan' : 'Find My Party'}
                 </h2>
                 {hasJoinedActiveSession && session && (
@@ -1399,13 +1390,13 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                 )}
               </div>
               {!hasJoinedActiveSession ? (
-                <p className="text-[11px] text-stone-400 truncate">
+                <p className="no-mobile-clamp text-[11px] sm:text-xs text-stone-400 whitespace-normal break-words leading-snug mt-0.5">
                   {language === 'bm'
                     ? 'Kesan lokasi tepat anda dan semak pin setiap ahli'
                     : 'Real-time GPS tracking with designated pins & live PTT radio'}
                 </p>
               ) : (
-                <p className="text-[10px] font-mono text-stone-400 truncate">
+                <p className="text-[10px] font-mono text-stone-400 whitespace-normal break-words leading-snug mt-0.5">
                   {designatedMembers.length} {designatedMembers.length === 1 ? 'member' : 'members'} · ~{remainingHours}h left
                 </p>
               )}
@@ -1413,23 +1404,25 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* High-visibility "Locate Me" button */}
-            <button
-              type="button"
-              onClick={handleLocateMe}
-              disabled={locatingUser}
-              className="min-h-[40px] px-2.5 sm:px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              title="Locate my exact position on map"
-            >
-              {locatingUser ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-              ) : (
-                <Crosshair className="w-3.5 h-3.5 text-emerald-100" />
-              )}
-              <span className="hidden xs:inline">
-                {language === 'bm' ? 'Kesan Saya' : 'Locate Me'}
-              </span>
-            </button>
+            {/* High-visibility "Locate Me" button (shown only when inside active beacon map view) */}
+            {hasJoinedActiveSession && (
+              <button
+                type="button"
+                onClick={handleLocateMe}
+                disabled={locatingUser}
+                className="min-h-[40px] px-2.5 sm:px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                title="Locate my exact position on map"
+              >
+                {locatingUser ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                ) : (
+                  <Crosshair className="w-3.5 h-3.5 text-emerald-100" />
+                )}
+                <span className="hidden xs:inline">
+                  {language === 'bm' ? 'Kesan Saya' : 'Locate Me'}
+                </span>
+              </button>
+            )}
 
             {/* Close Button */}
             <button

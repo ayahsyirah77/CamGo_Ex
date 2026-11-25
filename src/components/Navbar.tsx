@@ -252,8 +252,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         setIsNotificationOpen(false);
       }
     };
+    const handleOpenDrawer = () => setIsMobileMenuOpen(true);
+    window.addEventListener('open-mobile-drawer', handleOpenDrawer);
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('open-mobile-drawer', handleOpenDrawer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   // Filtered search items
@@ -513,7 +518,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     <>
       <nav
         aria-label="Main Navigation"
-        className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 transform ${
+        className={`hidden sm:block fixed top-0 left-0 right-0 z-40 transition-all duration-300 transform ${
           isVisible ? 'translate-y-0' : '-translate-y-full'
         } ${
           isScrolled

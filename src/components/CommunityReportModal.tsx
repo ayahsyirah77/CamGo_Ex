@@ -235,22 +235,16 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
   };
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 animate-in fade-in duration-200 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-3xl bg-stone-900 border-2 border-emerald-500/40 shadow-[0_0_50px_rgba(16,185,129,0.25)] text-stone-100 relative overflow-hidden backdrop-blur-xl my-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[999] flex flex-col bg-stone-950 overflow-hidden animate-in fade-in duration-200">
+      <div className="w-full h-[100dvh] bg-stone-950 text-stone-100 relative overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 bg-stone-900/95">
+        <div className="shrink-0 flex items-center justify-between border-b border-white/10 px-4 sm:px-6 py-3.5 bg-stone-950/95 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+            <div className="p-2 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
               <ShieldAlert className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h3 className="font-heading font-black text-base sm:text-lg text-white">
+              <h3 className="no-mobile-clamp font-heading font-black text-sm sm:text-lg text-white">
                 {language === 'bm' ? 'Laporan Komuniti / Insiden' : 'Enhanced Community Incident Report'}
               </h3>
               <p className="text-[11px] text-stone-400">
@@ -262,14 +256,18 @@ export const CommunityReportModal: React.FC<CommunityReportModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded-full bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-6 pb-20 max-w-2xl w-full mx-auto space-y-4"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
           {successMessage ? (
             <div className="p-6 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-center space-y-2 animate-in zoom-in-95">
               <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />

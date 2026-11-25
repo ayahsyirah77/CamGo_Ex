@@ -79,14 +79,8 @@ export const VendorBookingAlertModal: React.FC<VendorBookingAlertModalProps> = (
   };
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[160] flex items-center justify-center bg-black/90 backdrop-blur-md p-2 sm:p-5 overflow-hidden"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-3xl max-h-[92dvh] flex flex-col rounded-3xl bg-stone-950 border border-amber-500/40 shadow-2xl overflow-hidden text-stone-100"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[160] flex flex-col bg-stone-950 overflow-hidden">
+      <div className="w-full h-[100dvh] flex flex-col bg-stone-950 overflow-hidden text-stone-100">
         {/* Sticky Header */}
         <div className="p-4 sm:p-5 border-b border-stone-800 bg-stone-900/95 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">

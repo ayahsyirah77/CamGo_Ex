@@ -968,11 +968,12 @@ class FirebaseStorageService {
                 this.claimVendorListingsForUser(fbUser.uid, cleanEmail).catch(() => {});
               }
 
+              const preferredName = localStorage.getItem('camgo_preferred_profile_name')?.trim() || '';
               const profile: UserProfile = {
                 uid: fbUser.uid,
                 email: fbUser.email || 'user@camgo.my',
-                displayName: userData?.displayName || fbUser.displayName || 'Highland Explorer',
-                fullName: userData?.fullName || existingProfile?.fullName || fbUser.displayName || '',
+                displayName: preferredName || userData?.displayName || fbUser.displayName || 'Highland Explorer',
+                fullName: preferredName || userData?.fullName || existingProfile?.fullName || fbUser.displayName || '',
                 phone: userData?.phone || existingProfile?.phone,
                 vendorBusinessName: userData?.vendorBusinessName || existingProfile?.vendorBusinessName,
                 photoURL: fbUser.photoURL || userData?.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
@@ -1001,11 +1002,12 @@ class FirebaseStorageService {
           const hasLocalVendor = offlineEmail
             ? this.getVendorListings().some((v) => v.ownerEmail?.toLowerCase().trim() === offlineEmail)
             : false;
+          const offlinePreferredName = localStorage.getItem('camgo_preferred_profile_name')?.trim() || '';
           const profile: UserProfile = {
             uid: fbUser.uid,
             email: fbUser.email || 'user@camgo.my',
-            displayName: fbUser.displayName || 'Highland Explorer',
-            fullName: existingProfile?.fullName || fbUser.displayName || '',
+            displayName: offlinePreferredName || fbUser.displayName || 'Highland Explorer',
+            fullName: offlinePreferredName || existingProfile?.fullName || fbUser.displayName || '',
             photoURL: fbUser.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fbUser.uid}`,
             role: isAdmin
               ? 'admin'
@@ -1291,19 +1293,27 @@ class FirebaseStorageService {
 
   public async signInWithGoogle(
     asAdmin = false,
-    preferredRole: 'user' | 'vendor' | 'admin' = asAdmin ? 'admin' : 'user'
+    preferredRole: 'user' | 'vendor' | 'admin' = asAdmin ? 'admin' : 'user',
+    customProfileName?: string
   ): Promise<UserProfile> {
     const isAIStudioPreview =
       window.location.hostname.includes('googleusercontent.com') ||
       window.location.hostname.includes('aistudio');
 
     const effectivePreferredRole: 'user' | 'vendor' | 'admin' = asAdmin ? 'admin' : preferredRole;
+    const trimmedCustomName = (customProfileName || '').trim();
+    if (trimmedCustomName) {
+      this.setLocalStorageItem('camgo_preferred_profile_name', trimmedCustomName);
+    }
 
     if (!isAIStudioPreview && auth) {
       try {
         const provider = new GoogleAuthProvider();
         const result = await signInWithPopup(auth, provider);
         const fbUser = result.user;
+        if (trimmedCustomName) {
+          updateProfile(fbUser, { displayName: trimmedCustomName }).catch(() => {});
+        }
         const targetEmail = (fbUser.email || '').trim().toLowerCase();
         const isAdminUser =
           asAdmin ||
@@ -1328,8 +1338,8 @@ class FirebaseStorageService {
         const profile: UserProfile = {
           uid: fbUser.uid,
           email: targetEmail || (isAdminUser ? 'ayahsyirah77@gmail.com' : assignedRole === 'vendor' ? 'vendor@gmail.com' : 'traveler@gmail.com'),
-          displayName: existingUser?.displayName || fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
-          fullName: existingUser?.fullName || fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
+          displayName: trimmedCustomName || existingUser?.displayName || fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
+          fullName: trimmedCustomName || existingUser?.fullName || fbUser.displayName || (isAdminUser ? 'Admin' : assignedRole === 'vendor' ? 'Business Vendor' : 'Highland Explorer'),
           phone: existingUser?.phone,
           vendorBusinessName: existingUser?.vendorBusinessName,
           photoURL: fbUser.photoURL || undefined,
@@ -1355,8 +1365,8 @@ class FirebaseStorageService {
         ? {
             uid: 'admin-ayahsyirah77',
             email: 'ayahsyirah77@gmail.com',
-            displayName: 'Ayah Syirah (Master Admin)',
-            fullName: 'Ayah Syirah (Master Admin)',
+            displayName: trimmedCustomName || 'Ayah Syirah (Master Admin)',
+            fullName: trimmedCustomName || 'Ayah Syirah (Master Admin)',
             photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
             role: 'admin',
             isBlocked: false,
@@ -1367,8 +1377,8 @@ class FirebaseStorageService {
         ? {
             uid: 'vendor-cameron-operator',
             email: 'vendor.cameron@gmail.com',
-            displayName: 'Highland Business Partner',
-            fullName: 'Highland Business Partner',
+            displayName: trimmedCustomName || 'Highland Business Partner',
+            fullName: trimmedCustomName || 'Highland Business Partner',
             photoURL: 'https://api.dicebear.com/7.x/adventurer/svg?seed=vendor-cameron',
             role: 'vendor',
             isBlocked: false,
@@ -1378,8 +1388,8 @@ class FirebaseStorageService {
         : {
             uid: 'traveler-cameron-explorer',
             email: 'traveler.cameron@gmail.com',
-            displayName: 'Highland Explorer',
-            fullName: 'Highland Explorer',
+            displayName: trimmedCustomName || 'Highland Explorer',
+            fullName: trimmedCustomName || 'Highland Explorer',
             photoURL: 'https://api.dicebear.com/7.x/adventurer/svg?seed=traveler-cameron',
             role: 'user',
             isBlocked: false,
@@ -1469,6 +1479,7 @@ class FirebaseStorageService {
     }
     this.currentUser = null;
     localStorage.removeItem(STORAGE_KEYS.USER);
+    localStorage.removeItem('camgo_preferred_profile_name');
     this.notify();
   }
 

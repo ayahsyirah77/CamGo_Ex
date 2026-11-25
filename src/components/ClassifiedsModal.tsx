@@ -267,21 +267,18 @@ export const ClassifiedsModal: React.FC<ClassifiedsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[110] bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="min-h-full flex flex-col items-center justify-start p-2 sm:p-4 py-8 sm:py-16" onClick={onClose}>
-        <div
-          className="glass-panel w-full max-w-6xl rounded-3xl p-4 sm:p-6 bg-stone-900/95 border border-amber-500/40 shadow-2xl relative space-y-4 my-auto shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
+    <div className="fixed inset-0 z-[110] bg-stone-950 overflow-y-auto overscroll-contain touch-pan-y animate-in fade-in duration-200" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="min-h-full w-full flex flex-col">
+        <div className="w-full max-w-6xl mx-auto px-3.5 sm:px-6 pb-20 space-y-4">
           {/* Sticky Top Header Bar */}
-          <div className="sticky top-0 z-30 pb-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md -mx-4 -mt-4 p-4 sm:-mx-6 sm:-mt-6 sm:p-6 rounded-t-3xl flex flex-wrap items-center justify-between gap-3">
+          <div className="sticky top-0 z-30 -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-md">
                 <Briefcase className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base sm:text-xl font-heading font-black text-white tracking-tight">
+                  <h3 className="no-mobile-clamp text-sm sm:text-xl font-heading font-black text-white tracking-tight">
                     {language === 'bm' ? 'Iklan & Jawatan Kosong' : 'Classifieds & Job Postings'}
                   </h3>
                   <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[10px] sm:text-xs font-bold border border-amber-500/30">

@@ -61,16 +61,13 @@ export const ForeignerMedicalChargesModal: React.FC<ForeignerMedicalChargesModal
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10050] bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200"
-      onClick={onClose}
+      className="fixed inset-0 z-[10050] bg-stone-950 overflow-y-auto overscroll-contain touch-pan-y text-stone-100 animate-in fade-in duration-200"
+      style={{ WebkitOverflowScrolling: 'touch' }}
     >
-      <div className="min-h-full flex flex-col items-center justify-start p-2 sm:p-4 py-6 sm:py-12">
-        <div
-          className="glass-panel w-full max-w-5xl rounded-3xl p-4 sm:p-6 bg-stone-900/95 border border-rose-500/40 shadow-2xl relative space-y-4 my-auto shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
+      <div className="min-h-full w-full flex flex-col">
+        <div className="w-full max-w-5xl mx-auto px-3.5 sm:px-6 pb-20 space-y-4">
           {/* Sticky Header */}
-          <div className="sticky top-0 z-20 pb-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md -mx-4 -mt-4 p-4 sm:-mx-6 sm:-mt-6 sm:p-6 rounded-t-3xl flex flex-wrap items-center justify-between gap-3">
+          <div className="sticky top-0 z-20 -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-md shrink-0">
                 <Hospital className="w-5 h-5 sm:w-6 sm:h-6" />

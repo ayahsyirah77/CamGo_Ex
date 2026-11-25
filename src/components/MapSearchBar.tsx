@@ -65,6 +65,7 @@ interface MapSearchBarProps {
   onTemporaryPinChange?: (result: GeocodingSearchResult | null) => void;
   placeholder?: string;
   className?: string;
+  anchorToParent?: boolean;
 }
 
 function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -102,6 +103,7 @@ export const MapSearchBar: React.FC<MapSearchBarProps> = ({
   onTemporaryPinChange,
   placeholder,
   className = '',
+  anchorToParent = false,
 }) => {
   const [query, setQuery] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -607,7 +609,7 @@ export const MapSearchBar: React.FC<MapSearchBarProps> = ({
     matchingCorridors.length === 0;
 
   return (
-    <div ref={containerRef} className={`relative flex-1 min-w-0 ${className}`}>
+    <div ref={containerRef} className={`${anchorToParent ? '' : 'relative '}flex-1 min-w-0 ${className}`}>
       {/* Search Input Pill */}
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
         <Search className="w-4 h-4 text-emerald-400 ml-1 sm:ml-2 shrink-0 pointer-events-none" />
@@ -675,7 +677,11 @@ export const MapSearchBar: React.FC<MapSearchBarProps> = ({
 
       {/* Autocomplete Dropdown (Anchored cleanly below search bar, fits mobile widths) */}
       {isDropdownOpen && (
-        <div className="pointer-events-auto absolute -left-11 -right-11 sm:left-0 sm:right-0 top-[calc(100%+10px)] z-[75] max-h-72 overflow-y-auto rounded-2xl bg-stone-950/98 backdrop-blur-2xl border border-emerald-500/35 shadow-2xl p-2 text-stone-100 space-y-2 [scrollbar-width:thin]">
+        <div
+          className={`pointer-events-auto absolute ${
+            anchorToParent ? 'left-0 right-0 top-[calc(100%+8px)]' : '-left-11 -right-11 sm:left-0 sm:right-0 top-[calc(100%+10px)]'
+          } z-[75] max-h-72 overflow-y-auto rounded-2xl bg-stone-950/92 backdrop-blur-2xl border border-white/15 shadow-2xl p-2 text-stone-100 space-y-2 [scrollbar-width:thin]`}
+        >
           {/* Section 1: Verified Local Highland Places */}
           {matchingLocalPlaces.length > 0 && (
             <div className="space-y-1">

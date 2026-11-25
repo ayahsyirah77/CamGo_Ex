@@ -4,7 +4,7 @@ interface CamLogoProps {
   className?: string;
   variant?: 'dark' | 'light' | 'auto';
   showTagline?: boolean;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'hero';
   onClick?: () => void;
 }
 
@@ -21,6 +21,7 @@ export const CamLogo: React.FC<CamLogoProps> = ({
     md: 'h-6 sm:h-13 md:h-14',
     lg: 'h-8 sm:h-16',
     xl: 'h-12 sm:h-20',
+    hero: 'h-9 sm:h-14',
   };
 
   const isDark = variant === 'dark';
@@ -114,13 +115,27 @@ export const CamLogo: React.FC<CamLogoProps> = ({
         {/* CamGo Bold Wordmark */}
         <div className="flex items-baseline font-black tracking-tight leading-none">
           <span
-            className={`text-base sm:text-3xl md:text-3.5xl font-heading font-extrabold transition-colors ${
+            className={`${
+              size === 'hero'
+                ? 'no-mobile-clamp text-[24px] sm:text-3xl'
+                : size === 'sm'
+                ? 'no-mobile-clamp text-base sm:text-2xl'
+                : 'text-base sm:text-3xl md:text-3.5xl'
+            } font-heading font-extrabold transition-colors ${
               isDark ? 'text-stone-900' : 'text-white'
             }`}
           >
             Cam
           </span>
-          <span className="text-base sm:text-3xl md:text-3.5xl font-heading font-extrabold text-emerald-400">
+          <span
+            className={`${
+              size === 'hero'
+                ? 'no-mobile-clamp text-[24px] sm:text-3xl'
+                : size === 'sm'
+                ? 'no-mobile-clamp text-base sm:text-2xl'
+                : 'text-base sm:text-3xl md:text-3.5xl'
+            } font-heading font-extrabold text-emerald-400`}
+          >
             Go
           </span>
         </div>

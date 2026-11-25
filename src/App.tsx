@@ -29,6 +29,7 @@ import { getTranslation } from './services/i18n';
 import { LoadingScreen } from './components/LoadingScreen';
 import { Navbar } from './components/Navbar';
 import { HeroSearchBar } from './components/HeroSearchBar';
+import { MobileUpperHero } from './components/MobileUpperHero';
 import { BackToTop } from './components/BackToTop';
 import { InteractiveMap } from './components/InteractiveMap';
 import { GalleryCarousel } from './components/GalleryCarousel';
@@ -75,6 +76,7 @@ import { NotificationCenter } from './components/NotificationCenter';
 import {
   MapPin,
   ArrowRight,
+  ArrowLeft,
   Navigation,
   Bike,
   Route,
@@ -84,6 +86,12 @@ import {
   X,
   BedDouble,
   BellRing,
+  CloudSun,
+  Car,
+  ShieldAlert,
+  Calendar,
+  Layers,
+  Compass,
 } from 'lucide-react';
 
 function checkIsVendorRoute(): boolean {
@@ -898,20 +906,62 @@ export default function App() {
         onDismiss={dismissToast}
       />
 
+      {/* Mobile Upper Hero (Image 3 Scenic Background + Image 2 Greeting & Search) */}
+      <MobileUpperHero
+        language={language}
+        currentUser={currentUser}
+        places={places}
+        events={events}
+        trafficAlerts={trafficAlerts}
+        hazards={hazards}
+        vendorAlertCount={vendorAlerts.filter((a) => !a.isRead).length}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenAdmin={() => {
+          if (
+            currentUser?.role === 'admin' ||
+            currentUser?.email === 'ayahsyirah77@gmail.com' ||
+            currentUser?.email === 'asuypower7984@gmail.com'
+          ) {
+            setIsAdminOpen(true);
+          } else {
+            setIsAdminLoginOpen(true);
+          }
+        }}
+        onOpenMap={() => setIsMapModalOpen(true)}
+        onOpenTraffic={() => setActiveCapsuleModal('traffic')}
+        onOpenChat={() => setIsChatOpen(true)}
+        onOpenDirectories={() => setIsDirectoriesModalOpen(true)}
+        onOpenPortals={() => setIsPortalsModalOpen(true)}
+        onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
+        onOpenVendorPortal={handleOpenVendorPortal}
+        onOpenVendorAlerts={() => setIsVendorAlertsModalOpen(true)}
+        onSelectPlace={handleSelectPlaceForMap}
+        onSelectEvent={(evt) => {
+          const match = places.find((p) => p.township === evt.township);
+          if (match) handleSelectPlaceForMap(match);
+          else setIsMapModalOpen(true);
+        }}
+        onSelectTownship={(town) => {
+          const match = places.find((p) => p.township === town);
+          if (match) handleSelectPlaceForMap(match);
+          else setIsPortalsModalOpen(true);
+        }}
+      />
+
       {/* Main Content Area */}
       <main className="flex-1">
-        {/* 3. Hero Section */}
-        <section id="hero-section" className="relative flex items-center justify-center pt-52 sm:pt-28 pb-4 sm:pb-5 px-4 sm:px-6 lg:px-8 overflow-hidden">
+        {/* 3. Desktop Hero Section */}
+        <section id="hero-section" className="hidden sm:flex relative items-center justify-center pt-28 pb-5 px-6 lg:px-8 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/60 to-stone-950/90 pointer-events-none" />
 
-          <div className="relative z-10 max-w-5xl mx-auto text-center space-y-3 sm:space-y-4">
+          <div className="relative z-10 max-w-5xl mx-auto text-center space-y-4">
             <h1 className="text-3xl sm:text-5xl lg:text-6xl font-heading font-black tracking-tight text-stone-50 leading-[1.1] [text-wrap:balance]">
               {getTranslation(language, 'hero_title')}{' '}
               <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-500 bg-clip-text text-transparent">
                 Cameron Highlands
               </span>
             </h1>
-            <p className="hidden sm:block text-sm lg:text-base text-stone-300 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-sm lg:text-base text-stone-300 max-w-2xl mx-auto leading-relaxed">
               {language === 'bm'
                 ? 'Cuaca mikro masa nyata, amaran trafik & bahaya jalan, navigasi laluan hutan luar talian dan penginapan disahkan.'
                 : 'Real-time highland microclimates, live road & hazard alerts, offline trail navigation, and verified direct homestay portals.'}
@@ -961,6 +1011,8 @@ export default function App() {
           onOpenParkingEv={() => setIsParkingEvOpen(true)}
           onOpenCurrency={() => setIsCurrencyOpen(true)}
           onOpenClassifieds={() => setIsClassifiedsModalOpen(true)}
+          onOpenDirectories={() => setIsDirectoriesModalOpen(true)}
+          onOpenPortals={() => setIsPortalsModalOpen(true)}
           onSelectTownshipOnMap={(town) => {
             const match = places.find((p) => p.township === town);
             if (match) setSelectedPlaceForMap(match);
@@ -1034,26 +1086,10 @@ export default function App() {
       {/* AI Chat Modal */}
       <AiChatModal isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} language={language} />
 
-      {/* Map Modal */}
+      {/* Map Modal (Edge-to-Edge Viewport with Floating Glass HUD inside InteractiveMap) */}
       {isMapModalOpen && (
         <div className="fixed inset-0 z-[110] bg-stone-950 flex flex-col">
-          <div className="hidden sm:flex items-center justify-between px-4 py-3 bg-stone-900 border-b border-stone-800">
-            <h3 className="font-bold text-emerald-400 text-sm">Cameron Highlands Interactive Map</h3>
-            <button
-              onClick={() => {
-                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                  window.speechSynthesis.cancel();
-                }
-                setIsMapModalOpen(false);
-                setSelectedHazardForMap(null);
-              }}
-              className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="flex-1 relative">
+          <div className="flex-1 min-h-0 relative">
             <InteractiveMap
               places={places}
               language={language}
@@ -1097,6 +1133,7 @@ export default function App() {
       {/* Auth Modal */}
       <AuthModal
         isOpen={isAuthOpen}
+        language={language}
         onClose={() => setIsAuthOpen(false)}
         onSuccess={(accountType) => {
           const user = firebaseService.getCurrentUser();
@@ -1287,40 +1324,45 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('open-emergency-sos'));
         }}
       />
-      {/* Highland Photo Gallery Popup Modal */}
+      {/* Highland Photo Gallery Full-Page View */}
       {isGalleryOpen && (
-        <div
-          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/90 backdrop-blur-md p-2 sm:p-6 overflow-hidden"
-          onClick={() => setIsGalleryOpen(false)}
-        >
-          <div
-            className="w-full max-w-6xl max-h-[92dvh] flex flex-col rounded-2xl sm:rounded-3xl bg-stone-950 border border-emerald-500/40 shadow-2xl overflow-hidden relative text-stone-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 z-20 flex items-center justify-between gap-3 p-3.5 sm:p-5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md shrink-0">
-              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                  <Camera className="w-5 h-5 sm:w-6 sm:h-6" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-base sm:text-xl font-heading font-black text-stone-100 truncate">
-                    Highland Events/Photo Gallery
-                  </h3>
-                  <p className="text-[11px] sm:text-xs text-stone-400 truncate">
-                    High-elevation photography, tea valley horizons, &amp; cultural spotlights
-                  </p>
-                </div>
-              </div>
+        <div className="fixed inset-0 z-[140] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               <button
+                type="button"
                 onClick={() => setIsGalleryOpen(false)}
-                className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Back"
               >
-                <X className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                <Camera className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="no-mobile-clamp text-sm sm:text-xl font-heading font-black text-stone-100 truncate">
+                  Highland Events/Photo Gallery
+                </h3>
+                <p className="text-[11px] sm:text-xs text-stone-400 truncate">
+                  High-elevation photography, tea valley horizons, &amp; cultural spotlights
+                </p>
+              </div>
             </div>
+            <button
+              onClick={() => setIsGalleryOpen(false)}
+              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
-            <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 sm:p-6">
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-20"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="max-w-6xl mx-auto">
               <GalleryCarousel
                 items={galleryItems}
                 onSelectPlace={(place) => {
@@ -1333,18 +1375,40 @@ export default function App() {
         </div>
       )}
 
-      {/* Directories Modal Dialog Wrapper */}
+      {/* Directories Full-Page View */}
       {isDirectoriesModalOpen && (
-        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
-          <div className="min-h-full flex flex-col items-center justify-start p-3 sm:p-6 py-10 sm:py-16" onClick={() => setIsDirectoriesModalOpen(false)}>
-            <div className="w-full max-w-6xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
+                type="button"
                 onClick={() => setIsDirectoriesModalOpen(false)}
-                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Back"
               >
-                <X className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                <Compass className="w-5 h-5" />
+              </div>
+              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
+                {language === 'bm' ? 'Direktori Cameron Highlands' : 'Cameron Highlands Directory'}
+              </h3>
+            </div>
+            <button
+              onClick={() => setIsDirectoriesModalOpen(false)}
+              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-24"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="max-w-6xl mx-auto">
               <DirectorySection
                 places={places}
                 language={language}
@@ -1373,18 +1437,40 @@ export default function App() {
         </div>
       )}
 
-      {/* Portals / Hub Modal Dialog Wrapper */}
+      {/* Portals / Hub Full-Page View */}
       {isPortalsModalOpen && (
-        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
-          <div className="min-h-full flex flex-col items-center justify-start p-3 sm:p-6 py-10 sm:py-16" onClick={() => setIsPortalsModalOpen(false)}>
-            <div className="w-full max-w-6xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
+                type="button"
                 onClick={() => setIsPortalsModalOpen(false)}
-                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Back"
               >
-                <X className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
+              <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
+                {language === 'bm' ? 'Hab Portal Tanah Tinggi' : 'Cameron Highlands Hub & Portals'}
+              </h3>
+            </div>
+            <button
+              onClick={() => setIsPortalsModalOpen(false)}
+              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-24"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="max-w-6xl mx-auto">
               <PortalsSection
                 language={language}
                 onExploreTownOnMap={() => {
@@ -1441,36 +1527,78 @@ export default function App() {
         language={language}
       />
 
-      {/* Capsule Modal: Microclimate (WeatherWidget) */}
+      {/* Full-Page View: Microclimate (WeatherWidget) */}
       {activeCapsuleModal === 'microclimate' && (
-        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
-          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
-            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
+                type="button"
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Back"
               >
-                <X className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
+              <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
+                <CloudSun className="w-5 h-5" />
+              </div>
+              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
+                {language === 'bm' ? 'Cuaca & Mikroklimat Tanah Tinggi' : 'Highland Weather & Microclimate'}
+              </h3>
+            </div>
+            <button
+              onClick={() => setActiveCapsuleModal(null)}
+              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-20"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="max-w-4xl mx-auto">
               <WeatherWidget weatherList={weatherList} language={language} />
             </div>
           </div>
         </div>
       )}
 
-      {/* Capsule Modal: Traffic (TrafficWidget) */}
+      {/* Full-Page View: Traffic (TrafficWidget) */}
       {activeCapsuleModal === 'traffic' && (
-        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
-          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
-            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
+                type="button"
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Back"
               >
-                <X className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                <Car className="w-5 h-5" />
+              </div>
+              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
+                {language === 'bm' ? 'Trafik & Laluan Langsung' : 'Live Highland Traffic'}
+              </h3>
+            </div>
+            <button
+              onClick={() => setActiveCapsuleModal(null)}
+              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-20"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="max-w-4xl mx-auto">
               <TrafficWidget
                 alerts={trafficAlerts}
                 language={language}
@@ -1484,36 +1612,78 @@ export default function App() {
         </div>
       )}
 
-      {/* Capsule Modal: Hazard & Slope Alerts (HazardWidget) */}
+      {/* Full-Page View: Hazard & Slope Alerts (HazardWidget) */}
       {activeCapsuleModal === 'hazard' && (
-        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
-          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
-            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
+                type="button"
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Back"
               >
-                <X className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
+                {language === 'bm' ? 'Notis & Amaran Bahaya Jalan' : 'Live Notice & Corridor Hazards'}
+              </h3>
+            </div>
+            <button
+              onClick={() => setActiveCapsuleModal(null)}
+              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-20"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="max-w-4xl mx-auto">
               <HazardWidget hazards={hazards} language={language} />
             </div>
           </div>
         </div>
       )}
 
-      {/* Capsule Modal: Highland Events (EventsWidget) */}
+      {/* Full-Page View: Highland Events (EventsWidget) */}
       {activeCapsuleModal === 'events' && (
-        <div className="fixed inset-0 z-[130] overflow-y-auto bg-stone-950/95 backdrop-blur-xl">
-          <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-6 py-10 sm:py-16" onClick={() => setActiveCapsuleModal(null)}>
-            <div className="w-full max-w-4xl relative my-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
+                type="button"
                 onClick={() => setActiveCapsuleModal(null)}
-                className="sticky top-2 right-2 float-right z-30 p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-                aria-label="Close"
+                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
+                aria-label="Back"
               >
-                <X className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
+                {language === 'bm' ? 'Acara & Kalendar Tanah Tinggi' : 'Highland Events & Calendar'}
+              </h3>
+            </div>
+            <button
+              onClick={() => setActiveCapsuleModal(null)}
+              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-20"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="max-w-4xl mx-auto">
               <EventsWidget events={events} language={language} />
             </div>
           </div>

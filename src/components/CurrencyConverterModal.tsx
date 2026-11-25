@@ -33,41 +33,38 @@ export const CurrencyConverterModal: React.FC<CurrencyConverterModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-[120] p-3 sm:p-6 overflow-y-auto bg-black/85 backdrop-blur-md flex justify-center items-start sm:items-center animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="glass-panel w-full max-w-2xl mt-12 sm:mt-0 my-auto rounded-3xl bg-stone-900 border border-emerald-500/40 shadow-[0_0_50px_rgba(16,185,129,0.2)] p-4 sm:p-6 relative overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Sticky Header Bar */}
-        <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10 sticky top-0 bg-stone-900/95 backdrop-blur-md z-30">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              <ArrowRightLeft className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 block leading-tight">
-                {language === 'bm' ? 'Utiliti Pelawat & Pertukaran' : 'Traveler Utility & Conversion'}
-              </span>
-              <h3 className="text-sm sm:text-base font-bold text-white leading-tight">
-                🇸🇬 SGD → MYR Real-Time Currency Converter
-              </h3>
-            </div>
+    <div className="fixed inset-0 z-[120] bg-stone-950 text-stone-100 flex flex-col overflow-hidden animate-in fade-in duration-200">
+      {/* Sticky Full-Page Header Bar */}
+      <div className="shrink-0 z-30 flex items-center justify-between gap-2 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+            <ArrowRightLeft className="w-5 h-5" />
           </div>
-
-          <button
-            onClick={onClose}
-            className="p-2 sm:p-2.5 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="min-w-0">
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 block leading-tight">
+              {language === 'bm' ? 'Utiliti Pelawat & Pertukaran' : 'Traveler Utility & Conversion'}
+            </span>
+            <h3 className="no-mobile-clamp text-sm sm:text-base font-bold text-white leading-tight truncate">
+              🇸🇬 SGD → MYR Real-Time Currency Converter
+            </h3>
+          </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="space-y-4">
+        <button
+          onClick={onClose}
+          className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 hover:border-emerald-500/50 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Scrollable Body */}
+      <div
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-6 pb-20"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
+        <div className="max-w-3xl mx-auto space-y-4">
           <CurrencyConverterWidget language={language} />
         </div>
       </div>

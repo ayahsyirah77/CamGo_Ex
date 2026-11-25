@@ -483,14 +483,8 @@ export const EmergencySosWidget: React.FC<EmergencySosWidgetProps> = ({
       {isOpen &&
         typeof document !== 'undefined' &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 overflow-hidden animate-in fade-in duration-200"
-            onClick={() => setIsOpen(false)}
-          >
-            <div
-              className="w-full max-w-lg max-h-[88vh] sm:max-h-[85vh] h-[88vh] sm:h-[82vh] flex flex-col rounded-3xl bg-stone-900 border-2 border-red-500/40 shadow-[0_0_70px_rgba(239,68,68,0.35)] text-stone-100 relative overflow-hidden backdrop-blur-xl min-h-0"
-              onClick={(e) => e.stopPropagation()}
-            >
+          <div className="fixed inset-0 z-[999] flex flex-col bg-stone-950 overflow-hidden animate-in fade-in duration-200">
+            <div className="w-full h-[100dvh] flex flex-col bg-stone-950 text-stone-100 relative overflow-hidden min-h-0">
               {/* Top Modal Header */}
               <div className="shrink-0 flex items-center justify-between border-b border-red-500/20 px-4 sm:px-5 py-3.5 bg-stone-900/95 backdrop-blur-md z-30">
                 <div className="flex items-center gap-3">

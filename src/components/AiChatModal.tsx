@@ -178,8 +178,8 @@ What's on your mind for the trip?`,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4">
-      <div className="glass-panel w-full max-w-2xl h-[92vh] sm:h-[660px] rounded-3xl overflow-hidden border border-emerald-500/30 shadow-2xl bg-stone-900 flex flex-col">
+    <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden">
+      <div className="w-full h-[100dvh] bg-stone-950 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="p-3.5 sm:p-4 bg-stone-950/95 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">

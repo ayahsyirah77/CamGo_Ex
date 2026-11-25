@@ -453,21 +453,20 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
           </p>
         </div>
 
-        {/* Township Microclimate Switcher Pills */}
-        <div className="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-stone-900/90 border border-white/10">
-          {weatherList.map((w: WeatherData) => (
-            <button
-              key={w.township}
-              onClick={() => setSelectedTown(w.township)}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                selectedTown === w.township
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950'
-                  : 'text-stone-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              {w.township}
-            </button>
-          ))}
+        {/* Compact Township Microclimate Dropdown */}
+        <div className="shrink-0">
+          <select
+            aria-label={language === 'bm' ? 'Pilih Pekan' : 'Select Township'}
+            value={selectedTown}
+            onChange={(e) => setSelectedTown(e.target.value as Township)}
+            className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-900/95 hover:bg-stone-800 border border-emerald-500/35 text-xs font-bold text-stone-100 outline-none focus:border-emerald-400 cursor-pointer shadow-md"
+          >
+            {weatherList.map((w: WeatherData) => (
+              <option key={w.township} value={w.township} className="bg-stone-900 text-stone-100">
+                📍 {w.township} ({w.temp}°C)
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

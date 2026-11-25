@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Place, MainCategory, SubCategory, Township, Language } from '../types';
 import { firebaseService } from '../services/firebase';
@@ -37,6 +37,8 @@ import {
   RotateCcw,
   BedDouble,
   ArrowRight,
+  ArrowLeft,
+  ChevronRight,
   BatteryCharging,
   FileText,
   Smartphone,
@@ -144,6 +146,8 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
 
   const [currentCategory, setCurrentCategory] = useState<MainCategory>(selectedCategory || 'food');
   const [currentSubCategory, setCurrentSubCategory] = useState<SubCategory | undefined>(selectedSubCategory);
+  const [isCategoryFullPageOpen, setIsCategoryFullPageOpen] = useState(false);
+  const categoryCarouselRef = useRef<HTMLDivElement>(null);
 
   // Sync with prop changes if parent updates
   React.useEffect(() => {
@@ -156,10 +160,13 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
     setCurrentSubCategory(selectedSubCategory);
   }, [selectedSubCategory]);
 
-  const handleSelectCategoryInternal = (cat: MainCategory, sub?: SubCategory) => {
+  const handleSelectCategoryInternal = (cat: MainCategory, sub?: SubCategory, openFullPage = true) => {
     setCurrentCategory(cat);
     setCurrentSubCategory(sub);
     onSelectCategory(cat, sub);
+    if (openFullPage) {
+      setIsCategoryFullPageOpen(true);
+    }
   };
 
   // Keep selectedTown in sync with initialTownship prop changes
@@ -182,14 +189,14 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
   }, []);
 
   React.useEffect(() => {
-    if (selectedPlacePopup) {
+    if (selectedPlacePopup || isCategoryFullPageOpen) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = prevOverflow;
       };
     }
-  }, [selectedPlacePopup]);
+  }, [selectedPlacePopup, isCategoryFullPageOpen]);
 
 
 
@@ -392,351 +399,408 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-stone-400 font-medium">
-              {language === 'bm' ? 'Kategori Aktif:' : 'Active Category:'}
-            </span>
-            <span className="font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs">
-              {mainCategories.find((c) => c.key === currentCategory)?.labelKey
-                ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey)
-                : currentCategory}
-            </span>
-          </div>
-        </div>
-
-        {/* Category Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2.5">
-          {mainCategories.map((cat) => {
-            const isActive = isCategoryMatch(currentCategory, cat.key);
-            // Exclude motorbike rentals from the count for transport category
-            const catPlaceCount = places.filter((p) => 
-              isCategoryMatch(p.category, cat.key) && !(p.category === 'transport' && p.subCategory === 'car_bike_rentals')
-            ).length;
-            return (
-              <button
-                key={cat.key}
-                type="button"
-                onClick={() => handleSelectCategoryInternal(cat.key, undefined)}
-                className={`p-1.5 min-[380px]:p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-1.5 sm:gap-2 relative overflow-hidden group min-h-[46px] min-[380px]:min-h-[50px] sm:min-h-[58px] ${
-                  isActive
-                    ? 'bg-gradient-to-br from-emerald-950/90 via-emerald-900/50 to-stone-900 border-emerald-500/80 shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-500/30 text-white'
-                    : 'bg-stone-900/90 border-white/5 hover:border-emerald-500/30 hover:bg-stone-850 text-stone-400 hover:text-white'
-                }`}
-              >
-                {isActive && (
-                  <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-                )}
-                <span className="text-sm min-[380px]:text-base sm:text-xl shrink-0 w-6 h-6 min-[380px]:w-7 min-[380px]:h-7 sm:w-8 sm:h-8 rounded-lg bg-white/5 group-hover:scale-105 transition-transform flex items-center justify-center">
-                  {cat.icon}
-                </span>
-                <div className="min-w-0 flex-1 py-0.5">
-                  <span className={`text-[8.5px] min-[360px]:text-[9px] min-[400px]:text-[10px] sm:text-[11px] font-bold block leading-tight break-normal whitespace-normal tracking-tight ${isActive ? 'text-emerald-200' : 'text-stone-200'}`}>
-                    {getTranslation(language, cat.labelKey)}
-                  </span>
-                  <span className="text-[7.5px] min-[360px]:text-[8px] sm:text-[9.5px] text-stone-500 font-mono block mt-0.5">
-                    {catPlaceCount} {language === 'bm' ? 'senarai' : 'listings'}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ========================================================= */}
-      {/* DISTINCT VISIBLE SEPARATION: DIRECTORY TABS <-> PLACE CARDS */}
-      {/* ========================================================= */}
-      <div className="pt-2 sm:pt-4">
-        {/* Bold Accent Divider Line with Center Beacon */}
-        <div className="relative mb-5 flex items-center" aria-hidden="true">
-          <div className="flex-grow border-t-2 border-dashed border-emerald-500/25"></div>
-          <div className="mx-3 sm:mx-4 flex items-center gap-2 px-3.5 py-1 rounded-full bg-stone-900 border-2 border-emerald-500/40 text-[11px] font-mono text-emerald-400 shadow-xl shadow-black/60">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span className="font-extrabold tracking-wider uppercase">
-              {language === 'bm' ? 'PREMIS & TARIKAN TERCATAT' : 'VERIFIED PLACE CARDS'}
-            </span>
-          </div>
-          <div className="flex-grow border-t-2 border-dashed border-emerald-500/25"></div>
-        </div>
-
-        {/* Place Cards Banner Header with Embedded Filters */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-stone-900/95 to-emerald-950/40 border border-emerald-500/30 shadow-xl mb-4 flex flex-col gap-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                <MapPin className="w-5 h-5 text-emerald-400" />
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                  <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
-                    {language === 'bm' ? 'Kad Tempat Cameron' : 'Cameron Place Cards'}
-                  </span>
-                  {selectedTown !== 'all' && (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
-                      📍 {selectedTown}
-                    </span>
-                  )}
-                  {searchQuery.trim() && (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-white/10">
-                      🔍 &quot;{searchQuery.trim()}&quot;
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-sm sm:text-base font-heading font-extrabold text-white mt-0.5">
-                  {language === 'bm'
-                    ? `Senarai Tempat: ${mainCategories.find((c) => c.key === currentCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey) : currentCategory}`
-                    : `Places in ${mainCategories.find((c) => c.key === currentCategory)?.labelKey ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey) : currentCategory}`}
-                </h3>
-              </div>
-            </div>
-
-            {/* Right Action & Place Counter */}
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              {(currentCategory !== 'food' || currentSubCategory || selectedTown !== 'all' || searchQuery.trim()) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleSelectCategoryInternal('food', undefined);
-                    setSelectedTown('all');
-                    setSearchQuery('');
-                  }}
-                  className="text-xs text-stone-300 hover:text-white px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  <RotateCcw className="w-3 h-3 text-stone-400" />
-                  <span>{language === 'bm' ? 'Tetap Semula' : 'Reset Filters'}</span>
-                </button>
-              )}
-              <span className="px-3 py-1.5 rounded-xl text-xs font-mono font-extrabold bg-emerald-500 text-stone-950 shadow-md">
-                {filteredPlaces.length} {language === 'bm' ? 'Tempat' : 'Places'}
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-stone-400 font-medium">
+                {language === 'bm' ? 'Kategori Aktif:' : 'Active Category:'}
+              </span>
+              <span className="font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs">
+                {mainCategories.find((c) => c.key === currentCategory)?.labelKey
+                  ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey)
+                  : currentCategory}
               </span>
             </div>
           </div>
+        </div>
 
-          {/* FILTERS INSIDE CAMERON PLACE CARDS HEADER */}
-          <div className="pt-2 border-t border-white/10 flex flex-col gap-2.5">
-            {/* Desktop Subcategory Pills */}
-            <div className="hidden sm:flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleSelectCategoryInternal(currentCategory, undefined)}
-                className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-                  !currentSubCategory
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-stone-800 text-stone-400 hover:text-white'
-                }`}
-              >
-                {language === 'bm' ? 'Semua Sub-Kategori' : 'All Types'}
-              </button>
-              {currentSubList.map((sub) => (
+        {/* Horizontal Swipeable Category Cards Carousel with Right-Arrow Scroll Indicator */}
+        <div className="relative">
+          <div
+            ref={categoryCarouselRef}
+            className="flex gap-2.5 overflow-x-auto snap-x snap-mandatory touch-pan-x pb-1.5 pr-9 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {mainCategories.map((cat) => {
+              const isActive = isCategoryMatch(currentCategory, cat.key);
+              const catPlaceCount = places.filter((p) =>
+                isCategoryMatch(p.category, cat.key) && !(p.category === 'transport' && p.subCategory === 'car_bike_rentals')
+              ).length;
+              return (
                 <button
-                  key={sub.key}
+                  key={cat.key}
                   type="button"
-                  onClick={() => handleSelectCategoryInternal(currentCategory, sub.key)}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 ${
-                    currentSubCategory === sub.key
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'bg-stone-800 text-stone-400 hover:text-white'
+                  onClick={() => handleSelectCategoryInternal(cat.key, undefined, true)}
+                  className={`min-w-[148px] sm:min-w-[172px] shrink-0 snap-start p-2.5 sm:p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-2 relative overflow-hidden group min-h-[58px] ${
+                    isActive
+                      ? 'bg-gradient-to-br from-emerald-950/90 via-emerald-900/50 to-stone-900 border-emerald-500/80 shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-500/30 text-white'
+                      : 'bg-stone-900/90 border-white/10 hover:border-emerald-500/40 hover:bg-stone-800/90 text-stone-300 hover:text-white'
                   }`}
                 >
-                  {sub.icon}
-                  {sub.label}
+                  {isActive && (
+                    <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                  )}
+                  <span className="text-base sm:text-xl shrink-0 w-8 h-8 rounded-xl bg-white/5 group-hover:scale-105 transition-transform flex items-center justify-center">
+                    {cat.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <span className={`no-mobile-clamp text-[10.5px] sm:text-xs font-bold block leading-tight break-normal whitespace-normal tracking-tight ${isActive ? 'text-emerald-200' : 'text-stone-100'}`}>
+                      {getTranslation(language, cat.labelKey)}
+                    </span>
+                    <span className="text-[9px] text-stone-400 font-mono block mt-0.5">
+                      {catPlaceCount} {language === 'bm' ? 'senarai' : 'listings'}
+                    </span>
+                  </div>
                 </button>
-              ))}
-            </div>
-
-            {/* Subcategory & Township Filters Row (Mobile & Desktop Township Selector) */}
-            <div className="flex items-center justify-between gap-2 w-full text-xs text-stone-400">
-              <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <Filter className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <select
-                  value={currentSubCategory || 'all'}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    handleSelectCategoryInternal(currentCategory, val === 'all' ? undefined : (val as SubCategory));
-                  }}
-                  className="bg-stone-800 text-stone-100 text-xs px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer w-full truncate font-medium"
-                >
-                  <option value="all">{language === 'bm' ? 'Semua Sub-Kategori (All Types)' : 'All Types'}</option>
-                  {currentSubList.map((sub) => (
-                    <option key={sub.key} value={sub.key}>
-                      {sub.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <select
-                  value={selectedTown}
-                  onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
-                  className="bg-stone-800 text-stone-100 text-xs px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer font-medium"
-                >
-                  <option value="all">{language === 'bm' ? 'Semua Pekan (All Towns)' : 'All Towns'}</option>
-                  <option value="Tanah Rata">Tanah Rata</option>
-                  <option value="Brinchang">Brinchang</option>
-                  <option value="Kea Farm">Kea Farm</option>
-                  <option value="Ringlet">Ringlet</option>
-                  <option value="Kampung Raja">Kampung Raja</option>
-                  <option value="Tringkap">Tringkap</option>
-                  <option value="Kuala Terla">Kuala Terla</option>
-                  <option value="Bertam Valley">Bertam Valley</option>
-                  <option value="Blue Valley">Blue Valley</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Accommodation Pay-to-Reveal Engine Banner */}
-        {currentCategory === 'accommodation' && (
-          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950/80 via-teal-950/40 to-stone-900 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-xl">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
-                  CamGo Anti-Bypass System
-                </span>
-                <h4 className="text-xs sm:text-sm font-extrabold text-white">
-                  {language === 'bm' ? 'Inap Desa & Chalet Disahkan (Kunci RM30)' : 'Verified Homestays & Stays (RM30 Lock)'}
-                </h4>
-              </div>
-              <p className="text-[11px] sm:text-xs text-stone-300">
-                {language === 'bm'
-                  ? 'Tempah terus dengan hos tempatan. Bayar deposit RM30 untuk mengunci tarikh & dapatkan pas percuma ladang strawberi Kea Farm.'
-                  : 'Book direct from local Cameron hosts with RM30 deposit lock-in, instant address reveal & free Kea Farm strawberry passes.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-accommodation'))}
-              className="px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-colors"
-            >
-              <BedDouble className="w-4 h-4" />
-              <span>{language === 'bm' ? 'Buka Senarai Homestay' : 'Browse Verified Homestays'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        {/* Government Hospitals' Treatment Charges for Foreigners Banner (Local Services / Clinic & Hospital) */}
-        {currentCategory === 'local_services' && (
-          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950/75 via-stone-900 to-stone-900 border border-rose-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-xl">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-black uppercase tracking-wider border border-rose-500/30">
-                  Fees Act (Medical) 1951
-                </span>
-                <h4 className="text-xs sm:text-sm font-extrabold text-white">
-                  {language === 'bm'
-                    ? 'Caj Rawatan Bukan Warganegara (Hospital Kerajaan)'
-                    : "Caj Rawatan Bukan Warganegara • Government Hospitals' Charges for Foreigners"}
-                </h4>
-              </div>
-              <p className="text-[11px] sm:text-xs text-stone-300">
-                {language === 'bm'
-                  ? 'Semak jadual caj rasmi pesakit luar (FA), wad & pembedahan (FB), pergigian & T&CM (FC), serta kardiologi untuk bukan warganegara.'
-                  : 'View official non-citizen hospital rates: Outpatient (Schedule FA), Wards, Delivery & Radiotherapy (FB), Dental & T&CM (FC), and Cardiothoracic Surgery.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'))}
-              className="px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-colors"
-            >
-              <FileText className="w-4 h-4" />
-              <span>
-                {language === 'bm' ? 'Lihat Jadual Caj (RM)' : 'View Foreigner Fee Schedule'}
-              </span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        {/* Places Cards Grid */}
-        {filteredPlaces.length === 0 ? (
-          <div className="p-12 text-center rounded-3xl bg-stone-900/40 border border-white/5">
-            <p className="text-stone-400 text-sm">
-              {language === 'bm'
-                ? 'Tiada tempat dijumpai bagi carian ini.'
-                : 'No places match the selected filters or search query.'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
-            {filteredPlaces.map((place) => {
-              const isBookmarked = bookmarkedIds.includes(place.id);
-              const openStatus = isCurrentlyOpen(place.operatingHours);
-
-              return (
-                <div
-                  key={place.id}
-                  onClick={() => setSelectedPlacePopup(place)}
-                  className="glass-card-hover no-mobile-clamp group p-3 sm:p-3.5 rounded-2xl bg-stone-900/95 border border-stone-800 hover:border-emerald-500/60 hover:bg-stone-850 flex flex-col justify-between gap-2 cursor-pointer transition-all shadow-md h-full min-h-[110px] sm:min-h-[120px] text-left relative overflow-hidden"
-                >
-                  {/* Top Row: Live Status Dot + Township badge & Bookmark */}
-                  <div className="flex items-center justify-between gap-1.5 w-full">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          openStatus ? 'bg-emerald-500 animate-pulse' : 'bg-stone-600'
-                        }`}
-                        title={openStatus ? 'Open Now' : 'Closed'}
-                      />
-                      <span className="text-[10px] sm:text-[11px] text-emerald-400 font-mono font-medium truncate">
-                        {place.township}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleBookmark(place.id);
-                      }}
-                      className="p-1 -mr-1 rounded-md text-stone-400 hover:text-white transition-colors shrink-0"
-                      title={isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}
-                    >
-                      <Bookmark
-                        className={`w-3.5 h-3.5 ${
-                          isBookmarked ? 'fill-emerald-400 text-emerald-400' : 'text-stone-400'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Business Name - crisp, readable, unclipped */}
-                  <div className="my-0.5 min-w-0">
-                    <h4 className="no-mobile-clamp text-xs sm:text-sm font-bold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 leading-snug break-words">
-                      {language === 'bm' ? place.nameBm || place.name : place.name}
-                    </h4>
-                  </div>
-
-                  {/* Sub-Category Label Badge */}
-                  <div className="flex flex-wrap items-center gap-1 my-0.5">
-                    <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-medium text-emerald-300 bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-md max-w-full">
-                      <span className="w-1 h-1 rounded-full bg-emerald-400 shrink-0" />
-                      <span className="truncate">{getSubCategoryLabel(place.subCategory)}</span>
-                    </span>
-                  </div>
-
-                  {/* Bottom Row: Star Rating & Details trigger */}
-                  <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono pt-1.5 border-t border-white/5 mt-auto">
-                    <span className="text-amber-400 font-semibold flex items-center gap-0.5">
-                      ★ {place.rating}
-                    </span>
-                    <span className="text-[10px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5">
-                      <span>{language === 'bm' ? 'Lihat' : 'Details'}</span>
-                      <ArrowUpRight className="w-3 h-3" />
-                    </span>
-                  </div>
-                </div>
               );
             })}
           </div>
-        )}
+
+          <button
+            type="button"
+            onClick={() => categoryCarouselRef.current?.scrollBy({ left: 220, behavior: 'smooth' })}
+            aria-label="Scroll more directory categories"
+            className="absolute right-0.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-stone-950/90 hover:bg-stone-900 border border-emerald-400/50 text-emerald-300 shadow-xl flex items-center justify-center cursor-pointer active:scale-90 transition-transform"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Prompt to open full-page verified place cards */}
+        <div className="pt-1 flex items-center justify-between gap-2 text-[11px] text-stone-400">
+          <span>
+            {language === 'bm'
+              ? 'Ketik mana-mana kad kategori untuk lihat senarai penuh.'
+              : 'Tap any category card above to open Verified Place Cards in full view.'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsCategoryFullPageOpen(true)}
+            className="px-3 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer shrink-0"
+          >
+            <span>{language === 'bm' ? 'Buka Senarai' : 'Open Places'}</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
       </div>
+
+      {/* Dedicated Full-Page Category View displaying Verified Place Cards with Back Button */}
+      {isCategoryFullPageOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[160] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
+            {/* Full-Page Top Header with Back Button */}
+            <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryFullPageOpen(false)}
+                  className="p-2 rounded-full bg-stone-800/90 hover:bg-stone-700 text-stone-200 hover:text-white border border-white/10 cursor-pointer shrink-0 flex items-center justify-center"
+                  aria-label="Back to Home"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/35 flex items-center justify-center text-lg shrink-0">
+                  {mainCategories.find((c) => c.key === currentCategory)?.icon || '📍'}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400">
+                    {language === 'bm' ? 'KAD TEMPAT DISAHKAN' : 'VERIFIED PLACE CARDS'}
+                  </div>
+                  <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
+                    {mainCategories.find((c) => c.key === currentCategory)?.labelKey
+                      ? getTranslation(language, mainCategories.find((c) => c.key === currentCategory)!.labelKey)
+                      : currentCategory}
+                  </h3>
+                </div>
+              </div>
+
+              <span className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-extrabold bg-emerald-500 text-stone-950 shadow-md shrink-0">
+                {filteredPlaces.length} {language === 'bm' ? 'Tempat' : 'Places'}
+              </span>
+            </div>
+
+            {/* Scrollable Verified Place Cards Content */}
+            <div
+              className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-24"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="max-w-6xl mx-auto space-y-4">
+                {/* Quick Category Switcher Carousel Inside Full-Page View */}
+                <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {mainCategories.map((cat) => {
+                    const isActive = isCategoryMatch(currentCategory, cat.key);
+                    return (
+                      <button
+                        key={`fp-${cat.key}`}
+                        type="button"
+                        onClick={() => handleSelectCategoryInternal(cat.key, undefined, false)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 flex items-center gap-1.5 border cursor-pointer transition-all ${
+                          isActive
+                            ? 'bg-emerald-600 text-white border-emerald-400 shadow'
+                            : 'bg-stone-900 text-stone-300 border-white/10 hover:bg-stone-800'
+                        }`}
+                      >
+                        <span>{cat.icon}</span>
+                        <span>{getTranslation(language, cat.labelKey)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Search & Filters Banner */}
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-stone-900/95 to-emerald-950/40 border border-emerald-500/30 shadow-xl flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder={getTranslation(language, 'search_placeholder')}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 rounded-xl bg-stone-950/90 border border-white/10 text-xs sm:text-sm text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                    {(currentSubCategory || selectedTown !== 'all' || searchQuery.trim()) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleSelectCategoryInternal(currentCategory, undefined, false);
+                          setSelectedTown('all');
+                          setSearchQuery('');
+                        }}
+                        className="text-xs text-stone-300 hover:text-white px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
+                      >
+                        <RotateCcw className="w-3 h-3 text-stone-400" />
+                        <span>{language === 'bm' ? 'Tetap Semula' : 'Reset Filters'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Desktop Subcategory Pills */}
+                  <div className="hidden sm:flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectCategoryInternal(currentCategory, undefined, false)}
+                      className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+                        !currentSubCategory
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'bg-stone-800 text-stone-400 hover:text-white'
+                      }`}
+                    >
+                      {language === 'bm' ? 'Semua Sub-Kategori' : 'All Types'}
+                    </button>
+                    {currentSubList.map((sub) => (
+                      <button
+                        key={sub.key}
+                        type="button"
+                        onClick={() => handleSelectCategoryInternal(currentCategory, sub.key, false)}
+                        className={`px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 ${
+                          currentSubCategory === sub.key
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'bg-stone-800 text-stone-400 hover:text-white'
+                        }`}
+                      >
+                        {sub.icon}
+                        {sub.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Mobile & Desktop Subcategory + Township Dropdown Row */}
+                  <div className="flex items-center justify-between gap-2 w-full text-xs text-stone-400">
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <Filter className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <select
+                        value={currentSubCategory || 'all'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleSelectCategoryInternal(
+                            currentCategory,
+                            val === 'all' ? undefined : (val as SubCategory),
+                            false
+                          );
+                        }}
+                        className="bg-stone-800 text-stone-100 text-xs px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer w-full truncate font-medium"
+                      >
+                        <option value="all">{language === 'bm' ? 'Semua Sub-Kategori (All Types)' : 'All Types'}</option>
+                        {currentSubList.map((sub) => (
+                          <option key={sub.key} value={sub.key}>
+                            {sub.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <select
+                        value={selectedTown}
+                        onChange={(e) => setSelectedTown(e.target.value as Township | 'all')}
+                        className="bg-stone-800 text-stone-100 text-xs px-2.5 py-1.5 rounded-xl border border-white/10 outline-none cursor-pointer font-medium"
+                      >
+                        <option value="all">{language === 'bm' ? 'Semua Pekan (All Towns)' : 'All Towns'}</option>
+                        <option value="Tanah Rata">Tanah Rata</option>
+                        <option value="Brinchang">Brinchang</option>
+                        <option value="Kea Farm">Kea Farm</option>
+                        <option value="Ringlet">Ringlet</option>
+                        <option value="Kampung Raja">Kampung Raja</option>
+                        <option value="Tringkap">Tringkap</option>
+                        <option value="Kuala Terla">Kuala Terla</option>
+                        <option value="Bertam Valley">Bertam Valley</option>
+                        <option value="Blue Valley">Blue Valley</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Accommodation Pay-to-Reveal Engine Banner */}
+                {currentCategory === 'accommodation' && (
+                  <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950/80 via-teal-950/40 to-stone-900 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-xl">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                          CamGo Anti-Bypass System
+                        </span>
+                        <h4 className="text-xs sm:text-sm font-extrabold text-white">
+                          {language === 'bm' ? 'Inap Desa & Chalet Disahkan (Kunci RM30)' : 'Verified Homestays & Stays (RM30 Lock)'}
+                        </h4>
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-stone-300">
+                        {language === 'bm'
+                          ? 'Tempah terus dengan hos tempatan. Bayar deposit RM30 untuk mengunci tarikh & dapatkan pas percuma ladang strawberi Kea Farm.'
+                          : 'Book direct from local Cameron hosts with RM30 deposit lock-in, instant address reveal & free Kea Farm strawberry passes.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCategoryFullPageOpen(false);
+                        window.dispatchEvent(new CustomEvent('open-accommodation'));
+                      }}
+                      className="px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-colors"
+                    >
+                      <BedDouble className="w-4 h-4" />
+                      <span>{language === 'bm' ? 'Buka Senarai Homestay' : 'Browse Verified Homestays'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Government Hospitals' Treatment Charges for Foreigners Banner */}
+                {currentCategory === 'local_services' && (
+                  <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950/75 via-stone-900 to-stone-900 border border-rose-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-xl">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-black uppercase tracking-wider border border-rose-500/30">
+                          Fees Act (Medical) 1951
+                        </span>
+                        <h4 className="text-xs sm:text-sm font-extrabold text-white">
+                          {language === 'bm'
+                            ? 'Caj Rawatan Bukan Warganegara (Hospital Kerajaan)'
+                            : "Caj Rawatan Bukan Warganegara • Government Hospitals' Charges for Foreigners"}
+                        </h4>
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-stone-300">
+                        {language === 'bm'
+                          ? 'Semak jadual caj rasmi pesakit luar (FA), wad & pembedahan (FB), pergigian & T&CM (FC), serta kardiologi untuk bukan warganegara.'
+                          : 'View official non-citizen hospital rates: Outpatient (Schedule FA), Wards, Delivery & Radiotherapy (FB), Dental & T&CM (FC), and Cardiothoracic Surgery.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'))}
+                      className="px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-colors"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>
+                        {language === 'bm' ? 'Lihat Jadual Caj (RM)' : 'View Foreigner Fee Schedule'}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Verified Place Cards Grid */}
+                {filteredPlaces.length === 0 ? (
+                  <div className="p-12 text-center rounded-3xl bg-stone-900/40 border border-white/5">
+                    <p className="text-stone-400 text-sm">
+                      {language === 'bm'
+                        ? 'Tiada tempat dijumpai bagi carian ini.'
+                        : 'No places match the selected filters or search query.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid no-mobile-clamp grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                    {filteredPlaces.map((place) => {
+                      const isBookmarked = bookmarkedIds.includes(place.id);
+                      const openStatus = isCurrentlyOpen(place.operatingHours);
+
+                      return (
+                        <div
+                          key={place.id}
+                          onClick={() => setSelectedPlacePopup(place)}
+                          className="glass-card-hover no-mobile-clamp group p-3 sm:p-3.5 rounded-2xl bg-stone-900/95 border border-stone-800 hover:border-emerald-500/60 hover:bg-stone-850 flex flex-col justify-between gap-2 cursor-pointer transition-all shadow-md h-full min-h-[110px] sm:min-h-[120px] text-left relative overflow-hidden"
+                        >
+                          <div className="flex items-center justify-between gap-1.5 w-full">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                  openStatus ? 'bg-emerald-500 animate-pulse' : 'bg-stone-600'
+                                }`}
+                                title={openStatus ? 'Open Now' : 'Closed'}
+                              />
+                              <span className="text-[10px] sm:text-[11px] text-emerald-400 font-mono font-medium truncate">
+                                {place.township}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleBookmark(place.id);
+                              }}
+                              className="p-1 -mr-1 rounded-md text-stone-400 hover:text-white transition-colors shrink-0"
+                              title={isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}
+                            >
+                              <Bookmark
+                                className={`w-3.5 h-3.5 ${
+                                  isBookmarked ? 'fill-emerald-400 text-emerald-400' : 'text-stone-400'
+                                }`}
+                              />
+                            </button>
+                          </div>
+
+                          <div className="my-0.5 min-w-0">
+                            <h4 className="no-mobile-clamp text-xs sm:text-sm font-bold text-stone-100 group-hover:text-emerald-300 transition-colors line-clamp-2 leading-snug break-words">
+                              {language === 'bm' ? place.nameBm || place.name : place.name}
+                            </h4>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1 my-0.5">
+                            <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-medium text-emerald-300 bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-md max-w-full">
+                              <span className="w-1 h-1 rounded-full bg-emerald-400 shrink-0" />
+                              <span className="truncate">{getSubCategoryLabel(place.subCategory)}</span>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono pt-1.5 border-t border-white/5 mt-auto">
+                            <span className="text-amber-400 font-semibold flex items-center gap-0.5">
+                              ★ {place.rating}
+                            </span>
+                            <span className="text-[10px] text-stone-400 group-hover:text-emerald-400 transition-colors flex items-center gap-0.5">
+                              <span>{language === 'bm' ? 'Lihat' : 'Details'}</span>
+                              <ArrowUpRight className="w-3 h-3" />
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Detailed Place Pop-up Modal (Image 2 style) */}
       {selectedPlacePopup &&
@@ -945,6 +1009,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                       onClick={() => {
                         const placeToNavigate = selectedPlacePopup;
                         setSelectedPlacePopup(null);
+                        setIsCategoryFullPageOpen(false);
                         if (placeToNavigate) {
                           onSelectPlaceForMap(placeToNavigate);
                           setTimeout(() => {

@@ -27,9 +27,6 @@ import {
   Coffee,
   ParkingCircle,
   Utensils,
-  ChevronDown,
-  ChevronUp,
-  Minimize2,
   Send,
   Trash2,
   BellRing,
@@ -38,6 +35,7 @@ import QRCode from 'qrcode';
 import { AccommodationListing, AccommodationBooking, Township, Language } from '../types';
 import { firebaseService, PaymentGatewayNoticeConfig } from '../services/firebase';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
+import { VerticalSwipeCarousel } from './VerticalSwipeCarousel';
 
 interface AccommodationListModalProps {
   isOpen: boolean;
@@ -145,8 +143,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   const [rateTier, setRateTier] = useState<'normal' | 'peak'>('normal');
   const [showMoreInfo, setShowMoreInfo] = useState(false);
 
-  // Collapsible Capsule Card State (auto-collapses previously opened card on new selection)
-  const [expandedStayId, setExpandedStayId] = useState<string | null>(null);
+  // Inline Card Notes & Gallery State
   const [expandedCardNotesId, setExpandedCardNotesId] = useState<string | null>(null);
   const [cardGalleryIdx, setCardGalleryIdx] = useState<Record<string, number>>({});
 
@@ -782,284 +779,168 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-            {filteredListings.map((stay) => {
-              const isAvailable = stay.roomAvailabilityStatus === 'rooms_available';
-              const isLimited = stay.roomAvailabilityStatus === 'limited_units';
-              const isSoldOut = stay.roomAvailabilityStatus === 'fully_booked';
-              const isExpanded = expandedStayId === stay.id;
-              const isNotesOpen = expandedCardNotesId === stay.id;
-              const displayPropertyName =
-                stay.propertyName?.trim() ||
-                stay.realBusinessName?.trim() ||
-                `Unit ${stay.code}`;
-              const shortUnitCode = stay.code.split(' (')[0].trim() || stay.code;
-              const galleryList =
-                stay.galleryImages && stay.galleryImages.length > 0
-                  ? stay.galleryImages
-                  : [stay.coverImage];
-              const activePhotoIdx = Math.min(
-                cardGalleryIdx[stay.id] ?? 0,
-                Math.max(0, galleryList.length - 1)
-              );
-              const activePhotoUrl = galleryList[activePhotoIdx] || stay.coverImage;
-              const enabledAddons = (stay.amenityAddons || []).filter((a) => a.enabled);
-
-              if (!isExpanded) {
-                return (
-                  <button
-                    key={stay.id}
-                    type="button"
-                    onClick={() => {
-                      setExpandedStayId(stay.id);
-                      setExpandedCardNotesId(null);
-                    }}
-                    aria-expanded={false}
-                    className="w-full min-h-[64px] px-2.5 py-2 rounded-2xl bg-stone-900/90 hover:bg-stone-800/95 border border-stone-800 hover:border-emerald-500/50 shadow-md hover:shadow-emerald-950/40 transition-all duration-200 flex items-center justify-between gap-2 text-left group cursor-pointer active:scale-[0.99]"
-                  >
-                    {/* Left: Thumbnail + Property Name & Unit Code */}
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <div className="relative shrink-0">
-                        <img
-                          src={safeSrc(stay.coverImage, DEFAULT_PLACE_IMAGE)}
-                          alt={displayPropertyName}
-                          className="w-9 h-9 rounded-full object-cover border border-white/15 bg-stone-950 group-hover:scale-105 transition-transform"
-                        />
-                        <span
-                          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-stone-900 ${
-                            isAvailable
-                              ? 'bg-emerald-400 animate-pulse'
-                              : isLimited
-                              ? 'bg-amber-400'
-                              : 'bg-rose-500'
-                          }`}
-                          title={
-                            isAvailable ? 'Available' : isLimited ? '1-2 Left' : 'Sold Out Today'
-                          }
-                        />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-[11px] sm:text-xs text-white group-hover:text-emerald-300 transition-colors leading-snug whitespace-normal break-words">
-                          {displayPropertyName}
-                        </h4>
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 text-[9px] sm:text-[10px] font-mono text-emerald-400 leading-tight">
-                          <span className="font-bold whitespace-nowrap">{shortUnitCode}</span>
-                          <span className="text-stone-600">·</span>
-                          <span className="font-sans text-stone-400 break-words">{stay.township}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Starting Rate + Live Availability Dot + Expand Caret */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <div className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                              isAvailable
-                                ? 'bg-emerald-400 animate-pulse'
-                                : isLimited
-                                ? 'bg-amber-400'
-                                : 'bg-rose-400'
-                            }`}
-                          />
-                          <span className="text-[11px] font-black text-white whitespace-nowrap">
-                            {stay.pricePerNight > 0 ? `RM ${stay.pricePerNight}` : 'Vendor Rate'}
-                          </span>
-                        </div>
-                        <span className="text-[9px] text-stone-400 block leading-none mt-0.5">
-                          {stay.pricePerNight > 0 ? '/night' : stay.bookingType === 'instant' ? 'Instant' : '30m SLA'}
-                        </span>
-                      </div>
-                      <div className="w-6 h-6 rounded-full bg-stone-950/80 border border-stone-700/80 group-hover:border-emerald-500/50 flex items-center justify-center text-stone-400 group-hover:text-emerald-300 transition-colors shrink-0">
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </div>
-                    </div>
-                  </button>
+          <div className="max-w-xl mx-auto">
+            <VerticalSwipeCarousel
+              items={filteredListings}
+              keyExtractor={(stay) => stay.id}
+              heightClassName="h-[530px] sm:h-[570px]"
+              accentColor="emerald"
+              showNavArrows={true}
+              renderItem={(stay) => {
+                const isAvailable = stay.roomAvailabilityStatus === 'rooms_available';
+                const isLimited = stay.roomAvailabilityStatus === 'limited_units';
+                const isSoldOut = stay.roomAvailabilityStatus === 'fully_booked';
+                const isNotesOpen = expandedCardNotesId === stay.id;
+                const displayPropertyName =
+                  stay.propertyName?.trim() ||
+                  stay.realBusinessName?.trim() ||
+                  `Unit ${stay.code}`;
+                const galleryList =
+                  stay.galleryImages && stay.galleryImages.length > 0
+                    ? stay.galleryImages
+                    : [stay.coverImage];
+                const activePhotoIdx = Math.min(
+                  cardGalleryIdx[stay.id] ?? 0,
+                  Math.max(0, galleryList.length - 1)
                 );
-              }
+                const activePhotoUrl = galleryList[activePhotoIdx] || stay.coverImage;
+                const enabledAddons = (stay.amenityAddons || []).filter((a) => a.enabled);
 
-              return (
-                <div
-                  key={stay.id}
-                  className="rounded-3xl bg-stone-900/95 border border-emerald-500/50 shadow-2xl shadow-emerald-950/30 transition-all duration-300 flex flex-col justify-between overflow-hidden group"
-                >
-                  {/* Collapsible Card Header Strip (Tap to Collapse) */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setExpandedStayId(null)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setExpandedStayId(null);
-                      }
-                    }}
-                    className="px-3.5 py-2 bg-stone-950/90 border-b border-stone-800 flex items-center justify-between gap-2 cursor-pointer hover:bg-stone-950 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${
-                          isAvailable
-                            ? 'bg-emerald-400 animate-pulse'
-                            : isLimited
-                            ? 'bg-amber-400'
-                            : 'bg-rose-400'
-                        }`}
+                return (
+                  <div className="h-full rounded-3xl bg-stone-900/95 border border-emerald-500/45 shadow-2xl shadow-emerald-950/30 flex flex-col justify-between overflow-hidden group relative">
+                    {/* Top Image & Badges */}
+                    <div className="relative h-36 sm:h-40 shrink-0 overflow-hidden bg-stone-950">
+                      <img
+                        src={safeSrc(activePhotoUrl, DEFAULT_PLACE_IMAGE)}
+                        alt={displayPropertyName}
+                        className="w-full h-full object-cover transition-transform duration-500"
                       />
-                      <span className="text-[11px] font-bold text-stone-200 truncate">
-                        {displayPropertyName}
-                      </span>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-white/10 text-[10px] font-bold flex items-center gap-1 shrink-0">
-                      <Minimize2 className="w-3 h-3 text-emerald-400" />
-                      <span>Collapse</span>
-                      <ChevronUp className="w-3 h-3" />
-                    </span>
-                  </div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/40 pointer-events-none" />
 
-                  {/* Top Image & Badges */}
-                  <div className="relative aspect-[16/10] overflow-hidden bg-stone-950">
-                    <img
-                      src={safeSrc(activePhotoUrl, DEFAULT_PLACE_IMAGE)}
-                      alt={displayPropertyName}
-                      className="w-full h-full object-cover transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/40 pointer-events-none" />
-
-                    {/* Top Row: Unit Code (Left) & Booking Confirmation Type (Right) */}
-                    <div className="absolute top-2.5 left-2.5 right-2.5 flex flex-wrap items-start justify-between gap-1.5">
-                      <span className="px-2 py-0.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/20 text-white font-mono font-bold text-[10px] leading-snug shadow-md whitespace-normal break-words max-w-[62%]">
-                        {stay.code}
-                      </span>
-                      {stay.bookingType === 'instant' ? (
-                        <span className="px-2 py-0.5 rounded-lg bg-emerald-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
-                          <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
-                          <span>Instant Confirm</span>
+                      {/* Top Row: Unit Code (Left) & Booking Confirmation Type (Right) */}
+                      <div className="absolute top-2.5 left-2.5 right-2.5 flex flex-wrap items-start justify-between gap-1.5">
+                        <span className="px-2 py-0.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/20 text-white font-mono font-bold text-[10px] leading-snug shadow-md whitespace-normal break-words max-w-[62%] line-clamp-1">
+                          {stay.code}
                         </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-lg bg-amber-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
-                          <Clock className="w-3 h-3 shrink-0" />
-                          <span>30m SLA</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Location preview over image bottom */}
-                    <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-xs text-stone-300">
-                      <span className="flex items-center gap-1 font-bold text-white text-[11px] truncate">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        {stay.township}
-                      </span>
-                      <span className="text-[11px] text-amber-400 font-bold">
-                        ★ {stay.rating} ({stay.reviewCount})
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Full Media Gallery Thumbnails (when multiple photos exist) */}
-                  {galleryList.length > 1 && (
-                    <div className="px-3 pt-2.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                      {galleryList.map((imgUrl, idx) => (
-                        <button
-                          key={`${stay.id}-gal-${idx}`}
-                          type="button"
-                          onClick={() =>
-                            setCardGalleryIdx((prev) => ({ ...prev, [stay.id]: idx }))
-                          }
-                          className={`w-12 h-9 rounded-lg overflow-hidden border transition-all shrink-0 cursor-pointer ${
-                            idx === activePhotoIdx
-                              ? 'border-emerald-400 ring-1 ring-emerald-400/60 scale-105'
-                              : 'border-stone-700 opacity-70 hover:opacity-100'
-                          }`}
-                        >
-                          <img
-                            src={safeSrc(imgUrl, DEFAULT_PLACE_IMAGE)}
-                            alt={`${displayPropertyName} gallery ${idx + 1}`}
-                            className="w-full h-full object-cover"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Body Content (Availability Status, Full Property Title, Unit Code, Specs, Amenities & Booking) */}
-                  <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
-                    <div className="space-y-2.5">
-                      {/* Status & Breakfast Row */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {isAvailable && (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            Available
+                        {stay.bookingType === 'instant' ? (
+                          <span className="px-2 py-0.5 rounded-lg bg-emerald-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
+                            <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
+                            <span>Instant Confirm</span>
                           </span>
-                        )}
-                        {isLimited && (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-950/90 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                            1-2 Left
-                          </span>
-                        )}
-                        {isSoldOut && (
-                          <span className="px-2 py-0.5 rounded-full bg-rose-950/90 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                            Sold Out Today
-                          </span>
-                        )}
-                        {stay.breakfastIncluded && (
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 whitespace-nowrap">
-                            <Coffee className="w-3 h-3" />
-                            Breakfast Included
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>30m SLA</span>
                           </span>
                         )}
                       </div>
 
-                      {/* Full-Width Property Name & Unit Code (Fully Visible, Never Truncated) */}
-                      <div className="space-y-0.5">
-                        <h4 className="font-black text-sm sm:text-[15px] text-white leading-snug group-hover:text-emerald-300 transition-colors break-words">
-                          {displayPropertyName}
-                        </h4>
-                        <span className="font-mono text-[10px] sm:text-[11px] font-semibold text-emerald-400 block leading-snug break-words">
-                          Unit {stay.code}
+                      {/* Location preview over image bottom */}
+                      <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-xs text-stone-300">
+                        <span className="flex items-center gap-1 font-bold text-white text-[11px] truncate">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          {stay.township}
+                        </span>
+                        <span className="text-[11px] text-amber-400 font-bold tabular-nums">
+                          ★ {stay.rating.toFixed(1)} ({stay.reviewCount})
                         </span>
                       </div>
+                    </div>
 
-                      <p className="text-[11px] text-stone-400">
-                        📍 {stay.proximityDesc}
-                      </p>
+                    {/* Full Media Gallery Thumbnails (when multiple photos exist) */}
+                    {galleryList.length > 1 && (
+                      <div className="px-3.5 pt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                        {galleryList.slice(0, 6).map((imgUrl, idx) => (
+                          <button
+                            key={`${stay.id}-gal-${idx}`}
+                            type="button"
+                            onClick={() =>
+                              setCardGalleryIdx((prev) => ({ ...prev, [stay.id]: idx }))
+                            }
+                            className={`w-11 h-7 rounded-lg overflow-hidden border transition-all shrink-0 cursor-pointer ${
+                              idx === activePhotoIdx
+                                ? 'border-emerald-400 ring-1 ring-emerald-400/60 scale-105'
+                                : 'border-stone-700 opacity-70 hover:opacity-100'
+                            }`}
+                          >
+                            <img
+                              src={safeSrc(imgUrl, DEFAULT_PLACE_IMAGE)}
+                              alt={`${displayPropertyName} gallery ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-                      {/* Check-In / Out Windows & Parking Quick Details */}
-                      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                        <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
-                          <span className="text-stone-400 block">Check-In / Out</span>
-                          <strong className="text-white font-mono">
-                            {stay.checkInWindow || '15:00'} / {stay.checkOutWindow || '12:00'}
-                          </strong>
+                    {/* Body Content */}
+                    <div className="p-3.5 sm:p-4 space-y-2 flex-1 flex flex-col justify-between min-h-0">
+                      <div className="space-y-2 min-h-0">
+                        {/* Status & Breakfast Row */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {isAvailable && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Available
+                            </span>
+                          )}
+                          {isLimited && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-950/90 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              1-2 Left
+                            </span>
+                          )}
+                          {isSoldOut && (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-950/90 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                              Sold Out Today
+                            </span>
+                          )}
+                          {stay.breakfastIncluded && (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 whitespace-nowrap">
+                              <Coffee className="w-3 h-3" />
+                              Breakfast Included
+                            </span>
+                          )}
                         </div>
-                        <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
-                          <span className="text-stone-400 block">Parking &amp; Kitchen</span>
-                          <strong className="text-white truncate block">
-                            {(stay.parkingType || 'private_available').replace(/_/g, ' ')}
-                            {stay.cookingPermitted ? ' · Cooking OK' : ''}
-                          </strong>
-                        </div>
-                      </div>
 
-                      {/* Amenities / CamGo Exclusive Perks */}
-                      <div className="space-y-1 pt-0.5">
-                        <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">
-                          Amenities &amp; CamGo Perks
-                        </span>
+                        {/* Property Name & Proximity */}
+                        <div className="space-y-0.5">
+                          <h4 className="font-black text-sm sm:text-[15px] text-white leading-snug group-hover:text-emerald-300 transition-colors line-clamp-1">
+                            {displayPropertyName}
+                          </h4>
+                          <p className="text-[11px] text-stone-400 line-clamp-1">
+                            Unit {stay.code} · {stay.proximityDesc}
+                          </p>
+                        </div>
+
+                        {/* Check-In / Out Windows & Parking Quick Details */}
+                        <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                          <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
+                            <span className="text-stone-400 block">Check-In / Out</span>
+                            <strong className="text-white font-mono">
+                              {stay.checkInWindow || '15:00'} / {stay.checkOutWindow || '12:00'}
+                            </strong>
+                          </div>
+                          <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
+                            <span className="text-stone-400 block">Parking &amp; Kitchen</span>
+                            <strong className="text-white truncate block">
+                              {(stay.parkingType || 'private_available').replace(/_/g, ' ')}
+                              {stay.cookingPermitted ? ' · Cooking OK' : ''}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {/* Amenities / CamGo Exclusive Perks */}
                         <div className="flex flex-wrap gap-1">
                           {stay.bundledPerks.slice(0, 2).map((perk, idx) => (
                             <span
                               key={idx}
-                              className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[10px] font-semibold"
+                              className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[10px] font-semibold line-clamp-1 max-w-full"
                             >
                               {perk}
                             </span>
                           ))}
-                          {enabledAddons.slice(0, 2).map((addon) => (
+                          {enabledAddons.slice(0, 1).map((addon) => (
                             <span
                               key={addon.id}
                               className="px-2 py-0.5 rounded-lg bg-stone-800 text-stone-200 border border-stone-700 text-[10px] font-medium"
@@ -1068,10 +949,8 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                             </span>
                           ))}
                         </div>
-                      </div>
 
-                      {/* Inline More Information / Vendor Notes Toggle */}
-                      <div>
+                        {/* Inline More Information / Vendor Notes Toggle */}
                         <button
                           type="button"
                           onClick={() =>
@@ -1082,71 +961,45 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                           <Info className="w-3.5 h-3.5" />
                           <span>{isNotesOpen ? 'Hide Vendor Notes & Rules' : 'More Information & Vendor Notes'}</span>
                         </button>
-
-                        {isNotesOpen && (
-                          <div className="mt-2 p-2.5 rounded-xl bg-stone-950 border border-teal-500/30 text-[11px] text-stone-300 space-y-1.5">
-                            {stay.description && (
-                              <p className="leading-relaxed whitespace-pre-line">{stay.description}</p>
-                            )}
-                            {stay.parkingDetails && (
-                              <p className="text-stone-400">
-                                <strong className="text-stone-200">Parking:</strong> {stay.parkingDetails}
-                              </p>
-                            )}
-                            {stay.kitchenNotes && (
-                              <p className="text-stone-400">
-                                <strong className="text-stone-200">Kitchen:</strong> {stay.kitchenNotes}
-                              </p>
-                            )}
-                            <p className="text-amber-200/90">
-                              <strong className="text-amber-300">Rules:</strong>{' '}
-                              {stay.houseRules ||
-                                'Observe quiet hours after 11:00 PM & present CamGo voucher on arrival.'}
-                            </p>
-                          </div>
-                        )}
                       </div>
-                    </div>
 
-                    {/* Financial Breakdown & CTA */}
-                    <div className="pt-3 border-t border-stone-800 space-y-3">
-                      <div className="flex items-end justify-between">
-                        <div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[11px] text-stone-400">Lock Fee:</span>
-                            <span className="text-xs font-black text-emerald-400">RM 30</span>
-                            <span className="text-[10px] text-stone-500 font-mono">(FPX/Card)</span>
+                      {/* Financial Breakdown & CTA */}
+                      <div className="pt-2 border-t border-stone-800 space-y-2 shrink-0">
+                        <div className="flex items-end justify-between">
+                          <div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-stone-400">Lock Fee:</span>
+                              <span className="text-xs font-black text-emerald-400">RM 30</span>
+                              <span className="text-[10px] text-stone-500 font-mono">(FPX/Card)</span>
+                            </div>
+                            <div className="text-[11px] text-stone-400">
+                              Door Balance: <strong className="text-amber-300 font-bold">RM {stay.balanceToCollect}</strong>
+                            </div>
                           </div>
-                          <div className="text-[11px] text-stone-400">
-                            Door Balance: <strong className="text-amber-300 font-bold">RM {stay.balanceToCollect}</strong>
+
+                          <div className="text-right">
+                            <span className="text-[10px] text-stone-500 block">Normal Rate</span>
+                            {stay.pricePerNight > 0 ? (
+                              <>
+                                <span className="text-base font-black text-white tabular-nums">RM {stay.pricePerNight}</span>
+                                <span className="text-[10px] text-stone-400">/night</span>
+                              </>
+                            ) : (
+                              <span className="text-xs font-bold text-stone-400">Rate Set by Vendor</span>
+                            )}
+                            {stay.peakPricePerNight && stay.peakPricePerNight > 0 && (
+                              <span className="block text-[10px] font-bold text-amber-300 mt-0.5 tabular-nums">
+                                Peak: RM {stay.peakPricePerNight}/night
+                              </span>
+                            )}
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="text-[10px] text-stone-500 block">Normal Rate</span>
-                          {stay.pricePerNight > 0 ? (
-                            <>
-                              <span className="text-base font-black text-white">RM {stay.pricePerNight}</span>
-                              <span className="text-[10px] text-stone-400">/night</span>
-                            </>
-                          ) : (
-                            <span className="text-xs font-bold text-stone-400">Rate Set by Vendor</span>
-                          )}
-                          {stay.peakPricePerNight && stay.peakPricePerNight > 0 && (
-                            <span className="block text-[10px] font-bold text-amber-300 mt-0.5">
-                              Peak Season: RM {stay.peakPricePerNight}/night
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* CTA Actions: Lock Room + Collapse */}
-                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => setActiveListingForBooking(stay)}
                           disabled={isSoldOut}
-                          className={`flex-1 py-2.5 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg cursor-pointer ${
+                          className={`w-full min-h-[42px] py-2.5 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg cursor-pointer ${
                             isSoldOut
                               ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
                               : 'bg-emerald-500 hover:bg-emerald-400 text-stone-950 hover:shadow-emerald-950/80 active:scale-[0.98]'
@@ -1155,21 +1008,52 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                           <Lock className="w-3.5 h-3.5" />
                           <span>{isSoldOut ? 'Sold Out Today' : 'Lock Room'}</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedStayId(null)}
-                          className="px-3 py-2.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                          title="Minimize back to capsule"
-                        >
-                          <ChevronUp className="w-4 h-4" />
-                          <span>Minimize</span>
-                        </button>
                       </div>
                     </div>
+
+                    {/* Internal Vendor Notes & House Rules Overlay Drawer (prevents card scroll trapping) */}
+                    {isNotesOpen && (
+                      <div className="absolute inset-x-3 bottom-16 top-28 z-20 rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-teal-500/40 p-3.5 flex flex-col justify-between shadow-2xl">
+                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-800 shrink-0">
+                          <span className="text-xs font-black text-teal-300 flex items-center gap-1.5">
+                            <Info className="w-3.5 h-3.5" />
+                            <span>Vendor Notes &amp; Rules</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedCardNotesId(null)}
+                            className="p-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white cursor-pointer"
+                            aria-label="Close notes"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto no-scrollbar py-2 space-y-2 text-[11px] text-stone-300">
+                          {stay.description && (
+                            <p className="leading-relaxed whitespace-pre-line">{stay.description}</p>
+                          )}
+                          {stay.parkingDetails && (
+                            <p className="text-stone-400">
+                              <strong className="text-stone-200">Parking:</strong> {stay.parkingDetails}
+                            </p>
+                          )}
+                          {stay.kitchenNotes && (
+                            <p className="text-stone-400">
+                              <strong className="text-stone-200">Kitchen:</strong> {stay.kitchenNotes}
+                            </p>
+                          )}
+                          <p className="text-amber-200/90">
+                            <strong className="text-amber-300">Rules:</strong>{' '}
+                            {stay.houseRules ||
+                              'Observe quiet hours after 11:00 PM & present CamGo voucher on arrival.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              }}
+            />
           </div>
         )}
 

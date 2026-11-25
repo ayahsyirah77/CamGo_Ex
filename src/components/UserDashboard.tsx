@@ -514,16 +514,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
-      <div 
-        ref={dashboardContainerRef} 
-        className="min-h-full flex flex-col items-center justify-start p-2.5 sm:p-6 py-10 sm:py-16"
-        onClick={onClose}
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain touch-pan-y bg-stone-950 animate-in fade-in duration-300" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div
+        ref={dashboardContainerRef}
+        className="min-h-full w-full flex flex-col items-center justify-start p-3 sm:p-6 pb-20"
       >
-        <div 
-          className="w-full max-w-5xl space-y-4 sm:space-y-6 pb-12 relative my-auto shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="w-full max-w-5xl space-y-4 sm:space-y-6 pb-12 relative shrink-0">
 
         {/* Top Navbar */}
         {/* Desktop Header (PC View Only - no hamburger link) */}

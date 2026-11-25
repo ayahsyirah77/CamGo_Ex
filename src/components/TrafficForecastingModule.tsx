@@ -162,6 +162,7 @@ interface TrafficForecastingModuleProps {
   onSelectCorridorOnMap?: (corridorId: string) => void;
   selectedCorridorId?: 'simpang-pulai' | 'tapah' | 'sungai-koyan';
   onCorridorChange?: (id: 'simpang-pulai' | 'tapah' | 'sungai-koyan') => void;
+  hideMinimizedBar?: boolean;
 }
 
 export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> = ({
@@ -169,6 +170,7 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
   onSelectCorridorOnMap,
   selectedCorridorId: externalCorridorId,
   onCorridorChange,
+  hideMinimizedBar = false,
 }) => {
   const [isMinimized, setIsMinimized] = useState(true);
   // Silent TomTom API Key State (configured exclusively via Admin Dashboard)
@@ -473,6 +475,10 @@ export const TrafficForecastingModule: React.FC<TrafficForecastingModuleProps> =
   };
 
   const currentAnalysis = calculateDepartureAnalysis();
+
+  if (isMinimized && hideMinimizedBar) {
+    return null;
+  }
 
   return (
     <div id="traffic-forecasting-section" className="relative">

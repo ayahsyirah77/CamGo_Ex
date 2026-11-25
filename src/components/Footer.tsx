@@ -1,7 +1,7 @@
 import React from 'react';
 import { CamLogo } from './CamLogo';
 import { Language, Township } from '../types';
-import { MapPin, ExternalLink, Github, Database, Share2, FileText } from 'lucide-react';
+import { MapPin, ExternalLink, Share2, FileText } from 'lucide-react';
 
 interface FooterProps {
   language: Language;
@@ -198,16 +198,8 @@ export const Footer: React.FC<FooterProps> = ({
 
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
-          {/* GitHub, Firebase & User Manual Ready Badge */}
+          {/* User Manual Ready Badge */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-900 border border-white/10 text-[11px] text-stone-400">
-              <Database className="w-3 h-3 text-emerald-400" />
-              <span>Firebase Connected</span>
-            </span>
-            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-900 border border-white/10 text-[11px] text-stone-400">
-              <Github className="w-3 h-3 text-stone-300" />
-              <span>GitHub Portable</span>
-            </span>
             <a
               href="/camgo_user_manual.pdf"
               download="CamGo_User_Manual.pdf"

@@ -176,14 +176,8 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[120] overflow-y-auto bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="min-h-full flex items-center justify-center p-0 sm:p-4" onClick={onClose}>
-        <div
-          className="w-full max-w-5xl h-[92vh] sm:h-[90vh] bg-stone-900 border border-emerald-500/40 rounded-3xl shadow-2xl flex flex-col min-h-0 overflow-hidden relative my-auto shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
-        {/* Mobile Pull Handle */}
-        <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
+    <div className="fixed inset-0 z-[120] bg-stone-950 flex flex-col overflow-hidden animate-in fade-in duration-200">
+      <div className="w-full h-[100dvh] bg-stone-950 flex flex-col min-h-0 overflow-hidden relative">
 
         {/* Sticky Header with Visible Close Button */}
         <div className="shrink-0 flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-white/10 bg-stone-900/98 backdrop-blur-md z-30 gap-2">
@@ -643,6 +637,5 @@ export const SmartParkingEvModal: React.FC<SmartParkingEvModalProps> = ({
         </div>
       </div>
     </div>
-  </div>
-);
+  );
 };

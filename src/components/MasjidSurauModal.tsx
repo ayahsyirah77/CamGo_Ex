@@ -222,15 +222,8 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[1400] overflow-y-auto bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="min-h-full flex flex-col items-center justify-end sm:justify-center p-0 sm:p-4" onClick={onClose}>
-        <div
-          className="w-full max-w-4xl h-[92dvh] sm:h-[88vh] max-h-[94dvh] sm:max-h-[88vh] bg-stone-900 border-t sm:border border-emerald-500/40 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col min-h-0 overflow-hidden relative my-auto shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
-
-        {/* Mobile Pull Handle */}
-        <div className="w-12 h-1.5 bg-stone-700 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
+    <div className="fixed inset-0 z-[1400] bg-stone-950 text-stone-100 flex flex-col overflow-hidden animate-in fade-in duration-200">
+      <div className="w-full h-full flex flex-col min-h-0 overflow-hidden relative">
 
         {/* Modal Header */}
         <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
@@ -595,6 +588,5 @@ export const MasjidSurauModal: React.FC<MasjidSurauModalProps> = ({
         </div>
       </div>
     </div>
-  </div>
-);
+  );
 };
