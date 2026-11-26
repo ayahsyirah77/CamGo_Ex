@@ -89,6 +89,7 @@ const STORAGE_KEYS = {
 
 export interface VisualBackgroundsConfig {
   headerBackgroundUrl: string;
+  directoryCardBgUrl: string;
   verifiedStaysBgUrl: string;
   motorbikeRentalsBgUrl: string;
   exploreWeatherBgUrl: string;
@@ -100,6 +101,7 @@ export interface VisualBackgroundsConfig {
 
 export const DEFAULT_VISUAL_BACKGROUNDS: VisualBackgroundsConfig = {
   headerBackgroundUrl: '',
+  directoryCardBgUrl: '',
   verifiedStaysBgUrl: '',
   motorbikeRentalsBgUrl: '',
   exploreWeatherBgUrl: '',
@@ -4722,6 +4724,8 @@ class FirebaseStorageService {
       return {
         headerBackgroundUrl:
           typeof parsed?.headerBackgroundUrl === 'string' ? parsed.headerBackgroundUrl : '',
+        directoryCardBgUrl:
+          typeof parsed?.directoryCardBgUrl === 'string' ? parsed.directoryCardBgUrl : '',
         verifiedStaysBgUrl:
           typeof parsed?.verifiedStaysBgUrl === 'string' ? parsed.verifiedStaysBgUrl : '',
         motorbikeRentalsBgUrl:
@@ -4750,6 +4754,10 @@ class FirebaseStorageService {
         typeof partial.headerBackgroundUrl === 'string'
           ? partial.headerBackgroundUrl.trim()
           : current.headerBackgroundUrl,
+      directoryCardBgUrl:
+        typeof partial.directoryCardBgUrl === 'string'
+          ? partial.directoryCardBgUrl.trim()
+          : current.directoryCardBgUrl,
       verifiedStaysBgUrl:
         typeof partial.verifiedStaysBgUrl === 'string'
           ? partial.verifiedStaysBgUrl.trim()
@@ -4814,6 +4822,8 @@ class FirebaseStorageService {
             const synced: VisualBackgroundsConfig = {
               headerBackgroundUrl:
                 typeof data?.headerBackgroundUrl === 'string' ? data.headerBackgroundUrl : '',
+              directoryCardBgUrl:
+                typeof data?.directoryCardBgUrl === 'string' ? data.directoryCardBgUrl : '',
               verifiedStaysBgUrl:
                 typeof data?.verifiedStaysBgUrl === 'string' ? data.verifiedStaysBgUrl : '',
               motorbikeRentalsBgUrl:

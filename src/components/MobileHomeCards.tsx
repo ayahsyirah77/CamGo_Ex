@@ -655,8 +655,15 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
         >
           <div className="absolute inset-0 z-0">
             <img
-              src="/assets/aistudio/explore_c7c5621e.jpg"
+              src={safeSrc(
+                visualBackgrounds.directoryCardBgUrl,
+                '/assets/aistudio/explore_c7c5621e.jpg'
+              )}
               alt="Directory"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-stone-950/95 via-stone-950/50 to-stone-950/40" />

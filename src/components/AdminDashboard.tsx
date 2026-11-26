@@ -2084,6 +2084,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   type VisualBgSlotKey =
     | 'headerBackgroundUrl'
+    | 'directoryCardBgUrl'
     | 'verifiedStaysBgUrl'
     | 'motorbikeRentalsBgUrl'
     | 'exploreWeatherBgUrl'
@@ -2093,6 +2094,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const INITIAL_VISUAL_BG_BOOL_RECORD: Record<VisualBgSlotKey, boolean> = {
     headerBackgroundUrl: false,
+    directoryCardBgUrl: false,
     verifiedStaysBgUrl: false,
     motorbikeRentalsBgUrl: false,
     exploreWeatherBgUrl: false,
@@ -2106,6 +2108,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { type: 'success' | 'error' | 'info'; text: string } | null
   > = {
     headerBackgroundUrl: null,
+    directoryCardBgUrl: null,
     verifiedStaysBgUrl: null,
     motorbikeRentalsBgUrl: null,
     exploreWeatherBgUrl: null,
@@ -2148,6 +2151,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           prev.headerBackgroundUrl === prevSaved.headerBackgroundUrl
             ? cfg.headerBackgroundUrl
             : prev.headerBackgroundUrl,
+        directoryCardBgUrl:
+          prev.directoryCardBgUrl === prevSaved.directoryCardBgUrl
+            ? cfg.directoryCardBgUrl
+            : prev.directoryCardBgUrl,
         verifiedStaysBgUrl:
           prev.verifiedStaysBgUrl === prevSaved.verifiedStaysBgUrl
             ? cfg.verifiedStaysBgUrl
@@ -3360,7 +3367,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 {(
                   [
                     {
@@ -3373,6 +3380,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       accentBorder: 'border-teal-500/35',
                       accentBadge: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
                       icon: <Monitor className="w-4 h-4 text-teal-400 shrink-0" />,
+                    },
+                    {
+                      key: 'directoryCardBgUrl' as const,
+                      title: 'Directory Card Background',
+                      subtitle: 'Featured Directory shortcut card on home',
+                      defaultPreview: '/assets/aistudio/explore_c7c5621e.jpg',
+                      previewLabel: 'Directory',
+                      badgeLabel: 'DIRECTORY CARD',
+                      accentBorder: 'border-lime-500/35',
+                      accentBadge: 'bg-lime-500/15 text-lime-300 border-lime-500/30',
+                      icon: <MapPin className="w-4 h-4 text-lime-400 shrink-0" />,
                     },
                     {
                       key: 'verifiedStaysBgUrl' as const,
