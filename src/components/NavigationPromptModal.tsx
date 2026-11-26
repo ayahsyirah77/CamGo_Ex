@@ -210,7 +210,7 @@ export const NavigationPromptModal: React.FC<NavigationPromptModalProps> = ({
               {routeMetrics && (
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10 text-[11px]">
                   <span className="font-bold text-emerald-300">
-                    {routeMetrics.distKm} km {language === 'bm' ? 'dari anda' : 'away'}
+                    {routeMetrics.distKm} {language === 'bm' ? 'KM dari anda' : 'km away'}
                   </span>
                   <div className="flex flex-wrap items-center gap-2.5 font-mono font-bold">
                     <span className="inline-flex items-center gap-1 text-amber-300">

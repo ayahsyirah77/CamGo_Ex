@@ -36,7 +36,7 @@ class GeminiHighlandService {
       return {
         condition: 'heavy',
         summary: `Federal Route 59 bottleneck near ${place.name}. High concentration of market shoppers, vegetable trucks, and tour coaches causing stop-and-go delays.`,
-        summaryBm: `Kesesakan di Laluan Persekutuan 59 berdekatan ${place.name}. Kehadiran bas persiaran dan pengunjung pasar menyebabkan kelewatan 25 - 40 minit.`,
+        summaryBm: `Kesesakan di FT59 berdekatan ${place.name}. Kehadiran bas persiaran dan pengunjung pasar menyebabkan kelewatan 25 - 40 minit.`,
         delayEstimate: '25 - 45 mins',
         peakWindow: '10:30 AM - 4:30 PM (Peak on Weekends & School Holidays)',
         suggestedAlternativeRoute:

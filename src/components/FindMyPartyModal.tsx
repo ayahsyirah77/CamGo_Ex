@@ -1381,7 +1381,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-base font-heading font-extrabold text-stone-100 whitespace-normal break-words leading-tight">
-                  {hasJoinedActiveSession && session ? session.name : language === 'bm' ? 'Cari Rakan Kumpulan' : 'Find My Party'}
+                  {hasJoinedActiveSession && session ? session.name : 'Find My Party'}
                 </h2>
                 {hasJoinedActiveSession && session && (
                   <span className="text-[10px] font-mono font-bold text-emerald-400 shrink-0">
@@ -1392,12 +1392,18 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
               {!hasJoinedActiveSession ? (
                 <p className="no-mobile-clamp text-[11px] sm:text-xs text-stone-400 whitespace-normal break-words leading-snug mt-0.5">
                   {language === 'bm'
-                    ? 'Kesan lokasi tepat anda dan semak pin setiap ahli'
+                    ? 'Penjejakan GPS masa nyata dengan pin khas & radio PTT langsung'
                     : 'Real-time GPS tracking with designated pins & live PTT radio'}
                 </p>
               ) : (
                 <p className="text-[10px] font-mono text-stone-400 whitespace-normal break-words leading-snug mt-0.5">
-                  {designatedMembers.length} {designatedMembers.length === 1 ? 'member' : 'members'} · ~{remainingHours}h left
+                  {designatedMembers.length}{' '}
+                  {language === 'bm'
+                    ? 'ahli'
+                    : designatedMembers.length === 1
+                    ? 'member'
+                    : 'members'}{' '}
+                  · ~{remainingHours}{language === 'bm' ? 'j baki' : 'h left'}
                 </p>
               )}
             </div>
@@ -1492,7 +1498,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
                   }}
                   className="mt-4 px-4 py-2 rounded-xl bg-rose-600 text-white font-bold"
                 >
-                  Try Manual Join
+                  {language === 'bm' ? 'Cuba Sertai Secara Manual' : 'Try Manual Join'}
                 </button>
               </div>
             )}
@@ -1530,7 +1536,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-semibold text-stone-300 mb-1.5">
-                      {language === 'bm' ? 'Warna Designated Pin Anda' : 'Designated Pin Color'}
+                      {language === 'bm' ? 'Warna Pin Pilihan Anda' : 'Designated Pin Color'}
                     </label>
                     <div className="flex items-center gap-2.5 pt-0.5">
                       {AVATAR_COLORS.map((col) => (

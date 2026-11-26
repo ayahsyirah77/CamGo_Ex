@@ -90,7 +90,7 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
   const baseCards = [
     {
       id: 'card-1',
-      title: isBm ? 'Mikroiklim' : 'Microclimate',
+      title: isBm ? 'Cuaca Mikro' : 'Microclimate',
       subtitle: weatherList && weatherList.length > 0 
         ? `${weatherList[0].temp}°C • ${isBm ? (weatherList[0].conditionBm || weatherList[0].condition) : weatherList[0].condition}`
         : (isBm ? '14°C - 22°C Tanah Tinggi' : '14°C - 22°C Altitude'),
@@ -129,7 +129,7 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
       imageUrl: customImages['card-2'] || 'https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=1200&q=80',
       icon: <Car className={`w-6 h-6 ${trafficAlerts && trafficAlerts.length > 0 ? 'text-rose-500 animate-bounce' : 'text-amber-400'}`} />,
       description: isBm
-        ? 'Pemantauan masa nyata Laluan Persekutuan 59 (Tapah / Simpang Pulai) dan jalan utama tanah tinggi untuk kelancaran percutian.'
+        ? 'Pemantauan masa nyata FT59 (Tapah / Simpang Pulai) dan jalan utama tanah tinggi untuk kelancaran percutian.'
         : 'Real-time monitoring of Federal Route 59 (Tapah / Simpang Pulai) and major highland arterial roads for smooth holiday transit.',
       details: isBm
         ? [
@@ -155,14 +155,14 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
       imageUrl: customImages['card-3'] || 'https://images.unsplash.com/photo-1516912481808-3406841bd33c?auto=format&fit=crop&w=1200&q=80',
       icon: <ShieldAlert className={`w-6 h-6 ${hazards && hazards.length > 0 ? 'text-red-500 animate-pulse' : 'text-rose-400'}`} />,
       description: isBm
-        ? 'Pemantauan cerun masa nyata Laluan FT059 (Tapah) dan FT185 (Simpang Pulai) oleh JKR Cameron Highlands serta notis perbandaran MDCH.'
-        : 'Real-time slope and landslide surveillance for FT059 (Tapah) & FT185 (Simpang Pulai) by JKR Cameron Highlands and MDCH municipal dispatches.',
+        ? 'Pemantauan cerun masa nyata FT59 (Tapah) dan FT185 (Simpang Pulai) oleh JKR Cameron Highlands serta notis perbandaran MDCH.'
+        : 'Real-time slope and landslide surveillance for FT59 (Tapah) & FT185 (Simpang Pulai) by JKR Cameron Highlands and MDCH municipal dispatches.',
       details: isBm
         ? [
             'Suapan masa nyata JKR Cameron Highlands (Portal eBencana)',
             'Notis keselamatan perbandaran MDCH',
             'Status pembersihan tanah runtuh dan laluan terkawal',
-            'Hotline SOS 999 response hotlines'
+            'Talian kecemasan SOS 999'
           ]
         : [
             'Real-time feeds from JKR Cameron Highlands (eBencana Portal)',
@@ -187,7 +187,7 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
         ? [
             'Pasar Malam Hujung Minggu Golden Hills & Brinchang',
             'Pesta Flora Cameron Highlands Tahunan',
-            'Lawatan sambutan penuaian Ladang Teh BOH',
+            'Lawatan sambutan penuaian BOH Tea',
             'Bazar kraf tempatan'
           ]
         : [
@@ -201,8 +201,8 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
       id: 'card-5',
       title: isBm ? 'Direktori Terkini' : 'Verified Directories',
       subtitle: places && places.length > 0
-        ? `${places.length}+ ${isBm ? 'Bisnes Highland' : 'Highland Businesses'}`
-        : (isBm ? '100+ Bisnes Highland' : '100+ Highland Businesses'),
+        ? `${places.length}+ ${isBm ? 'Perniagaan Tempatan' : 'Highland Businesses'}`
+        : (isBm ? '100+ Perniagaan Tempatan' : '100+ Highland Businesses'),
       category: isBm ? 'Direktori' : 'Directory',
       imageUrl: customImages['card-5'] || 'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1200&q=80',
       icon: <Compass className="w-6 h-6 text-emerald-400" />,
@@ -302,7 +302,7 @@ export const GsapLoopGallery: React.FC<GsapLoopGalleryProps> = ({
         </h3>
         <p className="text-xs sm:text-sm text-stone-400 max-w-2xl mx-auto mt-1 sm:mt-2">
           {isBm
-            ? 'Leret secara mendatar dengan jari atau seret tetikus, atau guna butang tindakan untuk meneroka Mikroiklim, Trafik, Amaran Bencana, Acara, Direktori, dan Portal.'
+            ? 'Leret secara mendatar atau guna butang tindakan untuk meneroka Cuaca Mikro, Trafik, Amaran Bencana, Acara, Direktori dan Portal.'
             : 'Swipe horizontally with fingers or mouse drag, or use action buttons to explore Microclimate, Traffic, Hazards, Events, Directories, and Portals.'}
         </p>
       </div>

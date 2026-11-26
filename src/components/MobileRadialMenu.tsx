@@ -175,11 +175,11 @@ export const MobileRadialMenu: React.FC<MobileRadialMenuProps> = ({
 
   const labels = {
     sos: language === 'bm' ? 'Kecemasan SOS' : 'Emergency SOS',
-    party: language === 'bm' ? 'Cari Rakan Kumpulan' : 'Find My Party',
+    party: 'Find My Party',
     masjid: language === 'bm' ? 'Masjid & Surau' : 'Masjid / Surau',
-    trail: language === 'bm' ? 'Enjin Trail Luar Talian' : 'Offline Trail Engine',
-    ai: language === 'bm' ? 'AI CamGo Chat' : 'CamGo AI Chat',
-    chat: language === 'bm' ? 'Ruang Sembang' : 'Chat Lounge',
+    trail: language === 'bm' ? 'Highland Trails (Luar Talian)' : 'Offline Trail Engine',
+    ai: language === 'bm' ? 'Sembang CamGo AI' : 'CamGo AI Chat',
+    chat: language === 'bm' ? 'Sembang Komuniti' : 'Chat Lounge',
   };
 
   const menuItems = [
@@ -213,7 +213,7 @@ export const MobileRadialMenu: React.FC<MobileRadialMenuProps> = ({
       id: 'party',
       label: isPartyBeaconRunning
         ? language === 'bm'
-          ? 'Cari Rakan (Suar Aktif)'
+          ? 'Find My Party (Suar Aktif)'
           : 'Find My Party (Active Beacon)'
         : labels.party,
       action: onOpenFindMyParty,
@@ -255,7 +255,7 @@ export const MobileRadialMenu: React.FC<MobileRadialMenuProps> = ({
       id: 'trail',
       label: isTrailRunning
         ? language === 'bm'
-          ? 'Trail Engine (Merekod)'
+          ? 'Highland Trails (Merekod)'
           : 'Trail Engine (Recording)'
         : labels.trail,
       action: onOpenTrailEngine,

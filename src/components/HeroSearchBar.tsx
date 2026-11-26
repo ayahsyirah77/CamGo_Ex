@@ -135,7 +135,7 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
   };
 
   return (
-    <div className="hidden sm:block relative z-30 max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pb-6 -mt-1">
+    <div className="hidden sm:block relative z-30 max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pb-6 mt-2">
       <div ref={containerRef} className="relative w-full">
         <div className="relative flex items-center bg-stone-900/85 backdrop-blur-xl border border-white/15 focus-within:border-emerald-400/80 rounded-2xl px-4 py-2.5 shadow-2xl shadow-black/50 transition-all focus-within:ring-2 focus-within:ring-emerald-500/20">
           <Search className="w-4 h-4 text-emerald-400 shrink-0 mr-3 pointer-events-none" />
@@ -156,7 +156,7 @@ export const HeroSearchBar: React.FC<HeroSearchBarProps> = ({
             onFocus={() => setIsSearchOpen(true)}
             placeholder={
               language === 'bm'
-                ? 'Cari direktori CamGo atau tekan Enter untuk jawapan web langsung...'
+                ? 'Cari penginapan, tempat makan, acara atau tekan Enter untuk carian web...'
                 : 'Search stays, rentals, events, or press Enter for live web answers...'
             }
             aria-label={language === 'bm' ? 'Cari tempat dan web' : 'Search directories and live web'}

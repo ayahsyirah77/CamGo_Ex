@@ -4066,7 +4066,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
     const stationName = (isBm ? place.nameBm : '') || place.name;
     const evVoiceText = isBm
-      ? `Stesen pengecas kenderaan elektrik dipilih: ${stationName} di ${place.township}.`
+      ? `Stesen pengecas EV dipilih: ${stationName} di ${place.township}.`
       : `EV charging station selected: ${stationName} in ${place.township}.`;
 
     speakEvChargingAlert(evVoiceText);
@@ -4104,7 +4104,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       triggeredEvGeofencesRef.current.add(`ev:${matchedEv.id}`);
       const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
       const evVoiceText = isBm
-        ? `Stesen pengecas kenderaan elektrik di hadapan. ${matchedEv.name} sejauh ${matchedEv.distanceMeters} meter.`
+        ? `Stesen pengecas EV di hadapan. ${matchedEv.name} sejauh ${matchedEv.distanceMeters} meter.`
         : `EV charging station ahead. ${matchedEv.name} is ${matchedEv.distanceMeters} meters away.`;
 
       showGeofenceBannerNotification({
@@ -5995,11 +5995,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                               }`}
                             >
                               {activeGeofenceBanner.kind === 'ev'
-                                ? 'EV CHARGING STATION (<=500M)'
+                                ? language === 'bm'
+                                  ? 'STESEN PENGECAS EV (<=500M)'
+                                  : 'EV CHARGING STATION (<=500M)'
                                 : activeGeofenceBanner.kind === 'fuel'
-                                ? 'GAS STATION (<=500M)'
+                                ? language === 'bm'
+                                  ? 'STESEN MINYAK (<=500M)'
+                                  : 'GAS STATION (<=500M)'
                                 : activeGeofenceBanner.kind === 'food'
-                                ? 'FOOD & BEVERAGE (<=280M)'
+                                ? language === 'bm'
+                                  ? 'MAKANAN & MINUMAN (<=280M)'
+                                  : 'FOOD & BEVERAGE (<=280M)'
+                                : language === 'bm'
+                                ? 'PELANCONGAN & TARIKAN (<=280M)'
                                 : 'TRAVEL & TOURISM (<=280M)'}
                             </div>
                             <div className="text-xs font-black text-white truncate">
@@ -6225,12 +6233,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                             <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[11px] sm:text-xs shrink-0">
                               <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
                                 <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                <span>{distKm} km away</span>
+                                <span>
+                                  {distKm} {language === 'bm' ? 'KM dari anda' : 'km away'}
+                                </span>
                               </div>
                               <div className="flex flex-wrap items-center gap-2.5 font-bold font-mono text-[10.5px] sm:text-[11px]">
                                 <span className="flex items-center gap-1 text-amber-300">
                                   <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                  <span>~{driveMins} mins drive</span>
+                                  <span>
+                                    {language === 'bm' ? `~${driveMins} min memandu` : `~${driveMins} mins drive`}
+                                  </span>
                                 </span>
                                 <span className="flex items-center gap-1 text-cyan-300">
                                   <Footprints className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -6460,7 +6472,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                               </h3>
                               <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-stone-400 mt-0.5 truncate">
                                 <span className="text-amber-400 font-bold shrink-0">★ {selectedPlace.rating}</span>
-                                <span className="truncate">({selectedPlace.reviewsCount || 85} reviews)</span>
+                                <span className="truncate">
+                                  ({selectedPlace.reviewsCount || 85} {language === 'bm' ? 'ulasan' : 'reviews'})
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -6504,12 +6518,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                               <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs shrink-0 w-full min-w-0 overflow-hidden">
                                 <div className="flex items-center gap-1.5 text-emerald-300 font-bold min-w-0 truncate">
                                   <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                  <span className="truncate">{dist} km away</span>
+                                  <span className="truncate">
+                                    {dist} {language === 'bm' ? 'KM dari anda' : 'km away'}
+                                  </span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 font-bold font-mono shrink-0 text-[10.5px] sm:text-xs">
                                   <span className="flex items-center gap-1 text-amber-300">
                                     <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                    <span>~{estMins} mins drive</span>
+                                    <span>
+                                      {language === 'bm' ? `~${estMins} min memandu` : `~${estMins} mins drive`}
+                                    </span>
                                   </span>
                                   <span className="flex items-center gap-1 text-cyan-300">
                                     <Footprints className="w-3.5 h-3.5 text-cyan-400 shrink-0" />

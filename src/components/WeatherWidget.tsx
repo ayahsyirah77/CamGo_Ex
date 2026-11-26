@@ -448,7 +448,7 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
           </h3>
           <p className="text-xs text-stone-400">
             {language === 'bm' 
-              ? 'Data iklim real-time dari sensor satelit Open-Meteo'
+              ? 'Data cuaca masa nyata daripada sensor satelit Open-Meteo'
               : 'Real-time climate data from Open-Meteo satellite sensors'}
           </p>
         </div>
@@ -537,7 +537,10 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
               <Wind className="w-4 h-4 text-teal-400" />
             </div>
             <div className="text-xl font-bold text-stone-100 mt-2">
-              {currentWeather.windSpeed ?? 12} <span className="text-xs font-normal text-stone-400">km/h</span>
+              {currentWeather.windSpeed ?? 12}{' '}
+              <span className="text-xs font-normal text-stone-400">
+                {language === 'bm' ? 'km/j' : 'km/h'}
+              </span>
             </div>
             <div className="text-[11px] text-stone-400 mt-1">
               {(currentWeather.windSpeed ?? 0) >= 25
@@ -552,7 +555,10 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
               <Sun className="w-4 h-4 text-amber-400 animate-spin duration-3000" />
             </div>
             <div className="text-xl font-bold text-stone-100 mt-2">
-              {currentWeather.uvIndex} <span className="text-xs font-normal text-emerald-400">Low</span>
+              {currentWeather.uvIndex}{' '}
+              <span className="text-xs font-normal text-emerald-400">
+                {language === 'bm' ? 'Rendah' : 'Low'}
+              </span>
             </div>
             <div className="text-[11px] text-stone-400 mt-1">
               {language === 'bm' ? 'Selesa' : 'Safe for trekking'}
@@ -746,7 +752,9 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ weatherList, langu
               </span>
               <span>
                 💨 {language === 'bm' ? 'Kelajuan Angin' : 'Wind Speed'}:{' '}
-                <strong className="underline">{currentWeather.windSpeed} km/h</strong>
+                <strong className="underline">
+                  {currentWeather.windSpeed} {language === 'bm' ? 'km/j' : 'km/h'}
+                </strong>
               </span>
               <span>
                 💧 {language === 'bm' ? 'Kelembapan' : 'Humidity'}:{' '}

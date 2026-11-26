@@ -53,7 +53,7 @@ function formatDistanceLabel(meters: number, isBm: boolean): string {
     return isBm ? `${meters}m dari anda` : `${meters}m away`;
   }
   const km = (meters / 1000).toFixed(1);
-  return isBm ? `${km} km dari anda` : `${km} km away`;
+  return isBm ? `${km} KM dari anda` : `${km} km away`;
 }
 
 export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language }) => {
@@ -472,7 +472,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                 </div>
                 <p className="text-xs text-rose-100/90 mt-0.5">
                   {isBm
-                    ? 'Anda berada dalam lingkungan 1km daripada bahaya jalan aktif. Pandu dengan berhati-hati.'
+                    ? 'Anda berada dalam lingkungan 1 KM daripada bahaya jalan aktif. Pandu dengan berhati-hati.'
                     : 'You are within 1 km of an active road hazard. Slow down and watch ahead.'}
                 </p>
               </div>
@@ -525,6 +525,8 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                 <span className="px-2.5 py-1 rounded-lg bg-rose-500/25 border border-rose-400/45 text-rose-200 font-mono font-extrabold text-[11px] shrink-0">
                   {typeof near.distanceMeters === 'number'
                     ? formatDistanceLabel(near.distanceMeters, isBm)
+                    : isBm
+                    ? '< 1 KM'
                     : '< 1 km'}
                 </span>
               </div>
@@ -546,18 +548,18 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             <span>
               {gpsStatus === 'active'
                 ? isBm
-                  ? 'Pengesan Jarak 1km Aktif: Tiada bahaya jalan berhampiran lokasi anda.'
+                  ? 'Pengesan Jarak 1 KM Aktif: Tiada bahaya jalan berhampiran lokasi anda.'
                   : '1 km Hazard Proximity Guard Active: No active road hazards within 1 km.'
                 : gpsStatus === 'locating'
                 ? isBm
-                  ? 'Mengesan lokasi GPS untuk amaran jarak 1km...'
+                  ? 'Mengesan lokasi GPS untuk amaran jarak 1 KM...'
                   : 'Checking GPS location for 1 km hazard proximity alerts...'
                 : gpsStatus === 'denied'
                 ? isBm
-                  ? 'Akses GPS disekat. Benarkan lokasi untuk amaran bahaya 1km.'
+                  ? 'Akses GPS disekat. Benarkan lokasi untuk amaran bahaya 1 KM.'
                   : 'Location permission denied. Enable GPS for automatic 1 km hazard warnings.'
                 : isBm
-                ? 'GPS tidak tersedia pada peranti ini untuk semakan jarak 1km.'
+                ? 'GPS tidak tersedia pada peranti ini untuk semakan jarak 1 KM.'
                 : 'GPS unavailable for 1 km proximity check.'}
             </span>
           </div>

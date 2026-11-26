@@ -288,7 +288,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
     },
     {
       id: 'trail',
-      label: language === 'bm' ? 'Laluan' : 'Trails',
+      label: language === 'bm' ? 'Trails' : 'Trails',
       icon: <Compass className="w-5 h-5 text-emerald-400" />,
       onClick: () => onOpenTrailEngine && onOpenTrailEngine(),
     },
@@ -465,7 +465,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/75 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
                 <div className="min-w-0 flex-1">
                   <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
-                    Weather
+                    {language === 'bm' ? 'Cuaca' : 'Weather'}
                   </span>
                   <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal">
                     {currentWeather?.township || 'Tanah Rata'} · {conditionDisplay}
@@ -497,7 +497,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-1">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-950/75 backdrop-blur-md border border-white/15 text-[9px] font-mono font-bold text-emerald-300 tabular-nums">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                    <span>{hazards.length > 0 ? `${hazards.length} Active` : 'LIVE'}</span>
+                    <span>{hazards.length > 0 ? `${hazards.length} ${language === 'bm' ? 'Aktif' : 'Active'}` : 'LIVE'}</span>
                   </span>
                   {hazards.some((h) => /pdrm/i.test(`${h.source || ''} ${h.title || ''}`)) && (
                     <span className="px-1.5 py-0.5 rounded-full bg-rose-600/90 text-white text-[8px] font-black tracking-wider uppercase">
@@ -511,7 +511,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                       {!hazardCard.title ||
                       hazardCard.title === 'Live Traffic/Hazard' ||
                       hazardCard.title === 'Live Notice/Hazard'
-                        ? 'Notice / Alert'
+                        ? (language === 'bm' ? 'Notis / Amaran' : 'Notice / Alert')
                         : hazardCard.title}
                     </span>
                     <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal line-clamp-1">
@@ -545,13 +545,13 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 <div className="absolute top-2 left-2">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-950/75 backdrop-blur-md border border-white/15 text-[9px] font-mono font-bold text-emerald-300 tabular-nums">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                    <span>{hazards.length > 0 ? `${hazards.length} Active` : 'LIVE'}</span>
+                    <span>{hazards.length > 0 ? `${hazards.length} ${language === 'bm' ? 'Aktif' : 'Active'}` : 'LIVE'}</span>
                   </span>
                 </div>
                 <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/80 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
                   <div className="min-w-0 flex-1">
                     <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
-                      Notice / Alert
+                      {language === 'bm' ? 'Notis / Amaran' : 'Notice / Alert'}
                     </span>
                     <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal line-clamp-1">
                       {hazards[0]
@@ -589,10 +589,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/75 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
                 <div className="min-w-0 flex-1">
                   <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
-                    Highland Maps
+                    {language === 'bm' ? 'Peta Tanah Tinggi' : 'Highland Maps'}
                   </span>
                   <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal">
-                    Live GPS &amp; 9 Towns
+                    {language === 'bm' ? 'GPS Langsung · 9 Pekan' : 'Live GPS & 9 Towns'}
                   </span>
                 </div>
                 <ArrowUpRight className="w-3.5 h-3.5 text-white shrink-0" />
@@ -625,10 +625,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/75 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
                 <div className="min-w-0 flex-1">
                   <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
-                    Itinerary
+                    {language === 'bm' ? 'Itinerari' : 'Itinerary'}
                   </span>
                   <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal">
-                    Smart Trip Planner
+                    {language === 'bm' ? 'Perancang Percutian' : 'Smart Trip Planner'}
                   </span>
                 </div>
                 <ArrowUpRight className="w-3.5 h-3.5 text-white shrink-0" />
@@ -672,22 +672,24 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           <div className="relative z-10 flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-950/65 backdrop-blur-md border border-white/15 text-[10px] font-bold text-stone-100">
               <MapPin className="w-3 h-3 text-[#c9ef3d] shrink-0" />
-              <span>Cameron Highlands · 9 Towns</span>
+              <span>Cameron Highlands · 9 {language === 'bm' ? 'Pekan' : 'Towns'}</span>
             </span>
 
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-950/65 backdrop-blur-md border border-emerald-400/35 text-[10px] font-mono font-bold text-emerald-300">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>VERIFIED</span>
+              <span>{language === 'bm' ? 'DISAHKAN' : 'VERIFIED'}</span>
             </span>
           </div>
 
           <div className="relative z-10 flex items-end justify-between gap-3 pt-4">
             <div className="min-w-0">
               <h3 className="no-mobile-clamp text-sm font-extrabold text-white leading-snug">
-                {language === 'bm' ? 'Direktori Tanah Tinggi' : 'Directory'}
+                {language === 'bm' ? 'Direktori' : 'Directory'}
               </h3>
               <span className="no-mobile-clamp text-[10.5px] text-stone-300 block leading-snug mt-0.5 whitespace-normal">
-                Farms, Food, Cafes, Attractions &amp; Stays
+                {language === 'bm'
+                  ? 'Ladang, Makanan, Kafe, Tarikan & Penginapan'
+                  : 'Farms, Food, Cafes, Attractions & Stays'}
               </span>
             </div>
 
@@ -710,14 +712,14 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             <div className="flex items-center gap-1 relative z-10">
               <Compass className="w-3.5 h-3.5 text-teal-400 shrink-0" />
               <span className="no-mobile-clamp text-[11px] font-extrabold text-white leading-tight whitespace-normal">
-                {language === 'bm' ? 'Laluan Hutan' : 'Highland Trails'}
+                Highland Trails
               </span>
             </div>
 
             <div className="relative rounded-xl overflow-hidden my-1.5 aspect-[16/10] bg-stone-950 border border-white/15 shadow-inner">
               <img
                 src={safeSrc('https://images.unsplash.com/photo-1551632811-561732d1e306?auto=format&fit=crop&w=600&q=80')}
-                alt={language === 'bm' ? 'Laluan Hutan' : 'Highland Trails'}
+                alt="Highland Trails"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
@@ -813,10 +815,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             <div className="pt-0.5 flex items-center justify-between gap-1 relative z-10">
               <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-400 text-stone-950 font-black text-[9.5px] shrink-0">
                 <ShieldCheck className="w-2.5 h-2.5 shrink-0" />
-                <span>Verified</span>
+                <span>{language === 'bm' ? 'Disahkan' : 'Verified'}</span>
               </span>
               <span className="text-[9px] text-emerald-300 font-mono font-bold truncate drop-shadow-sm">
-                {accommodations.length > 0 ? `${accommodations.length} Units` : 'RM30 LOCK'}
+                {accommodations.length > 0 ? `${accommodations.length} Unit` : 'RM30 LOCK'}
               </span>
             </div>
           </div>
@@ -844,14 +846,14 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             <div className="flex items-center gap-1 relative z-10">
               <Bike className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span className="no-mobile-clamp text-[11px] font-extrabold text-white leading-tight whitespace-normal drop-shadow-sm">
-                Motorbike Rentals
+                {language === 'bm' ? 'Sewa Motosikal' : 'Motorbike Rentals'}
               </span>
             </div>
 
             <div className="relative z-10 rounded-xl overflow-hidden my-1.5 aspect-[16/10] bg-stone-950 border border-white/15 shadow-inner">
               <img
                 src={bikesCardPreviewImg}
-                alt="Motorbike Rentals"
+                alt={language === 'bm' ? 'Sewa Motosikal' : 'Motorbike Rentals'}
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
@@ -864,10 +866,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             <div className="pt-0.5 flex items-center justify-between gap-1 relative z-10">
               <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-cyan-400 text-stone-950 font-black text-[9.5px] shrink-0">
                 <ShieldCheck className="w-2.5 h-2.5 shrink-0" />
-                <span>Verified</span>
+                <span>{language === 'bm' ? 'Disahkan' : 'Verified'}</span>
               </span>
               <span className="text-[9px] text-cyan-300 font-mono font-bold truncate drop-shadow-sm">
-                {motorbikePartners.length > 0 ? `${motorbikePartners.length} Fleets` : '2-WHEELS'}
+                {motorbikePartners.length > 0 ? `${motorbikePartners.length} ${language === 'bm' ? 'Rakan' : 'Fleets'}` : '2-WHEELS'}
               </span>
             </div>
           </div>
@@ -1196,7 +1198,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                     <Wind className="w-3 h-3 text-teal-400" />
                     {desktopWeather?.windSpeed ?? 12} km/h
                   </span>
-                  <span className="text-cyan-300 font-bold">Forecast →</span>
+                  <span className="text-cyan-300 font-bold">
+                    {language === 'bm' ? 'Ramalan →' : 'Forecast →'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1213,7 +1217,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                   {!hazardCard.title ||
                   hazardCard.title === 'Live Traffic/Hazard' ||
                   hazardCard.title === 'Live Notice/Hazard'
-                    ? 'Notice / Alert'
+                    ? (language === 'bm' ? 'Notis / Amaran' : 'Notice / Alert')
                     : hazardCard.title}
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-mono font-black text-[9px] shadow-md flex items-center gap-1 shrink-0">
@@ -1253,7 +1257,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                   {language === 'bm' ? 'Info jalan & cuaca terkini' : 'Live road & weather updates'}
                 </span>
                 <span className="text-[11px] text-emerald-400 font-mono font-bold shrink-0 tabular-nums">
-                  {hazards.length > 0 ? `${hazards.length} Active` : hazardCard.buttonText || 'Monitored'} →
+                  {hazards.length > 0
+                    ? `${hazards.length} ${language === 'bm' ? 'Aktif' : 'Active'}`
+                    : hazardCard.buttonText || (language === 'bm' ? 'Dipantau' : 'Monitored')} →
                 </span>
               </div>
             </div>
@@ -1293,12 +1299,14 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               </div>
 
               <div className="pt-3 mt-2 border-t border-white/10 flex items-center justify-between relative z-10">
-                <span className="text-xs text-stone-400 truncate pr-2">Live group beacons</span>
+                <span className="text-xs text-stone-400 truncate pr-2">
+                  {language === 'bm' ? 'Suar kumpulan langsung' : 'Live group beacons'}
+                </span>
                 <button
                   type="button"
                   className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-sm group-hover:scale-105 transition-all cursor-pointer shrink-0"
                 >
-                  {partyCard.buttonText || 'Explore'}
+                  {partyCard.buttonText || (language === 'bm' ? 'Buka' : 'Explore')}
                 </button>
               </div>
             </div>
@@ -1317,7 +1325,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                   <MessageSquare className="w-4 h-4" />
                 </div>
                 <h4 className="text-base font-heading font-black text-white truncate group-hover:text-indigo-200 transition-colors">
-                  Community Chat Lounge
+                  {language === 'bm' ? 'Sembang Komuniti' : 'Community Chat Lounge'}
                 </h4>
               </div>
               <span className="text-[11px] text-indigo-300 font-mono font-bold shrink-0">PTT</span>
@@ -1325,7 +1333,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
             <div className="space-y-2 my-auto relative z-10">
               <p className="text-xs text-stone-300 leading-relaxed">
-                Live road reports, hiker trail buddies &amp; convoy Push-to-Talk channels.
+                {language === 'bm'
+                  ? 'Laporan jalan semasa, rakan denai & saluran radio PTT konvoi.'
+                  : 'Live road reports, hiker trail buddies & convoy Push-to-Talk channels.'}
               </p>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {[
@@ -1349,12 +1359,14 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             </div>
 
             <div className="pt-3 mt-2 border-t border-white/10 flex items-center justify-between relative z-10">
-              <span className="text-xs text-stone-400 truncate pr-2">Community channels</span>
+              <span className="text-xs text-stone-400 truncate pr-2">
+                {language === 'bm' ? 'Saluran komuniti' : 'Community channels'}
+              </span>
               <button
                 type="button"
                 className="px-3.5 py-1.5 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white font-black text-xs shadow-sm group-hover:scale-105 transition-all cursor-pointer shrink-0 flex items-center gap-1"
               >
-                <span>Open</span>
+                <span>{language === 'bm' ? 'Buka' : 'Open'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1398,7 +1410,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                       Verified Stays
                     </h3>
                     <p className="text-xs sm:text-sm text-stone-200 mt-1 leading-relaxed">
-                      Direct host homestays &amp; apartments (CH-1+) with RM30 anti-scam room lock.
+                      {language === 'bm'
+                        ? 'Inap desa & apartmen terus daripada hos (CH-1+) dengan deposit kunci bilik RM30.'
+                        : 'Direct host homestays & apartments (CH-1+) with RM30 anti-scam room lock.'}
                     </p>
                   </div>
                 </div>
@@ -1406,13 +1420,15 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
               <div className="relative z-10 pt-4 mt-4 border-t border-white/15 flex items-center justify-between gap-3">
                 <span className="text-xs font-semibold text-emerald-200">
-                  RM30 Lock Deposit · Pay Balance at Door
+                  {language === 'bm'
+                    ? 'Deposit Kunci RM30 · Baki Bayar Di Pintu'
+                    : 'RM30 Lock Deposit · Pay Balance at Door'}
                 </span>
                 <button
                   type="button"
                   className="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-lg group-hover:scale-105 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
                 >
-                  <span>Browse Stays</span>
+                  <span>{language === 'bm' ? 'Lihat Penginapan' : 'Browse Stays'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -1429,7 +1445,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               <div className="absolute inset-0 z-0">
                 <img
                   src={bikesCardPreviewImg}
-                  alt="Motorbike Rentals"
+                  alt={language === 'bm' ? 'Sewa Motosikal' : 'Motorbike Rentals'}
                   referrerPolicy="no-referrer"
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
@@ -1448,14 +1464,17 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                     <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[10.5px] font-mono font-bold mb-1.5">
                       <ShieldCheck className="w-3 h-3" />
                       <span>
-                        Verified Fleets{motorbikePartners.length > 0 ? ` · ${motorbikePartners.length} Partners` : ''}
+                        {language === 'bm' ? 'Rakan Disahkan' : 'Verified Fleets'}
+                        {motorbikePartners.length > 0 ? ` · ${motorbikePartners.length} ${language === 'bm' ? 'Rakan' : 'Partners'}` : ''}
                       </span>
                     </div>
                     <h3 className="text-xl lg:text-2xl font-heading font-black text-white tracking-tight group-hover:text-cyan-200 transition-colors">
-                      Motorbike Rentals
+                      {language === 'bm' ? 'Sewa Motosikal' : 'Motorbike Rentals'}
                     </h3>
                     <p className="text-xs sm:text-sm text-stone-200 mt-1 leading-relaxed">
-                      Trusted scooters &amp; motorcycles for hassle-free highland traffic navigation.
+                      {language === 'bm'
+                        ? 'Skuter & motosikal berdaftar untuk perjalanan lancar tanpa kesesakan.'
+                        : 'Trusted scooters & motorcycles for hassle-free highland traffic navigation.'}
                     </p>
                   </div>
                 </div>
@@ -1463,13 +1482,15 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
               <div className="relative z-10 pt-4 mt-4 border-t border-white/15 flex items-center justify-between gap-3">
                 <span className="text-xs font-semibold text-cyan-200">
-                  Helmets Included · Direct Vendor Booking
+                  {language === 'bm'
+                    ? 'Helmet Disediakan · Tempahan Terus Vendor'
+                    : 'Helmets Included · Direct Vendor Booking'}
                 </span>
                 <button
                   type="button"
                   className="px-4 py-2 rounded-full bg-cyan-400 hover:bg-cyan-300 text-stone-950 font-black text-xs shadow-lg group-hover:scale-105 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
                 >
-                  <span>Browse Rentals</span>
+                  <span>{language === 'bm' ? 'Lihat Motosikal' : 'Browse Rentals'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>

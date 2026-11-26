@@ -960,7 +960,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1">
         {/* 3. Desktop Hero Section */}
-        <section id="hero-section" className="hidden sm:flex relative items-center justify-center pt-28 pb-5 px-6 lg:px-8 overflow-hidden">
+        <section id="hero-section" className="hidden sm:flex relative items-center justify-center pt-36 md:pt-40 lg:pt-44 pb-8 px-6 lg:px-8 overflow-hidden">
           {headerBgUrl && (
             <img
               src={headerBgUrl}
@@ -979,7 +979,7 @@ export default function App() {
             </h1>
             <p className="text-sm lg:text-base text-stone-300 max-w-2xl mx-auto leading-relaxed">
               {language === 'bm'
-                ? 'Cuaca mikro masa nyata, amaran trafik & bahaya jalan, navigasi laluan hutan luar talian dan penginapan disahkan.'
+                ? 'Cuaca mikro tanah tinggi masa nyata, amaran trafik & bahaya secara langsung, navigasi denai luar talian, serta portal inap desa yang aktif.'
                 : 'Real-time highland microclimates, live road & hazard alerts, offline trail navigation, and verified direct homestay portals.'}
             </p>
           </div>
@@ -1560,7 +1560,7 @@ export default function App() {
                 <CloudSun className="w-5 h-5" />
               </div>
               <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
-                {language === 'bm' ? 'Cuaca & Mikroklimat Tanah Tinggi' : 'Highland Weather & Microclimate'}
+                {language === 'bm' ? 'Cuaca Mikro Tanah Tinggi' : 'Highland Weather & Microclimate'}
               </h3>
             </div>
             <button
@@ -1599,7 +1599,7 @@ export default function App() {
                 <Car className="w-5 h-5" />
               </div>
               <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
-                {language === 'bm' ? 'Trafik & Laluan Langsung' : 'Live Highland Traffic'}
+                {language === 'bm' ? 'Info Trafik Tanah Tinggi' : 'Live Highland Traffic'}
               </h3>
             </div>
             <button

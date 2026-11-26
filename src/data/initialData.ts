@@ -1168,7 +1168,7 @@ export const OFFICIAL_PORTALS = [
     nameBm: 'JKR Cameron Highlands',
     type: 'Roads & Infrastructure',
     description: 'Official authority handling federal Route 59 maintenance, landslide updates, road closures, and slope safety.',
-    descriptionBm: 'Pihak berkuasa rasmi yang mengendalikan penyelenggaraan Laluan Persekutuan 59, kemas kini tanah runtuh dan keselamatan cerun.',
+    descriptionBm: 'Pihak berkuasa rasmi yang mengendalikan penyelenggaraan laluan FT59, kemas kini tanah runtuh dan keselamatan cerun.',
     url: 'https://www.jkr.gov.my',
     phone: '+60 5-491 1122',
   },

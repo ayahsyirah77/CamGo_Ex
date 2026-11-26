@@ -1020,7 +1020,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                       className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer transition-all active:scale-95"
                     >
                       <Sparkles className="w-4 h-4 text-emerald-200" />
-                      <span>Map &amp; Live GPS Route</span>
+                      <span>{language === 'bm' ? 'Peta & Laluan GPS Langsung' : 'Map & Live GPS Route'}</span>
                       <ArrowUpRight className="w-4 h-4" />
                     </button>
                   </div>
@@ -1075,7 +1075,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                           </span>
                           {isToday && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-sans uppercase font-bold">
-                              Today
+                              {language === 'bm' ? 'Hari Ini' : 'Today'}
                             </span>
                           )}
                         </div>
@@ -1085,7 +1085,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                           </span>
                         ) : (
                           <span className="text-rose-400 font-bold px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
-                            CLOSED
+                            {language === 'bm' ? 'TUTUP' : 'CLOSED'}
                           </span>
                         )}
                       </div>
@@ -1098,7 +1098,7 @@ export const DirectorySection: React.FC<DirectorySectionProps> = ({
                     onClick={() => setScheduleModalPlace(null)}
                     className="px-4 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold cursor-pointer"
                   >
-                    Close
+                    {language === 'bm' ? 'Tutup' : 'Close'}
                   </button>
                 </div>
               </div>

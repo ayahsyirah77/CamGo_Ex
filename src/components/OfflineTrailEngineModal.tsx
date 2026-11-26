@@ -1842,7 +1842,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 )}
               </div>
               <h2 className="text-sm sm:text-lg font-heading font-black text-stone-100 tracking-tight whitespace-normal break-words leading-tight mt-0.5">
-                {language === 'bm' ? 'Enjin Keselamatan & Laluan Hutan' : 'Highland Trail Safety & Map'}
+                {language === 'bm' ? 'Highland Trails — Keselamatan & Peta GPS' : 'Highland Trail Safety & Map'}
               </h2>
             </div>
           </div>
@@ -1979,10 +1979,10 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                     <div className="min-w-0 space-y-0.5">
                       <div className="text-[11px] font-mono font-bold uppercase text-emerald-300">
-                        Active Session Available
+                        {language === 'bm' ? 'Sesi Aktif Tersedia' : 'Active Session Available'}
                       </div>
                       <div className="text-xs text-stone-200 whitespace-normal break-words leading-snug">
-                        {resumableSession.trailName} • Hiker: {resumableSession.hikerName}
+                        {resumableSession.trailName} • {language === 'bm' ? 'Pendaki' : 'Hiker'}: {resumableSession.hikerName}
                       </div>
                     </div>
 
@@ -1993,7 +1993,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
                       >
                         <Navigation className="w-3.5 h-3.5 shrink-0" />
-                        <span>Resume Active Map</span>
+                        <span>{language === 'bm' ? 'Sambung Peta Aktif' : 'Resume Active Map'}</span>
                       </button>
 
                       {!isConfirmingResetSession ? (
@@ -2003,7 +2003,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                           className="min-h-[44px] px-3.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-rose-500/40 text-rose-300 font-bold text-xs shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
                         >
                           <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                          <span>Reset Active Map</span>
+                          <span>{language === 'bm' ? 'Set Semula Peta' : 'Reset Active Map'}</span>
                         </button>
                       ) : (
                         <div className="flex items-center gap-1.5">
@@ -2012,14 +2012,14 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                             onClick={handleResetActiveCachedSession}
                             className="min-h-[44px] px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shrink-0 cursor-pointer shadow-md"
                           >
-                            Confirm Reset
+                            {language === 'bm' ? 'Sahkan Set Semula' : 'Confirm Reset'}
                           </button>
                           <button
                             type="button"
                             onClick={() => setIsConfirmingResetSession(false)}
                             className="min-h-[44px] px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs shrink-0 cursor-pointer"
                           >
-                            Cancel
+                            {language === 'bm' ? 'Batal' : 'Cancel'}
                           </button>
                         </div>
                       )}
@@ -2035,7 +2035,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                   </div>
                   <div className="min-w-0">
                     <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 whitespace-normal break-words">
-                      Safety First Protocol
+                      {language === 'bm' ? 'Protokol Keselamatan Utama' : 'Safety First Protocol'}
                     </div>
                     <h3 className="text-base sm:text-lg font-heading font-black text-white leading-tight whitespace-normal break-words">
                       {language === 'bm'
@@ -2156,56 +2156,56 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    Hiker / Lead Name *
+                    {language === 'bm' ? 'Nama Pendaki / Ketua *' : 'Hiker / Lead Name *'}
                   </label>
                   <input
                     type="text"
                     required
                     value={hikerName}
                     onChange={(e) => setHikerName(e.target.value)}
-                    placeholder="e.g., Ahmad Faris"
+                    placeholder={language === 'bm' ? 'Cth: Ahmad Faris' : 'e.g., Ahmad Faris'}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
                   />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    Emergency Contact Name (ICE) *
+                    {language === 'bm' ? 'Nama Kenalan Kecemasan (ICE) *' : 'Emergency Contact Name (ICE) *'}
                   </label>
                   <input
                     type="text"
                     required
                     value={emergencyContactName}
                     onChange={(e) => setEmergencyContactName(e.target.value)}
-                    placeholder="e.g., Siti (Spouse / Next of Kin)"
+                    placeholder={language === 'bm' ? 'Cth: Siti (Pasangan / Waris)' : 'e.g., Siti (Spouse / Next of Kin)'}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
                   />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    Emergency Contact Phone (ICE) *
+                    {language === 'bm' ? 'No. Telefon Kecemasan (ICE) *' : 'Emergency Contact Phone (ICE) *'}
                   </label>
                   <input
                     type="tel"
                     required
                     value={emergencyContact}
                     onChange={(e) => setEmergencyContact(e.target.value)}
-                    placeholder="e.g., +60123456789"
+                    placeholder={language === 'bm' ? 'Cth: +60123456789' : 'e.g., +60123456789'}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
                   />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    Group Size (Hikers) *
+                    {language === 'bm' ? 'Bilangan Ahli (Pendaki) *' : 'Group Size (Hikers) *'}
                   </label>
                   <input
                     type="number"
                     required
                     min={1}
                     max={30}
-                    placeholder="e.g., 2"
+                    placeholder={language === 'bm' ? 'Cth: 2' : 'e.g., 2'}
                     value={groupSize}
                     onChange={(e) => setGroupSize(e.target.value)}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
@@ -2214,7 +2214,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
                 <div className="sm:col-span-2">
                   <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    Expected Return Duration (Hours) *
+                    {language === 'bm' ? 'Anggaran Tempoh Pulang (Jam) *' : 'Expected Return Duration (Hours) *'}
                   </label>
                   <input
                     type="number"
@@ -2222,7 +2222,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     min={0.5}
                     max={48}
                     required
-                    placeholder="e.g., 3"
+                    placeholder={language === 'bm' ? 'Cth: 3' : 'e.g., 3'}
                     value={expectedHours}
                     onChange={(e) => setExpectedHours(e.target.value)}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
@@ -2234,23 +2234,23 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
               <div className="p-3 rounded-2xl bg-stone-900 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                 <div className="flex items-center gap-2 text-stone-200">
                   <Activity className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="font-bold">Live Sensors Ready</span>
+                  <span className="font-bold">{language === 'bm' ? 'Sensor Langsung Sedia' : 'Live Sensors Ready'}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-stone-300">
                   <span>
                     GPS:{' '}
                     <strong className="text-emerald-400">
-                      {currentGps.hasRealFix ? `Locked (±${currentGps.accuracy}m)` : 'Acquiring...'}
+                      {currentGps.hasRealFix ? `${language === 'bm' ? 'Terkunci' : 'Locked'} (±${currentGps.accuracy}m)` : (language === 'bm' ? 'Mengesan...' : 'Acquiring...')}
                     </strong>
                   </span>
                   <span>
-                    Battery:{' '}
+                    {language === 'bm' ? 'Bateri:' : 'Battery:'}{' '}
                     <strong className="text-amber-300">
-                      {telemetry.batteryPercent !== null ? `${telemetry.batteryPercent}%` : 'Ready'}
+                      {telemetry.batteryPercent !== null ? `${telemetry.batteryPercent}%` : (language === 'bm' ? 'Sedia' : 'Ready')}
                     </strong>
                   </span>
                   <span>
-                    Signal: <strong className="text-sky-300">{telemetry.signalLabel}</strong>
+                    {language === 'bm' ? 'Isyarat:' : 'Signal:'} <strong className="text-sky-300">{telemetry.signalLabel}</strong>
                   </span>
                 </div>
               </div>
@@ -2267,7 +2267,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     ) : (
                       <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     )}
-                    <span>Initial Planned Trail</span>
+                    <span>{language === 'bm' ? 'Laluan Awal Dirancang' : 'Initial Planned Trail'}</span>
                   </label>
 
                   <div className="flex items-center gap-2">
@@ -2281,7 +2281,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       }`}
                     >
                       {!isPassportFieldsValid
-                        ? 'Fill * fields first'
+                        ? (language === 'bm' ? 'Isi ruangan * dahulu' : 'Fill * fields first')
                         : isPlannedTrailEnabled
                         ? 'ON'
                         : 'OFF'}
@@ -2711,7 +2711,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     >
                       <Footprints className="w-3.5 h-3.5 shrink-0" />
                       <span className="no-mobile-clamp tabular-nums">
-                        {isRecording ? `Pause (${breadcrumbs.length})` : 'Record'}
+                        {isRecording
+                          ? `${language === 'bm' ? 'Jeda' : 'Pause'} (${breadcrumbs.length})`
+                          : (language === 'bm' ? 'Rakam' : 'Record')}
                       </span>
                     </button>
 
@@ -2743,7 +2745,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       title="Trail Utilities & Secondary Controls"
                     >
                       <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden xs:inline">Tools</span>
+                      <span className="hidden xs:inline">{language === 'bm' ? 'Alatan' : 'Tools'}</span>
                       <ChevronDown
                         className={`w-3 h-3 transition-transform ${
                           isToolsMenuOpen ? 'rotate-180' : ''
@@ -2765,7 +2767,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer"
                     >
                       <Sunrise className="w-4 h-4 text-amber-300 shrink-0" />
-                      <span className="truncate">Weather &amp; Sun</span>
+                      <span className="truncate">{language === 'bm' ? 'Cuaca & Matahari' : 'Weather & Sun'}</span>
                     </button>
 
                     <button
@@ -2777,7 +2779,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer"
                     >
                       <Compass className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="truncate">Compass Dial</span>
+                      <span className="truncate">{language === 'bm' ? 'Kompas' : 'Compass Dial'}</span>
                     </button>
 
                     <button
@@ -2794,7 +2796,11 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       }`}
                     >
                       <Flashlight className="w-4 h-4 text-amber-300 shrink-0" />
-                      <span className="truncate">{torchMode !== 'off' ? 'Torch ON' : 'Phone Torch'}</span>
+                      <span className="truncate">
+                        {torchMode !== 'off'
+                          ? (language === 'bm' ? 'Lampu AKTIF' : 'Torch ON')
+                          : (language === 'bm' ? 'Lampu Suluh' : 'Phone Torch')}
+                      </span>
                     </button>
 
                     <button
@@ -2806,7 +2812,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer"
                     >
                       <UserCheck className="w-4 h-4 text-teal-300 shrink-0" />
-                      <span className="truncate">ICE Contact</span>
+                      <span className="truncate">{language === 'bm' ? 'Kenalan ICE' : 'ICE Contact'}</span>
                     </button>
 
                     <button
@@ -2818,7 +2824,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer"
                     >
                       <Activity className="w-4 h-4 text-sky-300 shrink-0" />
-                      <span className="truncate">Safety Brief</span>
+                      <span className="truncate">{language === 'bm' ? 'Ringkasan Keselamatan' : 'Safety Brief'}</span>
                     </button>
 
                     {displayedElevationPts.length > 0 && (
@@ -2831,7 +2837,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer"
                       >
                         <Mountain className="w-4 h-4 text-amber-300 shrink-0" />
-                        <span className="truncate">Elevation</span>
+                        <span className="truncate">{language === 'bm' ? 'Ketinggian' : 'Elevation'}</span>
                       </button>
                     )}
 
@@ -2846,7 +2852,11 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     >
                       <Download className="w-4 h-4 text-emerald-400 shrink-0" />
                       <span className="truncate">
-                        {isPreDownloading ? `${downloadProgress}%` : cacheVerified ? 'Map Cached' : 'Cache Map'}
+                        {isPreDownloading
+                          ? `${downloadProgress}%`
+                          : cacheVerified
+                          ? (language === 'bm' ? 'Peta Disimpan' : 'Map Cached')
+                          : (language === 'bm' ? 'Simpan Peta' : 'Cache Map')}
                       </span>
                     </button>
 
@@ -2859,7 +2869,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2 cursor-pointer"
                     >
                       <RotateCcw className="w-4 h-4 shrink-0" />
-                      <span className="truncate">Edit Passport</span>
+                      <span className="truncate">{language === 'bm' ? 'Sunting Pasport' : 'Edit Passport'}</span>
                     </button>
 
                     <div className="col-span-2 sm:col-span-4 pt-1 border-t border-white/10">
@@ -2900,7 +2910,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     onClick={handleTurnOffTorch}
                     className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-[11px] cursor-pointer"
                   >
-                    Turn Off
+                    {language === 'bm' ? 'Matikan' : 'Turn Off'}
                   </button>
                 </div>
               )}
@@ -2982,7 +2992,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-stone-100 text-xs font-semibold flex items-center gap-2.5 cursor-pointer"
                       >
                         <Sunrise className="w-4 h-4 text-amber-300 shrink-0" />
-                        <span>Weather &amp; Sun Times</span>
+                        <span>{language === 'bm' ? 'Cuaca & Matahari' : 'Weather & Sun Times'}</span>
                       </button>
                       <button
                         type="button"
@@ -2993,7 +3003,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-stone-100 text-xs font-semibold flex items-center gap-2.5 cursor-pointer"
                       >
                         <Compass className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>Full Compass Dial</span>
+                        <span>{language === 'bm' ? 'Kompas Penuh' : 'Full Compass Dial'}</span>
                       </button>
                       <button
                         type="button"
@@ -3004,7 +3014,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-stone-100 text-xs font-semibold flex items-center gap-2.5 cursor-pointer"
                       >
                         <Activity className="w-4 h-4 text-sky-300 shrink-0" />
-                        <span>Safety &amp; Telemetry</span>
+                        <span>{language === 'bm' ? 'Keselamatan & Telemetri' : 'Safety & Telemetry'}</span>
                       </button>
                       <button
                         type="button"
@@ -3015,7 +3025,15 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-stone-100 text-xs font-semibold flex items-center gap-2.5 cursor-pointer"
                       >
                         <Download className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>{cacheVerified ? 'Offline Map Cached' : 'Cache Offline Map'}</span>
+                        <span>
+                          {cacheVerified
+                            ? language === 'bm'
+                              ? 'Peta Luar Talian Disimpan'
+                              : 'Offline Map Cached'
+                            : language === 'bm'
+                            ? 'Simpan Peta Luar Talian'
+                            : 'Cache Offline Map'}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -3026,7 +3044,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-amber-300 text-xs font-semibold flex items-center gap-2.5 cursor-pointer"
                       >
                         <RotateCcw className="w-4 h-4 shrink-0" />
-                        <span>Edit Safety Passport</span>
+                        <span>{language === 'bm' ? 'Sunting Pasport Keselamatan' : 'Edit Safety Passport'}</span>
                       </button>
 
                       <div className="pt-1.5 mt-1 border-t border-white/10 px-1">
@@ -3244,7 +3262,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     >
                       <Info className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                       <span className="no-mobile-clamp text-[10px] font-mono font-bold text-stone-900 tabular-nums">
-                        {selectedTrail.distanceKm} km ·{' '}
+                        {selectedTrail.distanceKm} {language === 'bm' ? 'KM' : 'km'} ·{' '}
                         {(() => {
                           const endPt =
                             selectedTrail.peakCoordinates ||
@@ -3258,7 +3276,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                             : selectedTrail.coordinates[0][1];
                           const km =
                             haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000;
-                          return `${km.toFixed(1)} km to finish · ${selectedTrail.maxElevationM}m`;
+                          return language === 'bm'
+                            ? `${km.toFixed(1)} KM ke tamat · ${selectedTrail.maxElevationM}m`
+                            : `${km.toFixed(1)} km to finish · ${selectedTrail.maxElevationM}m`;
                         })()}
                       </span>
                     </button>
@@ -3304,7 +3324,13 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         >
                           <Flashlight className="w-4 h-4 shrink-0" />
                           <span className="no-mobile-clamp text-[9px] font-bold leading-none whitespace-nowrap">
-                            {torchMode !== 'off' ? 'Torch ON' : 'Phone Torch'}
+                            {torchMode !== 'off'
+                              ? language === 'bm'
+                                ? 'Lampu AKTIF'
+                                : 'Torch ON'
+                              : language === 'bm'
+                              ? 'Lampu Suluh'
+                              : 'Phone Torch'}
                           </span>
                         </button>
 
@@ -3332,7 +3358,17 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         >
                           <ShieldAlert className="w-4 h-4 shrink-0" />
                           <span className="no-mobile-clamp text-[9px] font-extrabold leading-none whitespace-nowrap">
-                            {manualSosDispatching ? 'Sending' : sosActive ? 'SOS ON' : 'SOS Alert'}
+                            {manualSosDispatching
+                              ? language === 'bm'
+                                ? 'Menghantar'
+                                : 'Sending'
+                              : sosActive
+                              ? language === 'bm'
+                                ? 'SOS AKTIF'
+                                : 'SOS ON'
+                              : language === 'bm'
+                              ? 'Amaran SOS'
+                              : 'SOS Alert'}
                           </span>
                         </button>
 
@@ -3348,9 +3384,11 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                           <Footprints className="w-4 h-4 shrink-0" />
                           <span className="no-mobile-clamp text-[9px] font-bold leading-none whitespace-nowrap">
                             {isRecording
-                              ? `Pause (${breadcrumbs.length})`
+                              ? `${language === 'bm' ? 'Jeda' : 'Pause'} (${breadcrumbs.length})`
                               : breadcrumbs.length > 0
-                              ? `Rec (${breadcrumbs.length})`
+                              ? `${language === 'bm' ? 'Rakam' : 'Rec'} (${breadcrumbs.length})`
+                              : language === 'bm'
+                              ? 'Rakam Denai'
                               : 'Record Trail'}
                           </span>
                         </button>
@@ -3414,7 +3452,15 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                             className="min-h-[30px] px-2.5 py-1 rounded-xl bg-stone-800/80 hover:bg-stone-700/80 text-amber-300 border border-white/10 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
                           >
                             <Mountain className="w-3 h-3 text-amber-300 shrink-0" />
-                            <span>{isElevationExpanded ? 'Hide Elevation' : 'Elevation'}</span>
+                            <span>
+                              {isElevationExpanded
+                                ? language === 'bm'
+                                  ? 'Tutup Ketinggian'
+                                  : 'Hide Elevation'
+                                : language === 'bm'
+                                ? 'Ketinggian'
+                                : 'Elevation'}
+                            </span>
                             <ChevronDown
                               className={`w-3 h-3 transition-transform ${
                                 isElevationExpanded ? 'rotate-180' : ''
@@ -3445,7 +3491,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       </span>
                       <span className="inline-flex items-center gap-1 tabular-nums">
                         <Wind className="w-3.5 h-3.5 text-teal-300 shrink-0" />
-                        <span>{safetyStatus.currentWeather.windSpeed} km/h</span>
+                        <span>
+                          {safetyStatus.currentWeather.windSpeed} {language === 'bm' ? 'km/j' : 'km/h'}
+                        </span>
                       </span>
                     </div>
                   )}
@@ -3455,10 +3503,10 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       <div className="flex items-center justify-between text-[11px] font-mono">
                         <span className="font-bold text-amber-300 uppercase flex items-center gap-1.5">
                           <Mountain className="w-3.5 h-3.5 shrink-0" />
-                          <span>Elevation Profile</span>
+                          <span>{language === 'bm' ? 'Profil Ketinggian' : 'Elevation Profile'}</span>
                         </span>
                         <span className="text-stone-200 font-bold tabular-nums">
-                          Peak {selectedTrail.maxElevationM}m ASL
+                          {language === 'bm' ? 'Puncak' : 'Peak'} {selectedTrail.maxElevationM}m ASL
                         </span>
                       </div>
                       <div className="flex items-end justify-between h-16 gap-1.5 pt-1">
@@ -3509,8 +3557,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                   <Activity className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-[10px] font-mono uppercase text-emerald-400 font-bold">CamGo Live Diagnostics</div>
-                  <h3 className="text-base font-heading font-black text-white">Trail Safety Brief</h3>
+                  <div className="text-[10px] font-mono uppercase text-emerald-400 font-bold">
+                    {language === 'bm' ? 'Diagnostik Langsung CamGo' : 'CamGo Live Diagnostics'}
+                  </div>
+                  <h3 className="text-base font-heading font-black text-white">
+                    {language === 'bm' ? 'Ringkasan Keselamatan Denai' : 'Trail Safety Brief'}
+                  </h3>
                 </div>
               </div>
               <button
@@ -3528,52 +3580,80 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
             <div className="space-y-3 text-xs">
               <div className="p-3 rounded-2xl bg-stone-950 border border-white/10 space-y-2">
                 <div className="flex justify-between font-mono gap-2">
-                  <span className="text-stone-400">Selected Trail:</span>
+                  <span className="text-stone-400">
+                    {language === 'bm' ? 'Denai Dipilih:' : 'Selected Trail:'}
+                  </span>
                   <span className="text-emerald-400 font-bold text-right">{selectedTrail.name}</span>
                 </div>
                 <div className="flex justify-between font-mono gap-2">
-                  <span className="text-stone-400">Distance to Finish:</span>
+                  <span className="text-stone-400">
+                    {language === 'bm' ? 'Jarak ke Tamat:' : 'Distance to Finish:'}
+                  </span>
                   <span className="text-sky-300 font-bold tabular-nums">
                     {(() => {
                       const endPt =
                         selectedTrail.peakCoordinates ||
                         selectedTrail.coordinates[selectedTrail.coordinates.length - 1];
-                      if (!endPt) return `${selectedTrail.distanceKm} km`;
+                      if (!endPt) return `${selectedTrail.distanceKm} ${language === 'bm' ? 'KM' : 'km'}`;
                       const refLat = currentGps.hasRealFix
                         ? currentGps.lat
                         : selectedTrail.coordinates[0][0];
                       const refLng = currentGps.hasRealFix
                         ? currentGps.lng
                         : selectedTrail.coordinates[0][1];
-                      return `${(haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000).toFixed(2)} km`;
+                      return `${(haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000).toFixed(2)} ${language === 'bm' ? 'KM' : 'km'}`;
                     })()}
                   </span>
                 </div>
                 <div className="flex justify-between font-mono">
-                  <span className="text-stone-400">GPS Signal &amp; Fix:</span>
-                  <span className="text-emerald-300 font-bold">{currentGps.hasRealFix ? `Locked (±${currentGps.accuracy}m)` : 'Acquiring (GPS Trailhead)'}</span>
+                  <span className="text-stone-400">
+                    {language === 'bm' ? 'Isyarat & Lokasi GPS:' : 'GPS Signal & Fix:'}
+                  </span>
+                  <span className="text-emerald-300 font-bold">
+                    {currentGps.hasRealFix
+                      ? `${language === 'bm' ? 'Terkunci' : 'Locked'} (±${currentGps.accuracy}m)`
+                      : language === 'bm'
+                      ? 'Mengesan (Permulaan Denai GPS)'
+                      : 'Acquiring (GPS Trailhead)'}
+                  </span>
                 </div>
                 <div className="flex justify-between font-mono">
-                  <span className="text-stone-400">Coordinates:</span>
+                  <span className="text-stone-400">
+                    {language === 'bm' ? 'Koordinat:' : 'Coordinates:'}
+                  </span>
                   <span className="text-stone-200 font-semibold">{currentGps.lat.toFixed(5)}, {currentGps.lng.toFixed(5)}</span>
                 </div>
                 <div className="flex justify-between font-mono">
-                  <span className="text-stone-400">Cellular / Network:</span>
+                  <span className="text-stone-400">
+                    {language === 'bm' ? 'Rangkaian Selular:' : 'Cellular / Network:'}
+                  </span>
                   <span className="text-sky-300 font-bold">{telemetry.effectiveType.toUpperCase()} ({telemetry.signalLabel})</span>
                 </div>
                 <div className="flex justify-between font-mono">
-                  <span className="text-stone-400">Battery Status:</span>
-                  <span className="text-amber-300 font-bold">{telemetry.batteryPercent !== null ? `${telemetry.batteryPercent}%` : '100% Ready'}</span>
+                  <span className="text-stone-400">
+                    {language === 'bm' ? 'Status Bateri:' : 'Battery Status:'}
+                  </span>
+                  <span className="text-amber-300 font-bold">
+                    {telemetry.batteryPercent !== null
+                      ? `${telemetry.batteryPercent}%`
+                      : language === 'bm'
+                      ? '100% Sedia'
+                      : '100% Ready'}
+                  </span>
                 </div>
               </div>
 
               <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 space-y-1 text-emerald-200">
                 <div className="font-bold text-emerald-300 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Offline Safety Protocol Active</span>
+                  <span>
+                    {language === 'bm' ? 'Protokol Keselamatan Luar Talian Aktif' : 'Offline Safety Protocol Active'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-stone-300 leading-relaxed">
-                  Breadcrumbs are recording locally. Dead-Man switch monitors stillness and 5-min auto-alert safeguards your descent.
+                  {language === 'bm'
+                    ? 'Jejak GPS direkod secara setempat. Pemantau ketidakaktifan mengesan pergerakan terhenti dan amaran automatik 5 minit melindungi perjalanan anda.'
+                    : 'Breadcrumbs are recording locally. Dead-Man switch monitors stillness and 5-min auto-alert safeguards your descent.'}
                 </p>
               </div>
             </div>
@@ -3586,7 +3666,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
               }}
               className="w-full min-h-[44px] py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-lg"
             >
-              Close Brief
+              {language === 'bm' ? 'Tutup Ringkasan' : 'Close Brief'}
             </button>
           </div>
         </div>

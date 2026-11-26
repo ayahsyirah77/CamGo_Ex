@@ -526,15 +526,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             : 'bg-gradient-to-b from-stone-950/90 via-stone-950/60 to-transparent py-4'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-          {/* Logo with Triple-Click hint */}
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+          {/* Logo anchored cleanly to far left */}
           <div className="flex items-center gap-1.5 shrink-0">
             <div
               onClick={handleLogoClick}
               className="group relative cursor-pointer"
               title={
                 language === 'bm'
-                  ? 'Klik 3 kali untuk akses Pentadbir'
+                  ? 'Klik 3 kali untuk akses Admin'
                   : 'Triple-click logo for Admin Access'
               }
             >
@@ -547,7 +547,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-            className="hidden lg:flex items-center gap-1 text-xs font-medium text-stone-200"
+            className="hidden lg:flex lg:flex-1 lg:justify-center items-center gap-1 text-xs font-medium text-stone-200"
           >
 
 
@@ -563,9 +563,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setDirectoriesOpen(false);
                   onOpenDirectoriesModal();
                 }}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Compass className="w-3.5 h-3.5 text-emerald-400" />
+                <Compass className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span>{getTranslation(language, 'nav_directories')}</span>
               </button>
 
@@ -816,9 +816,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setPortalsOpen(false);
                   onOpenPortalsModal();
                 }}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span>Hub</span>
               </button>
               
@@ -857,9 +857,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onNavigateSection('interactive-map');
                 }
               }}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
             >
-              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+              <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>{getTranslation(language, 'nav_map')}</span>
             </motion.button>
 
@@ -873,10 +873,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onNavigateSection('interactive-map');
                 }
               }}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
             >
-              <Route className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Itinerary</span>
+              <Route className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>{language === 'bm' ? 'Itinerari' : 'Itinerary'}</span>
             </motion.button>
 
             {/* Non-Citizen Hospital Fee */}
@@ -885,10 +885,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'));
               }}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer"
-              title={language === 'bm' ? 'Fi Hospital Bukan Warganegara' : 'Non-Citizen Hospital Fee Schedule'}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+              title={language === 'bm' ? 'Caj Hospital Bukan Warganegara' : 'Non-Citizen Hospital Fee Schedule'}
             >
-              <FileText className="w-3.5 h-3.5 text-rose-400" />
+              <FileText className="w-3.5 h-3.5 text-rose-400 shrink-0" />
               <span>{language === 'bm' ? 'Fi Hospital' : 'Non-Citizen Hospital Fee'}</span>
             </motion.button>
 
@@ -910,8 +910,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           </motion.div>
 
-          {/* Right Action Container: Language Toggle, Notification Bell & User Profile */}
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          {/* Right Action Container: Language Toggle, Notification Bell & User Profile pushed to far right */}
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 ml-auto">
 
             {/* Desktop Quick Language Switcher */}
             <div className="hidden md:flex items-center p-0.5 rounded-full bg-stone-900/90 border border-white/10 text-[11px] font-bold shrink-0">
@@ -970,11 +970,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <div className="flex items-center gap-1.5">
                         <BellRing className="w-4 h-4 text-emerald-400" />
                         <span className="text-xs font-black text-white">
-                          {language === 'bm' ? 'Pemberitahuan & Amaran' : 'Highland Live Updates'}
+                          {language === 'bm' ? 'Notifikasi & Amaran' : 'Highland Live Updates'}
                         </span>
                       </div>
                       <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
-                        {notificationItems.length} Live
+                        {notificationItems.length} {language === 'bm' ? 'Aktif' : 'Live'}
                       </span>
                     </div>
 
@@ -1006,12 +1006,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
 
                     <div className="pt-1 border-t border-white/10 flex items-center justify-between text-[10px] text-stone-400">
-                      <span>Tap item to view live status</span>
+                      <span>{language === 'bm' ? 'Ketik item untuk lihat status semasa' : 'Tap item to view live status'}</span>
                       <button
                         onClick={() => setIsNotificationOpen(false)}
                         className="text-emerald-400 font-bold hover:underline cursor-pointer"
                       >
-                        Close
+                        {language === 'bm' ? 'Tutup' : 'Close'}
                       </button>
                     </div>
                   </motion.div>
@@ -1112,7 +1112,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         >
                           <div className="flex items-center gap-2">
                             <Store className="w-4 h-4 text-amber-400" />
-                            <span>Vendor Dashboard</span>
+                            <span>{language === 'bm' ? 'Portal Vendor' : 'Vendor Dashboard'}</span>
                           </div>
                           <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono uppercase">Vendor</span>
                         </button>
@@ -1128,7 +1128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         >
                           <div className="flex items-center gap-2">
                             <ShieldCheck className="w-4 h-4 text-red-400" />
-                            <span>Admin Control Room</span>
+                            <span>{language === 'bm' ? 'Panel Kawalan Admin' : 'Admin Control Room'}</span>
                           </div>
                           <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-300 font-mono font-bold">Admin</span>
                         </button>
@@ -1817,7 +1817,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="flex items-center justify-between p-2 rounded-2xl bg-stone-900/90 border border-white/10">
                   <span className="text-xs font-bold text-stone-300 flex items-center gap-1.5 pl-2">
                     <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Language</span>
+                    <span>{language === 'bm' ? 'Bahasa' : 'Language'}</span>
                   </span>
                   <div className="flex items-center p-0.5 rounded-xl bg-stone-950 border border-white/10 text-xs font-bold">
                     <button
