@@ -114,6 +114,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
   onOpenVendorPortal,
 }) => {
   const [listings, setListings] = useState<AccommodationListing[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedTownship, setSelectedTownship] = useState<string>('all');
   const [selectedBookingType, setSelectedBookingType] = useState<'all' | 'instant' | 'request'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -159,11 +160,17 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
   // Load listings & subscribe to payment gateway notice on mount
   useEffect(() => {
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
     if (isOpen) {
+      setIsLoading(true);
       setListings(firebaseService.getAccommodationListings());
+      settleTimer = setTimeout(() => {
+        setIsLoading(false);
+      }, 450);
     }
     const handleUpdate = () => {
       setListings(firebaseService.getAccommodationListings());
+      setIsLoading(false);
     };
     const unsubGatewayNotice = firebaseService.subscribePaymentGatewayNotice((cfg) => {
       setPaymentGatewayNotice(cfg);
@@ -171,6 +178,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
     window.addEventListener('accommodation-listings-updated', handleUpdate);
     window.addEventListener('vendor-listings-updated', handleUpdate);
     return () => {
+      if (settleTimer) clearTimeout(settleTimer);
       unsubGatewayNotice();
       window.removeEventListener('accommodation-listings-updated', handleUpdate);
       window.removeEventListener('vendor-listings-updated', handleUpdate);
@@ -748,8 +756,45 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
 
       {/* Main Content Area */}
       <div className="max-w-6xl mx-auto w-full p-4 sm:p-6 space-y-6">
-        {/* Accommodation Listings Grid */}
-        {listings.length === 0 ? (
+        {/* Accommodation Listings Stacked Card Deck */}
+        {isLoading ? (
+          <div className="max-w-lg mx-auto">
+            <VerticalSwipeCarousel
+              deckTitle="Verified Stays Deck"
+              items={[]}
+              keyExtractor={(_, idx) => `accom-skel-${idx}`}
+              heightClassName="h-[360px]"
+              accentColor="emerald"
+              isLoading={true}
+              skeleton={
+                <div className="h-full rounded-2xl bg-stone-900/95 border border-emerald-500/25 flex flex-col justify-between overflow-hidden">
+                  <div className="h-[118px] w-full skeleton-shimmer shrink-0" />
+                  <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="h-4 w-3/4 rounded-lg skeleton-shimmer" />
+                      <div className="h-3 w-11/12 rounded-md skeleton-shimmer" />
+                      <div className="flex gap-1.5 pt-0.5">
+                        <div className="h-5 w-24 rounded-md skeleton-shimmer" />
+                        <div className="h-5 w-28 rounded-md skeleton-shimmer" />
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-stone-800 space-y-2">
+                      <div className="flex items-end justify-between">
+                        <div className="space-y-1">
+                          <div className="h-3.5 w-28 rounded-md skeleton-shimmer" />
+                          <div className="h-3 w-32 rounded-md skeleton-shimmer" />
+                        </div>
+                        <div className="h-5 w-20 rounded-md skeleton-shimmer" />
+                      </div>
+                      <div className="h-10 w-full rounded-xl skeleton-shimmer" />
+                    </div>
+                  </div>
+                </div>
+              }
+              renderItem={() => null}
+            />
+          </div>
+        ) : listings.length === 0 ? (
           <div className="p-10 text-center rounded-3xl bg-stone-900/60 border border-stone-800 space-y-4 max-w-xl mx-auto my-6">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400 shadow-inner">
               <Building className="w-8 h-8" />
@@ -779,11 +824,13 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
             </button>
           </div>
         ) : (
-          <div className="max-w-xl mx-auto">
+          <div className="max-w-lg mx-auto">
             <VerticalSwipeCarousel
+              deckTitle="Verified Stays Deck"
+              deckSubtitle="Flick card up for next stay · down for previous"
               items={filteredListings}
               keyExtractor={(stay) => stay.id}
-              heightClassName="h-[530px] sm:h-[570px]"
+              heightClassName="h-[360px]"
               accentColor="emerald"
               showNavArrows={true}
               renderItem={(stay) => {
@@ -807,135 +854,132 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                 const enabledAddons = (stay.amenityAddons || []).filter((a) => a.enabled);
 
                 return (
-                  <div className="h-full rounded-3xl bg-stone-900/95 border border-emerald-500/45 shadow-2xl shadow-emerald-950/30 flex flex-col justify-between overflow-hidden group relative">
+                  <div className="h-full rounded-2xl bg-stone-900/95 border border-emerald-500/45 shadow-2xl shadow-emerald-950/30 flex flex-col justify-between overflow-hidden group relative">
                     {/* Top Image & Badges */}
-                    <div className="relative h-36 sm:h-40 shrink-0 overflow-hidden bg-stone-950">
+                    <div className="relative h-[118px] shrink-0 overflow-hidden bg-stone-950">
                       <img
                         src={safeSrc(activePhotoUrl, DEFAULT_PLACE_IMAGE)}
                         alt={displayPropertyName}
                         className="w-full h-full object-cover transition-transform duration-500"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/40 pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-black/45 pointer-events-none" />
 
-                      {/* Top Row: Unit Code (Left) & Booking Confirmation Type (Right) */}
-                      <div className="absolute top-2.5 left-2.5 right-2.5 flex flex-wrap items-start justify-between gap-1.5">
-                        <span className="px-2 py-0.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/20 text-white font-mono font-bold text-[10px] leading-snug shadow-md whitespace-normal break-words max-w-[62%] line-clamp-1">
-                          {stay.code}
-                        </span>
+                      {/* Top Row: Unit Code + Availability & Booking Type */}
+                      <div className="absolute top-2 left-2.5 right-2.5 flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-white/20 text-white font-mono font-bold text-[10px] shadow-md truncate">
+                            {stay.code}
+                          </span>
+                          {isAvailable && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500 text-stone-950 text-[9.5px] font-black uppercase whitespace-nowrap">
+                              Available
+                            </span>
+                          )}
+                          {isLimited && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-stone-950 text-[9.5px] font-black uppercase whitespace-nowrap">
+                              1-2 Left
+                            </span>
+                          )}
+                          {isSoldOut && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-rose-500 text-white text-[9.5px] font-black uppercase whitespace-nowrap">
+                              Sold Out
+                            </span>
+                          )}
+                        </div>
                         {stay.bookingType === 'instant' ? (
-                          <span className="px-2 py-0.5 rounded-lg bg-emerald-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
                             <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
-                            <span>Instant Confirm</span>
+                            <span>Instant</span>
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-600/95 backdrop-blur-md text-white font-black text-[10px] flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap">
                             <Clock className="w-3 h-3 shrink-0" />
                             <span>30m SLA</span>
                           </span>
                         )}
                       </div>
 
-                      {/* Location preview over image bottom */}
-                      <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-xs text-stone-300">
+                      {/* Location, Gallery Dots & Rating over image bottom */}
+                      <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between gap-2 text-xs text-stone-300">
                         <span className="flex items-center gap-1 font-bold text-white text-[11px] truncate">
                           <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                           {stay.township}
                         </span>
-                        <span className="text-[11px] text-amber-400 font-bold tabular-nums">
+
+                        {galleryList.length > 1 && (
+                          <div className="flex items-center gap-1 bg-black/55 px-1.5 py-1 rounded-full backdrop-blur-sm">
+                            {galleryList.slice(0, 5).map((_, idx) => (
+                              <button
+                                key={`${stay.id}-dot-${idx}`}
+                                type="button"
+                                aria-label={`Photo ${idx + 1}`}
+                                onClick={() =>
+                                  setCardGalleryIdx((prev) => ({ ...prev, [stay.id]: idx }))
+                                }
+                                className={`rounded-full transition-all cursor-pointer ${
+                                  idx === activePhotoIdx
+                                    ? 'w-3 h-1.5 bg-emerald-400'
+                                    : 'w-1.5 h-1.5 bg-white/50 hover:bg-white'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        <span className="text-[11px] text-amber-400 font-bold tabular-nums shrink-0">
                           ★ {stay.rating.toFixed(1)} ({stay.reviewCount})
                         </span>
                       </div>
                     </div>
 
-                    {/* Full Media Gallery Thumbnails (when multiple photos exist) */}
-                    {galleryList.length > 1 && (
-                      <div className="px-3.5 pt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-                        {galleryList.slice(0, 6).map((imgUrl, idx) => (
+                    {/* Body Content */}
+                    <div className="p-3 sm:p-3.5 flex-1 flex flex-col justify-between min-h-0">
+                      <div className="space-y-1.5 min-h-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h4 className="font-black text-sm text-white leading-snug group-hover:text-emerald-300 transition-colors line-clamp-1">
+                              {displayPropertyName}
+                            </h4>
+                            <p className="text-[11px] text-stone-400 line-clamp-1">
+                              Unit {stay.code} · {stay.proximityDesc}
+                            </p>
+                          </div>
                           <button
-                            key={`${stay.id}-gal-${idx}`}
                             type="button"
                             onClick={() =>
-                              setCardGalleryIdx((prev) => ({ ...prev, [stay.id]: idx }))
+                              setExpandedCardNotesId(isNotesOpen ? null : stay.id)
                             }
-                            className={`w-11 h-7 rounded-lg overflow-hidden border transition-all shrink-0 cursor-pointer ${
-                              idx === activePhotoIdx
-                                ? 'border-emerald-400 ring-1 ring-emerald-400/60 scale-105'
-                                : 'border-stone-700 opacity-70 hover:opacity-100'
-                            }`}
+                            className="shrink-0 px-2 py-1 rounded-lg bg-stone-800/90 hover:bg-stone-700 text-[10.5px] font-bold text-teal-300 flex items-center gap-1 cursor-pointer"
                           >
-                            <img
-                              src={safeSrc(imgUrl, DEFAULT_PLACE_IMAGE)}
-                              alt={`${displayPropertyName} gallery ${idx + 1}`}
-                              className="w-full h-full object-cover"
-                            />
+                            <Info className="w-3 h-3" />
+                            <span>Info</span>
                           </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Body Content */}
-                    <div className="p-3.5 sm:p-4 space-y-2 flex-1 flex flex-col justify-between min-h-0">
-                      <div className="space-y-2 min-h-0">
-                        {/* Status & Breakfast Row */}
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {isAvailable && (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              Available
-                            </span>
-                          )}
-                          {isLimited && (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-950/90 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                              1-2 Left
-                            </span>
-                          )}
-                          {isSoldOut && (
-                            <span className="px-2 py-0.5 rounded-full bg-rose-950/90 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                              Sold Out Today
-                            </span>
-                          )}
-                          {stay.breakfastIncluded && (
-                            <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 whitespace-nowrap">
-                              <Coffee className="w-3 h-3" />
-                              Breakfast Included
-                            </span>
-                          )}
                         </div>
 
-                        {/* Property Name & Proximity */}
-                        <div className="space-y-0.5">
-                          <h4 className="font-black text-sm sm:text-[15px] text-white leading-snug group-hover:text-emerald-300 transition-colors line-clamp-1">
-                            {displayPropertyName}
-                          </h4>
-                          <p className="text-[11px] text-stone-400 line-clamp-1">
-                            Unit {stay.code} · {stay.proximityDesc}
-                          </p>
-                        </div>
-
-                        {/* Check-In / Out Windows & Parking Quick Details */}
-                        <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                          <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
-                            <span className="text-stone-400 block">Check-In / Out</span>
-                            <strong className="text-white font-mono">
-                              {stay.checkInWindow || '15:00'} / {stay.checkOutWindow || '12:00'}
-                            </strong>
-                          </div>
-                          <div className="p-2 rounded-xl bg-stone-950/80 border border-stone-800">
-                            <span className="text-stone-400 block">Parking &amp; Kitchen</span>
-                            <strong className="text-white truncate block">
-                              {(stay.parkingType || 'private_available').replace(/_/g, ' ')}
-                              {stay.cookingPermitted ? ' · Cooking OK' : ''}
-                            </strong>
-                          </div>
+                        {/* Compact Check-In/Out & Parking Meta Line */}
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10.5px] text-stone-300">
+                          <span className="font-mono text-stone-200">
+                            In {stay.checkInWindow || '15:00'} / Out {stay.checkOutWindow || '12:00'}
+                          </span>
+                          <span aria-hidden="true" className="text-stone-600">·</span>
+                          <span className="truncate">
+                            {(stay.parkingType || 'private_available').replace(/_/g, ' ')}
+                            {stay.cookingPermitted ? ' · Kitchen OK' : ''}
+                          </span>
                         </div>
 
                         {/* Amenities / CamGo Exclusive Perks */}
                         <div className="flex flex-wrap gap-1">
+                          {stay.breakfastIncluded && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold inline-flex items-center gap-1 whitespace-nowrap">
+                              <Coffee className="w-2.5 h-2.5" />
+                              Breakfast
+                            </span>
+                          )}
                           {stay.bundledPerks.slice(0, 2).map((perk, idx) => (
                             <span
                               key={idx}
-                              className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[10px] font-semibold line-clamp-1 max-w-full"
+                              className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[10px] font-semibold line-clamp-1 max-w-[165px]"
                             >
                               {perk}
                             </span>
@@ -943,24 +987,12 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                           {enabledAddons.slice(0, 1).map((addon) => (
                             <span
                               key={addon.id}
-                              className="px-2 py-0.5 rounded-lg bg-stone-800 text-stone-200 border border-stone-700 text-[10px] font-medium"
+                              className="px-2 py-0.5 rounded-md bg-stone-800 text-stone-200 border border-stone-700 text-[10px] font-medium"
                             >
-                              + {addon.name} (RM {addon.priceRm})
+                              +{addon.name} (RM{addon.priceRm})
                             </span>
                           ))}
                         </div>
-
-                        {/* Inline More Information / Vendor Notes Toggle */}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedCardNotesId(isNotesOpen ? null : stay.id)
-                          }
-                          className="text-[11px] font-bold text-teal-300 hover:text-teal-200 flex items-center gap-1 cursor-pointer"
-                        >
-                          <Info className="w-3.5 h-3.5" />
-                          <span>{isNotesOpen ? 'Hide Vendor Notes & Rules' : 'More Information & Vendor Notes'}</span>
-                        </button>
                       </div>
 
                       {/* Financial Breakdown & CTA */}
@@ -978,7 +1010,6 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                           </div>
 
                           <div className="text-right">
-                            <span className="text-[10px] text-stone-500 block">Normal Rate</span>
                             {stay.pricePerNight > 0 ? (
                               <>
                                 <span className="text-base font-black text-white tabular-nums">RM {stay.pricePerNight}</span>
@@ -988,7 +1019,7 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                               <span className="text-xs font-bold text-stone-400">Rate Set by Vendor</span>
                             )}
                             {stay.peakPricePerNight && stay.peakPricePerNight > 0 && (
-                              <span className="block text-[10px] font-bold text-amber-300 mt-0.5 tabular-nums">
+                              <span className="block text-[10px] font-bold text-amber-300 tabular-nums">
                                 Peak: RM {stay.peakPricePerNight}/night
                               </span>
                             )}
@@ -999,22 +1030,22 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                           type="button"
                           onClick={() => setActiveListingForBooking(stay)}
                           disabled={isSoldOut}
-                          className={`w-full min-h-[42px] py-2.5 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg cursor-pointer ${
+                          className={`w-full min-h-[40px] py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg cursor-pointer ${
                             isSoldOut
                               ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
                               : 'bg-emerald-500 hover:bg-emerald-400 text-stone-950 hover:shadow-emerald-950/80 active:scale-[0.98]'
                           }`}
                         >
                           <Lock className="w-3.5 h-3.5" />
-                          <span>{isSoldOut ? 'Sold Out Today' : 'Lock Room'}</span>
+                          <span>{isSoldOut ? 'Sold Out Today' : 'Pay RM30 & Lock Room'}</span>
                         </button>
                       </div>
                     </div>
 
-                    {/* Internal Vendor Notes & House Rules Overlay Drawer (prevents card scroll trapping) */}
+                    {/* Internal Vendor Notes & House Rules Overlay Drawer */}
                     {isNotesOpen && (
-                      <div className="absolute inset-x-3 bottom-16 top-28 z-20 rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-teal-500/40 p-3.5 flex flex-col justify-between shadow-2xl">
-                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-800 shrink-0">
+                      <div className="absolute inset-2.5 z-20 rounded-xl bg-stone-950/95 backdrop-blur-xl border border-teal-500/40 p-3 flex flex-col justify-between shadow-2xl">
+                        <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-stone-800 shrink-0">
                           <span className="text-xs font-black text-teal-300 flex items-center gap-1.5">
                             <Info className="w-3.5 h-3.5" />
                             <span>Vendor Notes &amp; Rules</span>
@@ -1028,7 +1059,10 @@ export const AccommodationListModal: React.FC<AccommodationListModalProps> = ({
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto no-scrollbar py-2 space-y-2 text-[11px] text-stone-300">
+                        <div
+                          data-card-scrollable="true"
+                          className="flex-1 overflow-y-auto no-scrollbar py-2 space-y-1.5 text-[11px] text-stone-300"
+                        >
                           {stay.description && (
                             <p className="leading-relaxed whitespace-pre-line">{stay.description}</p>
                           )}

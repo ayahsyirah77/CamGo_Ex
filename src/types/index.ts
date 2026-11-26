@@ -311,6 +311,8 @@ export interface HazardAlert {
   agencyHotline?: string;
   isVerifiedAgency?: boolean;
   lastVerified?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export type CamgoHazardType =

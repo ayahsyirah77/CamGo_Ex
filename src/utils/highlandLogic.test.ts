@@ -274,18 +274,26 @@ test('Strict Voice Matcher: finds ms-MY voice while strictly rejecting id-ID Ind
   assert.equal(matchedUnderscore?.lang, 'ms_MY');
 });
 
-test('Cameron Trails Module: includes Gunung Irau, Gunung Siku, and Gunung Jasar with valid GeoJSON LineStrings and Peaks', () => {
-  assert.equal(CAMERON_TRAILS.length, 15);
+test('Cameron Trails Module: includes Gunung Irau, Gunung Siku, Gunung Jasar, and Admin Test FT59 road routes with valid GeoJSON', () => {
+  assert.equal(CAMERON_TRAILS.length, 17);
 
   const jasar = CAMERON_TRAILS.find((t) => t.id === 'trail-10');
   const irau = CAMERON_TRAILS.find((t) => t.id === 'trail-14');
   const siku = CAMERON_TRAILS.find((t) => t.id === 'trail-15');
+  const adminTrBr = CAMERON_TRAILS.find((t) => t.id === 'admin-test-tanah-rata-brinchang');
+  const adminKeaBr = CAMERON_TRAILS.find((t) => t.id === 'admin-test-kea-farm-brinchang');
 
   assert.ok(jasar && jasar.maxElevationM === 1696);
   assert.ok(irau && irau.maxElevationM === 2110);
   assert.ok(siku && siku.maxElevationM === 1916);
+  assert.ok(adminTrBr && adminTrBr.isAdminTest && adminTrBr.coordinates.length >= 6);
+  assert.ok(adminKeaBr && adminKeaBr.isAdminTest && adminKeaBr.coordinates.length >= 6);
+  assert.deepEqual(adminTrBr?.coordinates[0], [4.4718, 101.3766]);
+  assert.deepEqual(adminTrBr?.peakCoordinates, [4.4926, 101.3879]);
+  assert.deepEqual(adminKeaBr?.coordinates[0], [4.5028, 101.4092]);
+  assert.deepEqual(adminKeaBr?.peakCoordinates, [4.4926, 101.3879]);
 
-  assert.equal(CAMERON_TRAILS_GEOJSON.features.length, 30);
+  assert.equal(CAMERON_TRAILS_GEOJSON.features.length, 34);
   assert.equal(CAMERON_SUMMIT_TRAILS_GEOJSON.type, 'FeatureCollection');
   assert.equal(CAMERON_SUMMIT_TRAILS_GEOJSON.features.length, 6);
 

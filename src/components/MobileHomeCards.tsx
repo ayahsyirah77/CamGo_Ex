@@ -37,11 +37,10 @@ import {
   MotorbikeRentalPartner,
   Township,
 } from '../types';
-import { firebaseService } from '../services/firebase';
+import { firebaseService, VisualBackgroundsConfig } from '../services/firebase';
 import { INITIAL_MOBILE_HOME_CARDS } from '../data/initialHomeCards';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 import { MasjidIcon } from './Navbar';
-import { VerticalSwipeCarousel } from './VerticalSwipeCarousel';
 
 interface MobileHomeCardsProps {
   language: Language;
@@ -100,6 +99,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
   const [motorbikePartners, setMotorbikePartners] = useState<MotorbikeRentalPartner[]>(() =>
     firebaseService.getMotorbikePartners()
   );
+  const [visualBackgrounds, setVisualBackgrounds] = useState<VisualBackgroundsConfig>(() =>
+    firebaseService.getVisualBackgrounds()
+  );
   const [desktopWeatherIdx, setDesktopWeatherIdx] = useState(0);
   const exploreScrollRef = useRef<HTMLDivElement>(null);
 
@@ -120,6 +122,9 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
       setAccommodations(firebaseService.getAccommodationListings());
       setMotorbikePartners(firebaseService.getMotorbikePartners());
     };
+    const unsubVisualBgs = firebaseService.subscribeVisualBackgrounds((cfg) => {
+      setVisualBackgrounds(cfg);
+    });
     window.addEventListener('home-cards-updated', handleCardsUpdated);
     window.addEventListener('accommodation-listings-updated', handleAccomUpdated);
     window.addEventListener('motorbike-partners-updated', handleBikeUpdated);
@@ -130,6 +135,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
       setMotorbikePartners(firebaseService.getMotorbikePartners());
     }, 2500);
     return () => {
+      unsubVisualBgs();
       window.removeEventListener('home-cards-updated', handleCardsUpdated);
       window.removeEventListener('accommodation-listings-updated', handleAccomUpdated);
       window.removeEventListener('motorbike-partners-updated', handleBikeUpdated);
@@ -309,6 +315,26 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
   const featuredTownships: Township[] = ['Tanah Rata', 'Brinchang', 'Kea Farm', 'Ringlet'];
 
+  const customStaysBg = safeSrc(visualBackgrounds.verifiedStaysBgUrl);
+  const customBikesBg = safeSrc(visualBackgrounds.motorbikeRentalsBgUrl);
+
+  const staysCardPreviewImg = safeSrc(
+    customStaysBg || accommodations[0]?.coverImage,
+    'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=900&q=80'
+  );
+
+  const defaultBikeCardImg =
+    bikeCard?.imageUrl &&
+    bikeCard.imageUrl !==
+      'https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=600&q=80'
+      ? bikeCard.imageUrl
+      : undefined;
+
+  const bikesCardPreviewImg = safeSrc(
+    customBikesBg || motorbikePartners[0]?.imageUrl || defaultBikeCardImg,
+    'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=900&q=80'
+  );
+
   return (
     <>
       {/* =====================================================================
@@ -417,7 +443,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             >
               <img
                 src={safeSrc(
-                  weatherCard?.imageUrl,
+                  visualBackgrounds.exploreWeatherBgUrl || weatherCard?.imageUrl,
                   'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=800&q=80'
                 )}
                 alt="Weather"
@@ -427,7 +453,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 }}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/85 via-stone-950/20 to-stone-950/35" />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/30 to-stone-950/45" />
               <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-1">
                 <span className="px-2 py-0.5 rounded-full bg-stone-950/75 backdrop-blur-md border border-cyan-400/40 text-cyan-200 text-[10px] font-black tabular-nums">
                   {tempDisplay}
@@ -449,29 +475,98 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               </div>
             </div>
 
-            {/* Card 2: Directory */}
-            <div
-              onClick={() => onOpenDirectories && onOpenDirectories()}
-              className="relative w-[42vw] min-w-[144px] max-w-[172px] aspect-[4/4.3] shrink-0 snap-start rounded-[22px] overflow-hidden border border-white/15 bg-stone-900 shadow-xl cursor-pointer active:scale-[0.97] transition-all group select-none"
-            >
-              <img
-                src="/assets/aistudio/explore_c7c5621e.jpg"
-                alt="Directory"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/85 via-transparent to-stone-950/20" />
-              <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/75 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
-                <div className="min-w-0 flex-1">
-                  <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
-                    Directory
+            {/* Card 2: Notice / Alert */}
+            {hazardCard && hazardCard.isActive ? (
+              <div
+                onClick={() => handleCardClick(hazardCard)}
+                className="relative w-[42vw] min-w-[144px] max-w-[172px] aspect-[4/4.3] shrink-0 snap-start rounded-[22px] overflow-hidden border border-rose-400/40 bg-stone-900 shadow-xl cursor-pointer active:scale-[0.97] transition-all group select-none"
+              >
+                <img
+                  src={safeSrc(
+                    visualBackgrounds.exploreNoticeAlertBgUrl || hazardCard.imageUrl,
+                    'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=900&q=80'
+                  )}
+                  alt="Notice / Alert"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/35 to-stone-950/45" />
+                <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-950/75 backdrop-blur-md border border-white/15 text-[9px] font-mono font-bold text-emerald-300 tabular-nums">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                    <span>{hazards.length > 0 ? `${hazards.length} Active` : 'LIVE'}</span>
                   </span>
-                  <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal">
-                    Farms, Food &amp; Stays
+                  {hazards.some((h) => /pdrm/i.test(`${h.source || ''} ${h.title || ''}`)) && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-rose-600/90 text-white text-[8px] font-black tracking-wider uppercase">
+                      PDRM
+                    </span>
+                  )}
+                </div>
+                <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/80 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
+                      {!hazardCard.title ||
+                      hazardCard.title === 'Live Traffic/Hazard' ||
+                      hazardCard.title === 'Live Notice/Hazard'
+                        ? 'Notice / Alert'
+                        : hazardCard.title}
+                    </span>
+                    <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal line-clamp-1">
+                      {hazards[0]
+                        ? language === 'bm'
+                          ? hazards[0].titleBm || hazards[0].title
+                          : hazards[0].title
+                        : language === 'bm'
+                        ? 'Info jalan & cuaca terkini'
+                        : 'Live road & weather updates'}
+                    </span>
+                  </div>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-[#c9ef3d] shrink-0" />
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => onOpenHazard()}
+                className="relative w-[42vw] min-w-[144px] max-w-[172px] aspect-[4/4.3] shrink-0 snap-start rounded-[22px] overflow-hidden border border-rose-400/40 bg-stone-900 shadow-xl cursor-pointer active:scale-[0.97] transition-all group select-none"
+              >
+                <img
+                  src={safeSrc(
+                    visualBackgrounds.exploreNoticeAlertBgUrl,
+                    'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=900&q=80'
+                  )}
+                  alt="Notice / Alert"
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/35 to-stone-950/45" />
+                <div className="absolute top-2 left-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-950/75 backdrop-blur-md border border-white/15 text-[9px] font-mono font-bold text-emerald-300 tabular-nums">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                    <span>{hazards.length > 0 ? `${hazards.length} Active` : 'LIVE'}</span>
                   </span>
                 </div>
-                <ArrowUpRight className="w-3.5 h-3.5 text-white shrink-0" />
+                <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/80 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
+                      Notice / Alert
+                    </span>
+                    <span className="no-mobile-clamp text-[9px] text-stone-300 block leading-snug mt-0.5 whitespace-normal line-clamp-1">
+                      {hazards[0]
+                        ? language === 'bm'
+                          ? hazards[0].titleBm || hazards[0].title
+                          : hazards[0].title
+                        : language === 'bm'
+                        ? 'Info jalan & cuaca terkini'
+                        : 'Live road & weather updates'}
+                    </span>
+                  </div>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-[#c9ef3d] shrink-0" />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Card 3: Highland Maps */}
             <div
@@ -480,7 +575,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             >
               <img
                 src={safeSrc(
-                  mapCard?.imageUrl,
+                  visualBackgrounds.exploreHighlandMapsBgUrl || mapCard?.imageUrl,
                   'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80'
                 )}
                 alt="Highland Maps"
@@ -490,7 +585,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 }}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/85 via-transparent to-stone-950/20" />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/25 to-stone-950/35" />
               <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/75 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
                 <div className="min-w-0 flex-1">
                   <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
@@ -511,11 +606,12 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             >
               <img
                 src={safeSrc(
-                  itineraryCard?.imageUrl &&
+                  visualBackgrounds.exploreItineraryBgUrl ||
+                    (itineraryCard?.imageUrl &&
                     itineraryCard.imageUrl !==
                       'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=600&q=80'
-                    ? itineraryCard.imageUrl
-                    : undefined,
+                      ? itineraryCard.imageUrl
+                      : undefined),
                   'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80'
                 )}
                 alt="Itinerary"
@@ -525,7 +621,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 }}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/85 via-transparent to-stone-950/20" />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/25 to-stone-950/35" />
               <div className="absolute inset-x-1.5 bottom-1.5 px-2.5 py-2 rounded-2xl bg-stone-950/75 backdrop-blur-md border border-white/15 flex items-center justify-between gap-1.5">
                 <div className="min-w-0 flex-1">
                   <span className="no-mobile-clamp text-[11px] font-extrabold text-white block leading-tight whitespace-normal">
@@ -552,69 +648,50 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           </div>
         </div>
 
-        {/* 3. Wide Featured Live Notice/Hazard Card (matching Image 2's wide featured bottom card) */}
-        {hazardCard && hazardCard.isActive && (
-          <div
-            onClick={() => handleCardClick(hazardCard)}
-            className="relative rounded-[24px] overflow-hidden border border-white/15 bg-stone-900 shadow-2xl min-h-[164px] p-4 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all group select-none"
-          >
-            <div className="absolute inset-0 z-0">
-              <img
-                src={safeSrc(
-                  hazardCard.imageUrl,
-                  'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=900&q=80'
-                )}
-                alt={hazardCard.title || 'Live Notice/Hazard'}
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/95 via-stone-950/55 to-stone-950/45" />
-            </div>
-
-            <div className="relative z-10 flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-950/65 backdrop-blur-md border border-white/15 text-[10px] font-bold text-stone-100">
-                <MapPin className="w-3 h-3 text-[#c9ef3d] shrink-0" />
-                <span>
-                  {hazardCard.subtitle && hazardCard.subtitle !== 'Kea Farm'
-                    ? hazardCard.subtitle
-                    : 'PDRM • JKR • MDCH'}
-                </span>
-              </span>
-
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-950/65 backdrop-blur-md border border-white/15 text-[10px] font-mono font-bold text-emerald-300 tabular-nums">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                <span>{hazards.length > 0 ? `${hazards.length} Active` : 'LIVE'}</span>
-              </span>
-            </div>
-
-            <div className="relative z-10 flex items-end justify-between gap-3 pt-4">
-              <div className="min-w-0">
-                <h3 className="no-mobile-clamp text-sm font-extrabold text-white leading-snug">
-                  {hazardCard.title === 'Live Traffic/Hazard'
-                    ? 'Live Notice & Corridor Hazards'
-                    : hazardCard.title || 'Live Notice & Corridor Hazards'}
-                </h3>
-                <span className="no-mobile-clamp text-[10.5px] text-stone-300 block leading-snug mt-0.5 whitespace-normal">
-                  {hazards[0]
-                    ? language === 'bm'
-                      ? hazards[0].titleBm || hazards[0].title
-                      : hazards[0].title
-                    : 'FT185 Simpang Pulai · Lojing · FT59 Tapah'}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                className="shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full bg-[#c9ef3d] hover:bg-[#d6f65c] text-stone-950 text-xs font-black shadow-lg cursor-pointer"
-              >
-                {language === 'bm' ? 'Semak' : 'Check'}
-              </button>
-            </div>
+        {/* 3. Wide Featured Directory Card (swapped from Explore Card 2) */}
+        <div
+          onClick={() => onOpenDirectories && onOpenDirectories()}
+          className="relative rounded-[24px] overflow-hidden border border-white/15 bg-stone-900 shadow-2xl min-h-[164px] p-4 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all group select-none"
+        >
+          <div className="absolute inset-0 z-0">
+            <img
+              src="/assets/aistudio/explore_c7c5621e.jpg"
+              alt="Directory"
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-stone-950/95 via-stone-950/50 to-stone-950/40" />
           </div>
-        )}
+
+          <div className="relative z-10 flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-950/65 backdrop-blur-md border border-white/15 text-[10px] font-bold text-stone-100">
+              <MapPin className="w-3 h-3 text-[#c9ef3d] shrink-0" />
+              <span>Cameron Highlands · 9 Towns</span>
+            </span>
+
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-950/65 backdrop-blur-md border border-emerald-400/35 text-[10px] font-mono font-bold text-emerald-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>VERIFIED</span>
+            </span>
+          </div>
+
+          <div className="relative z-10 flex items-end justify-between gap-3 pt-4">
+            <div className="min-w-0">
+              <h3 className="no-mobile-clamp text-sm font-extrabold text-white leading-snug">
+                {language === 'bm' ? 'Direktori Tanah Tinggi' : 'Directory'}
+              </h3>
+              <span className="no-mobile-clamp text-[10.5px] text-stone-300 block leading-snug mt-0.5 whitespace-normal">
+                Farms, Food, Cafes, Attractions &amp; Stays
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full bg-[#c9ef3d] hover:bg-[#d6f65c] text-stone-950 text-xs font-black shadow-lg cursor-pointer"
+            >
+              {language === 'bm' ? 'Terokai' : 'Browse'}
+            </button>
+          </div>
+        </div>
 
         {/* 4. Compact Row: Highland Trails & Find My Party */}
         <div className="grid grid-cols-2 gap-2.5 no-mobile-clamp">
@@ -687,180 +764,107 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           )}
         </div>
 
-        {/* Row 5: Verified Homestays & Stays (Vertical Stacked Swipe Carousel) */}
-        <VerticalSwipeCarousel
-          items={accommodations.length > 0 ? accommodations : [null]}
-          keyExtractor={(stay, idx) => (stay ? stay.id : `default-stay-${idx}`)}
-          heightClassName="h-[172px]"
-          accentColor="emerald"
-          renderItem={(stay) => {
-            const stayImg = safeSrc(
-              stay?.coverImage,
-              'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=600&q=80'
-            );
-            const featuredStayLabel = stay
-              ? `${stay.propertyName?.trim() || stay.maskedTitle} · ${stay.township}${
-                  stay.pricePerNight > 0 ? ` · RM ${stay.pricePerNight}/night` : ''
-                }`
-              : 'Direct Host Portals · Pay Balance at Door';
+        {/* Row 5: Verified Stays & Motorbike Rentals Side-by-Side Shortcut Cards */}
+        <div className="grid grid-cols-2 gap-2.5 no-mobile-clamp">
+          {/* Card 1: Verified Stays */}
+          <div
+            onClick={() => onOpenAccommodation && onOpenAccommodation()}
+            className="rounded-2xl p-2.5 bg-stone-900/95 backdrop-blur-xl border border-emerald-400/40 hover:border-emerald-300 shadow-lg flex flex-col justify-between min-h-[138px] cursor-pointer active:scale-[0.97] transition-all group relative overflow-hidden select-none"
+          >
+            {customStaysBg && (
+              <>
+                <img
+                  src={customStaysBg}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover z-0 group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/55 to-stone-950/90 z-0 pointer-events-none" />
+              </>
+            )}
 
-            return (
-              <div
-                onClick={() => onOpenAccommodation && onOpenAccommodation()}
-                className="h-full rounded-2xl p-3.5 bg-stone-900/95 backdrop-blur-xl border-2 border-emerald-500/50 hover:border-emerald-400 active:border-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.35)] flex flex-col justify-between gap-2.5 cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden select-none"
-              >
-                <div className="absolute inset-0 z-0">
-                  <img
-                    src={stayImg}
-                    alt="Verified Homestays & Stays"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                    className="w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-stone-950/95 via-stone-900/90 to-emerald-950/80" />
-                </div>
+            <div className="flex items-center gap-1 relative z-10">
+              <BedDouble className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="no-mobile-clamp text-[11px] font-extrabold text-white leading-tight whitespace-normal drop-shadow-sm">
+                Verified Stays
+              </span>
+            </div>
 
-                <div className="flex items-center gap-3 relative z-10">
-                  <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-stone-950 shrink-0 border-2 border-emerald-400/40 group-hover:border-emerald-300 transition-colors shadow-md">
-                    <img
-                      src={stayImg}
-                      alt="Verified Homestays & Stays"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-stone-950/70 via-transparent to-transparent" />
-                    <div className="absolute bottom-1 right-1 w-5 h-5 rounded-md bg-emerald-500 text-stone-950 flex items-center justify-center shadow-md">
-                      <BedDouble className="w-3 h-3" />
-                    </div>
-                  </div>
+            <div className="relative z-10 rounded-xl overflow-hidden my-1.5 aspect-[16/10] bg-stone-950 border border-white/15 shadow-inner">
+              <img
+                src={staysCardPreviewImg}
+                alt="Verified Stays"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-stone-950/20 to-transparent" />
+            </div>
 
-                  <div className="flex-1 min-w-0">
-                    <h5 className="text-sm font-black text-white group-hover:text-emerald-300 transition-colors leading-snug line-clamp-1">
-                      Verified Homestays &amp; Stays
-                    </h5>
-                    <p className="text-[11px] text-stone-300 leading-snug mt-0.5 line-clamp-2 whitespace-normal">
-                      {featuredStayLabel}
-                    </p>
-                  </div>
-                </div>
+            <div className="pt-0.5 flex items-center justify-between gap-1 relative z-10">
+              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-400 text-stone-950 font-black text-[9.5px] shrink-0">
+                <ShieldCheck className="w-2.5 h-2.5 shrink-0" />
+                <span>Verified</span>
+              </span>
+              <span className="text-[9px] text-emerald-300 font-mono font-bold truncate drop-shadow-sm">
+                {accommodations.length > 0 ? `${accommodations.length} Units` : 'RM30 LOCK'}
+              </span>
+            </div>
+          </div>
 
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10 relative z-10">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/35 text-emerald-300 text-[9.5px] font-black uppercase tracking-wider">
-                      <ShieldCheck className="w-3 h-3" />
-                      <span>RM30 Lock</span>
-                    </span>
-                    <span className="text-[10px] font-mono text-stone-400">
-                      {accommodations.length > 0 ? `${accommodations.length} Verified` : 'Vendor Direct'}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-md shrink-0 flex items-center gap-1 group-hover:scale-105 transition-transform cursor-pointer"
-                  >
-                    <span>Browse</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          }}
-        />
-
-        {/* Row 6: Motorbike / Scooter Rentals (Vertical Stacked Swipe Carousel) */}
-        {bikeCard && bikeCard.isActive && (
-          <VerticalSwipeCarousel
-            items={motorbikePartners.length > 0 ? motorbikePartners : [null]}
-            keyExtractor={(partner, idx) => (partner ? partner.id : `default-bike-${idx}`)}
-            heightClassName="h-[172px]"
-            accentColor="cyan"
-            renderItem={(partner) => {
-              const fallbackBikeImg = safeSrc(
-                bikeCard.imageUrl &&
-                  bikeCard.imageUrl !== 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=600&q=80'
-                  ? bikeCard.imageUrl
-                  : undefined,
-                'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=600&q=80'
-              );
-              const bikeImg = safeSrc(partner?.imageUrl, fallbackBikeImg);
-              const bikeTitle = bikeCard.title || 'Motorbike / Scooter Rentals';
-              const bikeSub = partner
-                ? `${partner.businessName} · ${partner.township} · RM ${partner.dailyRateRm || partner.packages?.[0]?.dailyRateRm || 75}/day`
-                : bikeCard.subtitle || 'Verified Two-Wheel Highland Fleets';
-
-              return (
-                <div
-                  onClick={() => handleCardClick(bikeCard)}
-                  className="h-full rounded-2xl p-3.5 bg-stone-900/95 backdrop-blur-xl border-2 border-cyan-400/60 hover:border-cyan-300 active:border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.2)] hover:shadow-[0_0_30px_rgba(34,211,238,0.4)] flex flex-col justify-between gap-2.5 cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden select-none"
-                >
-                  <div className="absolute inset-0 z-0">
-                    <img
-                      src={bikeImg}
-                      alt={bikeTitle}
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                      className="w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-r from-stone-950/95 via-stone-900/90 to-cyan-950/80" />
-                  </div>
-
-                  <div className="flex items-center gap-3 relative z-10">
-                    <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-stone-950 shrink-0 border-2 border-cyan-400/45 group-hover:border-cyan-300 transition-colors shadow-md">
-                      <img
-                        src={bikeImg}
-                        alt={bikeTitle}
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950/70 via-transparent to-transparent" />
-                      <div className="absolute bottom-1 right-1 w-5 h-5 rounded-md bg-cyan-400 text-stone-950 flex items-center justify-center shadow-md">
-                        <Bike className="w-3 h-3" />
-                      </div>
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <h5 className="text-sm font-black text-white group-hover:text-cyan-200 transition-colors leading-snug line-clamp-1">
-                        {bikeTitle}
-                      </h5>
-                      <p className="text-[11px] text-stone-300 leading-snug mt-0.5 line-clamp-2 whitespace-normal">
-                        {bikeSub}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10 relative z-10">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[9.5px] font-mono font-black uppercase tracking-wider">
-                      {partner
-                        ? partner.operatingStatus === 'open'
-                          ? 'Open Now'
-                          : 'Rental'
-                        : bikeCard.badge || bikeCard.tag || 'Rides'}
-                    </span>
-
-                    <button
-                      type="button"
-                      className="px-3.5 py-1.5 rounded-full bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-xs shadow-md shrink-0 flex items-center gap-1 group-hover:scale-105 transition-transform cursor-pointer"
-                    >
-                      <span>{bikeCard.buttonText || 'Rent Ride'}</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
+          {/* Card 2: Motorbike Rentals */}
+          <div
+            onClick={() => {
+              if (bikeCard) handleCardClick(bikeCard);
+              else if (onOpenMotorbike) onOpenMotorbike();
             }}
-          />
-        )}
+            className="rounded-2xl p-2.5 bg-stone-900/95 backdrop-blur-xl border border-cyan-400/40 hover:border-cyan-300 shadow-lg flex flex-col justify-between min-h-[138px] cursor-pointer active:scale-[0.97] transition-all group relative overflow-hidden select-none"
+          >
+            {customBikesBg && (
+              <>
+                <img
+                  src={customBikesBg}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover z-0 group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/55 to-stone-950/90 z-0 pointer-events-none" />
+              </>
+            )}
+
+            <div className="flex items-center gap-1 relative z-10">
+              <Bike className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="no-mobile-clamp text-[11px] font-extrabold text-white leading-tight whitespace-normal drop-shadow-sm">
+                Motorbike Rentals
+              </span>
+            </div>
+
+            <div className="relative z-10 rounded-xl overflow-hidden my-1.5 aspect-[16/10] bg-stone-950 border border-white/15 shadow-inner">
+              <img
+                src={bikesCardPreviewImg}
+                alt="Motorbike Rentals"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-stone-950/20 to-transparent" />
+            </div>
+
+            <div className="pt-0.5 flex items-center justify-between gap-1 relative z-10">
+              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-cyan-400 text-stone-950 font-black text-[9.5px] shrink-0">
+                <ShieldCheck className="w-2.5 h-2.5 shrink-0" />
+                <span>Verified</span>
+              </span>
+              <span className="text-[9px] text-cyan-300 font-mono font-bold truncate drop-shadow-sm">
+                {motorbikePartners.length > 0 ? `${motorbikePartners.length} Fleets` : '2-WHEELS'}
+              </span>
+            </div>
+          </div>
+        </div>
 
         {/* Custom Cards */}
         {customCards.length > 0 && (
@@ -950,7 +954,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10" />
               <div className="absolute inset-0 z-0">
                 <img
-                  src={safeSrc(mapCard.imageUrl, 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80')}
+                  src={safeSrc(
+                    visualBackgrounds.exploreHighlandMapsBgUrl || mapCard.imageUrl,
+                    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80'
+                  )}
                   alt={mapCard.title || 'Highland Map'}
                   referrerPolicy="no-referrer"
                   onError={(e) => {
@@ -1019,10 +1026,12 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               <div className="absolute inset-0 z-0">
                 <img
                   src={safeSrc(
-                    itineraryCard.imageUrl &&
-                      itineraryCard.imageUrl !== 'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=600&q=80'
-                      ? itineraryCard.imageUrl
-                      : undefined,
+                    visualBackgrounds.exploreItineraryBgUrl ||
+                      (itineraryCard.imageUrl &&
+                      itineraryCard.imageUrl !==
+                        'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=600&q=80'
+                        ? itineraryCard.imageUrl
+                        : undefined),
                     'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=900&q=80'
                   )}
                   alt={itineraryCard.title || 'Plan Your Trip'}
@@ -1039,10 +1048,12 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-stone-950 shrink-0 border-2 border-white/15 group-hover:border-emerald-400/60 transition-colors shadow-lg">
                   <img
                     src={safeSrc(
-                      itineraryCard.imageUrl &&
-                        itineraryCard.imageUrl !== 'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=600&q=80'
-                        ? itineraryCard.imageUrl
-                        : undefined,
+                      visualBackgrounds.exploreItineraryBgUrl ||
+                        (itineraryCard.imageUrl &&
+                        itineraryCard.imageUrl !==
+                          'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=600&q=80'
+                          ? itineraryCard.imageUrl
+                          : undefined),
                       'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80'
                     )}
                     alt={itineraryCard.title || 'Plan Your Trip'}
@@ -1084,7 +1095,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           )}
         </div>
 
-        {/* Row 2: 12-Col Interactive Weather + Live Notice/Hazard + Verified Homestays */}
+        {/* Row 2: 12-Col Interactive Weather + Live Notice/Hazard + Find My Party + Community Chat Lounge */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5 items-stretch">
           {/* Card 3: Interactive Cameron Highlands Weather */}
           {weatherCard && weatherCard.isActive && (
@@ -1092,10 +1103,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
               onClick={() => handleCardClick(weatherCard)}
               className="lg:col-span-3 rounded-3xl p-5 bg-stone-900/95 backdrop-blur-xl border-2 border-cyan-400/60 hover:border-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] hover:shadow-[0_0_36px_rgba(34,211,238,0.36)] flex flex-col justify-between min-h-[240px] cursor-pointer hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
             >
-              {safeSrc(weatherCard.imageUrl) ? (
+              {safeSrc(visualBackgrounds.exploreWeatherBgUrl || weatherCard.imageUrl) ? (
                 <div className="absolute inset-0 z-0">
                   <img
-                    src={safeSrc(weatherCard.imageUrl)}
+                    src={safeSrc(visualBackgrounds.exploreWeatherBgUrl || weatherCard.imageUrl)}
                     alt=""
                     referrerPolicy="no-referrer"
                     onError={(e) => {
@@ -1184,7 +1195,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             </div>
           )}
 
-          {/* Card 4: Live Notice / Hazard Camera Feed */}
+          {/* Card 4: Notice / Alert Feed */}
           {hazardCard && hazardCard.isActive && (
             <div
               onClick={() => handleCardClick(hazardCard)}
@@ -1192,7 +1203,11 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             >
               <div className="relative z-10 flex items-center justify-between gap-2 mb-2.5">
                 <span className="text-xs font-black text-stone-100 tracking-tight group-hover:text-emerald-200 transition-colors">
-                  {hazardCard.title === 'Live Traffic/Hazard' ? 'Live Notice/Hazard' : hazardCard.title || 'Live Notice/Hazard'}
+                  {!hazardCard.title ||
+                  hazardCard.title === 'Live Traffic/Hazard' ||
+                  hazardCard.title === 'Live Notice/Hazard'
+                    ? 'Notice / Alert'
+                    : hazardCard.title}
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-mono font-black text-[9px] shadow-md flex items-center gap-1 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
@@ -1202,15 +1217,18 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
               <div className="relative rounded-2xl overflow-hidden aspect-[16/9] bg-stone-950 border-2 border-white/15 group-hover:border-emerald-400/60 transition-colors shadow-inner">
                 <img
-                  src={safeSrc(hazardCard.imageUrl, 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=600&q=80')}
-                  alt={hazardCard.title || 'Live Notice/Hazard'}
+                  src={safeSrc(
+                    visualBackgrounds.exploreNoticeAlertBgUrl || hazardCard.imageUrl,
+                    'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=600&q=80'
+                  )}
+                  alt="Notice / Alert"
                   referrerPolicy="no-referrer"
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
                   }}
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/20 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/30 to-transparent" />
                 {hazards.some((h) => h.agency === 'PDRM') && (
                   <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-sky-600/90 text-white text-[9px] font-mono font-black tracking-wide border border-sky-300/40">
                     PDRM LIVE
@@ -1225,7 +1243,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
 
               <div className="pt-3 mt-auto border-t border-white/10 flex items-center justify-between text-xs font-bold text-stone-200 z-10 gap-2">
                 <span className="truncate text-[11px] text-stone-300">
-                  {hazardCard.subtitle && hazardCard.subtitle !== 'Kea Farm' ? hazardCard.subtitle : 'PDRM · JKR · MDCH'}
+                  {language === 'bm' ? 'Info jalan & cuaca terkini' : 'Live road & weather updates'}
                 </span>
                 <span className="text-[11px] text-emerald-400 font-mono font-bold shrink-0 tabular-nums">
                   {hazards.length > 0 ? `${hazards.length} Active` : hazardCard.buttonText || 'Monitored'} →
@@ -1234,117 +1252,11 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             </div>
           )}
 
-          {/* Card 5: Verified Homestays & Stays (Vertical Stacked Swipe Carousel) */}
-          <div className="md:col-span-2 lg:col-span-6">
-            <VerticalSwipeCarousel
-              items={accommodations.length > 0 ? accommodations : [null]}
-              keyExtractor={(stay, idx) => (stay ? stay.id : `desktop-stay-${idx}`)}
-              heightClassName="h-[244px]"
-              accentColor="emerald"
-              showNavArrows={true}
-              renderItem={(stay) => {
-                const stayImg = safeSrc(
-                  stay?.coverImage,
-                  'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=900&q=80'
-                );
-
-                return (
-                  <div
-                    onClick={() => onOpenAccommodation && onOpenAccommodation()}
-                    className="h-full rounded-3xl p-6 bg-stone-900/95 backdrop-blur-xl border-2 border-emerald-500/50 hover:border-emerald-400 shadow-[0_0_24px_rgba(16,185,129,0.18)] hover:shadow-[0_0_38px_rgba(16,185,129,0.34)] flex flex-col justify-between gap-4 cursor-pointer transition-all duration-300 group relative overflow-hidden select-none"
-                  >
-                    <div className="absolute inset-0 z-0">
-                      <img
-                        src={stayImg}
-                        alt="Verified Homestays & Stays"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                        className="w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-500"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-r from-stone-950/95 via-stone-900/90 to-emerald-950/80" />
-                    </div>
-
-                    <div className="flex items-start justify-between gap-4 relative z-10">
-                      <div className="flex items-center gap-4 min-w-0">
-                        <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-stone-950 shrink-0 border-2 border-emerald-400/40 group-hover:border-emerald-300 transition-colors shadow-lg">
-                          <img
-                            src={stayImg}
-                            alt="Verified Homestays & Stays"
-                            referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                          />
-                          <div className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-lg bg-emerald-500 text-stone-950 flex items-center justify-center shadow-md">
-                            <BedDouble className="w-4 h-4" />
-                          </div>
-                        </div>
-
-                        <div className="min-w-0">
-                          <h4 className="text-xl font-heading font-black text-white group-hover:text-emerald-300 transition-colors truncate">
-                            Verified Homestays &amp; Stays
-                          </h4>
-                          <p className="text-xs sm:text-sm text-stone-300 mt-1 truncate">
-                            {stay
-                              ? `${stay.propertyName?.trim() || stay.maskedTitle} · ${stay.township}`
-                              : 'Direct Host Portals · Pay Balance at Door · Anti-Scam Protected'}
-                          </p>
-                          <div className="flex items-center gap-3 mt-2 text-xs text-emerald-300 font-semibold">
-                            <span className="inline-flex items-center gap-1">
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                              RM30 Lock Deposit
-                            </span>
-                            <span className="text-stone-500">·</span>
-                            <span className="text-stone-300 font-mono tabular-nums">
-                              {accommodations.length > 0 ? `${accommodations.length} Verified Listings` : 'Vendor Direct'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/10 relative z-10">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-stone-300">
-                        {stay ? (
-                          <span className="px-2.5 py-1 rounded-lg bg-stone-950/75 border border-white/10 text-[11px] font-medium truncate max-w-[260px]">
-                            {stay.maskedTitle}
-                            {stay.pricePerNight > 0 && (
-                              <>
-                                {' '}
-                                · <strong className="text-emerald-300 tabular-nums">RM{stay.pricePerNight}/night</strong>
-                              </>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-stone-400">Browse verified homestays &amp; chalets</span>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        className="px-5 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-lg shrink-0 flex items-center gap-1.5 group-hover:scale-105 transition-transform cursor-pointer ml-auto"
-                      >
-                        <span>Browse Stays</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Row 3: 12-Col Find My Party + Motorbike Rentals + Community Chat Lounge */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-12 gap-5 items-stretch">
-          {/* Card 6: Find My Party */}
+          {/* Card 5: Find My Party */}
           {partyCard && partyCard.isActive && (
             <div
               onClick={() => handleCardClick(partyCard)}
-              className="lg:col-span-4 rounded-3xl p-5 bg-stone-900/90 backdrop-blur-xl border-2 border-emerald-400/50 hover:border-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.18)] hover:shadow-[0_0_32px_rgba(16,185,129,0.34)] flex flex-col justify-between min-h-[215px] cursor-pointer hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
+              className="lg:col-span-3 rounded-3xl p-5 bg-stone-900/90 backdrop-blur-xl border-2 border-emerald-400/50 hover:border-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.18)] hover:shadow-[0_0_32px_rgba(16,185,129,0.34)] flex flex-col justify-between min-h-[240px] cursor-pointer hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
             >
               <div className="flex items-center justify-between gap-2 relative z-10 mb-2.5">
                 <div className="flex items-center gap-2 min-w-0">
@@ -1385,81 +1297,10 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             </div>
           )}
 
-          {/* Card 7: Motorbike Rentals (Vertical Stacked Swipe Carousel) */}
-          {bikeCard && bikeCard.isActive && (
-            <div className="lg:col-span-4">
-              <VerticalSwipeCarousel
-                items={motorbikePartners.length > 0 ? motorbikePartners : [null]}
-                keyExtractor={(partner, idx) => (partner ? partner.id : `desktop-bike-${idx}`)}
-                heightClassName="h-[228px]"
-                accentColor="cyan"
-                showNavArrows={true}
-                renderItem={(partner) => {
-                  const fallbackBikeImg = safeSrc(
-                    bikeCard.imageUrl &&
-                      bikeCard.imageUrl !== 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=600&q=80'
-                      ? bikeCard.imageUrl
-                      : undefined,
-                    'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=600&q=80'
-                  );
-                  const bikeImg = safeSrc(partner?.imageUrl, fallbackBikeImg);
-                  const bikeTitle = bikeCard.title || 'Motorbike Rentals';
-                  const bikeSub = partner
-                    ? `${partner.businessName} · ${partner.township} · RM ${partner.dailyRateRm || partner.packages?.[0]?.dailyRateRm || 75}/day`
-                    : 'Verified two-wheel fleets';
-
-                  return (
-                    <div
-                      onClick={() => handleCardClick(bikeCard)}
-                      className="h-full rounded-3xl p-5 bg-stone-900/90 backdrop-blur-xl border-2 border-cyan-400/60 hover:border-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.18)] hover:shadow-[0_0_32px_rgba(34,211,238,0.36)] flex flex-col justify-between cursor-pointer transition-all duration-300 ease-out group relative overflow-hidden select-none"
-                    >
-                      <div className="flex items-center justify-between gap-2 relative z-10 mb-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 shrink-0">
-                            <Bike className="w-4 h-4" />
-                          </div>
-                          <h4 className="text-base font-heading font-black text-white truncate group-hover:text-cyan-200 transition-colors">
-                            {bikeTitle}
-                          </h4>
-                        </div>
-                        <span className="text-[11px] text-cyan-400 font-mono font-bold shrink-0">
-                          {partner ? partner.township : bikeCard.badge || bikeCard.tag || 'Rides'}
-                        </span>
-                      </div>
-
-                      <div className="relative rounded-2xl overflow-hidden my-auto aspect-[16/9] bg-stone-950 border border-white/15 group-hover:border-cyan-400/60 transition-colors shadow-inner">
-                        <img
-                          src={bikeImg}
-                          alt={bikeTitle}
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent" />
-                      </div>
-
-                      <div className="pt-2.5 mt-2 border-t border-white/10 flex items-center justify-between relative z-10">
-                        <span className="text-xs text-stone-400 truncate pr-2">{bikeSub}</span>
-                        <button
-                          type="button"
-                          className="px-3.5 py-1.5 rounded-full bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-xs shadow-sm group-hover:scale-105 transition-all cursor-pointer shrink-0"
-                        >
-                          {bikeCard.buttonText || 'Rent Ride'}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-            </div>
-          )}
-
-          {/* Card 8: Community Chat Lounge & Walkie-Talkie */}
+          {/* Card 6: Community Chat Lounge & Walkie-Talkie */}
           <div
             onClick={() => onOpenChat && onOpenChat()}
-            className="lg:col-span-4 rounded-3xl p-5 bg-stone-900/90 backdrop-blur-xl border-2 border-indigo-400/50 hover:border-indigo-300 shadow-[0_0_20px_rgba(129,140,248,0.18)] hover:shadow-[0_0_32px_rgba(129,140,248,0.34)] flex flex-col justify-between min-h-[215px] cursor-pointer hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
+            className="lg:col-span-3 rounded-3xl p-5 bg-stone-900/90 backdrop-blur-xl border-2 border-indigo-400/50 hover:border-indigo-300 shadow-[0_0_20px_rgba(129,140,248,0.18)] hover:shadow-[0_0_32px_rgba(129,140,248,0.34)] flex flex-col justify-between min-h-[240px] cursor-pointer hover:-translate-y-1 transition-all duration-300 ease-out group relative overflow-hidden select-none"
           >
             <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-indigo-500/15 blur-2xl pointer-events-none" />
 
@@ -1512,6 +1353,122 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Row 3: Verified Stays & Motorbike Rentals Side-by-Side Shortcut Cards */}
+        <section aria-label="Verified Stays and Motorbike Rentals" className="pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
+            {/* Desktop Card 1: Verified Stays */}
+            <div
+              onClick={() => onOpenAccommodation && onOpenAccommodation()}
+              className="rounded-3xl p-6 bg-stone-900/90 backdrop-blur-xl border-2 border-emerald-400/50 hover:border-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.18)] hover:shadow-[0_0_36px_rgba(16,185,129,0.34)] cursor-pointer hover:-translate-y-1 transition-all duration-300 ease-out group flex flex-col justify-between select-none relative overflow-hidden min-h-[210px]"
+            >
+              <div className="absolute inset-0 z-0">
+                <img
+                  src={staysCardPreviewImg}
+                  alt="Verified Stays"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                  className="w-full h-full object-cover opacity-55 group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-stone-950/92 via-stone-950/75 to-stone-950/55" />
+              </div>
+
+              <div className="relative z-10 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 shrink-0 shadow-lg">
+                    <BedDouble className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10.5px] font-mono font-bold mb-1.5">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>
+                        Verified Stays{accommodations.length > 0 ? ` · ${accommodations.length} Units` : ''}
+                      </span>
+                    </div>
+                    <h3 className="text-xl lg:text-2xl font-heading font-black text-white tracking-tight group-hover:text-emerald-200 transition-colors">
+                      Verified Stays
+                    </h3>
+                    <p className="text-xs sm:text-sm text-stone-200 mt-1 leading-relaxed">
+                      Direct host homestays &amp; apartments (CH-1+) with RM30 anti-scam room lock.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative z-10 pt-4 mt-4 border-t border-white/15 flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-emerald-200">
+                  RM30 Lock Deposit · Pay Balance at Door
+                </span>
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-lg group-hover:scale-105 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <span>Browse Stays</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Desktop Card 2: Motorbike Rentals */}
+            <div
+              onClick={() => {
+                if (bikeCard) handleCardClick(bikeCard);
+                else if (onOpenMotorbike) onOpenMotorbike();
+              }}
+              className="rounded-3xl p-6 bg-stone-900/90 backdrop-blur-xl border-2 border-cyan-400/50 hover:border-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] hover:shadow-[0_0_36px_rgba(34,211,238,0.34)] cursor-pointer hover:-translate-y-1 transition-all duration-300 ease-out group flex flex-col justify-between select-none relative overflow-hidden min-h-[210px]"
+            >
+              <div className="absolute inset-0 z-0">
+                <img
+                  src={bikesCardPreviewImg}
+                  alt="Motorbike Rentals"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                  className="w-full h-full object-cover opacity-55 group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-stone-950/92 via-stone-950/75 to-stone-950/55" />
+              </div>
+
+              <div className="relative z-10 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <div className="p-3 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 shrink-0 shadow-lg">
+                    <Bike className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[10.5px] font-mono font-bold mb-1.5">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>
+                        Verified Fleets{motorbikePartners.length > 0 ? ` · ${motorbikePartners.length} Partners` : ''}
+                      </span>
+                    </div>
+                    <h3 className="text-xl lg:text-2xl font-heading font-black text-white tracking-tight group-hover:text-cyan-200 transition-colors">
+                      Motorbike Rentals
+                    </h3>
+                    <p className="text-xs sm:text-sm text-stone-200 mt-1 leading-relaxed">
+                      Trusted scooters &amp; motorcycles for hassle-free highland traffic navigation.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative z-10 pt-4 mt-4 border-t border-white/15 flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-cyan-200">
+                  Helmets Included · Direct Vendor Booking
+                </span>
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-full bg-cyan-400 hover:bg-cyan-300 text-stone-950 font-black text-xs shadow-lg group-hover:scale-105 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <span>Browse Rentals</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* Custom Admin Cards on PC */}
         {customCards.length > 0 && (

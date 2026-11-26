@@ -19,6 +19,7 @@ export interface TrailRoute {
   peakName?: string;
   peakCoordinates?: [number, number]; // [lat, lng]
   elevationProfile: { distance: number; altitude: number }[];
+  isAdminTest?: boolean;
 }
 
 export interface TrailFeatureProperties {
@@ -558,6 +559,77 @@ export const CAMERON_TRAILS: TrailRoute[] = [
       { distance: 3.2, altitude: 1825 },
       { distance: 4.8, altitude: 1916 },
     ],
+  },
+  {
+    id: 'admin-test-tanah-rata-brinchang',
+    number: 16,
+    name: '[Admin Test] Tanah Rata to Brinchang (FT59 Road Route)',
+    location: 'Tanah Rata → Brinchang (FT59 Main Road)',
+    trailheadName: 'Tanah Rata Town Center (FT59)',
+    difficulty: 'Easy',
+    color: '#0ea5e9',
+    distanceKm: 4.5,
+    estDurationHrs: '15 mins drive',
+    maxElevationM: 1555,
+    conditionBadge: '[Admin Test] FT59 Road Corridor — Live GPS & Telemetry Verification',
+    conditionType: 'clear',
+    description:
+      '[Admin Test] Road-following test route along FT59 starting at Tanah Rata Town Center, passing Jalan Persiaran Camellia and Cameron Highlands Golf Course, and ending at Brinchang Town Square.',
+    descriptionBm:
+      '[Ujian Admin] Laluan jalan raya FT59 dari Pusat Bandar Tanah Rata melalui Jalan Persiaran Camellia & Padang Golf menuju ke Dataran Brinchang.',
+    coordinates: [
+      [4.4718, 101.3766],
+      [4.4742, 101.3792],
+      [4.4778, 101.3818],
+      [4.4812, 101.3842],
+      [4.4846, 101.3858],
+      [4.4885, 101.3869],
+      [4.4926, 101.3879],
+    ],
+    peakName: 'Brinchang Town Square (Finish)',
+    peakCoordinates: [4.4926, 101.3879],
+    elevationProfile: [
+      { distance: 0, altitude: 1440 },
+      { distance: 1.5, altitude: 1475 },
+      { distance: 3.0, altitude: 1520 },
+      { distance: 4.5, altitude: 1555 },
+    ],
+    isAdminTest: true,
+  },
+  {
+    id: 'admin-test-kea-farm-brinchang',
+    number: 17,
+    name: '[Admin Test] Kea Farm to Brinchang (FT59 Road Route)',
+    location: 'Kea Farm → Brinchang (FT59 Main Road)',
+    trailheadName: 'Kea Farm Market / Copthorne (FT59)',
+    difficulty: 'Easy',
+    color: '#f43f5e',
+    distanceKm: 3.8,
+    estDurationHrs: '12 mins drive',
+    maxElevationM: 1615,
+    conditionBadge: '[Admin Test] FT59 Descent Corridor — Live GPS & Telemetry Verification',
+    conditionType: 'clear',
+    description:
+      '[Admin Test] Road-following test route along FT59 starting at Kea Farm Market / Copthorne, descending south past Equatorial Hill & Cactus Valley corridor to Brinchang Town Square.',
+    descriptionBm:
+      '[Ujian Admin] Laluan jalan raya FT59 dari Pasar Kea Farm / Copthorne menuruni koridor Equatorial Hill menuju ke Dataran Brinchang.',
+    coordinates: [
+      [4.5028, 101.4092],
+      [4.5004, 101.4052],
+      [4.4981, 101.4012],
+      [4.4962, 101.3968],
+      [4.4945, 101.3924],
+      [4.4926, 101.3879],
+    ],
+    peakName: 'Brinchang Town Square (Finish)',
+    peakCoordinates: [4.4926, 101.3879],
+    elevationProfile: [
+      { distance: 0, altitude: 1615 },
+      { distance: 1.3, altitude: 1595 },
+      { distance: 2.6, altitude: 1572 },
+      { distance: 3.8, altitude: 1550 },
+    ],
+    isAdminTest: true,
   },
 ];
 

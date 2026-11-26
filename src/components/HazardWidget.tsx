@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { HazardAlert, Language, CamgoHazard } from '../types';
 import { getTranslation } from '../services/i18n';
 import { hazardFeedService, OFFICIAL_AGENCIES } from '../services/hazardFeedService';
 import { camgoHazardsService } from '../services/camgoHazardsService';
 import { fetchLiveWebHazards } from '../services/webHazardFetcher';
+import { audioService } from '../services/audioService';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -22,11 +23,37 @@ import {
   ShieldCheck,
   Globe,
   Loader2,
+  MapPin,
+  LocateFixed,
+  Volume2,
+  X,
 } from 'lucide-react';
 
 interface HazardWidgetProps {
   hazards: HazardAlert[];
   language: Language;
+}
+
+const HAZARD_PROXIMITY_RADIUS_METERS = 1000;
+
+function haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+function formatDistanceLabel(meters: number, isBm: boolean): string {
+  if (meters < 1000) {
+    return isBm ? `${meters}m dari anda` : `${meters}m away`;
+  }
+  const km = (meters / 1000).toFixed(1);
+  return isBm ? `${km} km dari anda` : `${km} km away`;
 }
 
 export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language }) => {
@@ -38,7 +65,55 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
     camgoHazardsService.getCachedActiveHazards()
   );
 
+  // 1km Proximity Alert System States
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<'locating' | 'active' | 'denied' | 'unavailable'>('locating');
+  const [dismissedProximityIds, setDismissedProximityIds] = useState<Set<string>>(() => new Set());
+  const alertedHazardIdsRef = useRef<Set<string>>(new Set());
+
   const isBm = language === 'bm';
+
+  const requestProximityGps = useCallback(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGpsStatus('unavailable');
+      return;
+    }
+    setGpsStatus('locating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsStatus('active');
+      },
+      (err) => {
+        setGpsStatus(err?.code === 1 ? 'denied' : 'unavailable');
+      },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 10000 }
+    );
+  }, []);
+
+  // Live continuous geolocation watch for 1km hazard proximity alerting
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGpsStatus('unavailable');
+      return;
+    }
+    requestProximityGps();
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsStatus('active');
+      },
+      (err) => {
+        if (err?.code === 1) {
+          setGpsStatus('denied');
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 }
+    );
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [requestProximityGps]);
 
   // Fetch live PDRM Cameron Highlands + JKR + MDCH notices and subscribe to camgo_hazards
   useEffect(() => {
@@ -118,7 +193,9 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
     }
   };
 
-  const mergedHazards = useMemo<Array<HazardAlert & { isWebSearch?: boolean }>>(() => {
+  const mergedHazards = useMemo<
+    Array<HazardAlert & { isWebSearch?: boolean; distanceMeters?: number | null }>
+  >(() => {
     const camgoAsAlerts = liveCamgoHazards
       .filter((h) => h && h.status !== 'cleared' && h.active !== false)
       .map((h) => {
@@ -131,6 +208,9 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             : h.severity === 'medium' || h.severity === 'moderate'
             ? 'moderate'
             : 'low';
+        const lat = Number(h.lat);
+        const lng = Number(h.lng);
+        const hasValidCoords = Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
 
         return {
           id: `camgo-${h.id}`,
@@ -158,11 +238,64 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
           isVerifiedAgency: isWeb,
           isWebSearch: isWeb,
           timestamp: h.reportedAt || h.updatedAt || h.timestamp,
+          lat: hasValidCoords ? lat : undefined,
+          lng: hasValidCoords ? lng : undefined,
         } as HazardAlert & { isWebSearch?: boolean };
       });
 
-    return [...camgoAsAlerts, ...hazards];
-  }, [liveCamgoHazards, hazards]);
+    const combined = [...camgoAsAlerts, ...hazards];
+    return combined.map((item) => {
+      const hLat = Number(item.lat);
+      const hLng = Number(item.lng);
+      const hasCoords = Number.isFinite(hLat) && Number.isFinite(hLng) && hLat !== 0 && hLng !== 0;
+      const distanceMeters =
+        userCoords && hasCoords
+          ? haversineDistanceMeters(userCoords.lat, userCoords.lng, hLat, hLng)
+          : null;
+      return {
+        ...item,
+        distanceMeters,
+      };
+    });
+  }, [liveCamgoHazards, hazards, userCoords]);
+
+  const nearbyHazards1Km = useMemo(() => {
+    return mergedHazards
+      .filter(
+        (h) =>
+          typeof h.distanceMeters === 'number' &&
+          h.distanceMeters <= HAZARD_PROXIMITY_RADIUS_METERS
+      )
+      .sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity));
+  }, [mergedHazards]);
+
+  const visibleNearbyHazards = useMemo(() => {
+    return nearbyHazards1Km.filter((h) => !dismissedProximityIds.has(h.id));
+  }, [nearbyHazards1Km, dismissedProximityIds]);
+
+  // Trigger audio chime + haptic pulse once per hazard ID upon entering 1km radius
+  useEffect(() => {
+    if (nearbyHazards1Km.length === 0) return;
+    let enteredNew = false;
+    nearbyHazards1Km.forEach((h) => {
+      if (!alertedHazardIdsRef.current.has(h.id)) {
+        alertedHazardIdsRef.current.add(h.id);
+        enteredNew = true;
+      }
+    });
+    if (enteredNew) {
+      if (audioService.getAudioState() === 'ready') {
+        audioService.playTestChime();
+      }
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try {
+          navigator.vibrate([180, 90, 180]);
+        } catch {
+          // ignore vibration blocks
+        }
+      }
+    }
+  }, [nearbyHazards1Km]);
 
   const getHazardIcon = (type: HazardAlert['type'], isPdrm?: boolean, isWeb?: boolean) => {
     if (isWeb) {
@@ -254,9 +387,7 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             {getTranslation(language, 'widget_hazard_title')}
           </h3>
           <p className="text-xs text-stone-300 mt-1 max-w-2xl leading-relaxed">
-            {isBm
-              ? 'Notis langsung dari PDRM Cameron Highlands, makluman cerun JKR eBencana, MDCH serta semakan carian web langsung sepanjang FT059, FT185 & laluan utama.'
-              : 'Live notices from PDRM Cameron Highlands, JKR eBencana slope alerts, MDCH municipal bulletins, and live web search groundings across FT059, FT185 & interior arteries.'}
+            {getTranslation(language, 'widget_hazard_subtitle')}
           </p>
         </div>
 
@@ -314,6 +445,131 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             <span>{syncFeedback}</span>
           </div>
           <span className="text-[10px] text-emerald-400/80 font-mono">Live Sync</span>
+        </div>
+      )}
+
+      {/* 1km Hazard Proximity Alert Banner & GPS Guard */}
+      {visibleNearbyHazards.length > 0 ? (
+        <div
+          role="alert"
+          className="mb-5 p-4 rounded-2xl bg-gradient-to-r from-rose-950/90 via-rose-900/75 to-amber-950/80 border-2 border-rose-500/75 shadow-lg shadow-rose-950/60 space-y-2.5 animate-in fade-in"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="p-2 rounded-xl bg-rose-500/25 border border-rose-400/50 text-rose-300 shrink-0 mt-0.5">
+                <AlertTriangle className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wide text-rose-200">
+                    {isBm
+                      ? `AMARAN BAHAYA DALAM 1 KM (${visibleNearbyHazards.length})`
+                      : `HAZARD PROXIMITY ALERT (< 1 KM) · ${visibleNearbyHazards.length}`}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-mono font-bold">
+                    GPS LIVE
+                  </span>
+                </div>
+                <p className="text-xs text-rose-100/90 mt-0.5">
+                  {isBm
+                    ? 'Anda berada dalam lingkungan 1km daripada bahaya jalan aktif. Pandu dengan berhati-hati.'
+                    : 'You are within 1 km of an active road hazard. Slow down and watch ahead.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  audioService.unlockAudio();
+                  audioService.playTestChime();
+                }}
+                className="p-1.5 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 border border-rose-400/40 text-rose-200 cursor-pointer"
+                title={isBm ? 'Bunyikan Amaran' : 'Play Alert Chime'}
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setDismissedProximityIds((prev) => {
+                    const next = new Set(prev);
+                    visibleNearbyHazards.forEach((h) => next.add(h.id));
+                    return next;
+                  })
+                }
+                className="p-1.5 rounded-lg bg-stone-900/70 hover:bg-stone-800 text-stone-300 hover:text-white border border-white/10 cursor-pointer"
+                title={isBm ? 'Tutup sementara' : 'Dismiss warning'}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 pl-1">
+            {visibleNearbyHazards.slice(0, 3).map((near) => (
+              <div
+                key={`prox-${near.id}`}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-stone-950/75 border border-rose-500/35 text-xs"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-white truncate">
+                    {isBm ? near.titleBm || near.title : near.title}
+                  </div>
+                  <div className="text-[11px] text-rose-200/80 flex items-center gap-1.5 truncate">
+                    <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
+                    <span className="truncate">{near.location}</span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-rose-500/25 border border-rose-400/45 text-rose-200 font-mono font-extrabold text-[11px] shrink-0">
+                  {typeof near.distanceMeters === 'number'
+                    ? formatDistanceLabel(near.distanceMeters, isBm)
+                    : '< 1 km'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4 px-3.5 py-2 rounded-xl bg-stone-900/70 border border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+          <div className="flex items-center gap-2 text-stone-300">
+            <LocateFixed
+              className={`w-3.5 h-3.5 shrink-0 ${
+                gpsStatus === 'active'
+                  ? 'text-emerald-400'
+                  : gpsStatus === 'locating'
+                  ? 'text-amber-400 animate-spin'
+                  : 'text-stone-400'
+              }`}
+            />
+            <span>
+              {gpsStatus === 'active'
+                ? isBm
+                  ? 'Pengesan Jarak 1km Aktif: Tiada bahaya jalan berhampiran lokasi anda.'
+                  : '1 km Hazard Proximity Guard Active: No active road hazards within 1 km.'
+                : gpsStatus === 'locating'
+                ? isBm
+                  ? 'Mengesan lokasi GPS untuk amaran jarak 1km...'
+                  : 'Checking GPS location for 1 km hazard proximity alerts...'
+                : gpsStatus === 'denied'
+                ? isBm
+                  ? 'Akses GPS disekat. Benarkan lokasi untuk amaran bahaya 1km.'
+                  : 'Location permission denied. Enable GPS for automatic 1 km hazard warnings.'
+                : isBm
+                ? 'GPS tidak tersedia pada peranti ini untuk semakan jarak 1km.'
+                : 'GPS unavailable for 1 km proximity check.'}
+            </span>
+          </div>
+          {gpsStatus !== 'active' && gpsStatus !== 'locating' && (
+            <button
+              type="button"
+              onClick={requestProximityGps}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/35 text-emerald-300 font-bold cursor-pointer"
+            >
+              {isBm ? 'Semak GPS' : 'Enable GPS Check'}
+            </button>
+          )}
         </div>
       )}
 
@@ -496,6 +752,9 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             const isPdrm = isPdrmAlert(hazard);
             const isWeb = Boolean(hazard.isWebSearch);
             const isJkr = hazard.agency === 'JKR' || hazard.source?.toLowerCase().includes('jkr');
+            const isWithin1Km =
+              typeof hazard.distanceMeters === 'number' &&
+              hazard.distanceMeters <= HAZARD_PROXIMITY_RADIUS_METERS;
             const officialUrl =
               hazard.sourceUrl ||
               (isPdrm
@@ -507,15 +766,17 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
             return (
               <div
                 key={hazard.id}
-                className={`glass-card-hover rounded-2xl p-4 sm:p-5 bg-stone-900/85 border transition-all space-y-3 ${
-                  isWeb
-                    ? 'border-sky-400/35 hover:border-sky-400/65'
+                className={`glass-card-hover rounded-2xl p-4 sm:p-5 border transition-all space-y-3 ${
+                  isWithin1Km
+                    ? 'bg-rose-950/35 border-rose-500/75 ring-1 ring-rose-500/45 shadow-lg shadow-rose-950/40'
+                    : isWeb
+                    ? 'bg-stone-900/85 border-sky-400/35 hover:border-sky-400/65'
                     : isPdrm
-                    ? 'border-sky-500/30 hover:border-sky-400/60'
-                    : 'border-white/10 hover:border-amber-500/30'
+                    ? 'bg-stone-900/85 border-sky-500/30 hover:border-sky-400/60'
+                    : 'bg-stone-900/85 border-white/10 hover:border-amber-500/30'
                 }`}
               >
-                {/* Card Top: Agency Badge, Ref, Severity */}
+                {/* Card Top: Agency Badge, Ref, Proximity, Severity */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
@@ -542,6 +803,19 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
                     {hazard.referenceNo && (
                       <span className="text-[10px] font-mono text-stone-400 bg-stone-800/80 px-2 py-0.5 rounded border border-white/5">
                         Ref: {hazard.referenceNo}
+                      </span>
+                    )}
+
+                    {typeof hazard.distanceMeters === 'number' && (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${
+                          isWithin1Km
+                            ? 'bg-rose-500/25 text-rose-200 border-rose-400/50 animate-pulse'
+                            : 'bg-stone-800/80 text-stone-300 border-white/10'
+                        }`}
+                      >
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        <span>{formatDistanceLabel(hazard.distanceMeters, isBm)}</span>
                       </span>
                     )}
                   </div>

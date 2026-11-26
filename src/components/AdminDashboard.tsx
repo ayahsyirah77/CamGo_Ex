@@ -35,7 +35,10 @@ import {
   UserProfile,
   PaymentGatewayNoticeConfig,
   DEFAULT_PAYMENT_GATEWAY_NOTICE,
+  VisualBackgroundsConfig,
+  DEFAULT_VISUAL_BACKGROUNDS,
 } from '../services/firebase';
+import { compressBackgroundImageFile } from '../utils/imageCompression';
 import { camgoHazardsService } from '../services/camgoHazardsService';
 import { fetchLiveWebHazards } from '../services/webHazardFetcher';
 import { TOWNSHIP_PORTALS } from '../data/initialData';
@@ -2079,6 +2082,199 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  type VisualBgSlotKey =
+    | 'headerBackgroundUrl'
+    | 'verifiedStaysBgUrl'
+    | 'motorbikeRentalsBgUrl'
+    | 'exploreWeatherBgUrl'
+    | 'exploreNoticeAlertBgUrl'
+    | 'exploreHighlandMapsBgUrl'
+    | 'exploreItineraryBgUrl';
+
+  const INITIAL_VISUAL_BG_BOOL_RECORD: Record<VisualBgSlotKey, boolean> = {
+    headerBackgroundUrl: false,
+    verifiedStaysBgUrl: false,
+    motorbikeRentalsBgUrl: false,
+    exploreWeatherBgUrl: false,
+    exploreNoticeAlertBgUrl: false,
+    exploreHighlandMapsBgUrl: false,
+    exploreItineraryBgUrl: false,
+  };
+
+  const INITIAL_VISUAL_BG_STATUS_RECORD: Record<
+    VisualBgSlotKey,
+    { type: 'success' | 'error' | 'info'; text: string } | null
+  > = {
+    headerBackgroundUrl: null,
+    verifiedStaysBgUrl: null,
+    motorbikeRentalsBgUrl: null,
+    exploreWeatherBgUrl: null,
+    exploreNoticeAlertBgUrl: null,
+    exploreHighlandMapsBgUrl: null,
+    exploreItineraryBgUrl: null,
+  };
+
+  const [savedVisualBgs, setSavedVisualBgs] = useState<VisualBackgroundsConfig>(() =>
+    firebaseService.getVisualBackgrounds()
+  );
+  const [visualBgDrafts, setVisualBgDrafts] = useState<VisualBackgroundsConfig>(() =>
+    firebaseService.getVisualBackgrounds()
+  );
+  const [slotUploading, setSlotUploading] = useState<Record<VisualBgSlotKey, boolean>>(
+    () => ({ ...INITIAL_VISUAL_BG_BOOL_RECORD })
+  );
+  const [slotSaving, setSlotSaving] = useState<Record<VisualBgSlotKey, boolean>>(
+    () => ({ ...INITIAL_VISUAL_BG_BOOL_RECORD })
+  );
+  const [slotDragOver, setSlotDragOver] = useState<Record<VisualBgSlotKey, boolean>>(
+    () => ({ ...INITIAL_VISUAL_BG_BOOL_RECORD })
+  );
+  const [slotStatus, setSlotStatus] = useState<
+    Record<VisualBgSlotKey, { type: 'success' | 'error' | 'info'; text: string } | null>
+  >(() => ({ ...INITIAL_VISUAL_BG_STATUS_RECORD }));
+
+  const savedVisualBgsRef = React.useRef<VisualBackgroundsConfig>(savedVisualBgs);
+  useEffect(() => {
+    savedVisualBgsRef.current = savedVisualBgs;
+  }, [savedVisualBgs]);
+
+  useEffect(() => {
+    const unsub = firebaseService.subscribeVisualBackgrounds((cfg) => {
+      const prevSaved = savedVisualBgsRef.current;
+      savedVisualBgsRef.current = cfg;
+      setSavedVisualBgs(cfg);
+      setVisualBgDrafts((prev) => ({
+        headerBackgroundUrl:
+          prev.headerBackgroundUrl === prevSaved.headerBackgroundUrl
+            ? cfg.headerBackgroundUrl
+            : prev.headerBackgroundUrl,
+        verifiedStaysBgUrl:
+          prev.verifiedStaysBgUrl === prevSaved.verifiedStaysBgUrl
+            ? cfg.verifiedStaysBgUrl
+            : prev.verifiedStaysBgUrl,
+        motorbikeRentalsBgUrl:
+          prev.motorbikeRentalsBgUrl === prevSaved.motorbikeRentalsBgUrl
+            ? cfg.motorbikeRentalsBgUrl
+            : prev.motorbikeRentalsBgUrl,
+        exploreWeatherBgUrl:
+          prev.exploreWeatherBgUrl === prevSaved.exploreWeatherBgUrl
+            ? cfg.exploreWeatherBgUrl
+            : prev.exploreWeatherBgUrl,
+        exploreNoticeAlertBgUrl:
+          prev.exploreNoticeAlertBgUrl === prevSaved.exploreNoticeAlertBgUrl
+            ? cfg.exploreNoticeAlertBgUrl
+            : prev.exploreNoticeAlertBgUrl,
+        exploreHighlandMapsBgUrl:
+          prev.exploreHighlandMapsBgUrl === prevSaved.exploreHighlandMapsBgUrl
+            ? cfg.exploreHighlandMapsBgUrl
+            : prev.exploreHighlandMapsBgUrl,
+        exploreItineraryBgUrl:
+          prev.exploreItineraryBgUrl === prevSaved.exploreItineraryBgUrl
+            ? cfg.exploreItineraryBgUrl
+            : prev.exploreItineraryBgUrl,
+        updatedAt: cfg.updatedAt,
+      }));
+    });
+    return () => unsub();
+  }, []);
+
+  const setSlotFeedback = (
+    slotKey: VisualBgSlotKey,
+    type: 'success' | 'error' | 'info',
+    text: string,
+    autoClearMs = 4500
+  ) => {
+    setSlotStatus((prev) => ({ ...prev, [slotKey]: { type, text } }));
+    if (autoClearMs > 0) {
+      setTimeout(() => {
+        setSlotStatus((prev) =>
+          prev[slotKey]?.text === text ? { ...prev, [slotKey]: null } : prev
+        );
+      }, autoClearMs);
+    }
+  };
+
+  const handleVisualBgFile = async (slotKey: VisualBgSlotKey, file: File) => {
+    const lowerName = file.name.toLowerCase();
+    const isValidType =
+      ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type.toLowerCase()) ||
+      /\.(jpe?g|png|webp)$/i.test(lowerName);
+
+    if (!isValidType) {
+      setSlotFeedback(slotKey, 'error', 'Unsupported format. Please upload a JPG, PNG, or WEBP image.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setSlotFeedback(slotKey, 'error', 'File is larger than 20MB. Please choose a smaller image.');
+      return;
+    }
+
+    setSlotUploading((prev) => ({ ...prev, [slotKey]: true }));
+    setSlotStatus((prev) => ({ ...prev, [slotKey]: null }));
+
+    try {
+      const compressed = await compressBackgroundImageFile(
+        file,
+        slotKey === 'headerBackgroundUrl'
+          ? { maxWidth: 1440, maxHeight: 900, quality: 0.82, maxDataUrlBytes: 320 * 1024 }
+          : { maxWidth: 960, maxHeight: 640, quality: 0.8, maxDataUrlBytes: 260 * 1024 }
+      );
+      const uploadedUrl = await firebaseService.uploadImage(compressed, 'visual_backgrounds');
+      setVisualBgDrafts((prev) => ({ ...prev, [slotKey]: uploadedUrl }));
+      const kb = Math.max(1, Math.round(compressed.size / 1024));
+      setSlotFeedback(
+        slotKey,
+        'info',
+        `Compressed (${kb} KB) and loaded into preview. Click Save / Apply to publish live.`,
+        6000
+      );
+    } catch (err: any) {
+      setSlotFeedback(
+        slotKey,
+        'error',
+        `Upload failed: ${err?.message || 'Could not process selected image.'}`
+      );
+    } finally {
+      setSlotUploading((prev) => ({ ...prev, [slotKey]: false }));
+    }
+  };
+
+  const handleSaveVisualBgSlot = async (slotKey: VisualBgSlotKey, label: string) => {
+    setSlotSaving((prev) => ({ ...prev, [slotKey]: true }));
+    try {
+      const updated = await firebaseService.saveVisualBackgrounds({
+        [slotKey]: (visualBgDrafts[slotKey] || '').trim(),
+      });
+      setSavedVisualBgs(updated);
+      setVisualBgDrafts(updated);
+      setSlotFeedback(slotKey, 'success', `${label} saved and applied live across all devices.`);
+      addActivity(`Updated ${label} image`);
+      onRefreshData();
+    } catch (err: any) {
+      setSlotFeedback(slotKey, 'error', `Failed to save: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setSlotSaving((prev) => ({ ...prev, [slotKey]: false }));
+    }
+  };
+
+  const handleResetVisualBgSlot = async (slotKey: VisualBgSlotKey, label: string) => {
+    setSlotSaving((prev) => ({ ...prev, [slotKey]: true }));
+    try {
+      const updated = await firebaseService.saveVisualBackgrounds({
+        [slotKey]: DEFAULT_VISUAL_BACKGROUNDS[slotKey],
+      });
+      setSavedVisualBgs(updated);
+      setVisualBgDrafts(updated);
+      setSlotFeedback(slotKey, 'success', `${label} reset to default scenic background.`);
+      addActivity(`Reset ${label} to default`);
+      onRefreshData();
+    } catch (err: any) {
+      setSlotFeedback(slotKey, 'error', `Failed to reset: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setSlotSaving((prev) => ({ ...prev, [slotKey]: false }));
+    }
+  };
+
   // RM30 Deposit Payment Gateway Temporary Unavailable Notice Control
   const [gatewayNotice, setGatewayNotice] = useState<PaymentGatewayNoticeConfig>(() =>
     firebaseService.getPaymentGatewayNotice()
@@ -3142,106 +3338,579 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {activeAdminSection === 'appearance' && (
-          /* Main Page Background Customizer */
-          <div className="p-6 rounded-3xl bg-stone-900/95 border border-purple-500/30 shadow-2xl space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center">
-                  <ImageIcon className="w-5 h-5" />
+          <div className="space-y-6">
+            {/* Visual & Background Customization (3 Dedicated Slots) */}
+            <div className="p-6 rounded-3xl bg-stone-900/95 border border-emerald-500/35 shadow-2xl space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/35 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-stone-100 flex items-center gap-2 flex-wrap">
+                      <span>Visual &amp; Background Customization</span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-[10px] font-mono font-bold text-emerald-300">
+                        REAL-TIME SYNC
+                      </span>
+                    </h4>
+                    <p className="text-xs text-stone-400">
+                      Upload JPG, PNG, or WEBP images via file picker or drag-and-drop. Images are automatically compressed client-side before saving.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-base font-bold text-stone-100 flex items-center gap-2">
-                    <span>Main Page Background Customizer</span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-[10px] font-mono font-bold text-purple-300">
-                      LIVE THEME
-                    </span>
-                  </h4>
-                  <p className="text-xs text-stone-400">
-                    Upload or paste an image URL to instantly set the main page background across all visitors.
-                  </p>
-                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {(
+                  [
+                    {
+                      key: 'headerBackgroundUrl' as const,
+                      title: 'Main App Header Background',
+                      subtitle: 'Top mobile & desktop hero backdrop',
+                      defaultPreview: '/assets/aistudio/explore_c7c5621e.jpg',
+                      previewLabel: 'Explore The Highlands',
+                      badgeLabel: 'HEADER HERO',
+                      accentBorder: 'border-teal-500/35',
+                      accentBadge: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+                      icon: <Monitor className="w-4 h-4 text-teal-400 shrink-0" />,
+                    },
+                    {
+                      key: 'verifiedStaysBgUrl' as const,
+                      title: 'Verified Stays Card Background',
+                      subtitle: 'Home screen Verified Stays shortcut card',
+                      defaultPreview:
+                        'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=900&q=80',
+                      previewLabel: 'Verified Stays',
+                      badgeLabel: 'STAY CARD',
+                      accentBorder: 'border-emerald-500/35',
+                      accentBadge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+                      icon: <BedDouble className="w-4 h-4 text-emerald-400 shrink-0" />,
+                    },
+                    {
+                      key: 'motorbikeRentalsBgUrl' as const,
+                      title: 'Motorbike Rentals Card Background',
+                      subtitle: 'Home screen Motorbike Rentals shortcut card',
+                      defaultPreview:
+                        'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=900&q=80',
+                      previewLabel: 'Motorbike Rentals',
+                      badgeLabel: 'RENTAL CARD',
+                      accentBorder: 'border-cyan-500/35',
+                      accentBadge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+                      icon: <Bike className="w-4 h-4 text-cyan-400 shrink-0" />,
+                    },
+                  ] as const
+                ).map((slot) => {
+                  const draftUrl = visualBgDrafts[slot.key] || '';
+                  const savedUrl = savedVisualBgs[slot.key] || '';
+                  const hasCustomSaved = Boolean(savedUrl.trim());
+                  const isDirty = draftUrl.trim() !== savedUrl.trim();
+                  const isUploading = slotUploading[slot.key];
+                  const isSaving = slotSaving[slot.key];
+                  const isDragging = slotDragOver[slot.key];
+                  const status = slotStatus[slot.key];
+
+                  return (
+                    <div
+                      key={slot.key}
+                      className={`rounded-2xl bg-stone-950/85 border ${slot.accentBorder} p-4 flex flex-col justify-between gap-3.5 shadow-xl`}
+                    >
+                      {/* Slot Header */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {slot.icon}
+                            <h5 className="text-xs sm:text-sm font-bold text-white truncate">
+                              {slot.title}
+                            </h5>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9.5px] font-mono font-bold border shrink-0 ${slot.accentBadge}`}
+                          >
+                            {isDirty ? 'UNSAVED' : hasCustomSaved ? 'CUSTOM LIVE' : 'DEFAULT'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-400">{slot.subtitle}</p>
+                      </div>
+
+                      {/* Live Thumbnail Preview */}
+                      <div className="relative h-32 rounded-xl overflow-hidden border border-white/15 bg-stone-900">
+                        <img
+                          src={safeSrc(draftUrl, slot.defaultPreview)}
+                          alt={slot.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-b from-stone-950/70 via-stone-950/35 to-stone-950/90 flex flex-col justify-between p-2.5">
+                          <span className="self-start px-2 py-0.5 rounded-md bg-stone-950/80 border border-white/15 text-[9.5px] font-mono font-bold text-stone-200">
+                            {draftUrl ? 'Live Custom Preview' : 'Default Preview'}
+                          </span>
+                          <span className="text-xs font-extrabold text-white drop-shadow">
+                            {slot.previewLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Drag & Drop + File Picker Upload Zone */}
+                      <label
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setSlotDragOver((prev) => ({ ...prev, [slot.key]: true }));
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          setSlotDragOver((prev) => ({ ...prev, [slot.key]: false }));
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setSlotDragOver((prev) => ({ ...prev, [slot.key]: false }));
+                          const droppedFile = e.dataTransfer?.files?.[0];
+                          if (droppedFile) {
+                            handleVisualBgFile(slot.key, droppedFile);
+                          }
+                        }}
+                        className={`min-h-[74px] rounded-xl border-2 border-dashed px-3 py-2.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all ${
+                          isDragging
+                            ? 'border-emerald-400 bg-emerald-500/15 text-emerald-200'
+                            : 'border-white/15 hover:border-emerald-400/50 bg-stone-900/70 hover:bg-stone-900 text-stone-300'
+                        }`}
+                      >
+                        {isUploading ? (
+                          <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Compressing &amp; uploading...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-stone-100">
+                              <Upload className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span>Drop JPG/PNG/WEBP or Click to Upload</span>
+                            </div>
+                            <span className="text-[10px] text-stone-400">
+                              Auto-compressed for instant Firestore &amp; Storage sync
+                            </span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          disabled={isUploading || isSaving}
+                          onChange={(e) => {
+                            const picked = e.target.files?.[0];
+                            if (picked) {
+                              handleVisualBgFile(slot.key, picked);
+                            }
+                            e.currentTarget.value = '';
+                          }}
+                        />
+                      </label>
+
+                      {/* Optional Direct Image URL Input */}
+                      <input
+                        type="url"
+                        value={draftUrl}
+                        onChange={(e) =>
+                          setVisualBgDrafts((prev) => ({ ...prev, [slot.key]: e.target.value }))
+                        }
+                        placeholder="Or paste custom image URL (https://...)"
+                        className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-[11px] text-stone-100 outline-none focus:border-emerald-500/50"
+                      />
+
+                      {/* Inline Feedback Status */}
+                      {status && (
+                        <div
+                          className={`p-2 rounded-xl border text-[11px] font-medium flex items-start gap-1.5 ${
+                            status.type === 'error'
+                              ? 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+                              : status.type === 'info'
+                              ? 'bg-cyan-950/50 border-cyan-500/40 text-cyan-200'
+                              : 'bg-emerald-950/50 border-emerald-500/40 text-emerald-200'
+                          }`}
+                        >
+                          {status.type === 'error' ? (
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          ) : (
+                            <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          )}
+                          <span>{status.text}</span>
+                        </div>
+                      )}
+
+                      {/* Individual Save / Apply & Reset to Default Buttons */}
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          disabled={isUploading || isSaving}
+                          onClick={() => handleSaveVisualBgSlot(slot.key, slot.title)}
+                          className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                        >
+                          {isSaving ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Save className="w-3.5 h-3.5" />
+                          )}
+                          <span>Save / Apply</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isUploading || isSaving || (!draftUrl && !hasCustomSaved)}
+                          onClick={() => handleResetVisualBgSlot(slot.key, slot.title)}
+                          className="min-h-[40px] px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs font-bold border border-white/10 flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
+                          title="Reset slot to default"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <form onSubmit={handleSaveMainPageBg} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                <div className="md:col-span-8 space-y-1.5">
-                  <label className="text-xs font-bold text-stone-300 block">
-                    Background Image URL
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={adminMainBgUrl}
-                      onChange={(e) => setAdminMainBgUrl(e.target.value)}
-                      placeholder="https://images.unsplash.com/... or upload image"
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-stone-950 border border-white/10 text-xs text-stone-100 outline-none focus:border-purple-500/50"
-                    />
-                    <label className="px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold border border-white/10 flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
-                      <Upload className="w-3.5 h-3.5 text-purple-400" />
-                      <span>Upload File</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => handleImageUpload(e, (url) => setAdminMainBgUrl(url))}
-                      />
-                    </label>
+            {/* Explore Cards Background Image Manager (File Upload + URL Paste) */}
+            <div className="p-6 rounded-3xl bg-stone-900/95 border border-cyan-500/35 shadow-2xl space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/35 flex items-center justify-center shrink-0">
+                    <ImageIcon className="w-5 h-5" />
                   </div>
-                </div>
-
-                <div className="md:col-span-4 flex items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={isSavingMainBg}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-950 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
-                  >
-                    {isSavingMainBg ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4" />
-                    )}
-                    <span>Save Background</span>
-                  </button>
-                  {adminMainBgUrl && (
-                    <button
-                      type="button"
-                      onClick={handleResetMainPageBg}
-                      className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold border border-white/10 cursor-pointer transition-colors"
-                      title="Reset to default background"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <div>
+                    <h4 className="text-base font-bold text-stone-100 flex items-center gap-2 flex-wrap">
+                      <span>Explore Cards Background Image Manager</span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono font-bold text-cyan-300">
+                        4 EXPLORE CARDS
+                      </span>
+                    </h4>
+                    <p className="text-xs text-stone-400">
+                      Upload a local image file (JPG, PNG, WEBP with automatic compression) or paste a direct image URL for each card in the Explore grid.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {adminMainBgUrl && (
-                <div className="pt-2">
-                  <span className="text-[10px] uppercase font-bold text-stone-500 block mb-1">
-                    Live Background Preview
-                  </span>
-                  <div className="relative w-full h-32 rounded-2xl overflow-hidden border border-purple-500/30">
-                    <img
-                      src={safeSrc(adminMainBgUrl, DEFAULT_PLACE_IMAGE)}
-                      alt="Background Preview"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-stone-950/60 backdrop-blur-[1px] flex items-center justify-center">
-                      <span className="px-3 py-1 rounded-full bg-stone-900/80 text-stone-200 text-xs font-bold border border-white/10">
-                        Dark Overlay Applied on Main Page
-                      </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {(
+                  [
+                    {
+                      key: 'exploreWeatherBgUrl' as const,
+                      title: 'Weather Card',
+                      subtitle: 'Explore Card 1 · Weather forecast',
+                      defaultPreview:
+                        'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=800&q=80',
+                      previewLabel: 'Weather',
+                      accentBorder: 'border-cyan-500/35',
+                      accentBadge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+                      icon: <CloudRain className="w-4 h-4 text-cyan-400 shrink-0" />,
+                    },
+                    {
+                      key: 'exploreNoticeAlertBgUrl' as const,
+                      title: 'Notice / Alert Card',
+                      subtitle: 'Explore Card 2 · Road & weather updates',
+                      defaultPreview:
+                        'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=900&q=80',
+                      previewLabel: 'Notice / Alert',
+                      accentBorder: 'border-rose-500/35',
+                      accentBadge: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+                      icon: <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />,
+                    },
+                    {
+                      key: 'exploreHighlandMapsBgUrl' as const,
+                      title: 'Highland Maps Card',
+                      subtitle: 'Explore Card 3 · Interactive GPS map',
+                      defaultPreview:
+                        'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
+                      previewLabel: 'Highland Maps',
+                      accentBorder: 'border-emerald-500/35',
+                      accentBadge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+                      icon: <Navigation className="w-4 h-4 text-emerald-400 shrink-0" />,
+                    },
+                    {
+                      key: 'exploreItineraryBgUrl' as const,
+                      title: 'Itinerary Card',
+                      subtitle: 'Explore Card 4 · Smart trip planner',
+                      defaultPreview:
+                        'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80',
+                      previewLabel: 'Itinerary',
+                      accentBorder: 'border-amber-500/35',
+                      accentBadge: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+                      icon: <Calendar className="w-4 h-4 text-amber-400 shrink-0" />,
+                    },
+                  ] as const
+                ).map((slot) => {
+                  const draftUrl = visualBgDrafts[slot.key] || '';
+                  const savedUrl = savedVisualBgs[slot.key] || '';
+                  const hasCustomSaved = Boolean(savedUrl.trim());
+                  const isDirty = draftUrl.trim() !== savedUrl.trim();
+                  const isUploading = slotUploading[slot.key];
+                  const isSaving = slotSaving[slot.key];
+                  const isDragging = slotDragOver[slot.key];
+                  const status = slotStatus[slot.key];
+
+                  return (
+                    <div
+                      key={slot.key}
+                      className={`rounded-2xl bg-stone-950/85 border ${slot.accentBorder} p-4 flex flex-col justify-between gap-3 shadow-xl`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {slot.icon}
+                            <h5 className="text-xs sm:text-sm font-bold text-white truncate">
+                              {slot.title}
+                            </h5>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9.5px] font-mono font-bold border shrink-0 ${slot.accentBadge}`}
+                          >
+                            {isDirty ? 'UNSAVED' : hasCustomSaved ? 'CUSTOM LIVE' : 'DEFAULT'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-400 truncate">{slot.subtitle}</p>
+                      </div>
+
+                      {/* Live Thumbnail Preview with Dark Overlay */}
+                      <div className="relative h-32 rounded-xl overflow-hidden border border-white/15 bg-stone-900">
+                        <img
+                          src={safeSrc(draftUrl, slot.defaultPreview)}
+                          alt={slot.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/35 to-stone-950/45 flex flex-col justify-between p-2.5">
+                          <span className="self-start px-2 py-0.5 rounded-md bg-stone-950/80 border border-white/15 text-[9.5px] font-mono font-bold text-stone-200">
+                            {draftUrl ? 'Live Custom Preview' : 'Default Preview'}
+                          </span>
+                          <span className="text-xs font-extrabold text-white drop-shadow">
+                            {slot.previewLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Upload Image File (Local Picker / Drag-and-Drop) */}
+                      <label
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setSlotDragOver((prev) => ({ ...prev, [slot.key]: true }));
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          setSlotDragOver((prev) => ({ ...prev, [slot.key]: false }));
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setSlotDragOver((prev) => ({ ...prev, [slot.key]: false }));
+                          const droppedFile = e.dataTransfer?.files?.[0];
+                          if (droppedFile) {
+                            handleVisualBgFile(slot.key, droppedFile);
+                          }
+                        }}
+                        className={`min-h-[68px] rounded-xl border-2 border-dashed px-3 py-2 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all ${
+                          isDragging
+                            ? 'border-cyan-400 bg-cyan-500/15 text-cyan-200'
+                            : 'border-white/15 hover:border-cyan-400/50 bg-stone-900/70 hover:bg-stone-900 text-stone-300'
+                        }`}
+                      >
+                        {isUploading ? (
+                          <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Compressing...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-stone-100">
+                              <Upload className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <span>Upload Image File</span>
+                            </div>
+                            <span className="text-[10px] text-stone-400">
+                              JPG, PNG, WEBP · Auto-compressed
+                            </span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          disabled={isUploading || isSaving}
+                          onChange={(e) => {
+                            const picked = e.target.files?.[0];
+                            if (picked) {
+                              handleVisualBgFile(slot.key, picked);
+                            }
+                            e.currentTarget.value = '';
+                          }}
+                        />
+                      </label>
+
+                      {/* Direct Image URL Paste Input */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">
+                          Paste Image URL
+                        </label>
+                        <input
+                          type="url"
+                          value={draftUrl}
+                          onChange={(e) =>
+                            setVisualBgDrafts((prev) => ({ ...prev, [slot.key]: e.target.value }))
+                          }
+                          placeholder="https://i.ibb.co/... or direct image URL"
+                          className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-white/10 text-[11px] text-stone-100 outline-none focus:border-cyan-500/50"
+                        />
+                      </div>
+
+                      {status && (
+                        <div
+                          className={`p-2 rounded-xl border text-[11px] font-medium flex items-start gap-1.5 ${
+                            status.type === 'error'
+                              ? 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+                              : status.type === 'info'
+                              ? 'bg-cyan-950/50 border-cyan-500/40 text-cyan-200'
+                              : 'bg-emerald-950/50 border-emerald-500/40 text-emerald-200'
+                          }`}
+                        >
+                          {status.type === 'error' ? (
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          ) : (
+                            <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          )}
+                          <span>{status.text}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          disabled={isUploading || isSaving}
+                          onClick={() => handleSaveVisualBgSlot(slot.key, slot.title)}
+                          className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-xs shadow-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                        >
+                          {isSaving ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Save className="w-3.5 h-3.5" />
+                          )}
+                          <span>Save / Apply</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isUploading || isSaving || (!draftUrl && !hasCustomSaved)}
+                          onClick={() => handleResetVisualBgSlot(slot.key, slot.title)}
+                          className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs font-bold border border-white/10 flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                          title="Reset to default image"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset</span>
+                        </button>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Existing Main Page Background Customizer */}
+            <div className="p-6 rounded-3xl bg-stone-900/95 border border-purple-500/30 shadow-2xl space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center">
+                    <ImageIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-stone-100 flex items-center gap-2">
+                      <span>Main Page Background Customizer</span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-[10px] font-mono font-bold text-purple-300">
+                        LIVE THEME
+                      </span>
+                    </h4>
+                    <p className="text-xs text-stone-400">
+                      Upload or paste an image URL to instantly set the main page background across all visitors.
+                    </p>
                   </div>
                 </div>
-              )}
+              </div>
 
-              {mainBgStatus && (
-                <div className="p-3 rounded-xl bg-purple-950/50 border border-purple-500/40 text-xs text-purple-200 font-medium">
-                  {mainBgStatus}
+              <form onSubmit={handleSaveMainPageBg} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                  <div className="md:col-span-8 space-y-1.5">
+                    <label className="text-xs font-bold text-stone-300 block">
+                      Background Image URL
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={adminMainBgUrl}
+                        onChange={(e) => setAdminMainBgUrl(e.target.value)}
+                        placeholder="https://images.unsplash.com/... or upload image"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-stone-950 border border-white/10 text-xs text-stone-100 outline-none focus:border-purple-500/50"
+                      />
+                      <label className="px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold border border-white/10 flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
+                        <Upload className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Upload File</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleImageUpload(e, (url) => setAdminMainBgUrl(url))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-4 flex items-center gap-2">
+                    <button
+                      type="submit"
+                      disabled={isSavingMainBg}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-950 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                    >
+                      {isSavingMainBg ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4" />
+                      )}
+                      <span>Save Background</span>
+                    </button>
+                    {adminMainBgUrl && (
+                      <button
+                        type="button"
+                        onClick={handleResetMainPageBg}
+                        className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold border border-white/10 cursor-pointer transition-colors"
+                        title="Reset to default background"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
-            </form>
+
+                {adminMainBgUrl && (
+                  <div className="pt-2">
+                    <span className="text-[10px] uppercase font-bold text-stone-500 block mb-1">
+                      Live Background Preview
+                    </span>
+                    <div className="relative w-full h-32 rounded-2xl overflow-hidden border border-purple-500/30">
+                      <img
+                        src={safeSrc(adminMainBgUrl, DEFAULT_PLACE_IMAGE)}
+                        alt="Background Preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-stone-950/60 backdrop-blur-[1px] flex items-center justify-center">
+                        <span className="px-3 py-1 rounded-full bg-stone-900/80 text-stone-200 text-xs font-bold border border-white/10">
+                          Dark Overlay Applied on Main Page
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {mainBgStatus && (
+                  <div className="p-3 rounded-xl bg-purple-950/50 border border-purple-500/40 text-xs text-purple-200 font-medium">
+                    {mainBgStatus}
+                  </div>
+                )}
+              </form>
+            </div>
           </div>
           )}
 

@@ -20,7 +20,7 @@ import {
   TrafficAlert,
   HazardAlert,
 } from '../types';
-import { UserProfile } from '../services/firebase';
+import { UserProfile, firebaseService } from '../services/firebase';
 import { safeSrc, DEFAULT_PLACE_IMAGE, DEFAULT_AVATAR_IMAGE } from '../utils/safeMedia';
 import { WebSearchResultsBlock, useWebSearch } from './WebSearchResultsBlock';
 import { CamLogo } from './CamLogo';
@@ -86,12 +86,22 @@ export const MobileUpperHero: React.FC<MobileUpperHeroProps> = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
+  const [headerBgUrl, setHeaderBgUrl] = useState<string>(
+    () => firebaseService.getVisualBackgrounds().headerBackgroundUrl
+  );
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const notifContainerRef = useRef<HTMLDivElement>(null);
   const clickCountRef = useRef(0);
   const lastClickTimeRef = useRef(0);
 
   const { webSearch, runWebSearch, clearWebSearch } = useWebSearch(language);
+
+  useEffect(() => {
+    const unsub = firebaseService.subscribeVisualBackgrounds((cfg) => {
+      setHeaderBgUrl(cfg.headerBackgroundUrl || '');
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const handleNewEvent = () => setHasUnread(true);
@@ -259,9 +269,9 @@ export const MobileUpperHero: React.FC<MobileUpperHeroProps> = ({
         {/* Clipped Background Image & Gradient Scrim */}
         <div className="absolute inset-0 rounded-b-[28px] overflow-hidden pointer-events-none">
           <img
-            src="/assets/aistudio/explore_c7c5621e.jpg"
+            src={safeSrc(headerBgUrl, '/assets/aistudio/explore_c7c5621e.jpg')}
             alt="Cameron Highlands sunrise hills"
-            className="w-full h-full object-cover object-center scale-105"
+            className="w-full h-full object-cover object-center scale-105 transition-opacity duration-300"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/75 via-stone-950/55 to-stone-950/90" />
         </div>

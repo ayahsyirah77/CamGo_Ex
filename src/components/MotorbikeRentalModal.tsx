@@ -145,13 +145,23 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
   }, [currentUser]);
 
   useEffect(() => {
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
     const refreshPartners = () => {
       setPartners(firebaseService.getMotorbikePartners());
       setVendorListings(firebaseService.getVendorListings());
       setIsLoading(false);
     };
 
-    refreshPartners();
+    if (isOpen) {
+      setIsLoading(true);
+      setPartners(firebaseService.getMotorbikePartners());
+      setVendorListings(firebaseService.getVendorListings());
+      settleTimer = setTimeout(() => {
+        setIsLoading(false);
+      }, 450);
+    } else {
+      refreshPartners();
+    }
 
     const handleUpdate = () => refreshPartners();
     window.addEventListener('motorbike-partners-updated', handleUpdate);
@@ -188,6 +198,7 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
     }
 
     return () => {
+      if (settleTimer) clearTimeout(settleTimer);
       window.removeEventListener('motorbike-partners-updated', handleUpdate);
       window.removeEventListener('vendor-listings-updated', handleUpdate);
       if (unsub) unsub();
@@ -900,9 +911,42 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
           </div>
         </div>
 
-        {/* Partners Public Advertised Cards Grid */}
+        {/* Partners Public Advertised Stacked Card Deck */}
         {isLoading ? (
-          <div className="text-center py-12 text-stone-400 text-sm">Loading rental operators...</div>
+          <div className="max-w-lg mx-auto">
+            <VerticalSwipeCarousel
+              deckTitle="Verified Two-Wheel Operators"
+              items={[]}
+              keyExtractor={(_, idx) => `moto-skel-${idx}`}
+              heightClassName="h-[360px]"
+              accentColor="cyan"
+              isLoading={true}
+              skeleton={
+                <div className="h-full rounded-2xl bg-stone-900 border border-cyan-500/25 flex flex-col justify-between overflow-hidden">
+                  <div className="h-[116px] w-full skeleton-shimmer shrink-0" />
+                  <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="h-4 w-2/3 rounded-lg skeleton-shimmer" />
+                      <div className="h-3 w-3/4 rounded-md skeleton-shimmer" />
+                      <div className="grid grid-cols-3 gap-2 pt-0.5">
+                        <div className="h-10 rounded-lg skeleton-shimmer" />
+                        <div className="h-10 rounded-lg skeleton-shimmer" />
+                        <div className="h-10 rounded-lg skeleton-shimmer" />
+                      </div>
+                      <div className="flex gap-1.5">
+                        <div className="h-5 w-24 rounded-md skeleton-shimmer" />
+                        <div className="h-5 w-24 rounded-md skeleton-shimmer" />
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-stone-800">
+                      <div className="h-10 w-full rounded-xl skeleton-shimmer" />
+                    </div>
+                  </div>
+                </div>
+              }
+              renderItem={() => null}
+            />
+          </div>
         ) : filteredPartners.length === 0 ? (
           <div className="py-16 px-4 text-center rounded-3xl bg-stone-900/60 border border-stone-800 space-y-3">
             <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
@@ -914,11 +958,13 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
             </p>
           </div>
         ) : (
-          <div className="max-w-xl mx-auto">
+          <div className="max-w-lg mx-auto">
             <VerticalSwipeCarousel
+              deckTitle="Verified Two-Wheel Operators"
+              deckSubtitle="Flick card up for next fleet · down for previous"
               items={filteredPartners}
               keyExtractor={(partner) => partner.id}
-              heightClassName="h-[540px] sm:h-[580px]"
+              heightClassName="h-[360px]"
               accentColor="cyan"
               showNavArrows={true}
               renderItem={(partner) => {
@@ -933,23 +979,23 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                 const hasDeposit = partner.depositRequired !== false && (partner.depositAmountRm ?? 100) > 0;
                 const depositDisplay = hasDeposit
                   ? `RM ${partner.depositAmountRm ?? 100} Deposit`
-                  : 'No Deposit Required';
+                  : 'No Deposit';
                 const rulesText = (partner.vendorRulesNotice || partner.vendorTerms || '').trim();
                 const isRulesExpanded = Boolean(expandedRules[partner.id]);
 
                 return (
-                  <div className="h-full rounded-3xl bg-stone-900 border border-stone-800 hover:border-cyan-500/40 shadow-xl transition-all flex flex-col justify-between overflow-hidden relative">
+                  <div className="h-full rounded-2xl bg-stone-900 border border-cyan-500/40 shadow-2xl transition-all flex flex-col justify-between overflow-hidden relative">
                     {/* Card Cover Image + Live Status Overlay */}
-                    <div className="relative h-36 sm:h-40 shrink-0 w-full overflow-hidden bg-stone-950">
+                    <div className="relative h-[112px] shrink-0 w-full overflow-hidden bg-stone-950">
                       <img
                         src={safeSrc(partner.imageUrl, DEFAULT_PLACE_IMAGE)}
                         alt={partner.businessName}
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/20 to-transparent" />
-                      <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/25 to-black/40" />
+                      <div className="absolute top-2 left-2.5 flex flex-wrap gap-1.5">
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase ${
                             partner.operatingStatus === 'open'
                               ? 'bg-emerald-500 text-stone-950'
                               : 'bg-rose-500 text-white'
@@ -957,14 +1003,14 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                         >
                           {partner.operatingStatus === 'open' ? 'Open Now' : 'Closed'}
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-stone-950/85 text-teal-300 border border-teal-500/30">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase bg-stone-950/85 text-teal-300 border border-teal-500/30">
                           {partner.township}
                         </span>
                       </div>
 
                       {/* Deposit Badge Top Right */}
                       <div
-                        className={`absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md ${
+                        className={`absolute top-2 right-2.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border backdrop-blur-md ${
                           hasDeposit
                             ? 'bg-amber-500/20 text-amber-200 border-amber-400/50'
                             : 'bg-emerald-500/25 text-emerald-200 border-emerald-400/50'
@@ -974,9 +1020,9 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                       </div>
 
                       {/* Live Fleet Availability Strip Bottom */}
-                      <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between gap-2">
+                      <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between gap-2">
                         <span
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold backdrop-blur-md border truncate ${
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold backdrop-blur-md border truncate ${
                             fleet.isFullyBooked
                               ? 'bg-rose-950/90 text-rose-200 border-rose-500/50'
                               : 'bg-stone-950/85 text-emerald-300 border-emerald-500/40'
@@ -988,70 +1034,74 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                     </div>
 
                     {/* Card Body */}
-                    <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between space-y-2 min-h-0">
-                      <div className="space-y-2 min-h-0">
-                        {/* Title & Location */}
-                        <div>
-                          <h4 className="text-base font-black text-white leading-snug line-clamp-1">
-                            {partner.businessName}
-                          </h4>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-stone-400 mt-0.5">
-                            <span className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
-                              <span>{partner.township}, Cameron Highlands</span>
-                            </span>
-                            <span className="flex items-center gap-1 text-stone-300">
-                              <Phone className="w-3 h-3 text-teal-400 shrink-0" />
-                              <span>{partner.contactPhone}</span>
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Pricing Breakdown */}
-                        <div className="p-2.5 rounded-xl bg-stone-950/90 border border-stone-800 space-y-1.5">
-                          <div className="grid grid-cols-3 gap-2 text-center">
-                            <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
-                              <span className="text-[9px] text-stone-400 uppercase block">Per Hour</span>
-                              <span className="text-xs font-black font-mono text-cyan-300 tabular-nums">
-                                RM {displayHourlyRate}
+                    <div className="p-3 sm:p-3.5 flex-1 flex flex-col justify-between min-h-0">
+                      <div className="space-y-1.5 min-h-0">
+                        {/* Title & Rules Trigger */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h4 className="text-sm sm:text-[15px] font-black text-white leading-snug line-clamp-1">
+                              {partner.businessName}
+                            </h4>
+                            <div className="flex items-center gap-2.5 text-[10.5px] text-stone-400 truncate">
+                              <span className="inline-flex items-center gap-1 truncate">
+                                <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+                                {partner.township}
                               </span>
-                            </div>
-                            <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
-                              <span className="text-[9px] text-stone-400 uppercase block">Per Day</span>
-                              <span className="text-xs font-black font-mono text-emerald-300 tabular-nums">
-                                RM {displayDailyRate}
-                              </span>
-                            </div>
-                            <div className="p-1.5 rounded-lg bg-stone-900 border border-stone-800">
-                              <span className="text-[9px] text-stone-400 uppercase block">Deposit</span>
-                              <span
-                                className={`text-xs font-black font-mono tabular-nums ${
-                                  hasDeposit ? 'text-amber-300' : 'text-emerald-300'
-                                }`}
-                              >
-                                {hasDeposit ? `RM ${partner.depositAmountRm ?? 100}` : 'RM 0'}
+                              <span aria-hidden="true" className="text-stone-600">·</span>
+                              <span className="inline-flex items-center gap-1 text-stone-300 shrink-0">
+                                <Phone className="w-3 h-3 text-teal-400 shrink-0" />
+                                {partner.contactPhone}
                               </span>
                             </div>
                           </div>
 
-                          {activeHourPkgs.length > 0 && (
-                            <div className="pt-1 border-t border-stone-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                              {activeHourPkgs.slice(0, 3).map((pkg) => (
-                                <span
-                                  key={pkg.id}
-                                  className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-semibold text-cyan-200 whitespace-nowrap shrink-0"
-                                >
-                                  {pkg.label} ({pkg.hours}h · RM{pkg.priceRm})
-                                </span>
-                              ))}
-                            </div>
+                          {rulesText && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedRules((prev) => ({
+                                  ...prev,
+                                  [partner.id]: !prev[partner.id],
+                                }))
+                              }
+                              className="shrink-0 px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-[10.5px] font-bold text-amber-300 inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Rules</span>
+                            </button>
                           )}
                         </div>
 
-                        {/* Included Add-ons & Fuel Policy Badges */}
-                        <div className="flex flex-wrap gap-1.5">
+                        {/* Compact 3-Col Pricing Row */}
+                        <div className="grid grid-cols-3 gap-1.5 text-center">
+                          <div className="py-1 px-1.5 rounded-lg bg-stone-950/90 border border-stone-800">
+                            <span className="text-[9px] text-stone-400 uppercase block leading-tight">Hourly</span>
+                            <span className="text-xs font-black font-mono text-cyan-300 tabular-nums">
+                              RM {displayHourlyRate}
+                            </span>
+                          </div>
+                          <div className="py-1 px-1.5 rounded-lg bg-stone-950/90 border border-stone-800">
+                            <span className="text-[9px] text-stone-400 uppercase block leading-tight">Daily</span>
+                            <span className="text-xs font-black font-mono text-emerald-300 tabular-nums">
+                              RM {displayDailyRate}
+                            </span>
+                          </div>
+                          <div className="py-1 px-1.5 rounded-lg bg-stone-950/90 border border-stone-800">
+                            <span className="text-[9px] text-stone-400 uppercase block leading-tight">Deposit</span>
+                            <span
+                              className={`text-xs font-black font-mono tabular-nums ${
+                                hasDeposit ? 'text-amber-300' : 'text-emerald-300'
+                              }`}
+                            >
+                              {hasDeposit ? `RM ${partner.depositAmountRm ?? 100}` : 'RM 0'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Equipment & Fuel Inclusions */}
+                        <div className="flex flex-wrap gap-1">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
                               partner.fuelPolicy === 'full_tank'
                                 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                                 : partner.fuelPolicy === 'half_tank'
@@ -1059,89 +1109,60 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                                 : 'bg-stone-800 text-stone-400 border-stone-700'
                             }`}
                           >
-                            <Fuel className="w-3 h-3" />
+                            <Fuel className="w-2.5 h-2.5" />
                             <span>
                               {partner.fuelPolicy === 'full_tank'
-                                ? 'Full Tank Fuel'
+                                ? 'Full Tank'
                                 : partner.fuelPolicy === 'half_tank'
-                                ? 'Half Tank Fuel'
-                                : 'Fuel Not Included'}
+                                ? 'Half Tank'
+                                : 'No Fuel'}
                             </span>
                           </span>
-
                           {partner.freeRaincoat && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30">
-                              <Umbrella className="w-3 h-3" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30">
+                              <Umbrella className="w-2.5 h-2.5" />
                               <span>Free Raincoat</span>
                             </span>
                           )}
-
                           {partner.childrenHelmet && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-200 border border-amber-500/30">
-                              <Shield className="w-3 h-3" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-200 border border-amber-500/30">
+                              <Shield className="w-2.5 h-2.5" />
                               <span>Kids Helmet</span>
                             </span>
                           )}
+                          {activeHourPkgs.slice(0, 1).map((pkg) => (
+                            <span
+                              key={pkg.id}
+                              className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-semibold text-cyan-200 whitespace-nowrap"
+                            >
+                              {pkg.label} ({pkg.hours}h · RM{pkg.priceRm})
+                            </span>
+                          ))}
                         </div>
 
-                        {/* Models Quick List (compact 2 rows so full card fits cleanly without scroll trap) */}
+                        {/* Quick Model Select Row */}
                         {partner.packages && partner.packages.length > 0 && (
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider">
-                                Available Models
+                          <div className="px-2.5 py-1.5 rounded-xl bg-stone-950/75 border border-stone-800 flex items-center justify-between gap-2 text-xs">
+                            <div className="min-w-0">
+                              <span className="font-bold text-white truncate block text-[11px]">
+                                {partner.packages[0].name}
+                                {partner.packages.length > 1
+                                  ? ` (+${partner.packages.length - 1} more)`
+                                  : ''}
                               </span>
-                              {partner.packages.length > 2 && (
-                                <span className="text-[10px] font-mono text-cyan-300">
-                                  +{partner.packages.length - 2} more in booking
-                                </span>
-                              )}
+                              <span className="text-[10px] text-stone-400">
+                                {partner.packages[0].cc} · {partner.packages[0].helmetsIncluded} Helmets
+                              </span>
                             </div>
-                            <div className="space-y-1">
-                              {partner.packages.slice(0, 2).map((pkg) => (
-                                <div
-                                  key={pkg.id}
-                                  className="px-2.5 py-1.5 rounded-xl bg-stone-950/70 border border-stone-800 flex items-center justify-between gap-2 text-xs"
-                                >
-                                  <div className="min-w-0">
-                                    <span className="font-bold text-white truncate block">
-                                      {pkg.name}
-                                    </span>
-                                    <span className="text-[10px] text-stone-400">
-                                      {pkg.cc} • {pkg.helmetsIncluded} Helmets
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="text-[11px] font-mono font-bold text-emerald-400 tabular-nums">
-                                      RM {pkg.dailyRateRm}/d
-                                    </span>
-                                    <button
-                                      type="button"
-                                      disabled={fleet.isFullyBooked}
-                                      onClick={() => handleOpenBooking(partner, pkg)}
-                                      className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-emerald-600 text-stone-200 hover:text-white text-[10px] font-bold transition-colors cursor-pointer disabled:opacity-40"
-                                    >
-                                      Select
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                            <button
+                              type="button"
+                              disabled={fleet.isFullyBooked}
+                              onClick={() => handleOpenBooking(partner, partner.packages![0])}
+                              className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-emerald-600 text-stone-200 hover:text-white text-[10px] font-bold transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                            >
+                              Select
+                            </button>
                           </div>
-                        )}
-
-                        {/* Vendor Rules & Notice Toggle */}
-                        {rulesText && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedRules((prev) => ({ ...prev, [partner.id]: !prev[partner.id] }))
-                            }
-                            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
-                          >
-                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                            <span>{isRulesExpanded ? 'Hide Vendor Rules & Notice' : 'View Vendor Rules & Notice'}</span>
-                          </button>
                         )}
                       </div>
 
@@ -1151,7 +1172,7 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                           type="button"
                           disabled={fleet.isFullyBooked}
                           onClick={() => handleOpenBooking(partner)}
-                          className="w-full min-h-[42px] py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-black text-xs transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
+                          className="w-full min-h-[40px] py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-black text-xs transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
                         >
                           <Bike className="w-4 h-4" />
                           <span>{fleet.isFullyBooked ? 'Currently Fully Booked' : 'Book Now'}</span>
@@ -1159,10 +1180,10 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Internal Vendor Rules Overlay Drawer (prevents card scroll trapping) */}
+                    {/* Internal Vendor Rules Overlay Drawer */}
                     {rulesText && isRulesExpanded && (
-                      <div className="absolute inset-x-3 bottom-16 top-28 z-20 rounded-2xl bg-stone-950/95 backdrop-blur-xl border border-amber-500/40 p-3.5 flex flex-col justify-between shadow-2xl">
-                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-800 shrink-0">
+                      <div className="absolute inset-2.5 z-20 rounded-xl bg-stone-950/95 backdrop-blur-xl border border-amber-500/40 p-3 flex flex-col justify-between shadow-2xl">
+                        <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-stone-800 shrink-0">
                           <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5" />
                             <span>Vendor Rules &amp; Notice</span>
@@ -1178,7 +1199,10 @@ export const MotorbikeRentalModal: React.FC<MotorbikeRentalModalProps> = ({
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto no-scrollbar py-2 text-[11px] text-stone-300 whitespace-pre-line leading-relaxed">
+                        <div
+                          data-card-scrollable="true"
+                          className="flex-1 overflow-y-auto no-scrollbar py-2 text-[11px] text-stone-300 whitespace-pre-line leading-relaxed"
+                        >
                           {rulesText}
                         </div>
                       </div>

@@ -71,6 +71,8 @@ import {
   ThumbsUp,
   Send,
   FileImage,
+  Zap,
+  Footprints,
 } from 'lucide-react';
 import { TrafficForecastingModule } from './TrafficForecastingModule';
 import { OperationalStatusBadges } from './OperationalStatusBadges';
@@ -700,6 +702,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Slide-up modals minimize-to-capsule states
   const [isNavCardMinimized, setIsNavCardMinimized] = useState<boolean>(false);
   const [isPlaceCardMinimized, setIsPlaceCardMinimized] = useState<boolean>(false);
+  const [placeImgErrorId, setPlaceImgErrorId] = useState<string | null>(null);
 
   // Hamburger Map Tools Visibility Menu
   interface MapToolVisibility {
@@ -904,12 +907,24 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
   }, []);
 
+  // Independent EV Charging Station Voice Alert State (decoupled from general POI/fuel/hazard audio)
+  const [isEvVoiceAlertEnabled, setIsEvVoiceAlertEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('camgo_ev_voice_alerts_enabled') !== 'false';
+  });
+  const isEvVoiceAlertEnabledRef = useRef<boolean>(isEvVoiceAlertEnabled);
+  useEffect(() => {
+    isEvVoiceAlertEnabledRef.current = isEvVoiceAlertEnabled;
+  }, [isEvVoiceAlertEnabled]);
+
   const spokenStepsMapRef = useRef<Record<number, boolean>>({});
   const triggeredGeofencesRef = useRef<Set<string>>(new Set());
+  const triggeredEvGeofencesRef = useRef<Set<string>>(new Set());
+  const lastSpokenEvSelectRef = useRef<{ id: string; timestamp: number }>({ id: '', timestamp: 0 });
   const geofenceBannerTimerRef = useRef<number | null>(null);
   const [activeGeofenceBanner, setActiveGeofenceBanner] = useState<{
     id: string;
-    kind: 'attraction' | 'fuel' | 'food';
+    kind: 'attraction' | 'fuel' | 'food' | 'ev';
     title: string;
     subtitle: string;
     voiceText: string;
@@ -1149,6 +1164,32 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
+  // Independent EV Charging Station Audio Control (does NOT share state with fuel/hazard/general POI mute)
+  const toggleEvVoiceAlerts = (explicitNext?: boolean) => {
+    const nextState = typeof explicitNext === 'boolean' ? explicitNext : !isEvVoiceAlertEnabled;
+    setIsEvVoiceAlertEnabled(nextState);
+    isEvVoiceAlertEnabledRef.current = nextState;
+    try {
+      localStorage.setItem('camgo_ev_voice_alerts_enabled', String(nextState));
+    } catch {
+      // ignore storage restrictions
+    }
+    if (nextState) {
+      unlockAudioEngine(true);
+    }
+  };
+
+  const speakEvChargingAlert = (text: string, forcedVoiceLang?: 'bm' | 'en') => {
+    if (!isEvVoiceAlertEnabledRef.current || typeof window === 'undefined' || !window.speechSynthesis) {
+      return;
+    }
+    try {
+      speakUtteranceMobileSafe(text, true, forcedVoiceLang);
+    } catch (e) {
+      console.warn('[EV TTS] Speech synthesis error:', e);
+    }
+  };
+
   const speakUtteranceMobileSafe = (
     text: string,
     cancelExisting: boolean,
@@ -1371,6 +1412,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return Math.round(R * c);
+  };
+
+  const formatWalkDuration = (distKm: number, lang: Language): string => {
+    const totalMins = Math.max(1, Math.round((distKm / 4.8) * 60));
+    if (totalMins < 60) {
+      return lang === 'bm' ? `~${totalMins} min jalan kaki` : `~${totalMins} mins walk`;
+    }
+    const hrs = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    return lang === 'bm' ? `~${hrs}j ${mins}m jalan kaki` : `~${hrs}h ${mins}m walk`;
   };
 
   const CORRIDOR_POLYLINES: Record<string, { coords: [number, number][]; color: string; name: string }> = {
@@ -2272,6 +2323,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           routeMetrics.distToTurnM
         );
         evaluateProximityGeofences(lat, lng);
+        evaluateEvChargingProximity(lat, lng);
 
         // AI Telemetry Monitoring
         const anomaly = await telemetryMonitor.processPacket({
@@ -2377,6 +2429,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       setUserGpsCoords({ lat: lat1, lng: lng1 });
       updateVehicleMarkerOnMap(lat1, lng1, bearing, simSpeed, metrics.distToTurnM);
       evaluateProximityGeofences(lat1, lng1);
+      evaluateEvChargingProximity(lat1, lng1);
 
       simProgressIdxRef.current = nextIdx;
     };
@@ -3785,30 +3838,44 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     );
   };
 
+  const isEvChargingPoi = (p: Place): boolean => {
+    const text = `${p.name || ''} ${p.nameBm || ''} ${(p.tags || []).join(' ')} ${p.description || ''}`.toLowerCase();
+    return (
+      text.includes('ev charger') ||
+      text.includes('ev charging') ||
+      text.includes('ev fast') ||
+      text.includes('ev station') ||
+      text.includes('pengecas ev') ||
+      text.includes('pengecasan ev') ||
+      text.includes('gentari') ||
+      text.includes('tnb electron') ||
+      text.includes('shell recharge') ||
+      text.includes('dc fast')
+    );
+  };
+
   const isGasStationPoi = (p: Place): boolean => {
     const text = `${p.name || ''} ${p.nameBm || ''} ${(p.tags || []).join(' ')} ${p.description || ''}`.toLowerCase();
     const isParkingOnly = text.includes('parking') || text.includes('parkir');
-    const hasFuelKeyword =
+    const isEv = isEvChargingPoi(p);
+    const hasPetrolKeyword =
       text.includes('petronas') ||
-      text.includes('shell') ||
+      (text.includes('shell') && !text.includes('shell recharge')) ||
       text.includes('bhp') ||
       text.includes('caltex') ||
       text.includes('petron') ||
       text.includes('stesen minyak') ||
       text.includes('gas station') ||
       text.includes('petrol') ||
-      text.includes('fuel') ||
-      text.includes('gentari') ||
-      text.includes('tnb electron') ||
-      text.includes('ev charger') ||
-      text.includes('ev fast');
-    if (isParkingOnly && !hasFuelKeyword) return false;
-    return p.subCategory === 'fuel_ev_charging' || hasFuelKeyword;
+      text.includes('fuel');
+    if (isEv && !hasPetrolKeyword) return false;
+    if (isParkingOnly && !hasPetrolKeyword) return false;
+    return (p.subCategory === 'fuel_ev_charging' && !isEv && hasPetrolKeyword) || hasPetrolKeyword;
   };
 
   // Voice alerts strictly allowed ONLY for:
   // 1. Travel & Highland Tourism
-  // 2. Gas Stations
+  // 2. Gas Stations (EV Charging Stations handled separately via evaluateEvChargingProximity & triggerEvChargingSelectionVoice)
   // 3. Food & Beverages
   const isAllowedVoiceAlertPoi = (p: Place): boolean => {
     return isTravelTourismPoi(p) || isGasStationPoi(p) || isFoodBeveragePoi(p);
@@ -3816,6 +3883,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   const resetTripLegGeofences = () => {
     triggeredGeofencesRef.current.clear();
+    triggeredEvGeofencesRef.current.clear();
     spokenStepsMapRef.current = {};
     if (geofenceBannerTimerRef.current !== null) {
       window.clearTimeout(geofenceBannerTimerRef.current);
@@ -3826,7 +3894,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   const showGeofenceBannerNotification = (banner: {
     id: string;
-    kind: 'attraction' | 'fuel' | 'food';
+    kind: 'attraction' | 'fuel' | 'food' | 'ev';
     title: string;
     subtitle: string;
     voiceText: string;
@@ -3982,11 +4050,93 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  // Trigger strict geofence proximity check whenever live GPS coordinates update
+  // Independent EV Charging Station Proximity & Selection Voice Engine (<= 500m)
+  const triggerEvChargingSelectionVoice = (place: Place) => {
+    if (!place || !isEvChargingPoi(place)) return;
+    const now = Date.now();
+    if (
+      lastSpokenEvSelectRef.current.id === place.id &&
+      now - lastSpokenEvSelectRef.current.timestamp < 6000
+    ) {
+      return;
+    }
+    lastSpokenEvSelectRef.current = { id: place.id, timestamp: now };
+    unlockAudioEngine(true);
+
+    const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
+    const stationName = (isBm ? place.nameBm : '') || place.name;
+    const evVoiceText = isBm
+      ? `Stesen pengecas kenderaan elektrik dipilih: ${stationName} di ${place.township}.`
+      : `EV charging station selected: ${stationName} in ${place.township}.`;
+
+    speakEvChargingAlert(evVoiceText);
+  };
+
+  const evaluateEvChargingProximity = (lat: number, lng: number) => {
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+
+    const EV_RADIUS_M = 500;
+    let nearestEv: { id: string; name: string; distanceMeters: number; place: Place } | null = null;
+
+    livePlacesRef.current.forEach((p) => {
+      if (!isEvChargingPoi(p)) return;
+      const pLat = Number(p.coordinates?.lat ?? (p as any).lat ?? 0);
+      const pLng = Number(p.coordinates?.lng ?? (p as any).lng ?? 0);
+      if (isNaN(pLat) || isNaN(pLng) || pLat === 0 || pLng === 0) return;
+
+      const key = `ev:${p.id}`;
+      if (triggeredEvGeofencesRef.current.has(key)) return;
+
+      const distM = calculateDistanceMeters(lat, lng, pLat, pLng);
+      if (distM <= EV_RADIUS_M && (!nearestEv || distM < nearestEv.distanceMeters)) {
+        const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
+        nearestEv = {
+          id: p.id,
+          name: (isBm ? p.nameBm : '') || p.name,
+          distanceMeters: distM,
+          place: p,
+        };
+      }
+    });
+
+    if (nearestEv) {
+      const matchedEv = nearestEv as { id: string; name: string; distanceMeters: number; place: Place };
+      triggeredEvGeofencesRef.current.add(`ev:${matchedEv.id}`);
+      const isBm = mapVoiceLangRef.current === 'bm' || language === 'bm';
+      const evVoiceText = isBm
+        ? `Stesen pengecas kenderaan elektrik di hadapan. ${matchedEv.name} sejauh ${matchedEv.distanceMeters} meter.`
+        : `EV charging station ahead. ${matchedEv.name} is ${matchedEv.distanceMeters} meters away.`;
+
+      showGeofenceBannerNotification({
+        id: `geofence-ev-${matchedEv.id}`,
+        kind: 'ev',
+        title:
+          language === 'bm'
+            ? `Stesen Pengecas EV: ${matchedEv.name}`
+            : `EV Charging Station Ahead: ${matchedEv.name}`,
+        subtitle: `${matchedEv.distanceMeters}m • ${matchedEv.place.township}`,
+        voiceText: evVoiceText,
+        distanceMeters: matchedEv.distanceMeters,
+        place: matchedEv.place,
+      });
+      speakEvChargingAlert(evVoiceText);
+    }
+  };
+
+  // Trigger strict geofence proximity check & independent EV check whenever live GPS coordinates update
   useEffect(() => {
     if (!userGpsCoords) return;
     evaluateProximityGeofences(userGpsCoords.lat, userGpsCoords.lng);
+    evaluateEvChargingProximity(userGpsCoords.lat, userGpsCoords.lng);
   }, [userGpsCoords, language, mapVoiceLang]);
+
+  // Reset image failure state and trigger independent EV voice alert when selecting an EV station
+  useEffect(() => {
+    setPlaceImgErrorId(null);
+    if (selectedPlace && isEvChargingPoi(selectedPlace)) {
+      triggerEvChargingSelectionVoice(selectedPlace);
+    }
+  }, [selectedPlace?.id]);
 
   // Muslim Prayer Time ("Coming Soon") Live Fetcher & Reminder Engine (JAKIM PHG06 Cameron Highlands)
   useEffect(() => {
@@ -5125,6 +5275,32 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                 {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
                               </span>
                             </button>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleEvVoiceAlerts()}
+                              className={`col-span-2 min-h-[38px] px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                                isEvVoiceAlertEnabled
+                                  ? 'bg-cyan-500/15 border-cyan-400/45 text-cyan-100'
+                                  : 'bg-stone-900/80 border-white/10 text-stone-400 hover:bg-stone-800'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <Zap className={`w-4 h-4 shrink-0 ${isEvVoiceAlertEnabled ? 'text-cyan-400' : 'text-stone-500'}`} />
+                                <span className="truncate">
+                                  {language === 'bm' ? 'Amaran Suara Pengecas EV' : 'EV Charger Voice Alerts'}
+                                </span>
+                              </span>
+                              <span
+                                className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-md shrink-0 ${
+                                  isEvVoiceAlertEnabled
+                                    ? 'bg-cyan-500 text-stone-950'
+                                    : 'bg-stone-800 text-stone-400'
+                                }`}
+                              >
+                                {isEvVoiceAlertEnabled ? 'ON' : 'OFF'}
+                              </span>
+                            </button>
                           </>
                         )}
 
@@ -5770,29 +5946,35 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     </div>
                   )}
 
-                  {/* Strict Geofence Proximity Alert Banner */}
+                  {/* Strict Geofence & EV Charging Proximity Alert Banner */}
                   {mapToolsVisibility.alertBanners && activeGeofenceBanner && (
                     <div className="pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300">
                       <div
                         className={`rounded-2xl backdrop-blur-2xl border shadow-2xl px-3 py-2 text-stone-100 flex items-center justify-between gap-2 ${
-                          activeGeofenceBanner.kind === 'fuel'
+                          activeGeofenceBanner.kind === 'ev'
+                            ? 'bg-cyan-950/95 border-cyan-400/75'
+                            : activeGeofenceBanner.kind === 'fuel'
                             ? 'bg-amber-950/95 border-amber-400/70'
                             : activeGeofenceBanner.kind === 'food'
-                              ? 'bg-teal-950/95 border-teal-400/70'
-                              : 'bg-emerald-950/95 border-emerald-400/70'
+                            ? 'bg-teal-950/95 border-teal-400/70'
+                            : 'bg-emerald-950/95 border-emerald-400/70'
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div
                             className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
-                              activeGeofenceBanner.kind === 'fuel'
+                              activeGeofenceBanner.kind === 'ev'
+                                ? 'bg-cyan-500/20 border-cyan-400/55 text-cyan-300'
+                                : activeGeofenceBanner.kind === 'fuel'
                                 ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
                                 : activeGeofenceBanner.kind === 'food'
-                                  ? 'bg-teal-500/20 border-teal-400/50 text-teal-300'
-                                  : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                                ? 'bg-teal-500/20 border-teal-400/50 text-teal-300'
+                                : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
                             }`}
                           >
-                            {activeGeofenceBanner.kind === 'fuel' ? (
+                            {activeGeofenceBanner.kind === 'ev' ? (
+                              <Zap className="w-4 h-4 animate-pulse" />
+                            ) : activeGeofenceBanner.kind === 'fuel' ? (
                               <Fuel className="w-4 h-4 animate-pulse" />
                             ) : activeGeofenceBanner.kind === 'food' ? (
                               <Utensils className="w-4 h-4 animate-bounce" />
@@ -5803,18 +5985,22 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           <div className="min-w-0">
                             <div
                               className={`text-[9.5px] font-mono font-black uppercase tracking-wider truncate ${
-                                activeGeofenceBanner.kind === 'fuel'
+                                activeGeofenceBanner.kind === 'ev'
+                                  ? 'text-cyan-300'
+                                  : activeGeofenceBanner.kind === 'fuel'
                                   ? 'text-amber-300'
                                   : activeGeofenceBanner.kind === 'food'
-                                    ? 'text-teal-300'
-                                    : 'text-emerald-300'
+                                  ? 'text-teal-300'
+                                  : 'text-emerald-300'
                               }`}
                             >
-                              {activeGeofenceBanner.kind === 'fuel'
+                              {activeGeofenceBanner.kind === 'ev'
+                                ? 'EV CHARGING STATION (<=500M)'
+                                : activeGeofenceBanner.kind === 'fuel'
                                 ? 'GAS STATION (<=500M)'
                                 : activeGeofenceBanner.kind === 'food'
-                                  ? 'FOOD & BEVERAGE (<=280M)'
-                                  : 'TRAVEL & TOURISM (<=280M)'}
+                                ? 'FOOD & BEVERAGE (<=280M)'
+                                : 'TRAVEL & TOURISM (<=280M)'}
                             </div>
                             <div className="text-xs font-black text-white truncate">
                               {activeGeofenceBanner.title}
@@ -5849,8 +6035,13 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                             type="button"
                             onClick={() => {
                               unlockAudioEngine(true);
-                              if (!isVoiceNavEnabled) togglePwaAudioAlerts(true);
-                              speakUtteranceMobileSafe(activeGeofenceBanner.voiceText, true);
+                              if (activeGeofenceBanner.kind === 'ev') {
+                                if (!isEvVoiceAlertEnabled) toggleEvVoiceAlerts(true);
+                                speakUtteranceMobileSafe(activeGeofenceBanner.voiceText, true);
+                              } else {
+                                if (!isVoiceNavEnabled) togglePwaAudioAlerts(true);
+                                speakUtteranceMobileSafe(activeGeofenceBanner.voiceText, true);
+                              }
                             }}
                             className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
                             title={language === 'bm' ? 'Ulang Suara' : 'Replay Voice Alert'}
@@ -5974,11 +6165,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     >
                       <div className="flex items-start justify-between gap-2 shrink-0">
                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                          <img
-                            src={safeSrc(selectedPlace.imageUrl, DEFAULT_PLACE_IMAGE)}
-                            alt={selectedPlace.name}
-                            className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl object-cover shrink-0 border border-white/15 shadow-md"
-                          />
+                          {safeSrc(selectedPlace.imageUrl) && placeImgErrorId !== selectedPlace.id ? (
+                            <img
+                              src={safeSrc(selectedPlace.imageUrl)}
+                              alt={selectedPlace.name}
+                              referrerPolicy="no-referrer"
+                              onError={() => setPlaceImgErrorId(selectedPlace.id)}
+                              className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl object-cover shrink-0 border border-white/15 shadow-md bg-stone-800"
+                            />
+                          ) : (
+                            <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-md">
+                              <MapPin className="w-6 h-6 text-emerald-400" />
+                            </div>
+                          )}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-400 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30">
@@ -6014,42 +6213,33 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
                       {userGpsCoords &&
                         selectedPlace.coordinates?.lat &&
-                        selectedPlace.coordinates?.lng && (
-                          <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[11px] sm:text-xs shrink-0">
-                            <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>
-                                {calculateDistanceKm(
-                                  userGpsCoords.lat,
-                                  userGpsCoords.lng,
-                                  Number(selectedPlace.coordinates.lat),
-                                  Number(selectedPlace.coordinates.lng)
-                                )}{' '}
-                                km away
-                              </span>
+                        selectedPlace.coordinates?.lng && (() => {
+                          const distKm = calculateDistanceKm(
+                            userGpsCoords.lat,
+                            userGpsCoords.lng,
+                            Number(selectedPlace.coordinates.lat),
+                            Number(selectedPlace.coordinates.lng)
+                          );
+                          const driveMins = Math.max(3, Math.round((distKm / 32) * 60));
+                          return (
+                            <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[11px] sm:text-xs shrink-0">
+                              <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span>{distKm} km away</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2.5 font-bold font-mono text-[10.5px] sm:text-[11px]">
+                                <span className="flex items-center gap-1 text-amber-300">
+                                  <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  <span>~{driveMins} mins drive</span>
+                                </span>
+                                <span className="flex items-center gap-1 text-cyan-300">
+                                  <Footprints className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                  <span>{formatWalkDuration(distKm, language)}</span>
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1.5 text-amber-300 font-bold font-mono text-[10.5px] sm:text-[11px]">
-                              <Car className="w-3.5 h-3.5 text-amber-400" />
-                              <span>
-                                ~
-                                {Math.max(
-                                  3,
-                                  Math.round(
-                                    (calculateDistanceKm(
-                                      userGpsCoords.lat,
-                                      userGpsCoords.lng,
-                                      Number(selectedPlace.coordinates.lat),
-                                      Number(selectedPlace.coordinates.lng)
-                                    ) /
-                                      32) *
-                                      60
-                                  )
-                                )}{' '}
-                                mins drive
-                              </span>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                       <button
                         type="button"
@@ -6238,14 +6428,22 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                         {/* Drag Handle Indicator */}
                         <div className="w-10 h-1 bg-stone-600/80 rounded-full mx-auto -mt-0.5 mb-0.5 shrink-0" />
 
-                        {/* Header: Place Photo + Titles + Minimize/Close Buttons */}
+                        {/* Header: Place Photo (or clean fallback icon) + Titles + Minimize/Close Buttons */}
                         <div className="flex items-start justify-between gap-2 w-full min-w-0 shrink-0">
                           <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1 overflow-hidden">
-                            <img
-                              src={safeSrc(selectedPlace.imageUrl, DEFAULT_PLACE_IMAGE)}
-                              alt={selectedPlace.name}
-                              className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl object-cover shrink-0 border border-white/10 shadow-md aspect-square"
-                            />
+                            {safeSrc(selectedPlace.imageUrl) && placeImgErrorId !== selectedPlace.id ? (
+                              <img
+                                src={safeSrc(selectedPlace.imageUrl)}
+                                alt={selectedPlace.name}
+                                referrerPolicy="no-referrer"
+                                onError={() => setPlaceImgErrorId(selectedPlace.id)}
+                                className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl object-cover shrink-0 border border-white/10 shadow-md aspect-square bg-stone-800"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-md aspect-square">
+                                <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400" />
+                              </div>
+                            )}
                             <div className="min-w-0 flex-1 overflow-hidden pr-0.5">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-400 px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 truncate max-w-[130px]">
@@ -6290,7 +6488,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           </div>
                         </div>
 
-                        {/* Live Distance & Estimated Mountain Drive Time */}
+                        {/* Live Distance & Estimated Mountain Drive + Walking Time */}
                         {(() => {
                           const lat = Number(selectedPlace.coordinates?.lat);
                           const lng = Number(selectedPlace.coordinates?.lng);
@@ -6303,14 +6501,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                             const estMins = Math.max(3, Math.round((dist / 32) * 60));
 
                             return (
-                              <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs shrink-0 w-full min-w-0 overflow-hidden">
+                              <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs shrink-0 w-full min-w-0 overflow-hidden">
                                 <div className="flex items-center gap-1.5 text-emerald-300 font-bold min-w-0 truncate">
                                   <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                                   <span className="truncate">{dist} km away</span>
                                 </div>
-                                <div className="flex items-center gap-1.5 text-amber-300 font-bold font-mono shrink-0 pl-1 text-[11px] sm:text-xs">
-                                  <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                  <span>~{estMins} mins drive</span>
+                                <div className="flex flex-wrap items-center gap-2 font-bold font-mono shrink-0 text-[10.5px] sm:text-xs">
+                                  <span className="flex items-center gap-1 text-amber-300">
+                                    <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    <span>~{estMins} mins drive</span>
+                                  </span>
+                                  <span className="flex items-center gap-1 text-cyan-300">
+                                    <Footprints className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                    <span>{formatWalkDuration(dist, language)}</span>
+                                  </span>
                                 </div>
                               </div>
                             );
@@ -6755,6 +6959,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     title={isVoiceNavEnabled ? 'Mute PWA Audio Alerts' : 'Enable PWA Audio Alerts'}
                   >
                     {isVoiceNavEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleEvVoiceAlerts()}
+                    className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                      isEvVoiceAlertEnabled
+                        ? 'bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300'
+                        : 'bg-stone-800/60 text-stone-500'
+                    }`}
+                    title={isEvVoiceAlertEnabled ? 'EV Charger Voice Alerts: On' : 'EV Charger Voice Alerts: Off'}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
                   </button>
 
                   <button

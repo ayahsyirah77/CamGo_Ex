@@ -192,12 +192,21 @@ export default function App() {
   const [events, setEvents] = useState<EventNotification[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(firebaseService.getCurrentUser());
   const [mainBgUrl, setMainBgUrl] = useState<string>(() => firebaseService.getMainPageBackground());
+  const [headerBgUrl, setHeaderBgUrl] = useState<string>(
+    () => firebaseService.getVisualBackgrounds().headerBackgroundUrl
+  );
 
   useEffect(() => {
     const unsub = firebaseService.subscribeMainPageBackground((url) => {
       setMainBgUrl(url);
     });
-    return () => unsub();
+    const unsubVisuals = firebaseService.subscribeVisualBackgrounds((cfg) => {
+      setHeaderBgUrl(cfg.headerBackgroundUrl || '');
+    });
+    return () => {
+      unsub();
+      unsubVisuals();
+    };
   }, []);
 
   const [selectedPlaceForMap, setSelectedPlaceForMap] = useState<Place | null>(null);
@@ -952,6 +961,13 @@ export default function App() {
       <main className="flex-1">
         {/* 3. Desktop Hero Section */}
         <section id="hero-section" className="hidden sm:flex relative items-center justify-center pt-28 pb-5 px-6 lg:px-8 overflow-hidden">
+          {headerBgUrl && (
+            <img
+              src={headerBgUrl}
+              alt="Cameron Highlands header background"
+              className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/80 via-stone-950/60 to-stone-950/90 pointer-events-none" />
 
           <div className="relative z-10 max-w-5xl mx-auto text-center space-y-4">
@@ -1629,7 +1645,7 @@ export default function App() {
                 <ShieldAlert className="w-5 h-5" />
               </div>
               <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
-                {language === 'bm' ? 'Notis & Amaran Bahaya Jalan' : 'Live Notice & Corridor Hazards'}
+                {language === 'bm' ? 'Notis / Amaran' : 'Notice / Alert'}
               </h3>
             </div>
             <button

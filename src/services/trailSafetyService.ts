@@ -587,6 +587,24 @@ export function saveCachedActiveTrailSession(session: TrailSafetySession | null)
   }
 }
 
+export async function clearCachedTrailSessionAndGps(): Promise<void> {
+  saveCachedActiveTrailSession(null);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(LAST_KNOWN_MAP_GPS_KEY);
+    } catch {
+      // ignore storage error
+    }
+  }
+  try {
+    const idb = await getTelemetryDb();
+    await idb.delete(STORE_TELEMETRY_STATE, 'last_known_map_gps');
+    await idb.clear(STORE_SESSION_OUTBOX);
+  } catch {
+    // IndexedDB unavailable
+  }
+}
+
 export async function getQueuedTrailSessionCount(): Promise<number> {
   try {
     const idb = await getTelemetryDb();

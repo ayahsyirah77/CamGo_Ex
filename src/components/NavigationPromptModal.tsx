@@ -1,11 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Navigation, MapPin, X, ExternalLink, Compass, Loader2 } from 'lucide-react';
+import {
+  Navigation,
+  MapPin,
+  X,
+  ExternalLink,
+  Compass,
+  Loader2,
+  Car,
+  Footprints,
+} from 'lucide-react';
 import { Place } from '../types';
+import { safeSrc } from '../utils/safeMedia';
 
 interface NavigationPromptModalProps {
   language?: 'en' | 'bm';
   onNavigateInternal: (place: Place) => void;
+}
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatWalkDuration(distKm: number, lang: 'en' | 'bm'): string {
+  const totalMins = Math.max(1, Math.round((distKm / 4.8) * 60));
+  if (totalMins < 60) {
+    return lang === 'bm' ? `~${totalMins} min jalan kaki` : `~${totalMins} mins walk`;
+  }
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return lang === 'bm'
+    ? `~${hrs}j ${mins}m jalan kaki`
+    : `~${hrs}h ${mins}m walk`;
+}
+
+function formatDriveDuration(distKm: number, lang: 'en' | 'bm'): string {
+  const mins = Math.max(3, Math.round((distKm / 32) * 60));
+  return lang === 'bm' ? `~${mins} min memandu` : `~${mins} mins drive`;
 }
 
 export const NavigationPromptModal: React.FC<NavigationPromptModalProps> = ({
@@ -14,10 +52,13 @@ export const NavigationPromptModal: React.FC<NavigationPromptModalProps> = ({
 }) => {
   const [targetPlace, setTargetPlace] = useState<Place | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => {
     const handleOpenNavPrompt = (e: any) => {
       if (e?.detail) {
+        setImgFailed(false);
         setTargetPlace(e.detail);
       }
     };
@@ -26,6 +67,40 @@ export const NavigationPromptModal: React.FC<NavigationPromptModalProps> = ({
       window.removeEventListener('open-navigation-prompt', handleOpenNavPrompt as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!targetPlace || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    let active = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (active) {
+          setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        }
+      },
+      () => {
+        // Silent fallback if permission declined
+      },
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 6000 }
+    );
+    return () => {
+      active = false;
+    };
+  }, [targetPlace]);
+
+  const routeMetrics = useMemo(() => {
+    if (!targetPlace || !userCoords) return null;
+    const destLat = Number(targetPlace.coordinates?.lat);
+    const destLng = Number(targetPlace.coordinates?.lng);
+    if (!Number.isFinite(destLat) || !Number.isFinite(destLng) || destLat === 0 || destLng === 0) {
+      return null;
+    }
+    const distKm = Number(haversineKm(userCoords.lat, userCoords.lng, destLat, destLng).toFixed(1));
+    return {
+      distKm,
+      driveText: formatDriveDuration(distKm, language),
+      walkText: formatWalkDuration(distKm, language),
+    };
+  }, [targetPlace, userCoords, language]);
 
   const onClose = () => {
     setIsLocating(false);
@@ -75,6 +150,8 @@ export const NavigationPromptModal: React.FC<NavigationPromptModalProps> = ({
     }
   };
 
+  const uploadedPhotoUrl = targetPlace ? safeSrc(targetPlace.imageUrl) : '';
+
   return (
     <AnimatePresence>
       {targetPlace && (
@@ -86,38 +163,69 @@ export const NavigationPromptModal: React.FC<NavigationPromptModalProps> = ({
             className="glass-panel w-full max-w-md bg-stone-900 border border-emerald-500/40 rounded-3xl p-6 text-stone-100 shadow-2xl relative overflow-hidden"
           >
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 animate-pulse" />
-            
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  <Navigation className="w-6 h-6 animate-bounce" />
-                </div>
-                <div>
+
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                {uploadedPhotoUrl && !imgFailed ? (
+                  <img
+                    src={uploadedPhotoUrl}
+                    alt={language === 'bm' ? targetPlace.nameBm || targetPlace.name : targetPlace.name}
+                    referrerPolicy="no-referrer"
+                    onError={() => setImgFailed(true)}
+                    className="w-14 h-14 rounded-2xl object-cover shrink-0 border border-emerald-400/35 shadow-md bg-stone-800"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                    <MapPin className="w-6 h-6" />
+                  </div>
+                )}
+                <div className="min-w-0">
                   <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400">
                     {language === 'bm' ? 'NAVIGASI GPS LANGSUNG' : 'LIVE GPS ROUTE NAVIGATOR'}
                   </div>
                   <h3 className="text-lg font-heading font-extrabold text-white line-clamp-1">
-                    {targetPlace.name}
+                    {language === 'bm' ? targetPlace.nameBm || targetPlace.name : targetPlace.name}
                   </h3>
                 </div>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 rounded-xl bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                className="p-2 rounded-xl bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-stone-950/80 rounded-2xl p-4 border border-white/5 space-y-2 mb-5">
+            <div className="bg-stone-950/80 rounded-2xl p-4 border border-white/5 space-y-2.5 mb-5">
               <div className="flex items-center justify-between text-xs text-stone-300">
-                <span className="flex items-center gap-1.5 font-semibold">
+                <span className="flex items-center gap-1.5 font-semibold min-w-0 truncate">
                   <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
-                  {targetPlace.township} • {targetPlace.elevation || 'Cameron Highlands'}
+                  <span className="truncate">
+                    {targetPlace.township} • {targetPlace.elevation || 'Cameron Highlands'}
+                  </span>
                 </span>
-                <span className="text-amber-400 font-bold">★ {targetPlace.rating || 4.8}</span>
+                <span className="text-amber-400 font-bold shrink-0">★ {targetPlace.rating || 4.8}</span>
               </div>
-              <p className="text-xs text-stone-300 font-medium pt-1">
+
+              {routeMetrics && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10 text-[11px]">
+                  <span className="font-bold text-emerald-300">
+                    {routeMetrics.distKm} km {language === 'bm' ? 'dari anda' : 'away'}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2.5 font-mono font-bold">
+                    <span className="inline-flex items-center gap-1 text-amber-300">
+                      <Car className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>{routeMetrics.driveText}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-cyan-300">
+                      <Footprints className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span>{routeMetrics.walkText}</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-stone-300 font-medium pt-0.5">
                 {language === 'bm'
                   ? 'Adakah anda ingin memulakan navigasi GPS ke tempat ini menggunakan lokasi semasa anda?'
                   : 'Would you like to start GPS turn-by-turn navigation to this location using your current position?'}

@@ -60,6 +60,7 @@ import {
   buildSmsLink,
   buildTrailTrackingUrl,
   buildWhatsAppLink,
+  clearCachedTrailSessionAndGps,
   flushPendingTrailSessions,
   generateTrackingToken,
   getCachedActiveTrailSession,
@@ -120,6 +121,8 @@ const TRAIL_COLORS: Record<number, string> = {
   13: '#f97316',
   14: '#7c3aed',
   15: '#e11d48',
+  16: '#0ea5e9',
+  17: '#f43f5e',
 };
 
 const FIVE_MINUTES_SEC = 5 * 60;
@@ -136,6 +139,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   // Unlocked Map State (false: Safety Passport Form -> true: Interactive Trail Map)
   const [passportUnlocked, setPassportUnlocked] = useState(false);
   const [resumableSession, setResumableSession] = useState<TrailSafetySession | null>(null);
+  const [isConfirmingResetSession, setIsConfirmingResetSession] = useState(false);
 
   // Selected Trail & Weather / Offline Cache State
   const [selectedTrail, setSelectedTrail] = useState<TrailRoute>(() => CAMERON_TRAILS[0]);
@@ -691,6 +695,28 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
       }
     };
   }, [isOpen, passportUnlocked]);
+
+  // Keep Leaflet breadcrumb polyline synchronized whenever breadcrumbs are restored, recorded, or reset
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !passportUnlocked) return;
+
+    if (breadcrumbs.length > 1) {
+      const latLngs = breadcrumbs.map((b) => [b.lat, b.lng] as [number, number]);
+      if (!breadcrumbLineRef.current) {
+        breadcrumbLineRef.current = L.polyline(latLngs, {
+          color: '#38bdf8',
+          weight: 4,
+          dashArray: '5 5',
+        }).addTo(map);
+      } else {
+        breadcrumbLineRef.current.setLatLngs(latLngs);
+      }
+    } else if (breadcrumbLineRef.current) {
+      breadcrumbLineRef.current.remove();
+      breadcrumbLineRef.current = null;
+    }
+  }, [breadcrumbs, passportUnlocked]);
 
   // Reflow Leaflet canvas + auto-detect & center current GPS location when Full Screen Map opens
   useEffect(() => {
@@ -1322,13 +1348,38 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
   const handleResumeCachedSession = () => {
     if (!resumableSession) return;
+    const restoredBreadcrumbs = resumableSession.breadcrumbs || [];
     setActiveSession(resumableSession);
     setHikerName(resumableSession.hikerName);
     setGroupSize(String(resumableSession.groupSize));
     setEmergencyContactName(resumableSession.emergencyContactName || '');
     setEmergencyContact(resumableSession.emergencyContact);
     setExpectedHours(String(resumableSession.expectedHours));
-    setBreadcrumbs(resumableSession.breadcrumbs || []);
+    setBreadcrumbs(restoredBreadcrumbs);
+    setIsRecording(Boolean(resumableSession.recordingStartedAt));
+    if (restoredBreadcrumbs[0]) {
+      setPinnedStart({ lat: restoredBreadcrumbs[0].lat, lng: restoredBreadcrumbs[0].lng });
+    }
+    if (resumableSession.expectedReturnAt) {
+      const remaining = Math.max(
+        0,
+        Math.floor((new Date(resumableSession.expectedReturnAt).getTime() - Date.now()) / 1000)
+      );
+      setTimeRemainingSeconds(remaining);
+    }
+    if (
+      !currentGps.hasRealFix &&
+      typeof resumableSession.lastKnownLat === 'number' &&
+      typeof resumableSession.lastKnownLng === 'number'
+    ) {
+      setCurrentGps((prev) => ({
+        ...prev,
+        lat: resumableSession.lastKnownLat!,
+        lng: resumableSession.lastKnownLng!,
+        altitude: resumableSession.currentAltitude || prev.altitude,
+        accuracy: resumableSession.telemetry?.gpsAccuracy ?? prev.accuracy,
+      }));
+    }
     overdueFiredRef.current = Boolean(resumableSession.overdueAlertSent);
     autoStartFiredRef.current = Boolean(resumableSession.autoStartAlertSent);
     inactivity1FiredRef.current = Boolean(resumableSession.inactivityAlert1Sent);
@@ -1347,6 +1398,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
       setSelectedTrailId(matchedTrail.id);
       setIsPlannedTrailEnabled(true);
     }
+    setIsConfirmingResetSession(false);
     setPassportUnlocked(true);
   };
 
@@ -1461,11 +1513,16 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     setFormError(null);
 
     // Reset map & active monitoring state
+    if (breadcrumbLineRef.current) {
+      breadcrumbLineRef.current.remove();
+      breadcrumbLineRef.current = null;
+    }
     setIsRecording(false);
     setBreadcrumbs([]);
     setPinnedStart(null);
     setActiveSession(null);
     setResumableSession(null);
+    setIsConfirmingResetSession(false);
     setIsFullScreenMap(false);
     setPassportUnlocked(false);
     overdueFiredRef.current = false;
@@ -1488,6 +1545,16 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     if (cached) {
       await markTrailSessionCheckedOut(cached).catch(() => {});
     }
+  };
+
+  // Reset Active Map from the "Active Session Available" prompt (wipes stale GPS, breadcrumbs & timers)
+  const handleResetActiveCachedSession = async () => {
+    const cached = resumableSession || activeSession || getCachedActiveTrailSession();
+    resetTrailUiSessionState();
+    if (cached) {
+      await markTrailSessionCheckedOut(cached).catch(() => {});
+    }
+    await clearCachedTrailSessionAndGps();
   };
 
   // Automatic One-Tap Smart SOS Activation (WhatsApp + Native SMS + Backend Relay, staying on Map)
@@ -1906,25 +1973,58 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
               onSubmit={handleSubmitSafetyPassport}
               className="p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl bg-stone-950/90 border border-emerald-500/40 shadow-xl space-y-4 animate-in fade-in duration-200"
             >
-              {/* Optional Resume Active Track Banner if a live session is cached */}
+              {/* Optional Resume / Reset Active Track Banner if a live session is cached */}
               {resumableSession && (
-                <div className="p-3 rounded-2xl bg-emerald-950/55 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                  <div className="min-w-0 space-y-0.5">
-                    <div className="text-[11px] font-mono font-bold uppercase text-emerald-300">
-                      Active Session Available
+                <div className="p-3.5 rounded-2xl bg-emerald-950/55 border border-emerald-500/40 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="text-[11px] font-mono font-bold uppercase text-emerald-300">
+                        Active Session Available
+                      </div>
+                      <div className="text-xs text-stone-200 whitespace-normal break-words leading-snug">
+                        {resumableSession.trailName} • Hiker: {resumableSession.hikerName}
+                      </div>
                     </div>
-                    <div className="text-xs text-stone-200 whitespace-normal break-words leading-snug">
-                      {resumableSession.trailName} • Hiker: {resumableSession.hikerName}
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleResumeCachedSession}
+                        className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                      >
+                        <Navigation className="w-3.5 h-3.5 shrink-0" />
+                        <span>Resume Active Map</span>
+                      </button>
+
+                      {!isConfirmingResetSession ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsConfirmingResetSession(true)}
+                          className="min-h-[44px] px-3.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-rose-500/40 text-rose-300 font-bold text-xs shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                          <span>Reset Active Map</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleResetActiveCachedSession}
+                            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shrink-0 cursor-pointer shadow-md"
+                          >
+                            Confirm Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsConfirmingResetSession(false)}
+                            className="min-h-[44px] px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs shrink-0 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleResumeCachedSession}
-                    className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <Navigation className="w-3.5 h-3.5 shrink-0" />
-                    <span>Resume Active Map</span>
-                  </button>
                 </div>
               )}
 
@@ -2247,9 +2347,21 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       ))}
                     </select>
                     {selectedTrailId && (
-                      <div className="text-[11px] text-stone-300 whitespace-normal break-words leading-snug">
-                        <span className="font-bold text-emerald-300">{selectedTrail.name}</span>{' '}
-                        • {selectedTrail.difficulty} ({selectedTrail.distanceKm}km • {selectedTrail.estDurationHrs})
+                      <div className="text-[11px] text-stone-300 whitespace-normal break-words leading-snug space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {selectedTrail.isAdminTest && (
+                            <span className="px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-sky-300 font-mono font-bold text-[10px]">
+                              [Admin Test]
+                            </span>
+                          )}
+                          <span className="font-bold text-emerald-300">{selectedTrail.name}</span>
+                          <span>
+                            • {selectedTrail.difficulty} ({selectedTrail.distanceKm}km • {selectedTrail.estDurationHrs})
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-stone-400">
+                          {selectedTrail.trailheadName} → {selectedTrail.peakName || 'Finish'}
+                        </div>
                       </div>
                     )}
                   </>
@@ -2749,6 +2861,29 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       <RotateCcw className="w-4 h-4 shrink-0" />
                       <span className="truncate">Edit Passport</span>
                     </button>
+
+                    <div className="col-span-2 sm:col-span-4 pt-1 border-t border-white/10">
+                      <label className="block text-[10px] font-mono uppercase text-stone-400 mb-1">
+                        Active Route / [Admin Test] Preview
+                      </label>
+                      <select
+                        value={selectedTrail.id}
+                        onChange={(e) => {
+                          const t = CAMERON_TRAILS.find((x) => x.id === e.target.value);
+                          if (t) {
+                            setSelectedTrail(t);
+                            setSelectedTrailId(t.id);
+                          }
+                        }}
+                        className="w-full min-h-[38px] px-2.5 py-1.5 rounded-xl bg-stone-900 border border-emerald-500/35 text-xs font-semibold text-white focus:outline-none focus:border-emerald-400 cursor-pointer"
+                      >
+                        {CAMERON_TRAILS.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.distanceKm}km)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2893,6 +3028,29 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         <RotateCcw className="w-4 h-4 shrink-0" />
                         <span>Edit Safety Passport</span>
                       </button>
+
+                      <div className="pt-1.5 mt-1 border-t border-white/10 px-1">
+                        <label className="block text-[9px] font-mono uppercase text-stone-400 mb-1">
+                          Route / [Admin Test]
+                        </label>
+                        <select
+                          value={selectedTrail.id}
+                          onChange={(e) => {
+                            const t = CAMERON_TRAILS.find((x) => x.id === e.target.value);
+                            if (t) {
+                              setSelectedTrail(t);
+                              setSelectedTrailId(t.id);
+                            }
+                          }}
+                          className="w-full min-h-[34px] px-2 py-1 rounded-lg bg-stone-900 border border-emerald-500/35 text-[11px] font-semibold text-white focus:outline-none cursor-pointer"
+                        >
+                          {CAMERON_TRAILS.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} ({t.distanceKm}km)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
 
@@ -3086,7 +3244,22 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     >
                       <Info className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                       <span className="no-mobile-clamp text-[10px] font-mono font-bold text-stone-900 tabular-nums">
-                        {selectedTrail.distanceKm} km · {selectedTrail.maxElevationM}m
+                        {selectedTrail.distanceKm} km ·{' '}
+                        {(() => {
+                          const endPt =
+                            selectedTrail.peakCoordinates ||
+                            selectedTrail.coordinates[selectedTrail.coordinates.length - 1];
+                          if (!endPt) return `${selectedTrail.maxElevationM}m`;
+                          const refLat = currentGps.hasRealFix
+                            ? currentGps.lat
+                            : selectedTrail.coordinates[0][0];
+                          const refLng = currentGps.hasRealFix
+                            ? currentGps.lng
+                            : selectedTrail.coordinates[0][1];
+                          const km =
+                            haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000;
+                          return `${km.toFixed(1)} km to finish · ${selectedTrail.maxElevationM}m`;
+                        })()}
                       </span>
                     </button>
                   </div>
@@ -3354,9 +3527,27 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
             <div className="space-y-3 text-xs">
               <div className="p-3 rounded-2xl bg-stone-950 border border-white/10 space-y-2">
-                <div className="flex justify-between font-mono">
+                <div className="flex justify-between font-mono gap-2">
                   <span className="text-stone-400">Selected Trail:</span>
-                  <span className="text-emerald-400 font-bold">{selectedTrail.name}</span>
+                  <span className="text-emerald-400 font-bold text-right">{selectedTrail.name}</span>
+                </div>
+                <div className="flex justify-between font-mono gap-2">
+                  <span className="text-stone-400">Distance to Finish:</span>
+                  <span className="text-sky-300 font-bold tabular-nums">
+                    {(() => {
+                      const endPt =
+                        selectedTrail.peakCoordinates ||
+                        selectedTrail.coordinates[selectedTrail.coordinates.length - 1];
+                      if (!endPt) return `${selectedTrail.distanceKm} km`;
+                      const refLat = currentGps.hasRealFix
+                        ? currentGps.lat
+                        : selectedTrail.coordinates[0][0];
+                      const refLng = currentGps.hasRealFix
+                        ? currentGps.lng
+                        : selectedTrail.coordinates[0][1];
+                      return `${(haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000).toFixed(2)} km`;
+                    })()}
+                  </span>
                 </div>
                 <div className="flex justify-between font-mono">
                   <span className="text-stone-400">GPS Signal &amp; Fix:</span>

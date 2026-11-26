@@ -83,7 +83,29 @@ const STORAGE_KEYS = {
   DELETED_MOTORBIKE_PARTNERS: 'camgo_deleted_motorbike_partners',
   MOTORBIKE_FRESH_START_FLAG: 'camgo_motorbike_fresh_start_v1',
   MAIN_PAGE_BG: 'camgo_main_page_bg_v1',
+  VISUAL_BACKGROUNDS: 'camgo_visual_backgrounds_v1',
   PAYMENT_GATEWAY_NOTICE: 'camgo_payment_gateway_notice_v1',
+};
+
+export interface VisualBackgroundsConfig {
+  headerBackgroundUrl: string;
+  verifiedStaysBgUrl: string;
+  motorbikeRentalsBgUrl: string;
+  exploreWeatherBgUrl: string;
+  exploreNoticeAlertBgUrl: string;
+  exploreHighlandMapsBgUrl: string;
+  exploreItineraryBgUrl: string;
+  updatedAt?: number;
+}
+
+export const DEFAULT_VISUAL_BACKGROUNDS: VisualBackgroundsConfig = {
+  headerBackgroundUrl: '',
+  verifiedStaysBgUrl: '',
+  motorbikeRentalsBgUrl: '',
+  exploreWeatherBgUrl: '',
+  exploreNoticeAlertBgUrl: '',
+  exploreHighlandMapsBgUrl: '',
+  exploreItineraryBgUrl: '',
 };
 
 export interface PaymentGatewayNoticeConfig {
@@ -745,8 +767,18 @@ class FirebaseStorageService {
         if (!snap.empty) {
           const cloudCards = snap.docs.map((d) => {
             const c = d.data() as MobileHomeCard;
-            if (c.id === 'card-2-hazard' && c.title === 'Live Traffic/Hazard') {
-              return { ...c, title: 'Live Notice/Hazard', subtitle: c.subtitle === 'Kea Farm' ? 'PDRM • JKR • MDCH' : c.subtitle };
+            if (
+              c.id === 'card-2-hazard' &&
+              (c.title === 'Live Traffic/Hazard' || c.title === 'Live Notice/Hazard')
+            ) {
+              return {
+                ...c,
+                title: 'Notice / Alert',
+                subtitle:
+                  !c.subtitle || c.subtitle === 'Kea Farm' || c.subtitle === 'PDRM • JKR • MDCH'
+                    ? 'Live road & weather updates'
+                    : c.subtitle,
+              };
             }
             if (c.id === 'card-3-map' && c.title === 'Plan Your Highland Escape') {
               return { ...c, title: 'Highland Map' };
@@ -2143,11 +2175,18 @@ class FirebaseStorageService {
           const cardMap = new Map<string, MobileHomeCard>();
           INITIAL_MOBILE_HOME_CARDS.forEach((c) => cardMap.set(c.id, c));
           parsed.forEach((c) => {
-            if (c && c.id === 'card-2-hazard' && c.title === 'Live Traffic/Hazard') {
+            if (
+              c &&
+              c.id === 'card-2-hazard' &&
+              (c.title === 'Live Traffic/Hazard' || c.title === 'Live Notice/Hazard')
+            ) {
               cardMap.set(c.id, {
                 ...c,
-                title: 'Live Notice/Hazard',
-                subtitle: c.subtitle === 'Kea Farm' ? 'PDRM • JKR • MDCH' : c.subtitle,
+                title: 'Notice / Alert',
+                subtitle:
+                  !c.subtitle || c.subtitle === 'Kea Farm' || c.subtitle === 'PDRM • JKR • MDCH'
+                    ? 'Live road & weather updates'
+                    : c.subtitle,
               });
             } else if (c && c.id === 'card-3-map' && c.title === 'Plan Your Highland Escape') {
               cardMap.set(c.id, {
@@ -4670,6 +4709,134 @@ class FirebaseStorageService {
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('main-page-bg-updated', handler);
+      }
+      if (unsubFirestore) unsubFirestore();
+    };
+  }
+
+  public getVisualBackgrounds(): VisualBackgroundsConfig {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.VISUAL_BACKGROUNDS);
+      if (!raw) return { ...DEFAULT_VISUAL_BACKGROUNDS };
+      const parsed = JSON.parse(raw);
+      return {
+        headerBackgroundUrl:
+          typeof parsed?.headerBackgroundUrl === 'string' ? parsed.headerBackgroundUrl : '',
+        verifiedStaysBgUrl:
+          typeof parsed?.verifiedStaysBgUrl === 'string' ? parsed.verifiedStaysBgUrl : '',
+        motorbikeRentalsBgUrl:
+          typeof parsed?.motorbikeRentalsBgUrl === 'string' ? parsed.motorbikeRentalsBgUrl : '',
+        exploreWeatherBgUrl:
+          typeof parsed?.exploreWeatherBgUrl === 'string' ? parsed.exploreWeatherBgUrl : '',
+        exploreNoticeAlertBgUrl:
+          typeof parsed?.exploreNoticeAlertBgUrl === 'string' ? parsed.exploreNoticeAlertBgUrl : '',
+        exploreHighlandMapsBgUrl:
+          typeof parsed?.exploreHighlandMapsBgUrl === 'string' ? parsed.exploreHighlandMapsBgUrl : '',
+        exploreItineraryBgUrl:
+          typeof parsed?.exploreItineraryBgUrl === 'string' ? parsed.exploreItineraryBgUrl : '',
+        updatedAt: typeof parsed?.updatedAt === 'number' ? parsed.updatedAt : undefined,
+      };
+    } catch {
+      return { ...DEFAULT_VISUAL_BACKGROUNDS };
+    }
+  }
+
+  public async saveVisualBackgrounds(
+    partial: Partial<VisualBackgroundsConfig>
+  ): Promise<VisualBackgroundsConfig> {
+    const current = this.getVisualBackgrounds();
+    const next: VisualBackgroundsConfig = {
+      headerBackgroundUrl:
+        typeof partial.headerBackgroundUrl === 'string'
+          ? partial.headerBackgroundUrl.trim()
+          : current.headerBackgroundUrl,
+      verifiedStaysBgUrl:
+        typeof partial.verifiedStaysBgUrl === 'string'
+          ? partial.verifiedStaysBgUrl.trim()
+          : current.verifiedStaysBgUrl,
+      motorbikeRentalsBgUrl:
+        typeof partial.motorbikeRentalsBgUrl === 'string'
+          ? partial.motorbikeRentalsBgUrl.trim()
+          : current.motorbikeRentalsBgUrl,
+      exploreWeatherBgUrl:
+        typeof partial.exploreWeatherBgUrl === 'string'
+          ? partial.exploreWeatherBgUrl.trim()
+          : current.exploreWeatherBgUrl,
+      exploreNoticeAlertBgUrl:
+        typeof partial.exploreNoticeAlertBgUrl === 'string'
+          ? partial.exploreNoticeAlertBgUrl.trim()
+          : current.exploreNoticeAlertBgUrl,
+      exploreHighlandMapsBgUrl:
+        typeof partial.exploreHighlandMapsBgUrl === 'string'
+          ? partial.exploreHighlandMapsBgUrl.trim()
+          : current.exploreHighlandMapsBgUrl,
+      exploreItineraryBgUrl:
+        typeof partial.exploreItineraryBgUrl === 'string'
+          ? partial.exploreItineraryBgUrl.trim()
+          : current.exploreItineraryBgUrl,
+      updatedAt: Date.now(),
+    };
+    this.setLocalStorageItem(STORAGE_KEYS.VISUAL_BACKGROUNDS, JSON.stringify(next));
+    if (db) {
+      try {
+        await setDoc(doc(db, 'settings', 'visual_backgrounds'), next, { merge: true });
+      } catch (err) {
+        console.warn('Failed saving visual backgrounds to Firestore:', err);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('visual-backgrounds-updated', { detail: next }));
+    }
+    this.notify();
+    return next;
+  }
+
+  public subscribeVisualBackgrounds(
+    callback: (config: VisualBackgroundsConfig) => void
+  ): () => void {
+    callback(this.getVisualBackgrounds());
+    const handler = (e: any) => {
+      if (e?.detail) {
+        callback({ ...DEFAULT_VISUAL_BACKGROUNDS, ...e.detail } as VisualBackgroundsConfig);
+      } else {
+        callback(this.getVisualBackgrounds());
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('visual-backgrounds-updated', handler);
+    }
+    let unsubFirestore: (() => void) | null = null;
+    if (db) {
+      try {
+        unsubFirestore = onSnapshot(doc(db, 'settings', 'visual_backgrounds'), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            const synced: VisualBackgroundsConfig = {
+              headerBackgroundUrl:
+                typeof data?.headerBackgroundUrl === 'string' ? data.headerBackgroundUrl : '',
+              verifiedStaysBgUrl:
+                typeof data?.verifiedStaysBgUrl === 'string' ? data.verifiedStaysBgUrl : '',
+              motorbikeRentalsBgUrl:
+                typeof data?.motorbikeRentalsBgUrl === 'string' ? data.motorbikeRentalsBgUrl : '',
+              exploreWeatherBgUrl:
+                typeof data?.exploreWeatherBgUrl === 'string' ? data.exploreWeatherBgUrl : '',
+              exploreNoticeAlertBgUrl:
+                typeof data?.exploreNoticeAlertBgUrl === 'string' ? data.exploreNoticeAlertBgUrl : '',
+              exploreHighlandMapsBgUrl:
+                typeof data?.exploreHighlandMapsBgUrl === 'string' ? data.exploreHighlandMapsBgUrl : '',
+              exploreItineraryBgUrl:
+                typeof data?.exploreItineraryBgUrl === 'string' ? data.exploreItineraryBgUrl : '',
+              updatedAt: typeof data?.updatedAt === 'number' ? data.updatedAt : undefined,
+            };
+            this.setLocalStorageItem(STORAGE_KEYS.VISUAL_BACKGROUNDS, JSON.stringify(synced));
+            callback(synced);
+          }
+        });
+      } catch {}
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('visual-backgrounds-updated', handler);
       }
       if (unsubFirestore) unsubFirestore();
     };
