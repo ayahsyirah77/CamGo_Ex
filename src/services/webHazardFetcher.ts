@@ -149,6 +149,15 @@ const CORRIDOR_DEFAULTS: Record<
 };
 
 let inFlightSyncPromise: Promise<FetchLiveWebHazardsResult> | null = null;
+let skipServerHazardApi = false;
+
+export function isServerHazardApiSkipped(): boolean {
+  return skipServerHazardApi;
+}
+
+export function markServerHazardApiSkipped(): void {
+  skipServerHazardApi = true;
+}
 
 /**
  * Safely extracts a JSON array from Gemini output wrapped in ```json ... ``` fences or mixed prose.
@@ -519,6 +528,7 @@ interface RawGeminiHazardItem {
   source?: string;
   sourceUrl?: string;
   reportedAt?: string;
+  extractionMethod?: string;
 }
 
 async function safeFetchJson<T = any>(
@@ -529,6 +539,9 @@ async function safeFetchJson<T = any>(
     const res = await fetch(url, init);
     const contentType = (res.headers.get('content-type') || '').toLowerCase();
     if (!res.ok) {
+      if (res.status === 404) {
+        skipServerHazardApi = true;
+      }
       return {
         ok: false,
         status: res.status,
@@ -536,6 +549,7 @@ async function safeFetchJson<T = any>(
       };
     }
     if (!contentType.includes('application/json')) {
+      skipServerHazardApi = true;
       return {
         ok: false,
         status: res.status,
@@ -553,14 +567,24 @@ async function safeFetchJson<T = any>(
   }
 }
 
-async function fetchViaGeminiSearchGrounding(): Promise<{
+async function fetchUnifiedServerHazardFeed(): Promise<{
   items: RawGeminiHazardItem[];
   resolvedSlugs: string[];
+  sourceUsed: 'gemini_search_grounding' | 'google_news_rss_fallback';
   available: boolean;
   reason?: string;
 }> {
-  // Step A: GET /api/hazards/web-search (server-side Gemini Search Grounding)
-  const result = await safeFetchJson<any>('/api/hazards/web-search', {
+  if (skipServerHazardApi) {
+    return {
+      items: [],
+      resolvedSlugs: [],
+      sourceUsed: 'google_news_rss_fallback',
+      available: false,
+      reason: 'Server hazard API skipped (circuit breaker open)',
+    };
+  }
+
+  const result = await safeFetchJson<any>('/api/hazards?type=feed', {
     method: 'GET',
     headers: { Accept: 'application/json' },
   });
@@ -569,6 +593,7 @@ async function fetchViaGeminiSearchGrounding(): Promise<{
     return {
       items: [],
       resolvedSlugs: [],
+      sourceUsed: 'google_news_rss_fallback',
       available: false,
       reason: result.reason,
     };
@@ -578,7 +603,9 @@ async function fetchViaGeminiSearchGrounding(): Promise<{
   const firstGroundingUrl = sanitizeHttpUrl(responseData?.firstGroundingUrl);
 
   let arrayItems: RawGeminiHazardItem[] = [];
-  if (Array.isArray(responseData?.items)) {
+  if (Array.isArray(responseData?.hazards)) {
+    arrayItems = responseData.hazards;
+  } else if (Array.isArray(responseData?.items)) {
     arrayItems = responseData.items;
   } else if (typeof responseData?.rawText === 'string' && responseData.rawText.trim()) {
     const jsonArrayStr = extractJsonArrayFromText(responseData.rawText);
@@ -614,146 +641,16 @@ async function fetchViaGeminiSearchGrounding(): Promise<{
     });
   }
 
-  return { items: activeItems, resolvedSlugs, available: true };
-}
-
-interface ParsedRssEntry {
-  title: string;
-  link: string;
-  pubDate: string;
-  source: string;
-}
-
-async function fetchBackendRssEntries(): Promise<{
-  entries: ParsedRssEntry[];
-  available: boolean;
-}> {
-  // Step B: GET /api/hazards/rss (server-side Google News Malaysia RSS parser)
-  const result = await safeFetchJson<any>('/api/hazards/rss', {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
-
-  if (!result.ok) {
-    return { entries: [], available: false };
-  }
-
-  const rawList = Array.isArray(result.data?.items)
-    ? result.data.items
-    : Array.isArray(result.data?.entries)
-    ? result.data.entries
-    : [];
-
-  const entries = rawList
-    .filter((item: any) => typeof item?.title === 'string' && item.title.trim())
-    .map((item: any) => ({
-      title: item.title.trim(),
-      link: String(item.link || ''),
-      pubDate: String(item.pubDate || ''),
-      source: String(item.source || 'Google News Malaysia'),
-    }));
-
-  return { entries, available: true };
-}
-
-async function fetchViaGoogleNewsRssFallback(): Promise<{
-  items: RawGeminiHazardItem[];
-  available: boolean;
-}> {
-  const { entries: combinedEntries, available } = await fetchBackendRssEntries();
-  const nowMs = Date.now();
-  const seenTitles = new Set<string>();
-  const converted: RawGeminiHazardItem[] = [];
-
-  for (const entry of combinedEntries) {
-    const cleanTitle = entry.title.replace(/\s+-\s+[^-]+$/, '').trim();
-    const dedupKey = cleanTitle.toLowerCase();
-    if (!cleanTitle || seenTitles.has(dedupKey)) continue;
-    seenTitles.add(dedupKey);
-
-    if (containsDebunkedSignal(entry.title)) continue;
-
-    const parsedPubMs = entry.pubDate ? Date.parse(entry.pubDate) : NaN;
-    if (Number.isFinite(parsedPubMs) && nowMs - parsedPubMs > LOOKBACK_WINDOW_MS) {
-      continue;
-    }
-    const pubMs = Number.isFinite(parsedPubMs) ? parsedPubMs : nowMs;
-
-    const lower = cleanTitle.toLowerCase();
-    const isRelevantCorridor =
-      lower.includes('cameron') ||
-      lower.includes('ft185') ||
-      lower.includes('ft59') ||
-      lower.includes('ft059') ||
-      lower.includes('ft102') ||
-      lower.includes('simpang pulai') ||
-      lower.includes('gua musang') ||
-      lower.includes('lojing') ||
-      lower.includes('pos blau') ||
-      lower.includes('albarakah') ||
-      lower.includes('seksyen 84') ||
-      lower.includes('blue valley') ||
-      lower.includes('kampung raja') ||
-      lower.includes('ringlet') ||
-      lower.includes('tanah rata') ||
-      lower.includes('brinchang') ||
-      lower.includes('tapah') ||
-      lower.includes('sungai koyan') ||
-      lower.includes('sg koyan');
-
-    const isHazardKeyword =
-      lower.includes('tanah runtuh') ||
-      lower.includes('runtuh') ||
-      lower.includes('landslide') ||
-      lower.includes('kemalangan') ||
-      lower.includes('nahas') ||
-      lower.includes('accident') ||
-      lower.includes('crash') ||
-      lower.includes('tutup') ||
-      lower.includes('ditutup') ||
-      lower.includes('closed') ||
-      lower.includes('closure') ||
-      lower.includes('lencongan') ||
-      lower.includes('diversion') ||
-      lower.includes('contraflow') ||
-      lower.includes('pokok tumbang') ||
-      lower.includes('banjir') ||
-      lower.includes('flood') ||
-      lower.includes('cerun') ||
-      lower.includes('bomba') ||
-      lower.includes('jkr');
-
-    if (!isRelevantCorridor || !isHazardKeyword) continue;
-
-    const geo = inferGeoFromText(cleanTitle);
-    const type = normalizeHazardType(undefined, cleanTitle);
-    const passableStatus = formatPassableStatus(undefined, cleanTitle);
-    const severity = normalizeSeverity(undefined, type, passableStatus);
-    const def = CORRIDOR_DEFAULTS[geo.corridor];
-
-    converted.push({
-      corridor: geo.corridor,
-      type,
-      severity,
-      status: 'active',
-      titleEn: cleanTitle,
-      titleMs: cleanTitle,
-      summaryEn: `Reported by ${entry.source} along ${geo.landmark}. Check JKR & police control updates before travel.`,
-      summaryMs: `Dilaporkan oleh ${entry.source} di ${geo.landmark}. Semak makluman terkini JKR & trafik sebelum memulakan perjalanan.`,
-      landmark: geo.landmark,
-      passableStatus,
-      alternativeRoute: `${def.altEn}`,
-      lat: geo.lat,
-      lng: geo.lng,
-      sourceName: entry.source || 'Google News Malaysia',
-      sourceUrl: sanitizeHttpUrl(entry.link),
-      reportedAt: Number.isFinite(pubMs) ? new Date(pubMs).toISOString() : new Date(nowMs).toISOString(),
-    });
-  }
+  const serverSource =
+    responseData?.sourceUsed === 'google_news_rss_fallback'
+      ? 'google_news_rss_fallback'
+      : 'gemini_search_grounding';
 
   return {
-    items: converted.slice(0, 12),
-    available,
+    items: activeItems,
+    resolvedSlugs,
+    sourceUsed: serverSource,
+    available: true,
   };
 }
 
@@ -864,7 +761,12 @@ function toCamgoHazardRecord(
     location: landmark,
     source: sourceName,
     verifiedBy: 'web_search',
-    extractionMethod: sourceUsed === 'gemini_search_grounding' ? 'web_search_grounding' : 'google_news_rss_fallback',
+    extractionMethod:
+      raw.extractionMethod === 'google_news_rss_fallback'
+        ? 'google_news_rss_fallback'
+        : sourceUsed === 'gemini_search_grounding'
+        ? 'web_search_grounding'
+        : 'google_news_rss_fallback',
     active: true,
     status: 'active',
     stillThereVotes: 0,
@@ -896,42 +798,26 @@ async function runLiveHazardSync(options: WebHazardSyncOptions = {}): Promise<Fe
     }
   }
 
-  let sourceUsed: 'gemini_search_grounding' | 'google_news_rss_fallback' = 'gemini_search_grounding';
-  let rawItems: RawGeminiHazardItem[] = [];
-  let resolvedSlugs: string[] = [];
-  let fallbackWarning: string | undefined;
-
-  // Step A: Try GET /api/hazards/web-search
-  const geminiResult = await fetchViaGeminiSearchGrounding();
-  if (geminiResult.available && geminiResult.items.length > 0) {
-    rawItems = geminiResult.items;
-    resolvedSlugs = geminiResult.resolvedSlugs;
-  } else {
-    resolvedSlugs = geminiResult.resolvedSlugs;
-    if (!geminiResult.available && geminiResult.reason) {
-      fallbackWarning = `Web search endpoint unavailable (${geminiResult.reason}); tried RSS fallback.`;
-    }
-
-    // Step B: Fall back to GET /api/hazards/rss
-    const rssResult = await fetchViaGoogleNewsRssFallback();
-    if (rssResult.available && rssResult.items.length > 0) {
-      rawItems = rssResult.items;
-      sourceUsed = 'google_news_rss_fallback';
-    } else if (!geminiResult.available && !rssResult.available) {
-      // Step C: Both API routes unavailable (e.g., AI Studio preview / static container) -> silent Firestore cache fallback
-      const cachedHazards = await readExistingFirestoreCachedHazards();
-      return {
-        syncedCount: cachedHazards.length,
-        resolvedCount: 0,
-        hazards: cachedHazards,
-        firestoreSynced: Boolean(db),
-        sourceUsed: 'firestore_cache',
-        skippedDueToCooldown: false,
-        nextEligibleSyncAt: Date.now() + GLOBAL_COOLDOWN_MS,
-        warning: fallbackWarning,
-      };
-    }
+  // Single unified request to GET /api/hazards?type=feed (protected by skipServerHazardApi circuit breaker)
+  const feedResult = await fetchUnifiedServerHazardFeed();
+  if (!feedResult.available) {
+    const cachedHazards = await readExistingFirestoreCachedHazards();
+    return {
+      syncedCount: cachedHazards.length,
+      resolvedCount: 0,
+      hazards: cachedHazards,
+      firestoreSynced: Boolean(db),
+      sourceUsed: 'firestore_cache',
+      skippedDueToCooldown: false,
+      nextEligibleSyncAt: Date.now() + GLOBAL_COOLDOWN_MS,
+      warning: feedResult.reason,
+    };
   }
+
+  const sourceUsed = feedResult.sourceUsed;
+  const rawItems = feedResult.items;
+  const resolvedSlugs = feedResult.resolvedSlugs;
+  let fallbackWarning: string | undefined;
 
   const nowMs = Date.now();
   const dedupMap = new Map<string, CamgoHazard & CamGoHazard>();

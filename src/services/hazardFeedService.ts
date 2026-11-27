@@ -1,6 +1,8 @@
 import { HazardAlert } from '../types';
 import { db } from '../lib/firebase';
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import { CAMGO_HAZARDS_COLLECTION } from './camgoHazardsService';
+import { isServerHazardApiSkipped, markServerHazardApiSkipped } from './webHazardFetcher';
 
 export interface AgencyInfo {
   id: 'PDRM' | 'JKR' | 'MDCH';
@@ -58,16 +60,84 @@ async function safeFetchJson<T = any>(
   url: string,
   init?: RequestInit
 ): Promise<T | null> {
+  if (isServerHazardApiSkipped()) {
+    return null;
+  }
   try {
     const resp = await fetch(url, init);
     const contentType = (resp.headers.get('content-type') || '').toLowerCase();
-    if (!resp.ok || !contentType.includes('application/json')) {
+    if (!resp.ok) {
+      if (resp.status === 404) {
+        markServerHazardApiSkipped();
+      }
+      return null;
+    }
+    if (!contentType.includes('application/json')) {
+      markServerHazardApiSkipped();
       return null;
     }
     return (await resp.json()) as T;
   } catch {
     return null;
   }
+}
+
+function mapRawHazardToAlert(item: any): HazardAlert {
+  const sourceStr = String(item?.sourceName || item?.source || 'JKR / Malaysian News');
+  const lowerSrc = sourceStr.toLowerCase();
+  const agency: 'PDRM' | 'JKR' | 'MDCH' = lowerSrc.includes('pdrm') || lowerSrc.includes('polis')
+    ? 'PDRM'
+    : lowerSrc.includes('mdch') || lowerSrc.includes('majlis')
+    ? 'MDCH'
+    : 'JKR';
+
+  const rawSeverity = String(item?.severity || 'moderate').toLowerCase();
+  const severity: HazardAlert['severity'] =
+    rawSeverity === 'critical'
+      ? 'critical'
+      : rawSeverity === 'high'
+      ? 'high'
+      : rawSeverity === 'advisory' || rawSeverity === 'low'
+      ? 'low'
+      : 'moderate';
+
+  const rawType = String(item?.type || 'hazard').toLowerCase();
+  const type: HazardAlert['type'] =
+    rawType === 'landslide'
+      ? 'landslide'
+      : rawType === 'road_closure'
+      ? 'road_closure'
+      : 'hazard';
+
+  const nowIso = new Date().toISOString();
+  const reportedAt = String(item?.reportedAt || item?.timestamp || nowIso);
+
+  return {
+    id: String(item?.id || `web-hazard-${Date.now()}`),
+    title: String(item?.titleEn || item?.title || 'Road Advisory'),
+    titleBm: String(item?.titleMs || item?.titleBm || item?.title || 'Makluman Laluan'),
+    location: String(item?.landmark || item?.location || 'Cameron Highlands'),
+    roadRoute: String(item?.routeCode || item?.roadRoute || item?.corridor || 'FT185 / FT059'),
+    severity,
+    type,
+    status: String(item?.passableStatus || item?.status || 'Active Advisory'),
+    description: String(item?.summaryEn || item?.description || item?.summary || ''),
+    descriptionBm: String(item?.summaryMs || item?.descriptionBm || item?.summary || ''),
+    actionTaken: String(item?.alternativeRoute || item?.actionTaken || 'Monitor JKR / PDRM traffic control updates.'),
+    actionTakenBm: String(item?.actionTakenBm || item?.alternativeRoute || 'Pantau makluman terkini JKR / PDRM.'),
+    agency,
+    agencyName: sourceStr,
+    source: sourceStr,
+    sourceType: 'ebencana_portal',
+    sourceUrl: String(item?.sourceUrl || 'https://bencanaalam.jkr.gov.my'),
+    referenceNo: String(item?.id || 'CAMGO-FEED'),
+    agencyHotline: agency === 'PDRM' ? '+60 5-491 1222' : agency === 'MDCH' ? '+60 5-491 1455' : '+60 5-491 1040',
+    isVerifiedAgency: true,
+    reportedTime: 'Live • Feed Synced',
+    reportedAt,
+    lastVerified: nowIso,
+    timestamp: reportedAt,
+  };
 }
 
 class HazardFeedService {
@@ -92,31 +162,53 @@ class HazardFeedService {
     return OFFICIAL_AGENCIES;
   }
 
-  /**
-   * Fetch live official feed (including real-time PDRM Cameron Highlands notices)
-   */
-  public async fetchLiveFeed(forceRefresh = false): Promise<HazardAlert[]> {
-    const data = await safeFetchJson<{ alerts?: HazardAlert[] }>(
-      `/api/hazards/feed${forceRefresh ? '?force=true' : ''}`,
-      { headers: { Accept: 'application/json' } }
-    );
-
-    if (Array.isArray(data?.alerts) && data.alerts.length > 0) {
-      localStorage.setItem('camgo_hazards', JSON.stringify(data.alerts));
-      const syncStamp = new Date();
-      this.lastSyncTime = syncStamp;
-      localStorage.setItem('camgo_hazards_last_sync', syncStamp.toISOString());
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('hazard-alerts-updated', { detail: data.alerts }));
+  private async readFirestoreFallbackAlerts(): Promise<HazardAlert[]> {
+    if (db) {
+      try {
+        const snap = await getDocs(
+          query(collection(db, CAMGO_HAZARDS_COLLECTION), where('status', '==', 'active'))
+        ).catch(() => null);
+        if (snap && !snap.empty) {
+          return snap.docs.map((d) => mapRawHazardToAlert({ id: d.id, ...d.data() }));
+        }
+      } catch {
+        // silent fallback to verified defaults below
       }
-      return data.alerts;
     }
-
     return this.getDefaultVerifiedFeeds();
   }
 
   /**
-   * Synchronize live official notice & hazard feeds from PDRM Cameron Highlands, JKR, and MDCH.
+   * Fetch live official feed via consolidated /api/hazards?type=feed endpoint
+   */
+  public async fetchLiveFeed(forceRefresh = false): Promise<HazardAlert[]> {
+    const data = await safeFetchJson<{ ok?: boolean; hazards?: any[]; alerts?: HazardAlert[] }>(
+      `/api/hazards?type=feed${forceRefresh ? '&force=true' : ''}`,
+      { headers: { Accept: 'application/json' } }
+    );
+
+    const resolvedAlerts: HazardAlert[] = Array.isArray(data?.alerts) && data.alerts.length > 0
+      ? data.alerts
+      : Array.isArray(data?.hazards) && data.hazards.length > 0
+      ? [...data.hazards.map(mapRawHazardToAlert), ...this.getDefaultVerifiedFeeds()]
+      : [];
+
+    if (resolvedAlerts.length > 0) {
+      localStorage.setItem('camgo_hazards', JSON.stringify(resolvedAlerts));
+      const syncStamp = new Date();
+      this.lastSyncTime = syncStamp;
+      localStorage.setItem('camgo_hazards_last_sync', syncStamp.toISOString());
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('hazard-alerts-updated', { detail: resolvedAlerts }));
+      }
+      return resolvedAlerts;
+    }
+
+    return this.readFirestoreFallbackAlerts();
+  }
+
+  /**
+   * Synchronize live official notice & hazard feeds via /api/hazards?type=feed.
    * Updates Firestore collection 'hazard_alerts' and localStorage, then dispatches an event.
    */
   public async syncFeeds(agency?: 'PDRM' | 'JKR' | 'MDCH'): Promise<{
@@ -132,27 +224,21 @@ class HazardFeedService {
     try {
       let fetchedAlerts: HazardAlert[] = [];
 
-      // 1. Request updated feed from backend API (only parse JSON when status is OK and Content-Type is JSON)
-      const syncData = await safeFetchJson<{ alerts?: HazardAlert[] }>('/api/hazards/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ agency, forceRefresh: true }),
-      });
+      // Request updated feed from consolidated /api/hazards?type=feed endpoint
+      const feedData = await safeFetchJson<{ ok?: boolean; hazards?: any[]; alerts?: HazardAlert[] }>(
+        '/api/hazards?type=feed&force=true',
+        { headers: { Accept: 'application/json' } }
+      );
 
-      if (Array.isArray(syncData?.alerts) && syncData.alerts.length > 0) {
-        fetchedAlerts = syncData.alerts;
-      } else {
-        const feedData = await safeFetchJson<{ alerts?: HazardAlert[] }>('/api/hazards/feed?force=true', {
-          headers: { Accept: 'application/json' },
-        });
-        if (Array.isArray(feedData?.alerts) && feedData.alerts.length > 0) {
-          fetchedAlerts = feedData.alerts;
-        }
+      if (Array.isArray(feedData?.alerts) && feedData.alerts.length > 0) {
+        fetchedAlerts = feedData.alerts;
+      } else if (Array.isArray(feedData?.hazards) && feedData.hazards.length > 0) {
+        fetchedAlerts = [...feedData.hazards.map(mapRawHazardToAlert), ...this.getDefaultVerifiedFeeds()];
       }
 
-      // If API routes are unavailable (e.g. static/preview host), fall back cleanly to verified defaults
+      // If API route is unavailable (e.g. 404 in local/AI Studio preview), fall back silently to Firestore camgo_hazards
       if (fetchedAlerts.length === 0) {
-        fetchedAlerts = this.getDefaultVerifiedFeeds();
+        fetchedAlerts = await this.readFirestoreFallbackAlerts();
       }
 
       // Filter by agency if requested

@@ -8,8 +8,7 @@ import { GoogleGenAI } from '@google/genai';
 import { WebSocketServer, WebSocket } from 'ws';
 import { processAndIngestHazard } from './server/hazardIngestion';
 import rssHandler from './api/rss';
-import hazardsRssHandler from './api/hazards/rss';
-import hazardsWebSearchHandler from './api/hazards/web-search';
+import hazardsHandler from './api/hazards';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1627,10 +1626,9 @@ Only return valid JSON without markdown wrapping.`;
     }
   });
 
-  // Server-side Google News Malaysia RSS & Web Hazard Search endpoints (mirrors Vercel /api/hazards/rss & /api/hazards/web-search)
+  // Server-side Google News Malaysia RSS & Consolidated Web Hazard Feed endpoint (mirrors Vercel /api/hazards)
   app.all('/api/rss', (req, res) => rssHandler(req, res));
-  app.all('/api/hazards/rss', (req, res) => hazardsRssHandler(req, res));
-  app.all('/api/hazards/web-search', (req, res) => hazardsWebSearchHandler(req, res));
+  app.all('/api/hazards', (req, res) => hazardsHandler(req, res));
 
   // Neural TTS Turn-by-Turn Navigation Proxy Endpoint (/api/tts/navigate)
   app.post('/api/tts/navigate', async (req, res) => {
