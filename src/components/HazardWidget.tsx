@@ -176,6 +176,10 @@ export const HazardWidget: React.FC<HazardWidgetProps> = ({ hazards, language })
           ? isBm
             ? 'Google News MY RSS'
             : 'Google News MY RSS fallback'
+          : res.sourceUsed === 'firestore_cache' || res.sourceUsed === 'cooldown_cache'
+          ? isBm
+            ? 'Cache Firestore'
+            : 'Firestore Cache'
           : 'Gemini Search Grounding';
       setSyncFeedback(
         isBm

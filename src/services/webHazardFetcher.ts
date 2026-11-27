@@ -15,7 +15,11 @@ export interface FetchLiveWebHazardsResult {
   resolvedCount: number;
   hazards: CamgoHazard[];
   firestoreSynced: boolean;
-  sourceUsed: 'gemini_search_grounding' | 'google_news_rss_fallback' | 'cooldown_cache';
+  sourceUsed:
+    | 'gemini_search_grounding'
+    | 'google_news_rss_fallback'
+    | 'cooldown_cache'
+    | 'firestore_cache';
   skippedDueToCooldown?: boolean;
   nextEligibleSyncAt?: number;
   warning?: string;
@@ -26,11 +30,6 @@ const LOOKBACK_WINDOW_MS = 72 * 60 * 60 * 1000; // 72 hours lookback
 const SYNC_META_COLLECTION = 'settings';
 const SYNC_META_DOC_ID = 'web_hazard_sync_meta';
 const LOCAL_META_KEY = 'camgo_web_hazard_sync_meta_v1';
-
-const GOOGLE_NEWS_RSS_FEEDS = [
-  'https://news.google.com/rss/search?q=(tanah+runtuh+OR+kemalangan+OR+jalan+tutup+OR+lencongan)+(Simpang+Pulai+OR+Gua+Musang+OR+Lojing+OR+Cameron+Highlands)&hl=ms&gl=MY&ceid=MY:ms',
-  'https://news.google.com/rss/search?q=(landslide+OR+accident+OR+road+closure)+(Simpang+Pulai+OR+Gua+Musang+OR+Lojing+OR+Cameron+Highlands)&hl=en-MY&gl=MY&ceid=MY:en',
-];
 
 const DEBUNKED_KEYWORDS = [
   'video lama',
@@ -522,109 +521,83 @@ interface RawGeminiHazardItem {
   reportedAt?: string;
 }
 
+async function safeFetchJson<T = any>(
+  url: string,
+  init?: RequestInit
+): Promise<{ ok: true; data: T } | { ok: false; status: number; reason: string }> {
+  try {
+    const res = await fetch(url, init);
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        reason: `HTTP ${res.status}`,
+      };
+    }
+    if (!contentType.includes('application/json')) {
+      return {
+        ok: false,
+        status: res.status,
+        reason: `Non-JSON response (${contentType || 'unknown'})`,
+      };
+    }
+    const data = (await res.json()) as T;
+    return { ok: true, data };
+  } catch (err: any) {
+    return {
+      ok: false,
+      status: 0,
+      reason: err?.message || 'Network unavailable',
+    };
+  }
+}
+
 async function fetchViaGeminiSearchGrounding(): Promise<{
   items: RawGeminiHazardItem[];
   resolvedSlugs: string[];
+  available: boolean;
+  reason?: string;
 }> {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
-    throw new Error('Missing VITE_GEMINI_API_KEY');
+  // Step A: GET /api/hazards/web-search (server-side Gemini Search Grounding)
+  const result = await safeFetchJson<any>('/api/hazards/web-search', {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!result.ok) {
+    return {
+      items: [],
+      resolvedSlugs: [],
+      available: false,
+      reason: result.reason,
+    };
   }
 
-  const prompt = `Search official JKR Perak, JKR Kelantan (Gua Musang), JKR Cameron Highlands announcements and major Malaysian news (Bernama, Berita Harian, NST, The Star, Astro Awani, Harian Metro, Sinar Harian) for active road hazards in the LAST 72 HOURS along all four Cameron Highlands access corridors—focusing primarily on:
-1. FT185_GUA_MUSANG_LOJING (FT185 Gua Musang – Lojing – Cameron Highlands)
-2. FT185_SIMPANG_PULAI (FT185 Simpang Pulai – Cameron Highlands)
-3. FT59_TAPAH (FT59 Tapah – Ringlet – Cameron Highlands)
-4. FT102_SUNGAI_KOYAN (FT102 Sungai Koyan – Ringlet)
+  const responseData = result.data;
+  const firstGroundingUrl = sanitizeHttpUrl(responseData?.firstGroundingUrl);
 
-Rules:
-- Include only verified active landslides (tanah runtuh), road/lane closures (jalan tutup / lencongan), accidents (kemalangan), or flood / fallen tree obstructions from the last 72 hours.
-- CRITICAL: Check for debunked or viral fake/old videos (if JKR issued a denial statement that a viral landslide video is old or false, exclude it or set "status": "resolved").
-- Extract exact section markers (Seksyen / KM), landmark names (e.g., Yayasan Albarakah, Pos Blau, Blue Valley, Kampung Raja), lane status ("full_closure", "single_lane_contraflow", "diversion_active", or "minor_delay"), and approximate latitude/longitude along FT185/FT59/FT102.
-
-Return a raw JSON array wrapped strictly between \`\`\`json and \`\`\` where each item matches:
-\`\`\`json
-[
-  {
-    "id": "ft185-sec84-15-landslide",
-    "corridor": "FT185_GUA_MUSANG_LOJING",
-    "type": "landslide",
-    "severity": "critical",
-    "status": "active",
-    "titleEn": "Landslide at FT185 Lojing-Gua Musang Sec 84.15",
-    "titleMs": "Tanah Runtuh di FT185 Lojing-Gua Musang Seksyen 84.15",
-    "summaryEn": "1-2 sentence English summary including section, landmark and vehicle advisory.",
-    "summaryMs": "1-2 ayat ringkasan Bahasa Melayu termasuk seksyen, mercu tanda dan nasihat laluan.",
-    "landmark": "FT185 Seksyen 84.15 (Near Yayasan Albarakah)",
-    "laneStatus": "diversion_active",
-    "passableStatus": "1 lane open / diversion active",
-    "alternativeRoute": "Use FT102 Sungai Koyan - Ringlet if heading from Kelantan",
-    "lat": 4.6185,
-    "lng": 101.4820,
-    "sourceName": "JKR Kelantan / Bernama",
-    "sourceUrl": "https://...",
-    "reportedAt": "ISO-8601 timestamp"
-  }
-]
-\`\`\`
-Allowed "corridor": "FT185_SIMPANG_PULAI" | "FT185_GUA_MUSANG_LOJING" | "FT59_TAPAH" | "FT102_SUNGAI_KOYAN".
-Allowed "type": "landslide" | "accident" | "road_closure" | "flood_or_fallen_tree".
-Allowed "severity": "critical" | "moderate" | "advisory".
-If there are zero verified incidents in the past 72 hours, return \`\`\`json\n[]\n\`\`\`.`;
-
-  const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash'];
-  let responseData: any = null;
-  let lastError: unknown = null;
-
-  for (const model of candidateModels) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-      apiKey.trim()
-    )}`;
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-      }),
-    });
-
-    if (res.ok) {
-      responseData = await res.json();
-      break;
-    }
-
-    const errText = await res.text().catch(() => '');
-    lastError = new Error(`Gemini HTTP ${res.status}: ${errText.slice(0, 180)}`);
-    if (res.status !== 404) {
-      throw lastError;
+  let arrayItems: RawGeminiHazardItem[] = [];
+  if (Array.isArray(responseData?.items)) {
+    arrayItems = responseData.items;
+  } else if (typeof responseData?.rawText === 'string' && responseData.rawText.trim()) {
+    const jsonArrayStr = extractJsonArrayFromText(responseData.rawText);
+    try {
+      const parsed = JSON.parse(jsonArrayStr);
+      if (Array.isArray(parsed)) arrayItems = parsed;
+    } catch {
+      arrayItems = [];
     }
   }
-
-  if (!responseData) {
-    throw lastError instanceof Error ? lastError : new Error('Gemini Search Grounding unavailable');
-  }
-
-  const candidate = responseData?.candidates?.[0];
-  const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
-  const rawText = parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('\n');
-
-  const groundingChunks: Array<{ web?: { uri?: string; title?: string } }> =
-    candidate?.groundingMetadata?.groundingChunks || [];
-  const firstGroundingUrl =
-    groundingChunks.map((c) => sanitizeHttpUrl(c?.web?.uri)).find(Boolean) || '';
-
-  const jsonArrayStr = extractJsonArrayFromText(rawText);
-  const parsed = JSON.parse(jsonArrayStr);
-  const arrayItems: RawGeminiHazardItem[] = Array.isArray(parsed) ? parsed : [];
 
   const activeItems: RawGeminiHazardItem[] = [];
-  const resolvedSlugs: string[] = [];
+  const resolvedSlugs: string[] = Array.isArray(responseData?.resolvedSlugs)
+    ? responseData.resolvedSlugs.filter((s: unknown): s is string => typeof s === 'string')
+    : [];
 
   for (const item of arrayItems) {
     if (!item) continue;
-    const textBlob = `${item.titleEn || ''} ${item.titleMs || ''} ${item.title || ''} ${item.summaryEn || ''} ${item.summaryMs || ''}`;
+    const textBlob = `${item.titleEn || ''} ${item.titleMs || ''} ${item.title || ''} ${item.summaryEn || ''} ${item.summaryMs || ''} ${item.summary || ''}`;
     const isResolved =
       String(item.status || '').toLowerCase() === 'resolved' || containsDebunkedSignal(textBlob);
 
@@ -641,7 +614,7 @@ If there are zero verified incidents in the past 72 hours, return \`\`\`json\n[]
     });
   }
 
-  return { items: activeItems, resolvedSlugs };
+  return { items: activeItems, resolvedSlugs, available: true };
 }
 
 interface ParsedRssEntry {
@@ -651,105 +624,43 @@ interface ParsedRssEntry {
   source: string;
 }
 
-function parseRssXmlEntries(xmlText: string): ParsedRssEntry[] {
-  const entries: ParsedRssEntry[] = [];
-  if (!xmlText || !xmlText.includes('<item')) return entries;
+async function fetchBackendRssEntries(): Promise<{
+  entries: ParsedRssEntry[];
+  available: boolean;
+}> {
+  // Step B: GET /api/hazards/rss (server-side Google News Malaysia RSS parser)
+  const result = await safeFetchJson<any>('/api/hazards/rss', {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
 
-  if (typeof DOMParser !== 'undefined') {
-    try {
-      const docXml = new DOMParser().parseFromString(xmlText, 'text/xml');
-      const itemNodes = Array.from(docXml.getElementsByTagName('item'));
-      for (const node of itemNodes) {
-        const title = node.getElementsByTagName('title')[0]?.textContent?.trim() || '';
-        const link = node.getElementsByTagName('link')[0]?.textContent?.trim() || '';
-        const pubDate = node.getElementsByTagName('pubDate')[0]?.textContent?.trim() || '';
-        const source =
-          node.getElementsByTagName('source')[0]?.textContent?.trim() || 'Google News Malaysia';
-        if (title) {
-          entries.push({ title, link, pubDate, source });
-        }
-      }
-      if (entries.length > 0) return entries;
-    } catch {
-      // fall through to regex XML parser
-    }
+  if (!result.ok) {
+    return { entries: [], available: false };
   }
 
-  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = itemRegex.exec(xmlText)) !== null) {
-    const block = match[1];
-    const extractTag = (tag: string) => {
-      const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
-      return m ? m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
-    };
-    const title = extractTag('title');
-    if (title) {
-      entries.push({
-        title,
-        link: extractTag('link'),
-        pubDate: extractTag('pubDate'),
-        source: extractTag('source') || 'Google News Malaysia',
-      });
-    }
-  }
-  return entries;
+  const rawList = Array.isArray(result.data?.items)
+    ? result.data.items
+    : Array.isArray(result.data?.entries)
+    ? result.data.entries
+    : [];
+
+  const entries = rawList
+    .filter((item: any) => typeof item?.title === 'string' && item.title.trim())
+    .map((item: any) => ({
+      title: item.title.trim(),
+      link: String(item.link || ''),
+      pubDate: String(item.pubDate || ''),
+      source: String(item.source || 'Google News Malaysia'),
+    }));
+
+  return { entries, available: true };
 }
 
-async function fetchSingleRssFeed(rssUrl: string): Promise<ParsedRssEntry[]> {
-  // 1. Primary CORS proxy: allorigins.win raw XML with cache-busting timestamp
-  try {
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}&_cb=${Date.now()}`;
-    const res = await fetch(proxyUrl, { cache: 'no-store' });
-    if (res.ok) {
-      const xml = await res.text();
-      const parsed = parseRssXmlEntries(xml);
-      if (parsed.length > 0) return parsed;
-    }
-  } catch {
-    // proceed to codetabs fallback
-  }
-
-  // 2. Secondary CORS proxy: codetabs XML proxy
-  try {
-    const codeTabsUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rssUrl)}`;
-    const res = await fetch(codeTabsUrl, { cache: 'no-store' });
-    if (res.ok) {
-      const xml = await res.text();
-      const parsed = parseRssXmlEntries(xml);
-      if (parsed.length > 0) return parsed;
-    }
-  } catch {
-    // proceed to rss2json fallback
-  }
-
-  // 3. Tertiary CORS JSON converter: rss2json
-  try {
-    const rss2JsonUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-    const res = await fetch(rss2JsonUrl, { cache: 'no-store' });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data?.items)) {
-        return data.items
-          .filter((i: any) => typeof i?.title === 'string' && i.title.trim())
-          .map((i: any) => ({
-            title: i.title.trim(),
-            link: String(i.link || ''),
-            pubDate: String(i.pubDate || ''),
-            source: String(i.author || data?.feed?.title || 'Google News Malaysia'),
-          }));
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return [];
-}
-
-async function fetchViaGoogleNewsRssFallback(): Promise<RawGeminiHazardItem[]> {
-  const results = await Promise.all(GOOGLE_NEWS_RSS_FEEDS.map((url) => fetchSingleRssFeed(url)));
-  const combinedEntries = results.flat();
+async function fetchViaGoogleNewsRssFallback(): Promise<{
+  items: RawGeminiHazardItem[];
+  available: boolean;
+}> {
+  const { entries: combinedEntries, available } = await fetchBackendRssEntries();
   const nowMs = Date.now();
   const seenTitles = new Set<string>();
   const converted: RawGeminiHazardItem[] = [];
@@ -840,7 +751,39 @@ async function fetchViaGoogleNewsRssFallback(): Promise<RawGeminiHazardItem[]> {
     });
   }
 
-  return converted.slice(0, 12);
+  return {
+    items: converted.slice(0, 12),
+    available,
+  };
+}
+
+async function readExistingFirestoreCachedHazards(): Promise<CamgoHazard[]> {
+  const nowMs = Date.now();
+  const cachedMap = new Map<string, CamgoHazard>();
+
+  for (const item of camgoHazardsService.getCachedActiveHazards()) {
+    cachedMap.set(item.id, item);
+  }
+
+  if (db) {
+    try {
+      const [activeSnap, statusSnap] = await Promise.all([
+        getDocs(query(collection(db, CAMGO_HAZARDS_COLLECTION), where('active', '==', true))).catch(() => null),
+        getDocs(query(collection(db, CAMGO_HAZARDS_COLLECTION), where('status', '==', 'active'))).catch(() => null),
+      ]);
+
+      for (const docSnap of [...(activeSnap?.docs || []), ...(statusSnap?.docs || [])]) {
+        const data = docSnap.data();
+        if (isDocActiveAndNonExpired(data, nowMs)) {
+          cachedMap.set(docSnap.id, { ...(data as CamgoHazard), id: docSnap.id });
+        }
+      }
+    } catch {
+      // silent fallback to local active cache
+    }
+  }
+
+  return Array.from(cachedMap.values());
 }
 
 function toCamgoHazardRecord(
@@ -958,22 +901,36 @@ async function runLiveHazardSync(options: WebHazardSyncOptions = {}): Promise<Fe
   let resolvedSlugs: string[] = [];
   let fallbackWarning: string | undefined;
 
-  try {
-    const geminiResult = await fetchViaGeminiSearchGrounding();
+  // Step A: Try GET /api/hazards/web-search
+  const geminiResult = await fetchViaGeminiSearchGrounding();
+  if (geminiResult.available && geminiResult.items.length > 0) {
     rawItems = geminiResult.items;
     resolvedSlugs = geminiResult.resolvedSlugs;
-    if (rawItems.length === 0) {
-      const rssItems = await fetchViaGoogleNewsRssFallback();
-      if (rssItems.length > 0) {
-        rawItems = rssItems;
-        sourceUsed = 'google_news_rss_fallback';
-      }
+  } else {
+    resolvedSlugs = geminiResult.resolvedSlugs;
+    if (!geminiResult.available && geminiResult.reason) {
+      fallbackWarning = `Web search endpoint unavailable (${geminiResult.reason}); tried RSS fallback.`;
     }
-  } catch (geminiErr) {
-    fallbackWarning =
-      geminiErr instanceof Error ? geminiErr.message : 'Gemini Search Grounding failed; used RSS fallback.';
-    sourceUsed = 'google_news_rss_fallback';
-    rawItems = await fetchViaGoogleNewsRssFallback();
+
+    // Step B: Fall back to GET /api/hazards/rss
+    const rssResult = await fetchViaGoogleNewsRssFallback();
+    if (rssResult.available && rssResult.items.length > 0) {
+      rawItems = rssResult.items;
+      sourceUsed = 'google_news_rss_fallback';
+    } else if (!geminiResult.available && !rssResult.available) {
+      // Step C: Both API routes unavailable (e.g., AI Studio preview / static container) -> silent Firestore cache fallback
+      const cachedHazards = await readExistingFirestoreCachedHazards();
+      return {
+        syncedCount: cachedHazards.length,
+        resolvedCount: 0,
+        hazards: cachedHazards,
+        firestoreSynced: Boolean(db),
+        sourceUsed: 'firestore_cache',
+        skippedDueToCooldown: false,
+        nextEligibleSyncAt: Date.now() + GLOBAL_COOLDOWN_MS,
+        warning: fallbackWarning,
+      };
+    }
   }
 
   const nowMs = Date.now();

@@ -7,6 +7,9 @@ import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
 import { WebSocketServer, WebSocket } from 'ws';
 import { processAndIngestHazard } from './server/hazardIngestion';
+import rssHandler from './api/rss';
+import hazardsRssHandler from './api/hazards/rss';
+import hazardsWebSearchHandler from './api/hazards/web-search';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1359,27 +1362,17 @@ If no breaking closure or emergency notice is found in recent PDRM Cameron Highl
         return res.status(400).json({ error: 'Message is required' });
       }
 
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
-        const fallback = getHighlandsFallbackReply(message, language);
-        return res.json({
-          reply: fallback,
-          source: 'knowledge_engine',
-          projectId: 'camgo-prod',
-          toolsUsed: ['firebase_directory'],
-          webSearchUsed: false
+        return res.status(500).json({
+          error: 'Server configuration error: GEMINI_API_KEY is not set in environment variables.',
         });
       }
 
       const ai = getGeminiClient();
       if (!ai) {
-        const fallback = getHighlandsFallbackReply(message, language);
-        return res.json({
-          reply: fallback,
-          source: 'knowledge_fallback',
-          projectId: 'camgo-prod',
-          toolsUsed: ['firebase_directory'],
-          webSearchUsed: false
+        return res.status(500).json({
+          error: 'Server configuration error: Unable to initialize Gemini client.',
         });
       }
       const localSearch = getHighlandsFallbackReply(message, language);
@@ -1475,7 +1468,7 @@ Structure answers with clean bullet points and bold highlights. Never give gener
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-2.5-flash',
         contents,
         config: {
           systemInstruction: systemPrompt,
@@ -1483,7 +1476,12 @@ Structure answers with clean bullet points and bold highlights. Never give gener
         }
       });
 
-      const reply = response.text || getHighlandsFallbackReply(message, language);
+      const reply = (response.text || '').trim();
+      if (!reply) {
+        return res.status(502).json({
+          error: 'Gemini returned an empty response. Please try rephrasing your question.',
+        });
+      }
 
       // Extract search grounding metadata if available from candidate
       const candidate = response.candidates?.[0];
@@ -1509,7 +1507,7 @@ Structure answers with clean bullet points and bold highlights. Never give gener
 
       return res.json({
         reply,
-        source: 'gemini-3.8-flash',
+        source: 'gemini-2.5-flash',
         projectId: 'camgo-prod',
         webSearchUsed,
         webQueries,
@@ -1517,18 +1515,13 @@ Structure answers with clean bullet points and bold highlights. Never give gener
         toolsUsed
       });
     } catch (err: any) {
-      if (err?.status === 429 || err?.code === 429) {
-        console.warn('[AI CHAT] Rate limit reached, falling back to local directory.');
-      } else {
-        console.error('[AI CHAT SERVER ERROR, FALLING BACK]', err);
-      }
-      const fallback = getHighlandsFallbackReply(req.body?.message || '', req.body?.language || 'en');
-      return res.json({
-        reply: fallback,
-        source: 'knowledge_fallback',
-        projectId: 'camgo-prod',
-        toolsUsed: ['firebase_directory'],
-        webSearchUsed: false
+      console.error('[AI CHAT SERVER ERROR]', err);
+      const status =
+        typeof err?.status === 'number' && err.status >= 400 && err.status < 600
+          ? err.status
+          : 500;
+      return res.status(status).json({
+        error: err?.message || 'Unexpected error while processing AI chat request.',
       });
     }
   });
@@ -1591,34 +1584,53 @@ Only return valid JSON without markdown wrapping.`;
   // AI Spatial Intent Extraction Endpoint
   app.post('/api/ai/extract-spatial-intent', async (req, res) => {
     try {
-      const { userInput } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) return res.status(503).json({ error: 'Gemini API not configured' });
+      const { userInput } = req.body || {};
+      if (!userInput || typeof userInput !== 'string' || !userInput.trim()) {
+        return res.status(400).json({ error: 'userInput is required.' });
+      }
+      const apiKey = process.env.GEMINI_API_KEY?.trim();
+      if (!apiKey) {
+        return res.status(500).json({
+          error: 'Server configuration error: GEMINI_API_KEY is not set in environment variables.',
+        });
+      }
 
       const ai = getGeminiClient();
-      if (!ai) return res.status(503).json({ error: 'Gemini API not configured' });
+      if (!ai) {
+        return res.status(500).json({
+          error: 'Server configuration error: Unable to initialize Gemini client.',
+        });
+      }
 
       const systemInstruction = "You are a geospatial AI. Extract location categories, preferences, and spatial relations from the user input. Output valid JSON.";
       const prompt = `${systemInstruction}\n\nUser Input: "${userInput}"\n\nSchema:\n{ "category": string, "attributes": string[], "spatial_anchor": string, "relation": "near" | "between" | "inside" | "unknown" }`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
         }
       });
-      const text = response.text || "{}";
+      const text = (response.text || "{}")
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
       return res.json(JSON.parse(text));
     } catch (err: any) {
-      if (isQuotaOrRateLimitError(err)) {
-        console.info('[AI SPATIAL INTENT] Quota exhausted, returning empty spatial extraction.');
-        return res.json({ category: 'all', attributes: [], spatial_anchor: '', relation: 'unknown' });
-      }
       console.error('[AI SPATIAL INTENT ERROR]', err);
-      return res.status(500).json({ error: err.message });
+      const status =
+        typeof err?.status === 'number' && err.status >= 400 && err.status < 600
+          ? err.status
+          : 500;
+      return res.status(status).json({ error: err?.message || 'Spatial intent extraction failed.' });
     }
   });
+
+  // Server-side Google News Malaysia RSS & Web Hazard Search endpoints (mirrors Vercel /api/hazards/rss & /api/hazards/web-search)
+  app.all('/api/rss', (req, res) => rssHandler(req, res));
+  app.all('/api/hazards/rss', (req, res) => hazardsRssHandler(req, res));
+  app.all('/api/hazards/web-search', (req, res) => hazardsWebSearchHandler(req, res));
 
   // Neural TTS Turn-by-Turn Navigation Proxy Endpoint (/api/tts/navigate)
   app.post('/api/tts/navigate', async (req, res) => {

@@ -35,6 +35,7 @@ interface Message {
   groundingSources?: Array<{ title?: string; url?: string }>;
   toolsUsed?: string[];
   spatialIntent?: { category: string; attributes: string[]; spatial_anchor?: string };
+  diagnosticError?: string;
 }
 
 export const AiChatModal: React.FC<AiChatModalProps> = ({ isOpen, onClose, language }) => {
@@ -148,6 +149,7 @@ What's on your mind for the trip?`,
         webQueries: chatResult.webQueries,
         groundingSources: chatResult.groundingSources,
         toolsUsed: chatResult.toolsUsed,
+        diagnosticError: chatResult.error,
       };
 
       // Extract Spatial Intent in background for metadata display
@@ -161,15 +163,17 @@ What's on your mind for the trip?`,
       setMessages((prev) => [...prev, aiMsg]);
       // Save AI reply to Firestore camgo-prod
       firebaseService.saveAiChatMessage(sessionId, aiMsg);
-    } catch {
+    } catch (err: any) {
+      const errDetail = err?.message || 'Unexpected client error';
       const fallbackMsg: Message = {
         sender: 'ai',
         text:
           language === 'bm'
-            ? 'Maaf, sambungan rangkaian terganggu. Sila cuba lagi sebentar lagi.'
-            : 'Connection interrupted. Please verify your connection or try again.',
+            ? `Maaf, ralat sambungan AI berlaku (${errDetail}).`
+            : `AI request error (${errDetail}). Please try again.`,
         time: 'Just now',
         toolsUsed: ['firebase_directory'],
+        diagnosticError: errDetail,
       };
       setMessages((prev) => [...prev, fallbackMsg]);
     } finally {
@@ -273,6 +277,11 @@ What's on your mind for the trip?`,
                       <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/30">
                         <MapPin className="w-2.5 h-2.5 text-amber-400" />
                         AI Spatial Intent: {m.spatialIntent.category}
+                      </span>
+                    )}
+                    {m.diagnosticError && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950/80 text-rose-300 border border-rose-500/35">
+                        Diagnostic: {m.diagnosticError}
                       </span>
                     )}
 

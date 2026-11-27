@@ -66,17 +66,7 @@
     }
   ],
   "rewrites": [
-    {
-      "source": "/api/notifications/broadcast",
-      "destination": "/api/notifications/broadcast"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

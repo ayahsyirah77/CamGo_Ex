@@ -19,6 +19,7 @@ export interface AiChatResult {
   webQueries?: string[];
   groundingSources?: Array<{ title: string; url: string }>;
   toolsUsed: string[];
+  error?: string;
 }
 
 class GeminiHighlandService {
@@ -246,6 +247,7 @@ class GeminiHighlandService {
   ): Promise<AiChatResult> {
     const enableWebSearch = options?.enableWebSearch ?? true;
     const activeTool = options?.activeTool ?? 'all';
+    let serverErrorDetail: string | undefined;
 
     try {
       const res = await fetch('/api/chat', {
@@ -260,24 +262,34 @@ class GeminiHighlandService {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.reply) {
-          return {
-            text: data.reply,
-            source: data.source || 'gemini-3.8-flash',
-            webSearchUsed: Boolean(data.webSearchUsed),
-            webQueries: data.webQueries || [],
-            groundingSources: data.groundingSources || [],
-            toolsUsed: data.toolsUsed || (data.webSearchUsed ? ['firebase_directory', 'search_the_web'] : ['firebase_directory']),
-          };
-        }
+      const contentType = res.headers.get('content-type') || '';
+      const data = contentType.includes('application/json')
+        ? await res.json().catch(() => null)
+        : null;
+
+      if (res.ok && data?.reply) {
+        return {
+          text: data.reply,
+          source: data.source || 'gemini-2.5-flash',
+          webSearchUsed: Boolean(data.webSearchUsed),
+          webQueries: data.webQueries || [],
+          groundingSources: data.groundingSources || [],
+          toolsUsed:
+            data.toolsUsed ||
+            (data.webSearchUsed ? ['firebase_directory', 'search_the_web'] : ['firebase_directory']),
+        };
       }
-    } catch (err) {
+
+      serverErrorDetail =
+        data?.error ||
+        `HTTP ${res.status} (${res.statusText || 'Request failed'})`;
+      console.warn('[GeminiService] /api/chat returned error:', serverErrorDetail);
+    } catch (err: any) {
+      serverErrorDetail = err?.message || 'Network request to /api/chat failed';
       console.warn('[GeminiService] Server /api/chat error:', err);
     }
 
-    // Knowledge Engine Fallback handled by UI or local knowledge search
+    // Knowledge Engine Fallback when a local directory answer matches
     const siteSearch = searchCamgoWebsite(question, language);
     if (siteSearch.found && siteSearch.response) {
       return {
@@ -285,16 +297,20 @@ class GeminiHighlandService {
         source: 'knowledge_engine',
         webSearchUsed: false,
         toolsUsed: ['firebase_directory'],
+        error: serverErrorDetail,
       };
     }
 
+    const diagnosticLabel = serverErrorDetail || 'Unknown API failure';
     return {
-      text: language === 'bm' 
-        ? 'Maaf, sambungan rangkaian terganggu. Sila cuba lagi sebentar lagi.' 
-        : 'Connection interrupted. Please verify your connection or try again.',
-      source: 'error_fallback',
+      text:
+        language === 'bm'
+          ? `Perkhidmatan AI tidak dapat menjawab buat masa ini (${diagnosticLabel}).`
+          : `AI service could not complete this request (${diagnosticLabel}).`,
+      source: 'error_diagnostic',
       webSearchUsed: false,
       toolsUsed: ['firebase_directory'],
+      error: diagnosticLabel,
     };
   }
 

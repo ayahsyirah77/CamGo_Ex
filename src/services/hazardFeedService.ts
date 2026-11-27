@@ -54,6 +54,22 @@ export const OFFICIAL_AGENCIES: AgencyInfo[] = [
   },
 ];
 
+async function safeFetchJson<T = any>(
+  url: string,
+  init?: RequestInit
+): Promise<T | null> {
+  try {
+    const resp = await fetch(url, init);
+    const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+    if (!resp.ok || !contentType.includes('application/json')) {
+      return null;
+    }
+    return (await resp.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 class HazardFeedService {
   private lastSyncTime: Date | null = null;
   private isSyncing = false;
@@ -80,24 +96,22 @@ class HazardFeedService {
    * Fetch live official feed (including real-time PDRM Cameron Highlands notices)
    */
   public async fetchLiveFeed(forceRefresh = false): Promise<HazardAlert[]> {
-    try {
-      const resp = await fetch(`/api/hazards/feed${forceRefresh ? '?force=true' : ''}`);
-      if (resp.ok) {
-        const data = await resp.json();
-        if (Array.isArray(data.alerts) && data.alerts.length > 0) {
-          localStorage.setItem('camgo_hazards', JSON.stringify(data.alerts));
-          const syncStamp = new Date();
-          this.lastSyncTime = syncStamp;
-          localStorage.setItem('camgo_hazards_last_sync', syncStamp.toISOString());
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('hazard-alerts-updated', { detail: data.alerts }));
-          }
-          return data.alerts;
-        }
+    const data = await safeFetchJson<{ alerts?: HazardAlert[] }>(
+      `/api/hazards/feed${forceRefresh ? '?force=true' : ''}`,
+      { headers: { Accept: 'application/json' } }
+    );
+
+    if (Array.isArray(data?.alerts) && data.alerts.length > 0) {
+      localStorage.setItem('camgo_hazards', JSON.stringify(data.alerts));
+      const syncStamp = new Date();
+      this.lastSyncTime = syncStamp;
+      localStorage.setItem('camgo_hazards_last_sync', syncStamp.toISOString());
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('hazard-alerts-updated', { detail: data.alerts }));
       }
-    } catch (err) {
-      console.warn('[HazardFeedService] Live feed fetch fallback:', err);
+      return data.alerts;
     }
+
     return this.getDefaultVerifiedFeeds();
   }
 
@@ -118,36 +132,25 @@ class HazardFeedService {
     try {
       let fetchedAlerts: HazardAlert[] = [];
 
-      // 1. Request updated feed from our backend API (triggers fresh PDRM web grounding + JKR/MDCH feeds)
-      try {
-        const response = await fetch('/api/hazards/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agency, forceRefresh: true }),
-        });
+      // 1. Request updated feed from backend API (only parse JSON when status is OK and Content-Type is JSON)
+      const syncData = await safeFetchJson<{ alerts?: HazardAlert[] }>('/api/hazards/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ agency, forceRefresh: true }),
+      });
 
-        if (response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data.alerts) && data.alerts.length > 0) {
-            fetchedAlerts = data.alerts;
-          }
-        }
-      } catch (apiErr) {
-        console.warn('[HazardFeedService] Backend API sync fetch failed, trying /api/hazards/feed:', apiErr);
-        try {
-          const feedResp = await fetch('/api/hazards/feed?force=true');
-          if (feedResp.ok) {
-            const feedData = await feedResp.json();
-            if (Array.isArray(feedData.alerts)) {
-              fetchedAlerts = feedData.alerts;
-            }
-          }
-        } catch (feedErr) {
-          console.warn('[HazardFeedService] Fallback to local default official feeds:', feedErr);
+      if (Array.isArray(syncData?.alerts) && syncData.alerts.length > 0) {
+        fetchedAlerts = syncData.alerts;
+      } else {
+        const feedData = await safeFetchJson<{ alerts?: HazardAlert[] }>('/api/hazards/feed?force=true', {
+          headers: { Accept: 'application/json' },
+        });
+        if (Array.isArray(feedData?.alerts) && feedData.alerts.length > 0) {
+          fetchedAlerts = feedData.alerts;
         }
       }
 
-      // If network calls returned empty (e.g. offline on mountain pass), use verified defaults
+      // If API routes are unavailable (e.g. static/preview host), fall back cleanly to verified defaults
       if (fetchedAlerts.length === 0) {
         fetchedAlerts = this.getDefaultVerifiedFeeds();
       }

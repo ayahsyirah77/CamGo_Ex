@@ -1007,6 +1007,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const viaLabel =
         res.sourceUsed === 'google_news_rss_fallback'
           ? 'Google News MY RSS fallback'
+          : res.sourceUsed === 'firestore_cache' || res.sourceUsed === 'cooldown_cache'
+          ? 'Firestore Cache'
           : 'Gemini Search Grounding';
       setWebAlertToast({
         type: 'success',
