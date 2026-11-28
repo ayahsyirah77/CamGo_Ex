@@ -349,7 +349,7 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
       [4.478, 101.382],
       [4.4815, 101.3855],
     ],
-    advisory: 'Commercial core traffic around bus terminal, taxi ranks, and cafés.',
+    advisory: 'Commercial core traffic around bus terminal, taxi ranks, and cafÃ©s.',
   },
   {
     id: 'central-golden-hills-brinchang',
@@ -391,7 +391,7 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
       [4.5028, 101.4072],
       [4.506, 101.412],
     ],
-    advisory: 'Highland market bottleneck; predictive curve slows sharply 10:00 AM–5:00 PM on weekends.',
+    advisory: 'Highland market bottleneck; predictive curve slows sharply 10:00 AMâ€“5:00 PM on weekends.',
   },
   {
     id: 'central-kea-tringkap',
@@ -475,7 +475,7 @@ export const HIGHWAY_TRAFFIC_SEGMENTS: TrafficPolylineSegment[] = [
       [4.5138, 101.4158],
       [4.5162, 101.4165],
     ],
-    advisory: 'Narrow single-lane plantation passing road; predictive historical delays peak 10:00 AM–3:30 PM.',
+    advisory: 'Narrow single-lane plantation passing road; predictive historical delays peak 10:00 AMâ€“3:30 PM.',
   },
   {
     id: 'interior-mossy-forest-ridge',
@@ -548,7 +548,7 @@ export const CONGESTION_HOTSPOTS: CongestionHotspotPoint[] = [
   {
     id: 'hotspot-golden-hills',
     name: 'Golden Hills Night Market Strip',
-    corridor: 'Tanah Rata – Brinchang Link',
+    corridor: 'Tanah Rata â€“ Brinchang Link',
     coords: [4.4815, 101.3855],
     severity: 'heavy',
     color: '#ef4444',
@@ -571,7 +571,7 @@ export const CONGESTION_HOTSPOTS: CongestionHotspotPoint[] = [
   },
   {
     id: 'hotspot-blue-valley',
-    name: 'Blue Valley – Kampung Raja Merge',
+    name: 'Blue Valley â€“ Kampung Raja Merge',
     corridor: 'FT 185 x FT 102 Junction',
     coords: [4.5683, 101.4087],
     severity: 'moderate',
@@ -591,7 +591,7 @@ export const CONGESTION_HOTSPOTS: CongestionHotspotPoint[] = [
     speedKmh: 18,
     delayMins: 10,
     cause: 'Central hub bus terminal entries, taxi ranks, and food street access.',
-    bypassTip: 'Avoid 12:00 PM – 2:30 PM peak lunch hours.',
+    bypassTip: 'Avoid 12:00 PM â€“ 2:30 PM peak lunch hours.',
   },
 ];
 
@@ -675,7 +675,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const [isLocatingUser, setIsLocatingUser] = useState<boolean>(false);
   const userLocationMarkerRef = useRef<L.Marker | null>(null);
 
-  // Automatic 3D Driver's Perspective Navigation States & Refs (50° - 65° low-horizon pitch + heading-up)
+  // Automatic 3D Driver's Perspective Navigation States & Refs (50Â° - 65Â° low-horizon pitch + heading-up)
   const DRIVER_CAMERA_MIN_PITCH = 50;
   const DRIVER_CAMERA_MAX_PITCH = 65;
   const DRIVER_CAMERA_DEFAULT_PITCH = 58;
@@ -1530,7 +1530,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       type: 'checkpoint' as const,
       corridorId: 'simpang-pulai' as const,
       title: 'Kea Farm Bottleneck Hotspot',
-      subtitle: 'Peak mountain market zone • Expect holiday queues',
+      subtitle: 'Peak mountain market zone â€¢ Expect holiday queues',
       badge: 'Bottleneck',
       color: 'text-rose-400',
       coords: [4.5028, 101.4072] as [number, number],
@@ -1541,7 +1541,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       type: 'checkpoint' as const,
       corridorId: 'tapah' as const,
       title: 'Lata Iskandar Waterfall Pass',
-      subtitle: 'FT 59 mountain climb • Hairpin turns & roadside stalls',
+      subtitle: 'FT 59 mountain climb â€¢ Hairpin turns & roadside stalls',
       badge: 'Scenic Pass',
       color: 'text-amber-400',
       coords: [4.331, 101.328] as [number, number],
@@ -1687,34 +1687,34 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const modifier = step.maneuver?.modifier;
     const roadName = step.name ? step.name : (lang === 'bm' ? 'Jalan Utama' : 'Highland Main Route');
 
-    let icon = '⬆️';
+    let icon = 'â¬†ï¸';
     let text = '';
 
     if (type === 'depart') {
-      icon = '🚗';
+      icon = 'ðŸš—';
       text = lang === 'bm' ? `Bertolak dari lokasi asal di ${roadName}` : `Depart from origin onto ${roadName}`;
     } else if (type === 'turn') {
       if (modifier?.includes('left')) {
-        icon = '⬅️';
+        icon = 'â¬…ï¸';
         text = lang === 'bm' ? `Belok kiri ke ${roadName}` : `Turn left onto ${roadName}`;
       } else if (modifier?.includes('right')) {
-        icon = '➡️';
+        icon = 'âž¡ï¸';
         text = lang === 'bm' ? `Belok kanan ke ${roadName}` : `Turn right onto ${roadName}`;
       } else {
-        icon = '↗️';
+        icon = 'â†—ï¸';
         text = lang === 'bm' ? `Teruskan ke ${roadName}` : `Continue onto ${roadName}`;
       }
     } else if (type === 'new name' || type === 'continue') {
-      icon = '⬆️';
+      icon = 'â¬†ï¸';
       text = lang === 'bm' ? `Terus di ${roadName}` : `Continue straight on ${roadName}`;
     } else if (type === 'roundabout' || type === 'rotary') {
-      icon = '🔄';
+      icon = 'ðŸ”„';
       text = lang === 'bm' ? `Di bulatan, ambil susur keluar ke ${roadName}` : `At roundabout, take exit onto ${roadName}`;
     } else if (type === 'arrive') {
-      icon = '🏁';
+      icon = 'ðŸ';
       text = lang === 'bm' ? `Tiba di destinasi: ${destName}` : `Arrive at destination: ${destName}`;
     } else {
-      icon = '🧭';
+      icon = 'ðŸ§­';
       text = lang === 'bm' ? `Ikuti laluan ${roadName}` : `Follow ${roadName}`;
     }
 
@@ -1763,7 +1763,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       routeLayerRef.current = L.layerGroup().addTo(map);
     }
 
-    // Origin Start Marker (Subtle Departure Pin — live zoomed-in Car marker sits on vehicle location)
+    // Origin Start Marker (Subtle Departure Pin â€” live zoomed-in Car marker sits on vehicle location)
     const originIcon = L.divIcon({
       className: 'route-origin-marker',
       html: `
@@ -1786,7 +1786,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
           <div style="position: absolute; inset: -4px; border-radius: 9999px; background: #10b981; opacity: 0.4;" class="animate-ping"></div>
           <div style="width: 28px; height: 28px; border-radius: 9999px; background: #10b981; border: 2.5px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.6); z-index: 2;">
-            <span style="font-size: 13px; line-height: 1;">🏁</span>
+            <span style="font-size: 13px; line-height: 1;">ðŸ</span>
           </div>
         </div>
       `,
@@ -1852,7 +1852,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         });
     }
 
-    // Automatically initialize 3D Driver's Perspective (50-65° low-horizon pitch, heading-up & easeTo) when navigation starts
+    // Automatically initialize 3D Driver's Perspective (50-65Â° low-horizon pitch, heading-up & easeTo) when navigation starts
     const initialOrigin = routeData.coordinates[0] || routeData.originCoords;
     const initialNext = routeData.coordinates[1] || routeData.destinationCoords;
     const initialBearing = computeBearingDeg(
@@ -1999,8 +1999,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           distanceKm: Number((Math.hypot(destination.lat - origin.lat, destination.lng - origin.lng) * 111).toFixed(1)),
           durationMins: 18,
           steps: [
-            { instruction: `Head towards ${destination.name}`, distanceMeters: 5000, durationSecs: 600, icon: '⬆️' },
-            { instruction: `Arrive at ${destination.name}`, distanceMeters: 0, durationSecs: 0, icon: '🏁' },
+            { instruction: `Head towards ${destination.name}`, distanceMeters: 5000, durationSecs: 600, icon: 'â¬†ï¸' },
+            { instruction: `Arrive at ${destination.name}`, distanceMeters: 0, durationSecs: 0, icon: 'ðŸ' },
           ],
           coordinates: fallbackCoords,
         },
@@ -2016,7 +2016,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   const pendingRouteTargetRef = useRef<Place | null>(null);
 
-  // Geographic Forward Bearing Calculation (0-360°)
+  // Geographic Forward Bearing Calculation (0-360Â°)
   const computeBearingDeg = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const toRad = (deg: number) => (deg * Math.PI) / 180;
     const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
@@ -2026,7 +2026,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
   };
 
-  // Shortest-Angle Unwrapping for Smooth 3D Heading-Up Rotation (prevents 355° -> 5° spin-back)
+  // Shortest-Angle Unwrapping for Smooth 3D Heading-Up Rotation (prevents 355Â° -> 5Â° spin-back)
   const updateSmoothHeading = (rawHeading: number) => {
     if (typeof rawHeading !== 'number' || isNaN(rawHeading)) return;
     const normalizedTarget = ((rawHeading % 360) + 360) % 360;
@@ -2037,16 +2037,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     setSmoothedContinuousHeading(continuousHeadingRef.current);
   };
 
-  // Dynamic Low-Horizon Camera Pitch strictly clamped between 50° and 65° for Driver's Perspective
+  // Dynamic Low-Horizon Camera Pitch strictly clamped between 50Â° and 65Â° for Driver's Perspective
   const computeDynamicDriverPitch = (
     speedKmh: number,
     distToNextTurnMeters: number | null
   ): number => {
     let targetPitch = DRIVER_CAMERA_DEFAULT_PITCH;
     if (distToNextTurnMeters !== null && distToNextTurnMeters <= 150) {
-      targetPitch = 52; // Slightly steeper 52° for tight intersection clarity
+      targetPitch = 52; // Slightly steeper 52Â° for tight intersection clarity
     } else if (speedKmh >= 60) {
-      targetPitch = 63; // Deeper 63° low-horizon forward perspective on fast stretches
+      targetPitch = 63; // Deeper 63Â° low-horizon forward perspective on fast stretches
     } else if (speedKmh >= 35) {
       targetPitch = 59;
     } else {
@@ -2154,7 +2154,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         ? computeBearingDeg(coords[prevIdx][0], coords[prevIdx][1], coords[nextIdx][0], coords[nextIdx][1])
         : null;
 
-    // Look ahead for a significant bend (>= 28°) to measure upcoming maneuver distance
+    // Look ahead for a significant bend (>= 28Â°) to measure upcoming maneuver distance
     let cumulativeKm = 0;
     let baseBearing = segmentBearing;
     for (let j = nearestIdx; j < coords.length - 2; j++) {
@@ -2379,7 +2379,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     setIsSimulatingDrive(false);
   };
 
-  // Interactive 3D Drive Simulator along active route for previewing 45-65° pitch, heading-up & dynamic zoom
+  // Interactive 3D Drive Simulator along active route for previewing 45-65Â° pitch, heading-up & dynamic zoom
   const handleToggleSimulateDrive = () => {
     unlockAudioEngine(true);
     if (isSimulatingDrive) {
@@ -2452,7 +2452,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   };
 
-  // Start, Stop, Resume Navigation Handlers (Automatic 50-65° pitch, heading-up & smooth easeTo)
+  // Start, Stop, Resume Navigation Handlers (Automatic 50-65Â° pitch, heading-up & smooth easeTo)
   const handleStartNavigation = () => {
     unlockAudioEngine(true);
     resetTripLegGeofences();
@@ -2785,7 +2785,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             cursor: pointer;
             transform: translate3d(0, 0, 0);
           ">
-            <span style="font-size: 13px;">📍</span> <span>${townshipName} Hub</span>
+            <span style="font-size: 13px;">ðŸ“</span> <span>${townshipName} Hub</span>
           </div>
         `,
         iconSize: [140, 30],
@@ -2801,14 +2801,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         townshipMarker.addTo(townshipLayerRef.current);
       }
 
-      townshipMarker.bindTooltip(`${townshipName} Hub • Click for Details & Facilities`, {
+      townshipMarker.bindTooltip(`${townshipName} Hub â€¢ Click for Details & Facilities`, {
         direction: 'top',
         offset: [0, -15],
         className: 'text-xs font-bold bg-stone-900 text-stone-100 px-2 py-1 rounded shadow-lg border border-white/10',
       });
 
       const attractionsList = Array.isArray(hubInfo.placesOfInterest)
-        ? hubInfo.placesOfInterest.join(' • ')
+        ? hubInfo.placesOfInterest.join(' â€¢ ')
         : hubInfo.placesOfInterest;
 
       const popupContent = `
@@ -2828,10 +2828,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
           <div style="background: #f5f5f4; border-radius: 12px; padding: 10px; margin-bottom: 8px; font-size: 11px; border: 1px solid #e7e5e4;">
             <div style="font-weight: 800; color: #0284c7; margin-bottom: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Essential Facilities</div>
-            <div style="margin-bottom: 3px; display: flex; gap: 5px;"><span>🏥</span> <div><strong style="color: #292524;">Clinic/Hospital:</strong> <span style="color: #57534e;">${hubInfo.clinicsOrHospitals}</span></div></div>
-            <div style="margin-bottom: 3px; display: flex; gap: 5px;"><span>👮</span> <div><strong style="color: #292524;">Police Station:</strong> <span style="color: #57534e;">${hubInfo.policeStation}</span></div></div>
-            <div style="margin-bottom: 3px; display: flex; gap: 5px;"><span>🚻</span> <div><strong style="color: #292524;">Public Toilet:</strong> <span style="color: #57534e;">${hubInfo.publicToilet}</span></div></div>
-            <div style="display: flex; gap: 5px;"><span>⛽</span> <div><strong style="color: #292524;">Gas Station:</strong> <span style="color: #57534e;">${hubInfo.gasStation}</span></div></div>
+            <div style="margin-bottom: 3px; display: flex; gap: 5px;"><span>ðŸ¥</span> <div><strong style="color: #292524;">Clinic/Hospital:</strong> <span style="color: #57534e;">${hubInfo.clinicsOrHospitals}</span></div></div>
+            <div style="margin-bottom: 3px; display: flex; gap: 5px;"><span>ðŸ‘®</span> <div><strong style="color: #292524;">Police Station:</strong> <span style="color: #57534e;">${hubInfo.policeStation}</span></div></div>
+            <div style="margin-bottom: 3px; display: flex; gap: 5px;"><span>ðŸš»</span> <div><strong style="color: #292524;">Public Toilet:</strong> <span style="color: #57534e;">${hubInfo.publicToilet}</span></div></div>
+            <div style="display: flex; gap: 5px;"><span>â›½</span> <div><strong style="color: #292524;">Gas Station:</strong> <span style="color: #57534e;">${hubInfo.gasStation}</span></div></div>
           </div>
 
           <div style="margin-bottom: 10px;">
@@ -2951,7 +2951,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           <div style="font-weight: 800; color: #f8fafc;">${segment.name}</div>
           <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
             <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${segment.color};"></span>
-            <span style="font-weight: 800; color: ${segment.color};">${segment.speedKmh} km/h • ${segment.statusLabel}</span>
+            <span style="font-weight: 800; color: ${segment.color};">${segment.speedKmh} km/h â€¢ ${segment.statusLabel}</span>
             ${segment.delayMins > 0 ? `<span style="color: #fca5a5; font-weight: 700;">(+${segment.delayMins}m)</span>` : ''}
           </div>
           <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">${sourceBadge} (${confidencePct}%)</div>
@@ -2972,7 +2972,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               ${sourceBadge}
             </span>
             <span style="font-size: 10px; font-weight: 800; color: ${segment.color};">
-              ● ${segment.statusLabel}
+              â— ${segment.statusLabel}
             </span>
           </div>
           <h4 style="font-size: 13px; font-weight: 800; color: #0f172a; margin: 0 0 6px 0; line-height: 1.3;">
@@ -3016,7 +3016,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             <div style="position: absolute; inset: -4px; border-radius: 9999px; background: ${hotspot.color}; opacity: 0.5;" class="animate-traffic-ping"></div>
             <div style="position: absolute; inset: 0px; border-radius: 9999px; background: ${hotspot.color}; opacity: 0.25;"></div>
             <div style="width: 26px; height: 26px; border-radius: 9999px; background: #1c1917; border: 2.5px solid ${hotspot.color}; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.6); z-index: 2;">
-              <span style="font-size: 12px; line-height: 1;">${hotspot.severity === 'gridlock' ? '⚠️' : hotspot.severity === 'heavy' ? '🛑' : '⏳'}</span>
+              <span style="font-size: 12px; line-height: 1;">${hotspot.severity === 'gridlock' ? 'âš ï¸' : hotspot.severity === 'heavy' ? 'ðŸ›‘' : 'â³'}</span>
             </div>
             <div style="position: absolute; top: -17px; background: ${hotspot.color}; color: white; font-size: 9px; font-weight: 900; padding: 1px 5px; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.5); white-space: nowrap; text-transform: uppercase;">
               ${hotspot.speedKmh} km/h
@@ -3077,7 +3077,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           </div>
 
           <button onclick="document.getElementById('traffic-forecasting-section')?.scrollIntoView({ behavior: 'smooth' })" style="width: 100%; background: #059669; color: white; border: none; padding: 7px; border-radius: 8px; font-size: 10.5px; font-weight: 800; cursor: pointer;">
-            View Detailed Forecast & Pattern ↓
+            View Detailed Forecast & Pattern â†“
           </button>
         </div>
       `;
@@ -3189,7 +3189,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
   }, []);
 
-  // Subscribe to Firestore camgo_hazards + Monitor Module B Corridor Telemetry Anomalies (≥70% speed drop)
+  // Subscribe to Firestore camgo_hazards + Monitor Module B Corridor Telemetry Anomalies (â‰¥70% speed drop)
   const combinedActiveHazards = useMemo(() => {
     const byId = new Map<string, CamgoHazard>();
     activeCamgoHazards.forEach((h) => {
@@ -3414,16 +3414,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
       const emojiByType: Record<string, string> = {
-        landslide: '⛰️',
-        accident: '💥',
-        road_closure: '🚧',
-        flood_or_fallen_tree: '🌊',
-        closure: '🚧',
-        weather: '🌧️',
-        roadblock: '🚧',
-        fallen_tree: '🌳',
-        flood: '🌊',
-        sudden_congestion: '🚨',
+        landslide: 'â›°ï¸',
+        accident: 'ðŸ’¥',
+        road_closure: 'ðŸš§',
+        flood_or_fallen_tree: 'ðŸŒŠ',
+        closure: 'ðŸš§',
+        weather: 'ðŸŒ§ï¸',
+        roadblock: 'ðŸš§',
+        fallen_tree: 'ðŸŒ³',
+        flood: 'ðŸŒŠ',
+        sudden_congestion: 'ðŸš¨',
       };
       const colorByType: Record<string, string> = {
         landslide: '#dc2626',
@@ -3446,7 +3446,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         low: '#059669',
       };
 
-      const badgeEmoji = emojiByType[hazard.type] || '⚠️';
+      const badgeEmoji = emojiByType[hazard.type] || 'âš ï¸';
       const pinColor = colorByType[hazard.type] || '#dc2626';
       const sevColor = severityColorByLevel[hazard.severity] || '#d97706';
       const isWebSearch = hazard.verifiedBy === 'web_search';
@@ -3476,7 +3476,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               <span style="font-size: 14px; line-height: 1;">${badgeEmoji}</span>
             </div>
             <div style="position: absolute; top: -16px; background: ${pinColor}; color: white; font-size: 8.5px; font-weight: 900; padding: 1px 5px; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.5); white-space: nowrap; text-transform: uppercase;">
-              ${hazard.isProvisional ? 'TELEMETRY -' + (hazard.speedDropPercent || 70) + '%' : isWebSearch ? 'WEB • ' + escapeHtml(hazard.type.replace(/_/g, ' ')) : escapeHtml(hazard.type.replace(/_/g, ' '))}
+              ${hazard.isProvisional ? 'TELEMETRY -' + (hazard.speedDropPercent || 70) + '%' : isWebSearch ? 'WEB â€¢ ' + escapeHtml(hazard.type.replace(/_/g, ' ')) : escapeHtml(hazard.type.replace(/_/g, ' '))}
             </div>
           </div>
         `,
@@ -3494,7 +3494,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         <div style="font-family: 'Plus Jakarta Sans', sans-serif; width: 280px; max-width: 82vw; padding: 4px; color: #1c1917;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px; flex-wrap: wrap;">
             <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; background: ${pinColor}1a; color: ${pinColor}; padding: 2px 7px; border-radius: 6px; border: 1px solid ${pinColor}40;">
-              ${badgeEmoji} ${hazard.isProvisional ? 'PROVISIONAL TELEMETRY ANOMALY' : isWebSearch ? 'WEB SEARCH • ' + escapeHtml(hazard.type.replace(/_/g, ' ')).toUpperCase() : escapeHtml(hazard.type.replace(/_/g, ' ')).toUpperCase()}
+              ${badgeEmoji} ${hazard.isProvisional ? 'PROVISIONAL TELEMETRY ANOMALY' : isWebSearch ? 'WEB SEARCH â€¢ ' + escapeHtml(hazard.type.replace(/_/g, ' ')).toUpperCase() : escapeHtml(hazard.type.replace(/_/g, ' ')).toUpperCase()}
             </span>
             <span style="font-size: 9px; font-weight: 800; color: ${sevColor}; background: ${sevColor}18; border: 1px solid ${sevColor}40; padding: 1px 6px; border-radius: 9999px; text-transform: uppercase;">
               ${escapeHtml(hazard.severity)}
@@ -3506,7 +3506,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           </h4>
 
           <div style="font-size: 10.5px; font-weight: 700; color: #475569; margin-bottom: 6px;">
-            📍 ${locText}${hazard.milestoneKm ? ` (KM ${escapeHtml(hazard.milestoneKm)})` : ''}
+            ðŸ“ ${locText}${hazard.milestoneKm ? ` (KM ${escapeHtml(hazard.milestoneKm)})` : ''}
           </div>
 
           <p style="font-size: 11px; color: #334155; line-height: 1.4; margin: 0 0 8px 0;">
@@ -3530,8 +3530,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 8px; margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 700; color: #475569; margin-bottom: 4px;">
-              <span>👍 Still There: <strong style="color: #b45309;">+${hazard.stillThereVotes || 0}</strong></span>
-              <span>✅ Cleared: <strong style="color: #047857;">${hazard.clearedVotes || 0}/${CLEARED_VOTE_EXPIRY_THRESHOLD}</strong></span>
+              <span>ðŸ‘ Still There: <strong style="color: #b45309;">+${hazard.stillThereVotes || 0}</strong></span>
+              <span>âœ… Cleared: <strong style="color: #047857;">${hazard.clearedVotes || 0}/${CLEARED_VOTE_EXPIRY_THRESHOLD}</strong></span>
             </div>
             <div style="font-size: 9.5px; color: #64748b;">
               ${remainingToClear} more "Cleared" vote${remainingToClear > 1 ? 's' : ''} will auto-expire this pin.
@@ -3544,14 +3544,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${escapeHtml(hazard.id)}', vote: 'still_there' } }))"
               style="background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
             >
-              👍 Still There (+1)
+              ðŸ‘ Still There (+1)
             </button>
             <button
               type="button"
               onclick="window.dispatchEvent(new CustomEvent('camgo-vote-hazard', { detail: { id: '${escapeHtml(hazard.id)}', vote: 'cleared' } }))"
               style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
             >
-              ✅ Cleared (-1)
+              âœ… Cleared (-1)
             </button>
           </div>
           <button
@@ -3559,13 +3559,13 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             onclick="window.dispatchEvent(new CustomEvent('camgo-inspect-hazard', { detail: { id: '${escapeHtml(hazard.id)}' } }))"
             style="width: 100%; background: #0f172a; color: #34d399; border: 1px solid #10b981; padding: 7px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;"
           >
-            ✨ AI Traffic Flow Prediction
+            âœ¨ AI Traffic Flow Prediction
           </button>
           <div style="font-size: 9px; color: #64748b; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px;">
             <span>Source: ${sourceText}</span>
             ${
               safeSourceUrl
-                ? `<a href="${escapeHtml(safeSourceUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; font-weight: 700; text-decoration: underline;">Read Report ↗</a>`
+                ? `<a href="${escapeHtml(safeSourceUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; font-weight: 700; text-decoration: underline;">Read Report â†—</a>`
                 : ''
             }
           </div>
@@ -3970,7 +3970,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         id: `geofence-fuel-${matchedFuel.id}`,
         kind: 'fuel',
         title: language === 'bm' ? 'Peringatan Stesen Minyak di Hadapan' : 'Please check your fuel level ahead.',
-        subtitle: `${matchedFuel.name} • ${matchedFuel.distanceMeters}m`,
+        subtitle: `${matchedFuel.name} â€¢ ${matchedFuel.distanceMeters}m`,
         voiceText: fuelVoice,
         distanceMeters: matchedFuel.distanceMeters,
         place: matchedFuel.place,
@@ -4042,7 +4042,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             : language === 'bm'
               ? `${poiName} berada di hadapan`
               : `${poiName} is just ahead`,
-        subtitle: `${matchedPoi.distanceMeters}m nearby • ${matchedPoi.place.township}`,
+        subtitle: `${matchedPoi.distanceMeters}m nearby â€¢ ${matchedPoi.place.township}`,
         voiceText: poiVoice,
         distanceMeters: matchedPoi.distanceMeters,
         place: matchedPoi.place,
@@ -4115,7 +4115,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           language === 'bm'
             ? `Stesen Pengecas EV: ${matchedEv.name}`
             : `EV Charging Station Ahead: ${matchedEv.name}`,
-        subtitle: `${matchedEv.distanceMeters}m • ${matchedEv.place.township}`,
+        subtitle: `${matchedEv.distanceMeters}m â€¢ ${matchedEv.place.township}`,
         voiceText: evVoiceText,
         distanceMeters: matchedEv.distanceMeters,
         place: matchedEv.place,
@@ -4640,58 +4640,58 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const getCategoryPinStyle = (cat?: string, subCat?: string) => {
     switch (cat) {
       case 'accommodation':
-        if (subCat === 'camping_glamping') return { pinColor: '#2563eb', iconEmoji: '⛺', label: 'Glamping & Camp' };
-        if (subCat === 'hostels_roomstay') return { pinColor: '#2563eb', iconEmoji: '🛏️', label: 'Hostels / Roomstay' };
-        if (subCat === 'homestay' || subCat === 'chalets') return { pinColor: '#2563eb', iconEmoji: '🏡', label: 'Chalet & Homestay' };
-        return { pinColor: '#1d4ed8', iconEmoji: '🏨', label: 'Hotel & Resort' };
+        if (subCat === 'camping_glamping') return { pinColor: '#2563eb', iconEmoji: 'â›º', label: 'Glamping & Camp' };
+        if (subCat === 'hostels_roomstay') return { pinColor: '#2563eb', iconEmoji: 'ðŸ›ï¸', label: 'Hostels / Roomstay' };
+        if (subCat === 'homestay' || subCat === 'chalets') return { pinColor: '#2563eb', iconEmoji: 'ðŸ¡', label: 'Chalet & Homestay' };
+        return { pinColor: '#1d4ed8', iconEmoji: 'ðŸ¨', label: 'Hotel & Resort' };
 
       case 'food':
-        if (subCat === 'steamboats') return { pinColor: '#ea580c', iconEmoji: '🍲', label: 'Steamboat' };
-        if (subCat === 'cafes') return { pinColor: '#c2410c', iconEmoji: '☕', label: 'Cafe' };
-        if (subCat === 'night_markets_street') return { pinColor: '#f97316', iconEmoji: '🍢', label: 'Street Food' };
-        return { pinColor: '#ea580c', iconEmoji: '🍽️', label: 'Food & Dining' };
+        if (subCat === 'steamboats') return { pinColor: '#ea580c', iconEmoji: 'ðŸ²', label: 'Steamboat' };
+        if (subCat === 'cafes') return { pinColor: '#c2410c', iconEmoji: 'â˜•', label: 'Cafe' };
+        if (subCat === 'night_markets_street') return { pinColor: '#f97316', iconEmoji: 'ðŸ¢', label: 'Street Food' };
+        return { pinColor: '#ea580c', iconEmoji: 'ðŸ½ï¸', label: 'Food & Dining' };
 
       case 'travel_tourism':
       case 'attraction':
-        if (subCat === 'agrotourism_farms') return { pinColor: '#16a34a', iconEmoji: '🍓', label: 'Farm & Agrotourism' };
-        if (subCat === 'outdoor_adventure') return { pinColor: '#059669', iconEmoji: '🌲', label: 'Nature & Adventure' };
-        return { pinColor: '#10b981', iconEmoji: '🏞️', label: 'Sightseeing & Attraction' };
+        if (subCat === 'agrotourism_farms') return { pinColor: '#16a34a', iconEmoji: 'ðŸ“', label: 'Farm & Agrotourism' };
+        if (subCat === 'outdoor_adventure') return { pinColor: '#059669', iconEmoji: 'ðŸŒ²', label: 'Nature & Adventure' };
+        return { pinColor: '#10b981', iconEmoji: 'ðŸžï¸', label: 'Sightseeing & Attraction' };
 
       case 'transport':
-        if (subCat === 'car_bike_rentals') return { pinColor: '#0284c7', iconEmoji: '🛵', label: 'Motorbike / Car Rental' };
-        if (subCat === 'fuel_ev_charging') return { pinColor: '#0ea5e9', iconEmoji: '⚡', label: 'EV & Fuel' };
-        if (subCat === 'taxi_ehailing') return { pinColor: '#0284c7', iconEmoji: '🚕', label: 'Taxi & E-Hailing' };
-        if (subCat === 'tyre_shop') return { pinColor: '#0284c7', iconEmoji: '🛞', label: 'Tyre Shop' };
-        if (subCat === 'car_battery_shop') return { pinColor: '#0284c7', iconEmoji: '🔋', label: 'Car Battery Shop' };
-        if (subCat === 'auto_repair_roadside') return { pinColor: '#0284c7', iconEmoji: '🔧', label: 'Auto Repair & Roadside' };
-        return { pinColor: '#0369a1', iconEmoji: '🚗', label: 'Transport' };
+        if (subCat === 'car_bike_rentals') return { pinColor: '#0284c7', iconEmoji: 'ðŸ›µ', label: 'Motorbike / Car Rental' };
+        if (subCat === 'fuel_ev_charging') return { pinColor: '#0ea5e9', iconEmoji: 'âš¡', label: 'EV & Fuel' };
+        if (subCat === 'taxi_ehailing') return { pinColor: '#0284c7', iconEmoji: 'ðŸš•', label: 'Taxi & E-Hailing' };
+        if (subCat === 'tyre_shop') return { pinColor: '#0284c7', iconEmoji: 'ðŸ›ž', label: 'Tyre Shop' };
+        if (subCat === 'car_battery_shop') return { pinColor: '#0284c7', iconEmoji: 'ðŸ”‹', label: 'Car Battery Shop' };
+        if (subCat === 'auto_repair_roadside') return { pinColor: '#0284c7', iconEmoji: 'ðŸ”§', label: 'Auto Repair & Roadside' };
+        return { pinColor: '#0369a1', iconEmoji: 'ðŸš—', label: 'Transport' };
 
       case 'local_services':
-        if (subCat === 'public_toilets_restrooms') return { pinColor: '#0d9488', iconEmoji: '🚻', label: 'Public Restroom' };
-        if (subCat === 'clinic_hospital') return { pinColor: '#e11d48', iconEmoji: '🏥', label: 'Clinic / Hospital' };
-        if (subCat === 'health_wellness') return { pinColor: '#e11d48', iconEmoji: '🏥', label: 'Clinic & Hospital' };
-        if (subCat === 'banking_financial') return { pinColor: '#0d9488', iconEmoji: '������', label: 'ATM & Banking' };
-        return { pinColor: '#0f766e', iconEmoji: '🏢', label: 'Local Services' };
+        if (subCat === 'public_toilets_restrooms') return { pinColor: '#0d9488', iconEmoji: 'ðŸš»', label: 'Public Restroom' };
+        if (subCat === 'clinic_hospital') return { pinColor: '#e11d48', iconEmoji: 'ðŸ¥', label: 'Clinic / Hospital' };
+        if (subCat === 'health_wellness') return { pinColor: '#e11d48', iconEmoji: 'ðŸ¥', label: 'Clinic & Hospital' };
+        if (subCat === 'banking_financial') return { pinColor: '#0d9488', iconEmoji: 'í ¼í¿¦', label: 'ATM & Banking' };
+        return { pinColor: '#0f766e', iconEmoji: 'ðŸ¢', label: 'Local Services' };
 
       case 'shopping':
-        if (subCat === 'fresh_markets_produce') return { pinColor: '#d97706', iconEmoji: '🥬', label: 'Fresh Market' };
-        if (subCat === 'souvenirs_handicrafts') return { pinColor: '#b45309', iconEmoji: '🎁', label: 'Souvenirs & Crafts' };
-        if (subCat === 'telecommunication') return { pinColor: '#0284c7', iconEmoji: '📶', label: 'Telecommunication' };
-        if (subCat === 'gadgets') return { pinColor: '#7c3aed', iconEmoji: '📱', label: 'Gadgets' };
-        return { pinColor: '#d97706', iconEmoji: '🛍️', label: 'Shopping' };
+        if (subCat === 'fresh_markets_produce') return { pinColor: '#d97706', iconEmoji: 'ðŸ¥¬', label: 'Fresh Market' };
+        if (subCat === 'souvenirs_handicrafts') return { pinColor: '#b45309', iconEmoji: 'ðŸŽ', label: 'Souvenirs & Crafts' };
+        if (subCat === 'telecommunication') return { pinColor: '#0284c7', iconEmoji: 'ðŸ“¶', label: 'Telecommunication' };
+        if (subCat === 'gadgets') return { pinColor: '#7c3aed', iconEmoji: 'ðŸ“±', label: 'Gadgets' };
+        return { pinColor: '#d97706', iconEmoji: 'ðŸ›ï¸', label: 'Shopping' };
 
       case 'masjid_surau':
-        return { pinColor: '#15803d', iconEmoji: '🕌', label: 'Masjid & Surau' };
+        return { pinColor: '#15803d', iconEmoji: 'ðŸ•Œ', label: 'Masjid & Surau' };
 
       case 'services_utilities':
-        if (subCat === 'cooking_gas_delivery') return { pinColor: '#6366f1', iconEmoji: '🔥', label: 'Gas Delivery' };
-        return { pinColor: '#6366f1', iconEmoji: '🔧', label: 'Utilities & Repairs' };
+        if (subCat === 'cooking_gas_delivery') return { pinColor: '#6366f1', iconEmoji: 'ðŸ”¥', label: 'Gas Delivery' };
+        return { pinColor: '#6366f1', iconEmoji: 'ðŸ”§', label: 'Utilities & Repairs' };
 
       case 'business':
-        return { pinColor: '#7c3aed', iconEmoji: '💼', label: 'Business & Office' };
+        return { pinColor: '#7c3aed', iconEmoji: 'ðŸ’¼', label: 'Business & Office' };
 
       default:
-        return { pinColor: '#059669', iconEmoji: '📍', label: 'Place' };
+        return { pinColor: '#059669', iconEmoji: 'ðŸ“', label: 'Place' };
     }
   };
 
@@ -4740,10 +4740,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           <div style="font-weight: 800; color: #f8fafc;">${place.name}</div>
           <div style="font-size: 9.5px; color: #94a3b8; display: flex; gap: 4px; align-items: center; margin-top: 2px;">
             <span>${iconEmoji} ${label}</span>
-            <span>•</span>
+            <span>â€¢</span>
             <span>${place.township}</span>
-            <span>•</span>
-            <span style="color: #facc15; font-weight: 700;">★ ${place.rating || '4.8'}</span>
+            <span>â€¢</span>
+            <span style="color: #facc15; font-weight: 700;">â˜… ${place.rating || '4.8'}</span>
           </div>
         </div>
       `, {
@@ -4772,14 +4772,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             ${place.name}
           </h4>
           <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: #d6d3d1; margin-bottom: 6px;">
-            <span style="color: #facc15; font-weight: 700;">★ ${place.rating || 4.8} <span style="color: #78716c; font-weight: 400;">(${place.reviewsCount || 10})</span></span>
+            <span style="color: #facc15; font-weight: 700;">â˜… ${place.rating || 4.8} <span style="color: #78716c; font-weight: 400;">(${place.reviewsCount || 10})</span></span>
             <span style="color: #34d399; font-weight: 700;">${place.elevation || '1,500m'}</span>
           </div>
           <p style="font-size: 11px; color: #a8a29e; margin: 0 0 10px 0; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
             ${descText}
           </p>
           <button id="btn-select-${place.id}" style="width: 100%; background: #059669; color: white; border: none; padding: 7px 12px; border-radius: 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);">
-            <span>🧭 ${language === 'bm' ? 'Pilih Tempat & Laluan' : 'Select Place & Route'}</span>
+            <span>ðŸ§­ ${language === 'bm' ? 'Pilih Tempat & Laluan' : 'Select Place & Route'}</span>
           </button>
         </div>
       `;
@@ -5049,7 +5049,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                               }`}
                             >
                               <span>{rad === 'all' ? (language === 'bm' ? 'Semua Jarak' : 'All Range') : `${rad} km`}</span>
-                              {proximityRadius === rad && <span className="text-[10px]">✓</span>}
+                              {proximityRadius === rad && <span className="text-[10px]">âœ“</span>}
                             </button>
                           ))}
                         </div>
@@ -5071,7 +5071,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           <span className="text-xs font-semibold">
                             {language === 'bm' ? 'Semua Kategori' : 'All Highland Spots'}
                           </span>
-                          {activeCategory === 'all' && <span className="text-[10px] text-emerald-300">✓</span>}
+                          {activeCategory === 'all' && <span className="text-[10px] text-emerald-300">âœ“</span>}
                         </button>
                         <button
                           type="button"
@@ -5083,7 +5083,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-sm">🌴</span>
+                            <span className="text-sm">ðŸŒ´</span>
                             <span className="text-xs font-semibold">
                               {language === 'bm' ? 'Tarikan & Pelancongan' : 'Attractions & Tourism'}
                             </span>
@@ -5099,7 +5099,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-sm">🏨</span>
+                            <span className="text-sm">ðŸ¨</span>
                             <span className="text-xs font-semibold">
                               {language === 'bm' ? 'Penginapan & Hotel' : 'Stays & Accommodations'}
                             </span>
@@ -5115,7 +5115,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-sm">🔧</span>
+                            <span className="text-sm">ðŸ”§</span>
                             <span className="text-xs font-semibold">
                               {language === 'bm' ? 'Perkhidmatan & Utiliti' : 'Services & Utilities'}
                             </span>
@@ -5131,7 +5131,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-sm">🛍️</span>
+                            <span className="text-sm">ðŸ›ï¸</span>
                             <span className="text-xs font-semibold">
                               {language === 'bm' ? 'Membeli-belah & Pasar' : 'Shopping & Markets'}
                             </span>
@@ -5183,11 +5183,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                         </button>
                       </div>
 
-                      {/* 1. Map Layer Style + 360° Street View */}
+                      {/* 1. Map Layer Style + 360Â° Street View */}
                       {mapToolsVisibility.viewSwitcher && (
                         <div className="space-y-1.5">
                           <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 px-0.5">
-                            {language === 'bm' ? 'Gaya Peta & 360°' : 'Map Style & Street View'}
+                            {language === 'bm' ? 'Gaya Peta & 360Â°' : 'Map Style & Street View'}
                           </div>
                           <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-stone-900/90 border border-white/10">
                             <button
@@ -5230,10 +5230,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                 setStreetViewOpen(true);
                               }}
                               className="py-1.5 rounded-lg text-[11px] font-bold text-amber-300 hover:bg-white/5 flex items-center justify-center gap-1 transition-all cursor-pointer"
-                              title="360° Street View"
+                              title="360Â° Street View"
                             >
                               <Eye className="w-3.5 h-3.5" />
-                              <span>360°</span>
+                              <span>360Â°</span>
                             </button>
                           </div>
                         </div>
@@ -5273,7 +5273,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                 {language === 'bm' ? 'Bahasa Suara' : 'Voice Lang'}
                               </span>
                               <span className="text-[11px] font-bold text-emerald-300 shrink-0">
-                                {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                                {mapVoiceLang === 'bm' ? 'ðŸ‡²ðŸ‡¾ BM' : 'ðŸ‡¬ðŸ‡§ EN'}
                               </span>
                             </button>
 
@@ -5453,7 +5453,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       <details className="pt-2 border-t border-white/10 group">
                         <summary className="list-none flex items-center justify-between text-[10.5px] font-semibold text-stone-400 hover:text-stone-200 cursor-pointer select-none px-0.5">
                           <span>{language === 'bm' ? 'Tetapan Paparan HUD' : 'Customize HUD Overlays'}</span>
-                          <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform">▼</span>
+                          <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform">â–¼</span>
                         </summary>
                         <div className="mt-2 space-y-1">
                           <div className="flex justify-end pb-1">
@@ -5492,7 +5492,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                     enabled ? 'bg-emerald-500 text-stone-950' : 'bg-stone-700 text-stone-400'
                                   }`}
                                 >
-                                  {enabled ? '✓' : ''}
+                                  {enabled ? 'âœ“' : ''}
                                 </span>
                               </button>
                             );
@@ -5526,7 +5526,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               <div className="rounded-2xl sm:rounded-3xl bg-emerald-700/92 backdrop-blur-2xl border border-emerald-400/40 shadow-2xl p-2.5 sm:p-4 text-white flex items-center justify-between gap-2 sm:gap-3">
                 <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white text-emerald-800 flex items-center justify-center shrink-0 shadow-md">
                   <span className="text-lg sm:text-2xl font-black leading-none">
-                    {activeRoute.steps[0]?.icon || '⬆️'}
+                    {activeRoute.steps[0]?.icon || 'â¬†ï¸'}
                   </span>
                 </div>
 
@@ -5565,7 +5565,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       : 'Voice: English (Click for Bahasa Malaysia)'
                   }
                 >
-                  {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                  {mapVoiceLang === 'bm' ? 'ðŸ‡²ðŸ‡¾ BM' : 'ðŸ‡¬ðŸ‡§ EN'}
                 </button>
 
                 <button
@@ -5710,15 +5710,15 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 <div className="grid grid-cols-2 gap-1 text-[10px] font-semibold">
                   <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
                     <span className="w-2 h-2 rounded-full bg-[#10b981] shrink-0" />
-                    <span>≥44 km/h Clear</span>
+                    <span>â‰¥44 km/h Clear</span>
                   </div>
                   <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
                     <span className="w-2 h-2 rounded-full bg-[#f59e0b] shrink-0" />
-                    <span>28–43 Moderate</span>
+                    <span>28â€“43 Moderate</span>
                   </div>
                   <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
                     <span className="w-2 h-2 rounded-full bg-[#ef4444] shrink-0" />
-                    <span>15–27 Heavy</span>
+                    <span>15â€“27 Heavy</span>
                   </div>
                   <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-900/80 border border-white/5">
                     <span className="w-2 h-2 rounded-full bg-[#dc2626] shrink-0" />
@@ -5789,10 +5789,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                         {language === 'bm' ? 'Trafik' : 'Traffic'}
                         {predictiveDepartureProfile !== 'live'
                           ? predictiveDepartureProfile === 'weekend_peak'
-                            ? ' · Wknd'
+                            ? ' Â· Wknd'
                             : predictiveDepartureProfile === 'evening_market'
-                              ? ' · Mkt'
-                              : ' · Night'
+                              ? ' Â· Mkt'
+                              : ' Â· Night'
                           : ''}
                       </span>
                       {predictiveFlowStats && (
@@ -5862,7 +5862,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                             </div>
                             <div className="min-w-0">
                               <div className="text-[9.5px] sm:text-[10px] font-mono font-black uppercase tracking-wider text-amber-300 flex items-center gap-1 flex-wrap">
-                                <span>🕌 {language === 'bm' ? 'WAKTU SOLAT' : 'PRAYER ALERT'}</span>
+                                <span>ðŸ•Œ {language === 'bm' ? 'WAKTU SOLAT' : 'PRAYER ALERT'}</span>
                                 <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
                                   {prayerSourceLabel}
                                 </span>
@@ -5886,7 +5886,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                   </span>
                                   {activePrayerAlert.nearestDistanceKm !== null &&
                                   activePrayerAlert.nearestDistanceKm !== undefined
-                                    ? ` • ${activePrayerAlert.nearestDistanceKm} km`
+                                    ? ` â€¢ ${activePrayerAlert.nearestDistanceKm} km`
                                     : ''}
                                 </div>
                               )}
@@ -6202,7 +6202,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                               {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
                             </h3>
                             <div className="flex items-center gap-2 text-[11px] sm:text-xs text-stone-400 mt-0.5">
-                              <span className="text-amber-400 font-bold">★ {selectedPlace.rating}</span>
+                              <span className="text-amber-400 font-bold">â˜… {selectedPlace.rating}</span>
                               <span>({selectedPlace.reviewsCount || 85} reviews)</span>
                             </div>
                           </div>
@@ -6301,7 +6301,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                             className="py-1.5 px-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-[10px] sm:text-[10.5px] flex items-center justify-center gap-1 cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5 shrink-0" />
-                            <span>360° View</span>
+                            <span>360Â° View</span>
                           </button>
                         </div>
 
@@ -6361,10 +6361,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       <div className="p-3 sm:p-4 space-y-2.5 overflow-y-auto text-[11px] sm:text-xs min-h-0 flex-1 [scrollbar-width:thin]">
                         <p className="text-stone-300 leading-relaxed">{selectedTownshipHubModal.description}</p>
                         <div className="p-2.5 rounded-2xl bg-stone-950/80 border border-white/10 space-y-1">
-                          <div>🏥 <strong>Clinic/Hospital:</strong> {selectedTownshipHubModal.clinicsOrHospitals}</div>
-                          <div>👮 <strong>Police:</strong> {selectedTownshipHubModal.policeStation}</div>
-                          <div>🚻 <strong>Public Toilet:</strong> {selectedTownshipHubModal.publicToilet}</div>
-                          <div>⛽ <strong>Gas Station:</strong> {selectedTownshipHubModal.gasStation}</div>
+                          <div>ðŸ¥ <strong>Clinic/Hospital:</strong> {selectedTownshipHubModal.clinicsOrHospitals}</div>
+                          <div>ðŸ‘® <strong>Police:</strong> {selectedTownshipHubModal.policeStation}</div>
+                          <div>ðŸš» <strong>Public Toilet:</strong> {selectedTownshipHubModal.publicToilet}</div>
+                          <div>â›½ <strong>Gas Station:</strong> {selectedTownshipHubModal.gasStation}</div>
                         </div>
                         <div className="text-stone-300">
                           <div className="font-bold text-emerald-400 uppercase text-[10px] mb-1">Places of Interest</div>
@@ -6472,7 +6472,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                 {language === 'bm' ? selectedPlace.nameBm || selectedPlace.name : selectedPlace.name}
                               </h3>
                               <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-stone-400 mt-0.5 truncate">
-                                <span className="text-amber-400 font-bold shrink-0">★ {selectedPlace.rating}</span>
+                                <span className="text-amber-400 font-bold shrink-0">â˜… {selectedPlace.rating}</span>
                                 <span className="truncate">
                                   ({selectedPlace.reviewsCount || 85} {language === 'bm' ? 'ulasan' : 'reviews'})
                                 </span>
@@ -6602,7 +6602,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                               className="py-1.5 px-1 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer text-center min-w-0 overflow-hidden"
                             >
                               <Eye className="w-3 h-3 shrink-0" />
-                              <span className="truncate">360° View</span>
+                              <span className="truncate">360Â° View</span>
                             </button>
                           </div>
 
@@ -6611,7 +6611,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                               <span className="truncate pr-1 text-[11px] sm:text-xs">
                                 {language === 'bm' ? 'Maklumat & Waktu Operasi' : 'Place Details & Operating Hours'}
                               </span>
-                              <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform shrink-0">▼</span>
+                              <span className="text-[10px] text-stone-500 group-open:rotate-180 transition-transform shrink-0">â–¼</span>
                             </summary>
                             <div className="mt-2 space-y-2 pt-2 border-t border-white/5 text-stone-300 text-[11px] overflow-hidden">
                               <p className="leading-relaxed break-words">
@@ -6631,7 +6631,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           <div className="bg-stone-950/90 rounded-2xl p-3 border border-emerald-500/30 space-y-2">
                             <div className="flex items-center justify-between">
                               <div className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
-                                <span>⭐</span>
+                                <span>â­</span>
                                 <span>Visitor Check-in & Reviews</span>
                               </div>
                               <span className="text-[10px] font-mono text-stone-400">
@@ -6650,7 +6650,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                       onClick={() => setNewReviewRating(star)}
                                       className={`text-sm cursor-pointer ${star <= newReviewRating ? 'text-amber-400' : 'text-stone-600'}`}
                                     >
-                                      ★
+                                      â˜…
                                     </button>
                                   ))}
                                 </div>
@@ -6684,7 +6684,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                   <div key={rev.id} className="p-2 rounded-xl bg-stone-900/90 border border-white/5 space-y-1">
                                     <div className="flex items-center justify-between text-[11px]">
                                       <span className="font-bold text-stone-200">{rev.authorName}</span>
-                                      <span className="text-amber-400 font-mono font-bold">★ {rev.rating}</span>
+                                      <span className="text-amber-400 font-mono font-bold">â˜… {rev.rating}</span>
                                     </div>
                                     <p className="text-[11px] text-stone-300 leading-snug">{rev.comment}</p>
                                     <div className="text-[9.5px] text-stone-500 font-mono">{rev.timestamp}</div>
@@ -6794,7 +6794,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   }`}
                   title={mapVoiceLang === 'bm' ? 'Suara: Bahasa Malaysia' : 'Voice: English'}
                 >
-                  {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                  {mapVoiceLang === 'bm' ? 'ðŸ‡²ðŸ‡¾ BM' : 'ðŸ‡¬ðŸ‡§ EN'}
                 </button>
 
                 <button
@@ -6830,7 +6830,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   onClick={() => setRouteStepsOpen(!routeStepsOpen)}
                   className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-800/90 border border-white/10 text-[10px] font-mono font-bold text-emerald-400 shadow-sm cursor-pointer active:opacity-75"
                 >
-                  <span>{routeStepsOpen ? '▼ Hide steps' : `▲ Slide up steps (${activeRoute.steps.length})`}</span>
+                  <span>{routeStepsOpen ? 'â–¼ Hide steps' : `â–² Slide up steps (${activeRoute.steps.length})`}</span>
                 </button>
                 <button
                   type="button"
@@ -7007,7 +7007,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                         : 'Map Voice: English (Click for Bahasa Malaysia)'
                     }
                   >
-                    {mapVoiceLang === 'bm' ? '🇲🇾 BM' : '🇬🇧 EN'}
+                    {mapVoiceLang === 'bm' ? 'ðŸ‡²ðŸ‡¾ BM' : 'ðŸ‡¬ðŸ‡§ EN'}
                   </button>
 
                   <button
@@ -7105,7 +7105,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         hideMinimizedBar={true}
       />
 
-      {/* Street View 360° Panorama Simulator Modal */}
+      {/* Street View 360Â° Panorama Simulator Modal */}
       {streetViewOpen && (
         <div
           className="fixed inset-0 z-[140] flex items-start justify-center bg-black/85 backdrop-blur-md p-2 overflow-y-auto"
@@ -7123,8 +7123,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 <Eye className="w-5 h-5 text-amber-400" />
                 <h3 className="font-bold text-stone-100 text-sm sm:text-base">
                   {selectedPlace
-                    ? `${selectedPlace.name} - Street View 360°`
-                    : 'Cameron Highlands Scenic Mountain 360° Panorama'}
+                    ? `${selectedPlace.name} - Street View 360Â°`
+                    : 'Cameron Highlands Scenic Mountain 360Â° Panorama'}
                 </h3>
               </div>
               <button
@@ -7150,7 +7150,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               />
 
               <div className="absolute top-4 left-4 p-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 text-xs text-stone-200 font-mono">
-                <div>Compass: {Math.round(panoramaHeading * 3.6)}° N</div>
+                <div>Compass: {Math.round(panoramaHeading * 3.6)}Â° N</div>
                 <div>Alt: {selectedPlace?.elevation || '1,560 m'}</div>
               </div>
 
@@ -7159,7 +7159,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   onClick={() => setPanoramaHeading((prev) => prev - 15)}
                   className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-colors cursor-pointer"
                 >
-                  ◀ Pan Left
+                  â—€ Pan Left
                 </button>
                 <button
                   onClick={() => setPanoramaHeading(45)}
@@ -7172,15 +7172,15 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   onClick={() => setPanoramaHeading((prev) => prev + 15)}
                   className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-colors cursor-pointer"
                 >
-                  Pan Right ▶
+                  Pan Right â–¶
                 </button>
               </div>
             </div>
 
             <div className="p-3 bg-stone-950 text-xs text-stone-400 text-center border-t border-white/5">
               {language === 'bm'
-                ? 'Paparan jalan 360° interaktif disimulasikan dari koordinat satelit Cameron Highlands.'
-                : 'Interactive 360° ground perspective rendered from Cameron Highlands geo-coordinates.'}
+                ? 'Paparan jalan 360Â° interaktif disimulasikan dari koordinat satelit Cameron Highlands.'
+                : 'Interactive 360Â° ground perspective rendered from Cameron Highlands geo-coordinates.'}
             </div>
           </div>
         </div>
@@ -7198,12 +7198,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-500/20 border border-rose-400/40 text-rose-300">
                     {selectedHazardModal.isProvisional
-                      ? `🚨 TELEMETRY (-${selectedHazardModal.speedDropPercent || 70}%)`
-                      : `⚠️ ${selectedHazardModal.type.replace('_', ' ').toUpperCase()}`}
+                      ? `ðŸš¨ TELEMETRY (-${selectedHazardModal.speedDropPercent || 70}%)`
+                      : `âš ï¸ ${selectedHazardModal.type.replace('_', ' ').toUpperCase()}`}
                   </span>
                   {selectedHazardModal.verifiedBy === 'web_search' && (
                     <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/40 text-sky-300">
-                      🌐 LIVE WEB SEARCH
+                      ðŸŒ LIVE WEB SEARCH
                     </span>
                   )}
                   <span
@@ -7224,7 +7224,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     : selectedHazardModal.titleEn || selectedHazardModal.title}
                 </h4>
                 <div className="text-xs text-emerald-300 font-semibold mt-0.5 flex items-center gap-1.5 flex-wrap">
-                  <span>📍 {selectedHazardModal.landmark || selectedHazardModal.location}</span>
+                  <span>ðŸ“ {selectedHazardModal.landmark || selectedHazardModal.location}</span>
                   <span className="text-[10px] font-mono text-stone-400">
                     ({resolveHazardCoords(selectedHazardModal).lat.toFixed(4)},{' '}
                     {resolveHazardCoords(selectedHazardModal).lng.toFixed(4)})
@@ -7274,7 +7274,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                       className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 underline font-semibold"
                     >
                       <span>{selectedHazardModal.sourceName || selectedHazardModal.source || 'Source Report'}</span>
-                      <span>↗</span>
+                      <span>â†—</span>
                     </a>
                   </div>
                 )}
@@ -7345,8 +7345,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     <span className="text-[10px] font-mono font-bold text-emerald-400 flex items-center gap-1">
                       {aiIncidentForecast?.loading && <Loader2 className="w-3 h-3 animate-spin" />}
                       {aiIncidentForecast?.isAiEnhanced
-                        ? '✨ Gemini AI Live Flow Forecast'
-                        : '⚡ Spatial-Temporal Traffic Model (FT59 Spine)'}
+                        ? 'âœ¨ Gemini AI Live Flow Forecast'
+                        : 'âš¡ Spatial-Temporal Traffic Model (FT59 Spine)'}
                     </span>
                     <button
                       type="button"
@@ -7369,11 +7369,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   <div className="pt-1.5 border-t border-white/10 space-y-1.5">
                     <div className="flex items-center justify-between text-[9.5px] font-mono">
                       <span className="text-stone-400 uppercase font-bold">
-                        {language === 'bm' ? 'Aliran 4 Koridor Masuk (BPR)' : '4 Upstream Feeders (BPR Vᵢ)'}
+                        {language === 'bm' ? 'Aliran 4 Koridor Masuk (BPR)' : '4 Upstream Feeders (BPR Váµ¢)'}
                       </span>
                       {selectedHazardImpact.spatialTemporalModel.anyIncidentCapped && (
                         <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-bold">
-                          {language === 'bm' ? '🛡️ Had Insiden Aktif' : '🛡️ Incident Cap Active'}
+                          {language === 'bm' ? 'ðŸ›¡ï¸ Had Insiden Aktif' : 'ðŸ›¡ï¸ Incident Cap Active'}
                         </span>
                       )}
                     </div>
@@ -7386,7 +7386,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                           <div className="min-w-0">
                             <div className="font-bold text-stone-200 truncate">{f.name}</div>
                             <div className="text-[8.5px] text-stone-400 truncate">
-                              → {f.entryJunction} ({f.climbLagMinRange[0]}–{f.climbLagMinRange[1]}m)
+                              â†’ {f.entryJunction} ({f.climbLagMinRange[0]}â€“{f.climbLagMinRange[1]}m)
                             </div>
                           </div>
                           <div className="text-right shrink-0 font-mono">
@@ -7507,11 +7507,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             {/* Quick Map Re-Center + Community Consensus */}
             <div className="p-2.5 rounded-xl bg-stone-900 border border-white/10 flex items-center justify-between text-xs">
               <span>
-                👍 Still There:{' '}
+                ðŸ‘ Still There:{' '}
                 <strong className="text-amber-300">+{selectedHazardModal.stillThereVotes}</strong>
               </span>
               <span>
-                ✅ Cleared:{' '}
+                âœ… Cleared:{' '}
                 <strong className="text-emerald-400">
                   {selectedHazardModal.clearedVotes}/{CLEARED_VOTE_EXPIRY_THRESHOLD}
                 </strong>
@@ -7561,7 +7561,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             <div className="flex items-start justify-between gap-2 pb-2 border-b border-white/10">
               <div>
                 <div className="text-[10px] font-mono font-black uppercase tracking-wider text-emerald-400">
-                  Gemini Multi-Modal Extraction → Firestore camgo_hazards
+                  Gemini Multi-Modal Extraction â†’ Firestore camgo_hazards
                 </div>
                 <h3 className="text-sm sm:text-base font-black text-white mt-0.5">
                   {language === 'bm'
