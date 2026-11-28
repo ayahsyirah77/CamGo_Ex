@@ -63,6 +63,8 @@ export const EmergencyContactTrackerView: React.FC<EmergencyContactTrackerViewPr
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trailLineRef = useRef<L.Polyline | null>(null);
+  const startMarkerRef = useRef<L.CircleMarker | null>(null);
+  const endMarkerRef = useRef<L.CircleMarker | null>(null);
   const footprintLineRef = useRef<L.Polyline | null>(null);
   const footprintDotsRef = useRef<L.CircleMarker[]>([]);
   const liveMarkerRef = useRef<L.Marker | null>(null);
@@ -147,7 +149,7 @@ export const EmergencyContactTrackerView: React.FC<EmergencyContactTrackerViewPr
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18,
-      attribution: '© OpenStreetMap | CamGo ICE Footprint',
+      attribution: '© OpenStreetMap | CamGo Safety Tracker',
     }).addTo(map);
 
     mapRef.current = map;
@@ -157,13 +159,15 @@ export const EmergencyContactTrackerView: React.FC<EmergencyContactTrackerViewPr
       map.remove();
       mapRef.current = null;
       trailLineRef.current = null;
+      startMarkerRef.current = null;
+      endMarkerRef.current = null;
       footprintLineRef.current = null;
       liveMarkerRef.current = null;
       footprintDotsRef.current = [];
     };
   }, [Boolean(session)]);
 
-  // Update Trail Route + Breadcrumb Footprints + Pulsing Live Hiker Pin
+  // Update Trail Pins + Breadcrumb Footprints + Live Hiker Pin
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !session) return;
@@ -174,12 +178,50 @@ export const EmergencyContactTrackerView: React.FC<EmergencyContactTrackerViewPr
       trailLineRef.current.remove();
       trailLineRef.current = null;
     }
-    if (matchedTrail && matchedTrail.coordinates.length > 0) {
-      trailLineRef.current = L.polyline(matchedTrail.coordinates, {
-        color: matchedTrail.color || '#10b981',
-        weight: 4,
-        opacity: 0.45,
-      }).addTo(map);
+    if (startMarkerRef.current) {
+      startMarkerRef.current.remove();
+      startMarkerRef.current = null;
+    }
+    if (endMarkerRef.current) {
+      endMarkerRef.current.remove();
+      endMarkerRef.current = null;
+    }
+
+    if (matchedTrail) {
+      if (matchedTrail.hasVerifiedGpx && matchedTrail.coordinates.length > 1) {
+        trailLineRef.current = L.polyline(matchedTrail.coordinates, {
+          color: matchedTrail.color || '#10b981',
+          weight: 4,
+          opacity: 0.5,
+        }).addTo(map);
+      }
+
+      if (matchedTrail.coordinates[0]) {
+        startMarkerRef.current = L.circleMarker(matchedTrail.coordinates[0], {
+          radius: 7,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#10b981',
+          fillOpacity: 1,
+        })
+          .bindTooltip(`Start: ${matchedTrail.trailheadName}`, { direction: 'bottom' })
+          .addTo(map);
+      }
+
+      const endCoord =
+        matchedTrail.peakCoordinates ||
+        matchedTrail.coordinates[matchedTrail.coordinates.length - 1];
+      if (endCoord) {
+        endMarkerRef.current = L.circleMarker(endCoord, {
+          radius: 7,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#f43f5e',
+          fillOpacity: 1,
+        })
+          .bindTooltip(`End: ${matchedTrail.peakName || matchedTrail.name}`, { direction: 'top' })
+          .addTo(map);
+      }
     }
 
     // Clear previous footprint dots & polyline
@@ -225,10 +267,7 @@ export const EmergencyContactTrackerView: React.FC<EmergencyContactTrackerViewPr
     const liveLat = session.lastKnownLat || crumbs[crumbs.length - 1]?.lat;
     const liveLng = session.lastKnownLng || crumbs[crumbs.length - 1]?.lng;
     if (typeof liveLat === 'number' && typeof liveLng === 'number') {
-      const isAlertState =
-        session.status === 'overdue' ||
-        session.inactivityAlert2Sent ||
-        session.inactivityAlert1Sent;
+      const isAlertState = session.status === 'overdue';
       const dotColor = isAlertState ? '#f43f5e' : '#38bdf8';
 
       const beaconIcon = L.divIcon({
@@ -276,18 +315,10 @@ export const EmergencyContactTrackerView: React.FC<EmergencyContactTrackerViewPr
         badgeClass: 'bg-emerald-600 text-white border-emerald-400',
       };
     }
-    if (session.inactivityAlert2Sent || session.status === 'overdue') {
+    if (session.status === 'overdue') {
       return {
-        label: session.inactivityAlert2Sent
-          ? 'CRITICAL: 30M ZERO MOVEMENT'
-          : 'OVERDUE ALERT ACTIVE',
-        badgeClass: 'bg-rose-600 text-white border-rose-300 animate-pulse',
-      };
-    }
-    if (session.inactivityAlert1Sent) {
-      return {
-        label: 'WARNING: 15M STILLNESS',
-        badgeClass: 'bg-amber-600 text-white border-amber-300 animate-pulse',
+        label: language === 'bm' ? 'LEWAT DAFTAR KELUAR' : 'OVERDUE CHECK-OUT',
+        badgeClass: 'bg-rose-600 text-white border-rose-300',
       };
     }
     return {
@@ -356,29 +387,19 @@ export const EmergencyContactTrackerView: React.FC<EmergencyContactTrackerViewPr
 
         {session && (
           <>
-            {/* Alert Escalation Banner when Overdue or Inactive */}
-            {(session.status === 'overdue' ||
-              session.inactivityAlert1Sent ||
-              session.inactivityAlert2Sent) && (
-              <div
-                className={`p-4 rounded-2xl border-2 space-y-1.5 ${
-                  session.inactivityAlert2Sent || session.status === 'overdue'
-                    ? 'bg-rose-950/85 border-rose-500 text-rose-100'
-                    : 'bg-amber-950/85 border-amber-500 text-amber-100'
-                }`}
-              >
+            {/* Alert Escalation Banner when Overdue Check-Out */}
+            {session.status === 'overdue' && (
+              <div className="p-4 rounded-2xl border-2 space-y-1.5 bg-rose-950/85 border-rose-500 text-rose-100">
                 <div className="flex items-center gap-2 font-black text-xs sm:text-sm">
                   <ShieldAlert className="w-5 h-5 shrink-0" />
                   <span>
-                    {session.inactivityAlert2Sent
-                      ? 'CRITICAL ALERT: Zero movement detected for 30 continuous minutes!'
-                      : session.status === 'overdue'
-                      ? 'OVERDUE ALERT: Expected return duration expired without check-out!'
-                      : 'WARNING: No hiker movement detected for 15 minutes.'}
+                    {language === 'bm'
+                      ? 'AMARAN DAFTAR KELUAR LEWAT: Tempoh jangkaan pulang telah tamat!'
+                      : 'OVERDUE CHECK-OUT ALERT: Expected return duration expired without check-out!'}
                   </span>
                 </div>
                 <p className="text-xs opacity-90">
-                  Last known pin: {session.lastKnownLat.toFixed(6)}, {session.lastKnownLng.toFixed(6)} ({formatRelativeAgo(session.updatedAt)}). Use Google Maps below to dispatch assistance.
+                  Last known Quick Ping: {session.lastKnownLat.toFixed(6)}, {session.lastKnownLng.toFixed(6)} ({formatRelativeAgo(session.updatedAt)}). Use Google Maps below to inspect location.
                 </p>
               </div>
             )}

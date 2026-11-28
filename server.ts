@@ -9,6 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { processAndIngestHazard } from './server/hazardIngestion';
 import rssHandler from './api/rss';
 import hazardsHandler from './api/hazards';
+import translateHandler from './api/translate';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1626,9 +1627,10 @@ Only return valid JSON without markdown wrapping.`;
     }
   });
 
-  // Server-side Google News Malaysia RSS & Consolidated Web Hazard Feed endpoint (mirrors Vercel /api/hazards)
-  app.all('/api/rss', (req, res) => rssHandler(req, res));
-  app.all('/api/hazards', (req, res) => hazardsHandler(req, res));
+  // Server-side Google News Malaysia RSS, Consolidated Web Hazard Feed & AI Menu/Signboard Translator endpoints
+  app.all('/api/rss', (req, res) => rssHandler(req as any, res as any));
+  app.all('/api/hazards', (req, res) => hazardsHandler(req as any, res as any));
+  app.all('/api/translate', (req, res) => translateHandler(req as any, res as any));
 
   // Neural TTS Turn-by-Turn Navigation Proxy Endpoint (/api/tts/navigate)
   app.post('/api/tts/navigate', async (req, res) => {

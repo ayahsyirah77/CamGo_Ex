@@ -61,11 +61,15 @@ import {
 } from '../utils/beaconUtils';
 import { LiveBeaconMapModal } from './LiveBeaconMapModal';
 import { WalkieTalkieLive } from './WalkieTalkieLive';
+import { usePersistentGeolocation, PersistentGpsPosition } from '../hooks/usePersistentGeolocation';
+import { MobileTrackingHelperBanner } from './MobileTrackingHelperBanner';
+import { ModulePwaControls } from './ModulePwaControls';
 
 interface FindMyPartyModalProps {
   isOpen: boolean;
   onClose: () => void;
   language: Language;
+  onNavigateMainPage?: () => void;
 }
 
 const AVATAR_COLORS = [
@@ -85,6 +89,7 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
   isOpen,
   onClose,
   language,
+  onNavigateMainPage,
 }) => {
   // Member profile state:
   // Use sessionStorage for memberId so each tab or browser connection gets a unique designated pin.
@@ -602,65 +607,96 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
     };
   }, [myCoords?.latitude, myCoords?.longitude, session?.members, session?.createdBy, memberId, routeTravelMode]);
 
-  // Continuous Geolocation Watcher
+  const syncCoordinatesRef = useRef(syncCoordinatesToFirestore);
+  syncCoordinatesRef.current = syncCoordinatesToFirestore;
+  const sessionCodeRef = useRef<string | undefined>(session?.code);
+  sessionCodeRef.current = session?.code;
+
+  // Hydrate last-known coordinates from IndexedDB / localStorage on open so OS suspension never wipes position
   useEffect(() => {
-    if (!isSharing) {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
+    if (!isOpen || myCoords) return;
+    beaconService.getPartyLastKnownCoords().then((saved) => {
+      if (saved && typeof saved.lat === 'number' && typeof saved.lng === 'number') {
+        setMyCoords((prev) =>
+          prev || {
+            latitude: saved.lat,
+            longitude: saved.lng,
+            accuracy: typeof saved.accuracy === 'number' ? Math.round(saved.accuracy) : 25,
+            heading: null,
+            speed: null,
+            altitude: null,
+          }
+        );
       }
-      return;
-    }
+    });
+  }, [isOpen]);
 
-    if (!('geolocation' in navigator)) {
-      setGpsError(
-        language === 'bm'
-          ? 'Peranti anda tidak menyokong geolokasi.'
-          : 'Geolocation is not supported by your browser.'
-      );
-      return;
-    }
+  // Continuous Persistent Geolocation Watcher + 12s Heartbeat + visibilitychange recovery + Screen Wake Lock
+  const handlePersistentPartyPosition = React.useCallback(
+    (pos: PersistentGpsPosition) => {
+      const coords = {
+        latitude: pos.lat,
+        longitude: pos.lng,
+        accuracy: Math.round(pos.accuracy ?? 12),
+        heading: pos.heading,
+        speed: pos.speed,
+        altitude: typeof pos.altitude === 'number' ? Math.round(pos.altitude) : null,
+      };
+      setGpsError(null);
+      setMyCoords(coords);
 
-    setGpsError(null);
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const coords = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: Math.round(pos.coords.accuracy),
-          heading: pos.coords.heading,
-          speed: pos.coords.speed,
-          altitude: pos.coords.altitude ? Math.round(pos.coords.altitude) : null,
-        };
-        setMyCoords(coords);
-        syncCoordinatesToFirestore(coords);
-      },
-      (err) => {
-        // Only set error if permission is explicitly denied
-        if (err.code === 1) {
-          setGpsError(
-            language === 'bm'
-              ? 'Izin GPS ditolak dalam pelayar.'
-              : 'Location permission was denied in your browser settings.'
-          );
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 3000,
+      void beaconService.savePartyLastKnownCoords({
+        sessionCode: sessionCodeRef.current,
+        memberId,
+        lat: coords.latitude,
+        lng: coords.longitude,
+        accuracy: coords.accuracy,
+        timestamp: pos.timestamp || Date.now(),
+      });
+
+      void syncCoordinatesRef.current(coords);
+    },
+    [memberId]
+  );
+
+  const {
+    gpsStatus: partyGpsStatus,
+    errorCode: partyGpsErrorCode,
+    errorMessage: partyGpsErrorMessage,
+    lastFixAt: partyLastFixAt,
+    wakeLockSupported: partyWakeLockSupported,
+    wakeLockActive: partyWakeLockActive,
+    keepAwakeEnabled: partyKeepAwakeEnabled,
+    setKeepAwakeEnabled: setPartyKeepAwakeEnabled,
+    forceRefreshFix: forceRefreshPartyGps,
+  } = usePersistentGeolocation({
+    isActive: isOpen && isSharing,
+    wakeLockEnabledWhenActive: isOpen && Boolean(session && session.members?.[memberId]) && isSharing,
+    heartbeatIntervalMs: 12000,
+    staleThresholdMs: 12000,
+    onPositionFix: handlePersistentPartyPosition,
+    onErrorFix: (code) => {
+      if (code === 1) {
+        setGpsError(
+          language === 'bm'
+            ? 'Izin GPS ditolak dalam pelayar (Kod 1).'
+            : 'Location permission was denied in your browser settings (Code 1).'
+        );
+      } else if (code === 2) {
+        setGpsError(
+          language === 'bm'
+            ? 'Isyarat lokasi GPS tidak tersedia (Kod 2).'
+            : 'GPS position unavailable right now (Code 2).'
+        );
+      } else if (code === 3) {
+        setGpsError(
+          language === 'bm'
+            ? 'Masa tamat pengesanan GPS (Kod 3) — mencuba semula.'
+            : 'GPS fix timed out (Code 3) — auto-retrying.'
+        );
       }
-    );
-
-    watchIdRef.current = watchId;
-
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
-    };
-  }, [isSharing, session?.code]);
+    },
+  });
 
   // Real "Locate Me" Feature: gets exact current GPS with automatic graceful fallback
   const handleLocateMe = () => {
@@ -1410,6 +1446,11 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <ModulePwaControls
+              moduleName="party"
+              language={language}
+              onNavigateMainPage={onNavigateMainPage}
+            />
             {/* High-visibility "Locate Me" button (shown only when inside active beacon map view) */}
             {hasJoinedActiveSession && (
               <button
@@ -1793,6 +1834,22 @@ export const FindMyPartyModal: React.FC<FindMyPartyModalProps> = ({
           ) : (
             /* ACTIVE SESSION VIEW: Zero-Scroll Above-the-Fold Split Layout */
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {isSharing && (
+                <div className="px-3 sm:px-5 pt-2 shrink-0">
+                  <MobileTrackingHelperBanner
+                    language={language}
+                    gpsStatus={partyGpsStatus}
+                    errorCode={partyGpsErrorCode}
+                    errorMessage={partyGpsErrorMessage}
+                    lastFixAt={partyLastFixAt}
+                    wakeLockSupported={partyWakeLockSupported}
+                    wakeLockActive={partyWakeLockActive}
+                    keepAwakeEnabled={partyKeepAwakeEnabled}
+                    onToggleKeepAwake={setPartyKeepAwakeEnabled}
+                    onRetryGps={forceRefreshPartyGps}
+                  />
+                </div>
+              )}
               {/* Compact Session Action Strip & 4-Tab Bar */}
               <div className="px-3 sm:px-5 py-1.5 bg-stone-900 border-b border-white/10 flex flex-col gap-1.5 shrink-0">
                 <div className="flex items-center justify-between gap-2">

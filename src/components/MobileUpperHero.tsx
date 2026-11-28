@@ -49,15 +49,15 @@ interface MobileUpperHeroProps {
 }
 
 const ALL_TOWNSHIPS: Township[] = [
+  'Ringlet',
+  'Bertam Valley',
+  'Habu',
   'Tanah Rata',
   'Brinchang',
   'Kea Farm',
-  'Ringlet',
-  'Kampung Raja',
   'Tringkap',
   'Kuala Terla',
-  'Bertam Valley',
-  'Blue Valley',
+  'Kampung Raja',
 ];
 
 export const MobileUpperHero: React.FC<MobileUpperHeroProps> = ({

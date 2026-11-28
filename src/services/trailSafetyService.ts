@@ -37,6 +37,8 @@ export interface TrailBreadcrumbPoint {
   time: string;
   timestamp: string;
   accuracy?: number | null;
+  isQuickPing?: boolean;
+  note?: string;
 }
 
 export interface DeviceTelemetrySnapshot {
@@ -91,6 +93,7 @@ export interface TrailSafetySession {
   lastKnownLng: number;
   currentAltitude?: number;
   coordSource: GpsCoordSource;
+  lastQuickPingAt?: string;
   breadcrumbs: TrailBreadcrumbPoint[];
   telemetry: DeviceTelemetrySnapshot;
   updatedAt: string;
@@ -277,24 +280,24 @@ function computeSignalDetails(
   if (!isOnline) {
     return {
       signalLevel: 'offline',
-      signalLabel: 'Zero Signal (Offline Cache Active)',
-      signalLabelBm: 'Tiada Isyarat (Mod Luar Talian)',
+      signalLabel: 'Offline (Saved Locally)',
+      signalLabelBm: 'Luar Talian (Disimpan Setempat)',
       signalBars: 0,
     };
   }
   if (effectiveType === 'slow-2g' || effectiveType === '2g') {
     return {
       signalLevel: 'weak',
-      signalLabel: `Weak Ridge Signal (${effectiveType.toUpperCase()})`,
-      signalLabelBm: `Isyarat Rabung Lemah (${effectiveType.toUpperCase()})`,
+      signalLabel: `Weak Signal (${effectiveType.toUpperCase()})`,
+      signalLabelBm: `Isyarat Lemah (${effectiveType.toUpperCase()})`,
       signalBars: 1,
     };
   }
   if (effectiveType === '3g' || (rttMs !== null && rttMs >= 220)) {
     return {
       signalLevel: 'moderate',
-      signalLabel: `Moderate Ridge Link (${effectiveType ? effectiveType.toUpperCase() : '3G'})`,
-      signalLabelBm: `Isyarat Rabung Sederhana (${effectiveType ? effectiveType.toUpperCase() : '3G'})`,
+      signalLabel: `Moderate Signal (${effectiveType ? effectiveType.toUpperCase() : '3G'})`,
+      signalLabelBm: `Isyarat Sederhana (${effectiveType ? effectiveType.toUpperCase() : '3G'})`,
       signalBars: 2,
     };
   }
@@ -306,8 +309,8 @@ function computeSignalDetails(
       : '4G/LTE';
   return {
     signalLevel: 'strong',
-    signalLabel: `Clear Ridge Connection (${typeTag})`,
-    signalLabelBm: `Sambungan Rabung Jelas (${typeTag})`,
+    signalLabel: `Online (${typeTag})`,
+    signalLabelBm: `Dalam Talian (${typeTag})`,
     signalBars: 4,
   };
 }
@@ -700,6 +703,80 @@ export async function flushPendingTrailSessions(): Promise<number> {
   }
 }
 
+/**
+ * Captures a Quick Ping GPS checkpoint (at check-in, app resume, or manual junction/summit ping),
+ * saves it offline immediately in localStorage + IndexedDB, and syncs to Firestore automatically
+ * when cellular data is available.
+ */
+export async function recordQuickPingLocation(
+  session: TrailSafetySession,
+  coords: {
+    lat: number;
+    lng: number;
+    altitude?: number;
+    accuracy?: number | null;
+    source?: GpsCoordSource;
+    note?: string;
+  },
+  telemetry: DeviceTelemetrySnapshot
+): Promise<{
+  session: TrailSafetySession;
+  synced: boolean;
+  queuedOffline: boolean;
+}> {
+  const nowIso = new Date().toISOString();
+  const alt =
+    typeof coords.altitude === 'number' && Number.isFinite(coords.altitude)
+      ? Math.round(coords.altitude)
+      : session.currentAltitude || 1450;
+
+  const pingPoint: TrailBreadcrumbPoint = {
+    lat: coords.lat,
+    lng: coords.lng,
+    altitude: alt,
+    time: new Date().toLocaleTimeString('en-MY', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }),
+    timestamp: nowIso,
+    accuracy: coords.accuracy ?? null,
+    isQuickPing: true,
+    note: coords.note || 'Quick Ping',
+  };
+
+  await updateLastKnownMapGps({
+    lat: coords.lat,
+    lng: coords.lng,
+    altitude: alt,
+    accuracy: coords.accuracy ?? null,
+    timestamp: nowIso,
+    source: coords.source || 'live_gps',
+    trailId: session.trailId,
+    trailName: session.trailName,
+  });
+
+  const existingCrumbs = Array.isArray(session.breadcrumbs) ? session.breadcrumbs : [];
+  const nextSession: TrailSafetySession = {
+    ...session,
+    lastKnownLat: coords.lat,
+    lastKnownLng: coords.lng,
+    lastKnownCoords: `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`,
+    currentAltitude: alt,
+    coordSource: coords.source || 'live_gps',
+    lastQuickPingAt: nowIso,
+    breadcrumbs: [...existingCrumbs, pingPoint].slice(-250),
+    telemetry,
+    updatedAt: nowIso,
+  };
+
+  const syncResult = await syncTrailSessionToCloudOrQueue(nextSession, false);
+  return {
+    session: nextSession,
+    ...syncResult,
+  };
+}
+
 export function buildSmsLink(phone: string, message: string): string {
   const clean = (phone || '').replace(/[^0-9+]/g, '');
   const isIOS =
@@ -1083,11 +1160,11 @@ export async function triggerOverdueTrailAlert(
     `Hiker: ${session.hikerName} (Group: ${session.groupSize})`,
     `Trail: ${session.trailName}`,
     `Expected Return: ${session.expectedHours}h (EXPIRED)`,
-    `📍 Last Known GPS: ${latestGps.lat.toFixed(6)}, ${latestGps.lng.toFixed(6)} (${latestGps.source})`,
-    `🥾 Live Footprint Map: ${trackingUrl}`,
+    `📍 Last Known Location (Quick Ping): ${latestGps.lat.toFixed(6)}, ${latestGps.lng.toFixed(6)}`,
+    `🥾 Live Tracking Link: ${trackingUrl}`,
     `🗺️ Map: ${mapsUrl}`,
     `🔋 Battery: ${telemetry.batteryPercent ?? 'N/A'}%${telemetry.isCharging ? ' (Charging)' : ''} | 📶 ${telemetry.signalLabel}`,
-    `📞 ICE: ${session.emergencyContact || '999'}`,
+    `📞 Emergency Contact: ${session.emergencyContact || '999'}`,
   ].join('\n');
 
   const overdueSession: TrailSafetySession = {

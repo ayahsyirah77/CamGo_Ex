@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   Home,
-  Compass,
   MessageSquare,
+  ScanText,
   Sparkles,
   ShieldAlert,
 } from 'lucide-react';
@@ -12,8 +12,9 @@ import { Language } from '../types';
 
 interface MobileStickyFooterProps {
   onGoHome: () => void;
-  onOpenDirectories: () => void;
+  onOpenDirectories?: () => void;
   onOpenChat: () => void;
+  onOpenTranslator: () => void;
   onOpenAi: () => void;
   onOpenSos: () => void;
   activeModal?: string | null;
@@ -23,8 +24,8 @@ interface MobileStickyFooterProps {
 
 export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
   onGoHome,
-  onOpenDirectories,
   onOpenChat,
+  onOpenTranslator,
   onOpenAi,
   onOpenSos,
   activeModal,
@@ -73,28 +74,7 @@ export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
           </span>
         </button>
 
-        {/* 2. Directories */}
-        <button
-          type="button"
-          onClick={() => {
-            setSosActive(false);
-            onOpenDirectories();
-          }}
-          aria-label="Highland Directories"
-          className={`relative flex flex-col items-center justify-center gap-0.5 h-full py-1 cursor-pointer select-none active:scale-95 transition-all ${
-            activeKey === 'directories' ? 'text-emerald-400' : 'text-stone-400 hover:text-stone-200'
-          }`}
-        >
-          {activeKey === 'directories' && (
-            <span className="absolute top-0 w-7 h-0.5 rounded-full bg-emerald-400" />
-          )}
-          <Compass className="w-[18px] h-[18px]" strokeWidth={activeKey === 'directories' ? 2.3 : 1.8} />
-          <span className="no-mobile-clamp text-[10px] font-bold leading-none tracking-tight">
-            {isBm ? 'Direktori' : 'Directories'}
-          </span>
-        </button>
-
-        {/* 3. Community Chat */}
+        {/* 2. Community Chat */}
         <button
           type="button"
           onClick={() => {
@@ -117,6 +97,27 @@ export const MobileStickyFooter: React.FC<MobileStickyFooterProps> = ({
           </div>
           <span className="no-mobile-clamp text-[10px] font-bold leading-none tracking-tight">
             {isBm ? 'Sembang' : 'Chat'}
+          </span>
+        </button>
+
+        {/* 3. Translator (Menu & Signboard Translator) */}
+        <button
+          type="button"
+          onClick={() => {
+            setSosActive(false);
+            onOpenTranslator();
+          }}
+          aria-label="Menu and Signboard Translator"
+          className={`relative flex flex-col items-center justify-center gap-0.5 h-full py-1 cursor-pointer select-none active:scale-95 transition-all ${
+            activeKey === 'translator' ? 'text-teal-400' : 'text-stone-300 hover:text-teal-300'
+          }`}
+        >
+          {activeKey === 'translator' && (
+            <span className="absolute top-0 w-7 h-0.5 rounded-full bg-teal-400" />
+          )}
+          <ScanText className="w-[18px] h-[18px]" strokeWidth={activeKey === 'translator' ? 2.3 : 1.8} />
+          <span className="no-mobile-clamp text-[10px] font-bold leading-none tracking-tight">
+            Translator
           </span>
         </button>
 

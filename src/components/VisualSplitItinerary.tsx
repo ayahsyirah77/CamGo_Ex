@@ -82,39 +82,41 @@ interface VisualSplitItineraryProps {
 }
 
 const TOWNSHIP_COORDS: Record<Township, Coordinates> = {
+  'Ringlet': { lat: 4.4128, lng: 101.3812 },
+  'Bertam Valley': { lat: 4.4178, lng: 101.3985 },
+  'Habu': { lat: 4.4518, lng: 101.3852 },
   'Tanah Rata': { lat: 4.4715, lng: 101.3805 },
   'Brinchang': { lat: 4.4905, lng: 101.3892 },
   'Kea Farm': { lat: 4.5078, lng: 101.4088 },
-  'Ringlet': { lat: 4.4128, lng: 101.3812 },
-  'Kampung Raja': { lat: 4.5668, lng: 101.4112 },
   'Tringkap': { lat: 4.5122, lng: 101.4215 },
   'Kuala Terla': { lat: 4.5422, lng: 101.4182 },
-  'Bertam Valley': { lat: 4.4178, lng: 101.3985 },
+  'Kampung Raja': { lat: 4.5668, lng: 101.4112 },
   'Blue Valley': { lat: 4.5888, lng: 101.4215 },
 };
 
 const ALL_9_TOWNSHIPS: Township[] = [
+  'Ringlet',
+  'Bertam Valley',
+  'Habu',
   'Tanah Rata',
   'Brinchang',
   'Kea Farm',
-  'Ringlet',
-  'Kampung Raja',
   'Tringkap',
   'Kuala Terla',
-  'Bertam Valley',
-  'Blue Valley',
+  'Kampung Raja',
 ];
 
 const TOWNSHIP_ORDER: Record<string, number> = {
   'Ringlet': 1,
   'Bertam Valley': 2,
-  'Tanah Rata': 3,
-  'Brinchang': 4,
-  'Kea Farm': 5,
-  'Tringkap': 6,
-  'Kuala Terla': 7,
-  'Kampung Raja': 8,
-  'Blue Valley': 9,
+  'Habu': 3,
+  'Tanah Rata': 4,
+  'Brinchang': 5,
+  'Kea Farm': 6,
+  'Tringkap': 7,
+  'Kuala Terla': 8,
+  'Kampung Raja': 9,
+  'Blue Valley': 10,
 };
 
 const calculateCrowdLevel = (activity: ItineraryActivity): 'Low' | 'Medium' | 'High' => {
@@ -661,12 +663,13 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
       }).addTo(map);
 
       marker
-        .bindPopup(`
-        <div style="font-family: 'Plus Jakarta Sans', sans-serif; min-width: 200px; padding: 4px; color: #1c1917;">
+        .bindPopup(
+          `
+        <div style="font-family: 'Plus Jakarta Sans', sans-serif; min-width: 170px; max-width: 235px; padding: 4px; color: #1c1917; word-break: break-word; overflow-wrap: anywhere;">
           <div style="font-size: 10px; font-weight: 800; color: #2563eb; text-transform: uppercase; margin-bottom: 2px;">
             Starting GPS Location
           </div>
-          <div style="font-size: 13.5px; font-weight: 800; color: #0f172a;">
+          <div style="font-size: 13px; font-weight: 800; color: #0f172a; line-height: 1.3;">
             ${locationObj.label}
           </div>
           <div style="font-size: 11px; color: #475569; margin-top: 2px;">
@@ -676,7 +679,9 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
             ${locationObj.lat.toFixed(4)}, ${locationObj.lng.toFixed(4)}
           </div>
         </div>
-      `)
+      `,
+          { maxWidth: 250 }
+        )
         .openPopup();
 
       userLocationMarkerRef.current = marker;
@@ -1831,16 +1836,16 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
             {/* Active Starting Location Pill */}
             <div
               onClick={() => setShowLocationPickerModal(true)}
-              className="mt-2 p-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-950/60 to-cyan-950/60 border border-blue-500/30 hover:border-cyan-400 flex items-center justify-between text-xs cursor-pointer transition-all group"
+              className="mt-2 p-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-950/60 to-cyan-950/60 border border-blue-500/30 hover:border-cyan-400 flex items-center justify-between gap-2 text-xs cursor-pointer transition-all group min-w-0"
               title="Click to change your starting location in Cameron Highlands"
             >
-              <div className="flex items-center gap-2 truncate">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <Compass className="w-3.5 h-3.5 text-cyan-400 shrink-0 group-hover:rotate-45 transition-transform" />
-                <span className="text-blue-200 font-bold truncate">
+                <span className="text-blue-200 font-bold truncate block">
                   Start: {userLocation ? userLocation.label : 'Select Highland Start Location'}
                 </span>
               </div>
-              <span className="text-[10px] font-bold text-cyan-300 bg-blue-500/20 px-2 py-0.5 rounded border border-blue-400/30 shrink-0 ml-1">
+              <span className="text-[10px] font-bold text-cyan-300 bg-blue-500/20 px-2 py-0.5 rounded border border-blue-400/30 shrink-0">
                 Change 📍
               </span>
             </div>
@@ -2249,17 +2254,17 @@ export const VisualSplitItinerary: React.FC<VisualSplitItineraryProps> = ({
                   }
                 }}
                 disabled={isLocating}
-                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-900/80 via-indigo-900/80 to-cyan-900/80 hover:from-blue-800 hover:to-cyan-800 border border-blue-400/40 text-blue-100 text-xs font-bold flex items-center justify-between cursor-pointer transition-all shadow-xl group"
+                className="w-full py-3 px-3 sm:px-4 rounded-2xl bg-gradient-to-r from-blue-900/80 via-indigo-900/80 to-cyan-900/80 hover:from-blue-800 hover:to-cyan-800 border border-blue-400/40 text-blue-100 text-xs font-bold flex items-center justify-between gap-2 cursor-pointer transition-all shadow-xl group"
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div className="w-7 h-7 rounded-xl bg-blue-500/20 text-cyan-300 border border-blue-400/30 flex items-center justify-center shrink-0">
                     <Compass className={`w-4 h-4 ${isLocating ? 'animate-spin' : ''}`} />
                   </div>
-                  <div className="text-left">
-                    <div className="font-extrabold text-white text-xs">
+                  <div className="text-left min-w-0 flex-1">
+                    <div className="font-extrabold text-white text-xs whitespace-normal break-words leading-snug">
                       📍 Use Automatic Current GPS Location
                     </div>
-                    <div className="text-[10px] text-blue-300 font-normal">
+                    <div className="text-[10px] text-blue-300 font-normal whitespace-normal break-words leading-snug mt-0.5">
                       {userLocation ? `Detected: ${userLocation.township}` : 'Click to fetch device GPS position & insert as stop'}
                     </div>
                   </div>

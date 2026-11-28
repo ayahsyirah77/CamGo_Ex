@@ -21,6 +21,8 @@ export default defineConfig(() => {
           'pwa-512x512.png',
           'pwa-maskable-512x512.png',
           'manifest-vendor.json',
+          'manifest-trails.json',
+          'manifest-party.json',
           'pwa-icon.svg',
           'assets/*',
         ],
@@ -68,7 +70,13 @@ export default defineConfig(() => {
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/sw\.js$/,
+            /^\/sw-custom\.js$/,
+            /^\/sw-sos-sync\.js$/,
+            /^\/firebase-messaging-sw\.js$/,
+          ],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,woff,woff2}'],
           runtimeCaching: [

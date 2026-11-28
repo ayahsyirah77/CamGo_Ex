@@ -11,15 +11,11 @@ import {
   Download,
   Copy,
   Check,
-  RefreshCw,
   X,
   Footprints,
   BatteryCharging,
   Battery,
-  Radio,
   Sparkles,
-  Mountain,
-  Lock,
   UserCheck,
   ExternalLink,
   FileText,
@@ -29,7 +25,6 @@ import {
   ChevronRight,
   ChevronDown,
   MessageSquare,
-  PhoneCall,
   Send,
   Activity,
   Wind,
@@ -48,7 +43,11 @@ import {
   Sun,
   SlidersHorizontal,
 } from 'lucide-react';
-import { CAMERON_TRAILS, TrailRoute } from '../data/trailsData';
+import {
+  CAMERON_TRAILS,
+  TrailRoute,
+  computeRecommendedReturnHours,
+} from '../data/trailsData';
 import { Language } from '../types';
 import { UserProfile, firebaseService } from '../services/firebase';
 import { weatherService, TrailSafetyStatus } from '../services/weather';
@@ -64,22 +63,23 @@ import {
   flushPendingTrailSessions,
   generateTrackingToken,
   getCachedActiveTrailSession,
+  getQueuedTrailSessionCount,
   haversineDistanceMeters,
   markTrailSessionCheckedOut,
-  playStillnessWarningTone,
   readLiveDeviceTelemetry,
-  requestMotionSensorPermissionIfNeeded,
+  recordQuickPingLocation,
   resolveBestSosCoordinates,
   sendInitialTrailCheckInAlert,
   subscribeDeviceTelemetry,
   syncTrailSessionToCloudOrQueue,
   triggerFiveMinuteAutoStartAlert,
-  triggerInactivityStage1Alert,
-  triggerInactivityStage2CriticalAlert,
   triggerOverdueTrailAlert,
   updateLastKnownMapGps,
 } from '../services/trailSafetyService';
 import { sendOrQueueEmergencySos, SosDispatchOutcome } from '../services/offlineSosQueue';
+import { usePersistentGeolocation, PersistentGpsPosition } from '../hooks/usePersistentGeolocation';
+import { MobileTrackingHelperBanner } from './MobileTrackingHelperBanner';
+import { ModulePwaControls } from './ModulePwaControls';
 
 interface OfflineTrailEngineModalProps {
   isOpen: boolean;
@@ -87,6 +87,7 @@ interface OfflineTrailEngineModalProps {
   language: Language;
   currentUser: UserProfile | null;
   onOpenAuth: () => void;
+  onNavigateMainPage?: () => void;
 }
 
 function triggerProgrammaticDeepLink(href: string, openInNewTab: boolean): void {
@@ -126,8 +127,6 @@ const TRAIL_COLORS: Record<number, string> = {
 };
 
 const FIVE_MINUTES_SEC = 5 * 60;
-const FIFTEEN_MINUTES_SEC = 15 * 60;
-const THIRTY_MINUTES_SEC = 30 * 60;
 
 export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = ({
   isOpen,
@@ -135,8 +134,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   language,
   currentUser,
   onOpenAuth,
+  onNavigateMainPage,
 }) => {
-  // Unlocked Map State (false: Safety Passport Form -> true: Interactive Trail Map)
+  // Unlocked Map State (false: Quick Trail Check-In Form -> true: Trail Map)
   const [passportUnlocked, setPassportUnlocked] = useState(false);
   const [resumableSession, setResumableSession] = useState<TrailSafetySession | null>(null);
   const [isConfirmingResetSession, setIsConfirmingResetSession] = useState(false);
@@ -144,14 +144,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   // Selected Trail & Weather / Offline Cache State
   const [selectedTrail, setSelectedTrail] = useState<TrailRoute>(() => CAMERON_TRAILS[0]);
   const [selectedTrailId, setSelectedTrailId] = useState<string>('');
-  const [isPlannedTrailEnabled, setIsPlannedTrailEnabled] = useState<boolean>(false);
   const [isPreDownloading, setIsPreDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(100);
   const [cacheVerified, setCacheVerified] = useState(false);
   const [safetyStatus, setSafetyStatus] = useState<TrailSafetyStatus | null>(null);
   const [isPermitCapsuleOpen, setIsPermitCapsuleOpen] = useState(false);
   const [isFullScreenMap, setIsFullScreenMap] = useState(false);
-  const [isElevationExpanded, setIsElevationExpanded] = useState(false);
   const [isSafetyBriefOpen, setIsSafetyBriefOpen] = useState(false);
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false);
 
@@ -197,7 +195,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     accuracy: 12,
     hasRealFix: false,
   });
-  const watchIdRef = useRef<number | null>(null);
 
   // Real Device Telemetry State
   const [telemetry, setTelemetry] = useState<DeviceTelemetrySnapshot>({
@@ -236,12 +233,15 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   const [autoStartTriggeredBanner, setAutoStartTriggeredBanner] =
     useState<TrailContactNotificationResult | null>(null);
 
-  // Phone Motion Sensor Dead-Man Switch (15m Warning / 30m Critical)
-  const [motionSensorSupported, setMotionSensorSupported] = useState<boolean>(false);
-  const [stillnessSeconds, setStillnessSeconds] = useState<number>(0);
-  const [inactivityStage1Active, setInactivityStage1Active] = useState<boolean>(false);
-  const [inactivityStage2Active, setInactivityStage2Active] = useState<boolean>(false);
   const [copiedTrackLink, setCopiedTrackLink] = useState<boolean>(false);
+
+  // Quick Ping & Offline Auto-Sync State
+  const [isQuickPinging, setIsQuickPinging] = useState<boolean>(false);
+  const [quickPingFeedback, setQuickPingFeedback] = useState<{
+    message: string;
+    queuedOffline: boolean;
+  } | null>(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
 
   // Alerts & Manual SOS Receipts
   const [initialAlertResult, setInitialAlertResult] =
@@ -281,14 +281,10 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   const isFullScreenMapRef = useRef(isFullScreenMap);
   isFullScreenMapRef.current = isFullScreenMap;
   const autoCenteredFullScreenRef = useRef(false);
+  const autoPingedOnOpenRef = useRef(false);
 
   const overdueFiredRef = useRef<boolean>(false);
   const autoStartFiredRef = useRef<boolean>(false);
-  const inactivity1FiredRef = useRef<boolean>(false);
-  const inactivity2FiredRef = useRef<boolean>(false);
-  const lastMovementMsRef = useRef<number>(Date.now());
-  const lastDisplacedGpsRef = useRef<{ lat: number; lng: number } | null>(null);
-  const lastAccelSampleRef = useRef<{ x: number; y: number; z: number } | null>(null);
   const lastCloudSyncTsRef = useRef<number>(0);
 
   // Subscribe to real Web API device telemetry (Battery + Network)
@@ -300,14 +296,19 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     return () => unsubscribe();
   }, [isOpen]);
 
-  // Silent flush of queued IndexedDB trail updates when signal returns
+  // Silent flush of queued IndexedDB trail check-ins & Quick Pings on open and whenever cellular data reconnects
   useEffect(() => {
     if (!isOpen) return;
-    const handleOnline = () => {
-      flushPendingTrailSessions();
+    const syncQueue = async () => {
+      if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+        await flushPendingTrailSessions();
+      }
+      const remaining = await getQueuedTrailSessionCount();
+      setPendingSyncCount(remaining);
     };
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
+    syncQueue();
+    window.addEventListener('online', syncQueue);
+    return () => window.removeEventListener('online', syncQueue);
   }, [isOpen]);
 
   // Smooth compass heading helper (avoids 359->0 wrap spinning)
@@ -410,222 +411,178 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
       }
       lastCloudSyncTsRef.current = now;
       await syncTrailSessionToCloudOrQueue(updatedSession, false);
+      const queuedCount = await getQueuedTrailSessionCount();
+      setPendingSyncCount(queuedCount);
     },
     []
   );
 
-  // DeviceMotionEvent + Accelerometer monitoring while active session is unlocked
-  useEffect(() => {
-    if (!isOpen || !passportUnlocked || !activeSession) return;
+  // Continuous persistent Geolocation watcher + 12s stalled heartbeat + visibilitychange recovery + Screen Wake Lock
+  const handlePersistentTrailPosition = useCallback(
+    async (pos: PersistentGpsPosition) => {
+      const accuracy = Math.round(pos.accuracy || 10);
+      const altitude =
+        typeof pos.altitude === 'number' && Number.isFinite(pos.altitude)
+          ? Math.round(pos.altitude)
+          : selectedTrailRef.current?.maxElevationM
+          ? Math.max(1420, selectedTrailRef.current.maxElevationM - 180)
+          : 1460;
 
-    const handleDeviceMotion = (event: DeviceMotionEvent) => {
-      setMotionSensorSupported(true);
-
-      // Prefer linear acceleration if provided, otherwise delta accelerationIncludingGravity
-      const acc = event.acceleration;
+      const loc = {
+        lat: pos.lat,
+        lng: pos.lng,
+        altitude,
+        accuracy,
+        hasRealFix: true,
+      };
+      setCurrentGps(loc);
       if (
-        acc &&
-        typeof acc.x === 'number' &&
-        typeof acc.y === 'number' &&
-        typeof acc.z === 'number'
+        typeof pos.heading === 'number' &&
+        Number.isFinite(pos.heading) &&
+        lastCompassHeadingRef.current === null
       ) {
-        const linearMag = Math.hypot(acc.x, acc.y, acc.z);
-        if (linearMag > 1.35) {
-          lastMovementMsRef.current = Date.now();
-        }
-        return;
+        applyHeadingUpdate(pos.heading, 'gps');
       }
 
-      const accG = event.accelerationIncludingGravity;
-      if (
-        accG &&
-        typeof accG.x === 'number' &&
-        typeof accG.y === 'number' &&
-        typeof accG.z === 'number'
-      ) {
-        const prev = lastAccelSampleRef.current;
-        if (prev) {
-          const delta =
-            Math.abs(accG.x - prev.x) +
-            Math.abs(accG.y - prev.y) +
-            Math.abs(accG.z - prev.z);
-          if (delta > 1.5) {
-            lastMovementMsRef.current = Date.now();
-          }
-        }
-        lastAccelSampleRef.current = { x: accG.x, y: accG.y, z: accG.z };
-      }
-    };
-
-    if (typeof window !== 'undefined' && 'DeviceMotionEvent' in window) {
-      window.addEventListener('devicemotion', handleDeviceMotion);
-    }
-
-    return () => {
-      if (typeof window !== 'undefined' && 'DeviceMotionEvent' in window) {
-        window.removeEventListener('devicemotion', handleDeviceMotion);
-      }
-    };
-  }, [isOpen, passportUnlocked, Boolean(activeSession)]);
-
-  // Continuous high-accuracy Geolocation watcher -> updates map GPS dot, motion displacement & active session
-  useEffect(() => {
-    if (!isOpen || !('geolocation' in navigator)) return;
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      async (pos) => {
-        const accuracy = Math.round(pos.coords.accuracy || 10);
-        const altitude =
-          typeof pos.coords.altitude === 'number' && Number.isFinite(pos.coords.altitude)
-            ? Math.round(pos.coords.altitude)
-            : selectedTrailRef.current?.maxElevationM
-            ? Math.max(1420, selectedTrailRef.current.maxElevationM - 180)
-            : 1460;
-
-        const loc = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          altitude,
-          accuracy,
-          hasRealFix: true,
-        };
-        setCurrentGps(loc);
-        if (typeof pos.coords.heading === 'number' && Number.isFinite(pos.coords.heading) && lastCompassHeadingRef.current === null) {
-          applyHeadingUpdate(pos.coords.heading, 'gps');
-        }
-
-        // GPS displacement check (>= 12m counts as real movement)
-        if (lastDisplacedGpsRef.current) {
-          const movedMeters = haversineDistanceMeters(
-            lastDisplacedGpsRef.current.lat,
-            lastDisplacedGpsRef.current.lng,
-            loc.lat,
-            loc.lng
-          );
-          if (movedMeters >= 12) {
-            lastMovementMsRef.current = Date.now();
-            lastDisplacedGpsRef.current = { lat: loc.lat, lng: loc.lng };
-          }
+      // Update Leaflet live blue GPS dot & auto-center in full-screen view
+      const map = mapInstanceRef.current;
+      if (map) {
+        if (!gpsMarkerRef.current) {
+          const blueDotIcon = L.divIcon({
+            className: 'custom-gps-marker',
+            html: '<div style="width: 18px; height: 18px; background: #38bdf8; border: 3px solid #ffffff; border-radius: 50%; box-shadow: 0 0 14px rgba(56,189,248,0.95);"></div>',
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+          });
+          gpsMarkerRef.current = L.marker([loc.lat, loc.lng], { icon: blueDotIcon }).addTo(map);
         } else {
-          lastDisplacedGpsRef.current = { lat: loc.lat, lng: loc.lng };
+          gpsMarkerRef.current.setLatLng([loc.lat, loc.lng]);
         }
-
-        // Update Leaflet live blue GPS dot & auto-center in full-screen view
-        const map = mapInstanceRef.current;
-        if (map) {
-          if (!gpsMarkerRef.current) {
-            const blueDotIcon = L.divIcon({
-              className: 'custom-gps-marker',
-              html: '<div style="width: 18px; height: 18px; background: #38bdf8; border: 3px solid #ffffff; border-radius: 50%; box-shadow: 0 0 14px rgba(56,189,248,0.95);"></div>',
-              iconSize: [18, 18],
-              iconAnchor: [9, 9],
-            });
-            gpsMarkerRef.current = L.marker([loc.lat, loc.lng], { icon: blueDotIcon }).addTo(map);
-          } else {
-            gpsMarkerRef.current.setLatLng([loc.lat, loc.lng]);
-          }
-          if (isFullScreenMapRef.current && !autoCenteredFullScreenRef.current) {
-            autoCenteredFullScreenRef.current = true;
-            map.setView([loc.lat, loc.lng], Math.max(map.getZoom(), 15), { animate: true });
-          }
+        if (isFullScreenMapRef.current && !autoCenteredFullScreenRef.current) {
+          autoCenteredFullScreenRef.current = true;
+          map.setView([loc.lat, loc.lng], Math.max(map.getZoom(), 15), { animate: true });
         }
+      }
 
-        const trail = selectedTrailRef.current;
-        await updateLastKnownMapGps({
+      const trail = selectedTrailRef.current;
+      await updateLastKnownMapGps({
+        lat: loc.lat,
+        lng: loc.lng,
+        altitude: loc.altitude,
+        accuracy: loc.accuracy,
+        timestamp: new Date().toISOString(),
+        source: 'map_watch',
+        trailId: trail?.id,
+        trailName: trail?.name,
+      });
+
+      const liveTelemetry = await readLiveDeviceTelemetry(accuracy);
+      setTelemetry(liveTelemetry);
+
+      const sess = activeSessionRef.current;
+      const shouldAutoPingOnOpen =
+        Boolean(sess && sess.status !== 'completed') && !autoPingedOnOpenRef.current;
+
+      if (isRecordingRef.current || shouldAutoPingOnOpen) {
+        if (shouldAutoPingOnOpen) {
+          autoPingedOnOpenRef.current = true;
+        }
+        const newPt: TrailBreadcrumbPoint = {
           lat: loc.lat,
           lng: loc.lng,
           altitude: loc.altitude,
-          accuracy: loc.accuracy,
+          time: new Date().toLocaleTimeString('en-MY', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          }),
           timestamp: new Date().toISOString(),
-          source: 'map_watch',
-          trailId: trail?.id,
-          trailName: trail?.name,
-        });
+          accuracy,
+          isQuickPing: shouldAutoPingOnOpen,
+          note: shouldAutoPingOnOpen ? 'App Open Quick Ping' : undefined,
+        };
 
-        const liveTelemetry = await readLiveDeviceTelemetry(accuracy);
-        setTelemetry(liveTelemetry);
+        setBreadcrumbs((prev) => {
+          const last = prev[prev.length - 1];
+          const distMoved = last
+            ? haversineDistanceMeters(last.lat, last.lng, loc.lat, loc.lng)
+            : 50;
+          const nextList =
+            shouldAutoPingOnOpen || distMoved >= 8 || prev.length === 0
+              ? [...prev, newPt]
+              : prev;
 
-        const sess = activeSessionRef.current;
-        const lastMovedIso = new Date(lastMovementMsRef.current).toISOString();
-
-        if (isRecordingRef.current) {
-          const newPt: TrailBreadcrumbPoint = {
-            lat: loc.lat,
-            lng: loc.lng,
-            altitude: loc.altitude,
-            time: new Date().toLocaleTimeString('en-MY', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            }),
-            timestamp: new Date().toISOString(),
-            accuracy,
-          };
-
-          setBreadcrumbs((prev) => {
-            const last = prev[prev.length - 1];
-            const distMoved = last
-              ? haversineDistanceMeters(last.lat, last.lng, loc.lat, loc.lng)
-              : 50;
-            const nextList = distMoved >= 8 || prev.length === 0 ? [...prev, newPt] : prev;
-
-            if (map && nextList.length > 1) {
-              const latLngs = nextList.map((b) => [b.lat, b.lng] as [number, number]);
-              if (!breadcrumbLineRef.current) {
-                breadcrumbLineRef.current = L.polyline(latLngs, {
-                  color: '#38bdf8',
-                  weight: 4,
-                  dashArray: '5 5',
-                }).addTo(map);
-              } else {
-                breadcrumbLineRef.current.setLatLngs(latLngs);
-              }
+          if (map && nextList.length > 1) {
+            const latLngs = nextList.map((b) => [b.lat, b.lng] as [number, number]);
+            if (!breadcrumbLineRef.current) {
+              breadcrumbLineRef.current = L.polyline(latLngs, {
+                color: '#38bdf8',
+                weight: 4,
+                dashArray: '5 5',
+              }).addTo(map);
+            } else {
+              breadcrumbLineRef.current.setLatLngs(latLngs);
             }
+          }
 
-            if (sess && sess.status !== 'completed') {
-              persistSessionProgress({
+          if (sess && sess.status !== 'completed') {
+            persistSessionProgress(
+              {
                 ...sess,
                 lastKnownCoords: `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`,
                 lastKnownLat: loc.lat,
                 lastKnownLng: loc.lng,
                 currentAltitude: loc.altitude,
                 coordSource: 'map_watch',
-                lastMovementAt: lastMovedIso,
+                lastQuickPingAt: shouldAutoPingOnOpen
+                  ? new Date().toISOString()
+                  : sess.lastQuickPingAt,
                 breadcrumbs: nextList,
                 telemetry: liveTelemetry,
                 updatedAt: new Date().toISOString(),
-              });
-            }
+              },
+              shouldAutoPingOnOpen
+            );
+          }
 
-            return nextList;
-          });
-        } else if (sess && sess.status !== 'completed') {
-          persistSessionProgress({
-            ...sess,
-            lastKnownCoords: `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`,
-            lastKnownLat: loc.lat,
-            lastKnownLng: loc.lng,
-            currentAltitude: loc.altitude,
-            coordSource: 'map_watch',
-            lastMovementAt: lastMovedIso,
-            telemetry: liveTelemetry,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      },
-      (err) => {
-        console.warn('[TrailEngine] Geolocation watch notice:', err.message);
-      },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 8000 }
-    );
-
-    return () => {
-      if (watchIdRef.current !== null && 'geolocation' in navigator) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
+          return nextList;
+        });
+      } else if (sess && sess.status !== 'completed') {
+        persistSessionProgress({
+          ...sess,
+          lastKnownCoords: `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`,
+          lastKnownLat: loc.lat,
+          lastKnownLng: loc.lng,
+          currentAltitude: loc.altitude,
+          coordSource: 'map_watch',
+          telemetry: liveTelemetry,
+          updatedAt: new Date().toISOString(),
+        });
       }
-    };
-  }, [isOpen, persistSessionProgress]);
+    },
+    [applyHeadingUpdate, persistSessionProgress]
+  );
+
+  const {
+    gpsStatus: trailGpsStatus,
+    errorCode: trailGpsErrorCode,
+    errorMessage: trailGpsErrorMessage,
+    lastFixAt: trailLastFixAt,
+    wakeLockSupported: trailWakeLockSupported,
+    wakeLockActive: trailWakeLockActive,
+    keepAwakeEnabled: trailKeepAwakeEnabled,
+    setKeepAwakeEnabled: setTrailKeepAwakeEnabled,
+    forceRefreshFix: forceRefreshTrailGps,
+  } = usePersistentGeolocation({
+    isActive: isOpen && (passportUnlocked || isRecording || sosActive),
+    wakeLockEnabledWhenActive: isOpen && passportUnlocked && (isRecording || sosActive),
+    heartbeatIntervalMs: 12000,
+    staleThresholdMs: 12000,
+    onPositionFix: handlePersistentTrailPosition,
+    onErrorFix: (code, msg) => {
+      console.warn(`[TrailEngine] Persistent GPS notice (code ${code}):`, msg);
+    },
+  });
 
   // Initialize / Clean up Leaflet Map when Interactive Map view is active
   useEffect(() => {
@@ -794,7 +751,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     };
   }, [isFullScreenMap, isOpen, passportUnlocked]);
 
-  // Draw / Update accurate Trail Polyline + Trailhead Start Marker + Summit Marker whenever trail changes
+  // Draw Start & End Trailhead Pins cleanly (only draw trail route polyline if verified GPX geometry exists)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !selectedTrail || !passportUnlocked) return;
@@ -815,41 +772,59 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     const color = TRAIL_COLORS[selectedTrail.number] || selectedTrail.color || '#10b981';
     const pts = selectedTrail.coordinates;
 
-    const poly = L.polyline(pts, {
-      color,
-      weight: 6,
-      opacity: 0.95,
-    }).addTo(map);
-    activePolylineRef.current = poly;
+    if (selectedTrail.hasVerifiedGpx && pts.length > 1) {
+      const poly = L.polyline(pts, {
+        color,
+        weight: 5,
+        opacity: 0.92,
+      }).addTo(map);
+      activePolylineRef.current = poly;
+    }
 
-    // Trailhead Start Marker
+    // Clean Start Trailhead Pin
     if (pts[0]) {
       trailheadMarkerRef.current = L.circleMarker(pts[0], {
-        radius: 6,
+        radius: 8,
         color: '#ffffff',
-        weight: 2,
+        weight: 2.5,
         fillColor: '#10b981',
         fillOpacity: 1,
       })
-        .bindTooltip(`Start: ${selectedTrail.trailheadName}`, { direction: 'bottom' })
+        .bindTooltip(`Start: ${selectedTrail.trailheadName}`, {
+          direction: 'bottom',
+          permanent: true,
+        })
         .addTo(map);
     }
 
-    // Summit / Endpoint Marker
+    // Clean End / Summit Trailhead Pin
     const peakCoord = selectedTrail.peakCoordinates || pts[pts.length - 1];
-    peakMarkerRef.current = L.circleMarker(peakCoord, {
-      radius: 7,
-      color: '#ffffff',
-      weight: 2,
-      fillColor: color,
-      fillOpacity: 1,
-    })
-      .bindTooltip(`${selectedTrail.peakName || selectedTrail.name} (${selectedTrail.maxElevationM}m)`, {
-        direction: 'top',
+    if (peakCoord) {
+      peakMarkerRef.current = L.circleMarker(peakCoord, {
+        radius: 8,
+        color: '#ffffff',
+        weight: 2.5,
+        fillColor: '#f43f5e',
+        fillOpacity: 1,
       })
-      .addTo(map);
+        .bindTooltip(
+          `End: ${selectedTrail.peakName || selectedTrail.name} (${selectedTrail.maxElevationM}m)`,
+          {
+            direction: 'top',
+            permanent: true,
+          }
+        )
+        .addTo(map);
+    }
 
-    map.fitBounds(poly.getBounds(), { padding: [36, 36] });
+    const fitPts: [number, number][] = [];
+    if (pts[0]) fitPts.push(pts[0]);
+    if (peakCoord) fitPts.push(peakCoord);
+    if (fitPts.length > 1) {
+      map.fitBounds(L.latLngBounds(fitPts), { padding: [44, 44] });
+    } else if (fitPts[0]) {
+      map.setView(fitPts[0], 15);
+    }
     setTimeout(() => map.invalidateSize(), 150);
 
     if (!currentGpsRef.current.hasRealFix && pts[0]) {
@@ -866,10 +841,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     }
   }, [selectedTrail, passportUnlocked, isOpen]);
 
-  // Combined 1-Second Safety Monitor Loop:
-  // 1) Automated Overdue Return Timer
-  // 2) Automated 5-Minute Start Alert Failsafe (when user clicked Record Trail)
-  // 3) Dead-Man Switch Motion Inactivity Checks (15 min Stage 1 / 30 min Stage 2 Critical)
+  // Combined 1-Second Safety Monitor Loop focused on Overdue Check-Out & 5-Min Start Failsafe
   useEffect(() => {
     if (!activeSession || activeSession.status === 'completed') return;
 
@@ -902,7 +874,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     const tick = async () => {
       const nowMs = Date.now();
 
-      // 1. Overdue Return Countdown Check
+      // 1. Overdue Check-Out Countdown Check
       const deadlineMs = new Date(activeSession.expectedReturnAt).getTime();
       const remaining = Math.floor((deadlineMs - nowMs) / 1000);
       if (remaining <= 0) {
@@ -958,79 +930,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
           );
         }
       }
-
-      // 3. Phone Motion Sensor + GPS Dead-Man Switch (15m / 30m Immobility)
-      const stillSec = Math.max(0, Math.floor((nowMs - lastMovementMsRef.current) / 1000));
-      setStillnessSeconds(stillSec);
-
-      if (
-        stillSec >= FIFTEEN_MINUTES_SEC &&
-        !inactivity1FiredRef.current &&
-        !activeSession.inactivityAlert1Sent
-      ) {
-        inactivity1FiredRef.current = true;
-        setInactivityStage1Active(true);
-        playStillnessWarningTone(false);
-
-        const latestCoord = buildFallbackGps();
-        const liveTel = await readLiveDeviceTelemetry(currentGpsRef.current.accuracy);
-        await triggerInactivityStage1Alert(activeSession, latestCoord, liveTel);
-        setActiveSession((prev) =>
-          prev ? { ...prev, inactivityAlert1Sent: true } : prev
-        );
-      }
-
-      if (
-        stillSec >= THIRTY_MINUTES_SEC &&
-        !inactivity2FiredRef.current &&
-        !activeSession.inactivityAlert2Sent
-      ) {
-        inactivity2FiredRef.current = true;
-        setInactivityStage1Active(false);
-        setInactivityStage2Active(true);
-        playStillnessWarningTone(true);
-
-        const latestCoord = buildFallbackGps();
-        const liveTel = await readLiveDeviceTelemetry(currentGpsRef.current.accuracy);
-        const card = firebaseService.getEmergencyCard();
-        await triggerInactivityStage2CriticalAlert(
-          activeSession,
-          latestCoord,
-          liveTel,
-          card
-        );
-        setActiveSession((prev) =>
-          prev
-            ? { ...prev, status: 'overdue', inactivityAlert2Sent: true }
-            : prev
-        );
-      }
     };
 
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [activeSession]);
-
-  // Dismiss 15-min Stillness Warning & reset Dead-Man timer
-  const handleDismissStillnessWarning = async () => {
-    lastMovementMsRef.current = Date.now();
-    setStillnessSeconds(0);
-    setInactivityStage1Active(false);
-    inactivity1FiredRef.current = false;
-    inactivity2FiredRef.current = false;
-
-    if (activeSession) {
-      const updated: TrailSafetySession = {
-        ...activeSession,
-        lastMovementAt: new Date().toISOString(),
-        inactivityAlert1Sent: false,
-        inactivityAlert1DismissedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      await persistSessionProgress(updated, true);
-    }
-  };
 
   // Mark manual WhatsApp/SMS start alert sent (cancelling 5-min failsafe)
   const handleMarkManualStartAlertSent = async () => {
@@ -1174,6 +1079,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   const parsedGroupSize = parseInt(groupSize, 10);
   const parsedExpectedHours = parseFloat(expectedHours);
   const isPassportFieldsValid =
+    Boolean(selectedTrailId) &&
     hikerName.trim().length > 0 &&
     emergencyContactName.trim().length > 0 &&
     emergencyContact.trim().length >= 6 &&
@@ -1182,29 +1088,23 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     Number.isFinite(parsedExpectedHours) &&
     parsedExpectedHours >= 0.5;
 
-  const canSubmitPassport =
-    isPassportFieldsValid && (!isPlannedTrailEnabled || Boolean(selectedTrailId));
+  const canSubmitPassport = isPassportFieldsValid;
 
-  useEffect(() => {
-    if (!isPassportFieldsValid && isPlannedTrailEnabled) {
-      setIsPlannedTrailEnabled(false);
-    }
-  }, [isPassportFieldsValid, isPlannedTrailEnabled]);
-
-  // Submit Safety Passport -> Initialize session & jump directly into Interactive Trail Map
+  // Submit Quick Trail Check-In -> Initialize session & open Trail Map immediately (Guest Mode supported)
   const handleSubmitSafetyPassport = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     const trimmedName = hikerName.trim();
-    const trimmedIceName = emergencyContactName.trim();
+    const trimmedContactName = emergencyContactName.trim();
     const trimmedPhone = emergencyContact.trim();
     const parsedHours = parseFloat(expectedHours);
     const parsedGroup = parseInt(groupSize, 10);
 
     if (
+      !selectedTrailId ||
       !trimmedName ||
-      !trimmedIceName ||
+      !trimmedContactName ||
       !trimmedPhone ||
       trimmedPhone.length < 6 ||
       !Number.isFinite(parsedGroup) ||
@@ -1214,8 +1114,8 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     ) {
       setFormError(
         language === 'bm'
-          ? 'Sila lengkapkan Nama Pendaki, Nama & Nombor Telefon Kenalan Kecemasan (ICE), Bilangan Kumpulan, dan Tempoh Jangkaan Pulang sebelum meneruskan.'
-          : 'Please complete Hiker / Lead Name, Emergency Contact Name & Phone (ICE), Group Size, and Expected Return Duration before opening the map.'
+          ? 'Sila pilih laluan dan lengkapkan Nama Pendaki, Nama & Nombor Telefon Kenalan Kecemasan, Saiz Kumpulan, dan Anggaran Tempoh Pulang.'
+          : 'Please select a trail and complete Hiker Name, Emergency Contact Name & Phone, Party Size, and Expected Return Duration.'
       );
       return;
     }
@@ -1223,10 +1123,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     setIsSubmittingPassport(true);
 
     try {
-      // Unlock motion sensors on user gesture (required on iOS Safari)
-      const motionAllowed = await requestMotionSensorPermissionIfNeeded();
-      setMotionSensorSupported(motionAllowed);
-
       const existingCard = firebaseService.getEmergencyCard();
       await firebaseService.saveEmergencyCard({
         ...existingCard,
@@ -1234,7 +1130,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         designatedSosNumber: trimmedPhone,
         primaryContact: {
           label: existingCard.primaryContact?.label || 'ICE 1',
-          name: trimmedIceName,
+          name: trimmedContactName,
           relationship: existingCard.primaryContact?.relationship || 'Emergency Contact',
           phone: trimmedPhone,
         },
@@ -1273,8 +1169,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
       const newSessionId = `session_${nowMs}_${uid}`;
       const trackingToken = generateTrackingToken();
 
-      lastMovementMsRef.current = nowMs;
-
       const newSession: TrailSafetySession = {
         id: newSessionId,
         uid,
@@ -1284,7 +1178,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         trailId: selectedTrail.id,
         trailName: selectedTrail.name,
         groupSize: parsedGroup,
-        emergencyContactName: trimmedIceName,
+        emergencyContactName: trimmedContactName,
         emergencyContact: trimmedPhone,
         expectedHours: parsedHours,
         status: 'active',
@@ -1294,15 +1188,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         initialContactNotified: true,
         manualStartAlertSent: false,
         autoStartAlertSent: false,
-        lastMovementAt: startedAt,
-        motionSensorActive: motionAllowed,
-        inactivityAlert1Sent: false,
-        inactivityAlert2Sent: false,
         lastKnownCoords: `${startCoords.lat.toFixed(6)}, ${startCoords.lng.toFixed(6)}`,
         lastKnownLat: startCoords.lat,
         lastKnownLng: startCoords.lng,
         currentAltitude: startCoords.altitude,
         coordSource: startCoords.source,
+        lastQuickPingAt: startedAt,
         breadcrumbs: [
           {
             lat: startCoords.lat,
@@ -1315,28 +1206,38 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
             }),
             timestamp: startedAt,
             accuracy: startCoords.accuracy,
+            isQuickPing: true,
+            note: 'Check-In Ping',
           },
         ],
         telemetry: liveTelemetry,
         updatedAt: startedAt,
       };
 
-      await syncTrailSessionToCloudOrQueue(newSession, true);
+      const syncRes = await syncTrailSessionToCloudOrQueue(newSession, true);
+      setPendingSyncCount(await getQueuedTrailSessionCount());
 
       overdueFiredRef.current = false;
       autoStartFiredRef.current = false;
-      inactivity1FiredRef.current = false;
-      inactivity2FiredRef.current = false;
+      autoPingedOnOpenRef.current = true;
       setIsOverdue(false);
       setOverdueAlertReceipt(null);
       setAutoStartTriggeredBanner(null);
-      setInactivityStage1Active(false);
-      setInactivityStage2Active(false);
       setManualSosReceipt(null);
       setResumableSession(null);
       setActiveSession(newSession);
       setBreadcrumbs(newSession.breadcrumbs);
       setTimeRemainingSeconds(Math.round(parsedHours * 3600));
+      setQuickPingFeedback({
+        message: syncRes.queuedOffline
+          ? language === 'bm'
+            ? 'Daftar masuk disimpan luar talian — akan disegerakkan secara automatik apabila isyarat kembali.'
+            : 'Check-in saved offline — will auto-sync to your safety link when signal reconnects.'
+          : language === 'bm'
+            ? 'Daftar masuk & lokasi GPS disegerakkan.'
+            : 'Check-in & GPS checkpoint synced.',
+        queuedOffline: syncRes.queuedOffline,
+      });
       setPassportUnlocked(true);
 
       const alertRes = await sendInitialTrailCheckInAlert(newSession);
@@ -1349,6 +1250,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   const handleResumeCachedSession = () => {
     if (!resumableSession) return;
     const restoredBreadcrumbs = resumableSession.breadcrumbs || [];
+    autoPingedOnOpenRef.current = false;
     setActiveSession(resumableSession);
     setHikerName(resumableSession.hikerName);
     setGroupSize(String(resumableSession.groupSize));
@@ -1382,24 +1284,61 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     }
     overdueFiredRef.current = Boolean(resumableSession.overdueAlertSent);
     autoStartFiredRef.current = Boolean(resumableSession.autoStartAlertSent);
-    inactivity1FiredRef.current = Boolean(resumableSession.inactivityAlert1Sent);
-    inactivity2FiredRef.current = Boolean(resumableSession.inactivityAlert2Sent);
-    lastMovementMsRef.current = resumableSession.lastMovementAt
-      ? new Date(resumableSession.lastMovementAt).getTime()
-      : Date.now();
     setIsOverdue(resumableSession.status === 'overdue');
-    setInactivityStage1Active(
-      Boolean(resumableSession.inactivityAlert1Sent && !resumableSession.inactivityAlert1DismissedAt)
-    );
-    setInactivityStage2Active(Boolean(resumableSession.inactivityAlert2Sent));
     const matchedTrail = CAMERON_TRAILS.find((t) => t.id === resumableSession.trailId);
     if (matchedTrail) {
       setSelectedTrail(matchedTrail);
       setSelectedTrailId(matchedTrail.id);
-      setIsPlannedTrailEnabled(true);
     }
     setIsConfirmingResetSession(false);
     setPassportUnlocked(true);
+  };
+
+  // Manual Quick Ping at trail junctions or summits (saves offline + auto-syncs on signal)
+  const handleQuickPingNow = async () => {
+    if (!activeSession || isQuickPinging) return;
+    setIsQuickPinging(true);
+    try {
+      const resolved = await resolveBestSosCoordinates(5000);
+      const liveTel = await readLiveDeviceTelemetry(resolved.accuracy);
+      setTelemetry(liveTel);
+      setCurrentGps({
+        lat: resolved.lat,
+        lng: resolved.lng,
+        altitude: resolved.altitude,
+        accuracy: resolved.accuracy ?? 15,
+        hasRealFix: resolved.source === 'live_gps' || resolved.source === 'map_watch',
+      });
+
+      const res = await recordQuickPingLocation(
+        activeSession,
+        {
+          lat: resolved.lat,
+          lng: resolved.lng,
+          altitude: resolved.altitude,
+          accuracy: resolved.accuracy,
+          source: resolved.source,
+          note: 'Quick Ping',
+        },
+        liveTel
+      );
+
+      setActiveSession(res.session);
+      setBreadcrumbs(res.session.breadcrumbs);
+      setPendingSyncCount(await getQueuedTrailSessionCount());
+      setQuickPingFeedback({
+        message: res.queuedOffline
+          ? language === 'bm'
+            ? 'Quick Ping disimpan luar talian — disegerak automatik bila isyarat ada.'
+            : 'Quick Ping saved offline — will auto-sync when cellular data reconnects.'
+          : language === 'bm'
+            ? 'Quick Ping lokasi terkini berjaya disegerak!'
+            : 'Quick Ping location synced to your tracking link!',
+        queuedOffline: res.queuedOffline,
+      });
+    } finally {
+      setIsQuickPinging(false);
+    }
   };
 
   // Record Trail Toggle -> Prompt WhatsApp/SMS Start Alert & Arm 5-Min Auto-Trigger Failsafe
@@ -1418,11 +1357,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
       }
       return;
     }
-
-    const motionAllowed = await requestMotionSensorPermissionIfNeeded();
-    if (motionAllowed) setMotionSensorSupported(true);
-
-    lastMovementMsRef.current = Date.now();
 
     const fix = currentGps.hasRealFix
       ? { lat: currentGps.lat, lng: currentGps.lng, altitude: currentGps.altitude }
@@ -1470,7 +1404,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         lastKnownLng: fix.lng,
         lastKnownCoords: `${fix.lat.toFixed(6)}, ${fix.lng.toFixed(6)}`,
         currentAltitude: fix.altitude,
-        lastMovementAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await persistSessionProgress(updated, true);
@@ -1492,16 +1425,14 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     setShowStartPromptModal(false);
     setStartFailsafeRemainingSec(FIVE_MINUTES_SEC);
     setAutoStartTriggeredBanner(null);
-    setInactivityStage1Active(false);
-    setInactivityStage2Active(false);
-    setStillnessSeconds(0);
     setTimeRemainingSeconds(0);
     setInitialAlertResult(null);
+    setQuickPingFeedback(null);
     setIsIceCardExpandedMobile(false);
     setCopiedSos(false);
     setCopiedTrackLink(false);
 
-    // Clear all Safety Passport form fields & turn Initial Planned Trail OFF
+    // Clear all Check-In form fields
     setHikerName('');
     setGroupSize('');
     setEmergencyContactName('');
@@ -1509,7 +1440,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     setExpectedHours('');
     setSelectedTrailId('');
     setSelectedTrail(CAMERON_TRAILS[0]);
-    setIsPlannedTrailEnabled(false);
     setFormError(null);
 
     // Reset map & active monitoring state
@@ -1527,8 +1457,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     setPassportUnlocked(false);
     overdueFiredRef.current = false;
     autoStartFiredRef.current = false;
-    inactivity1FiredRef.current = false;
-    inactivity2FiredRef.current = false;
+    autoPingedOnOpenRef.current = false;
   };
 
   const handleCheckOutSafely = async () => {
@@ -1538,7 +1467,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
     resetTrailUiSessionState();
   };
 
-  // Reset active session, switch off SOS Alert & timers, and clear Safety Passport setup
+  // Reset active session, switch off SOS Alert & timers, and return to Quick Trail Check-In form
   const handleResetToSafetyPassport = async () => {
     const cached = activeSession || getCachedActiveTrailSession();
     resetTrailUiSessionState();
@@ -1809,117 +1738,75 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
   return (
     <div className="fixed inset-0 z-[150] bg-stone-950 flex flex-col overflow-hidden animate-in fade-in duration-200">
       <div className="w-full h-[100dvh] bg-stone-950 flex flex-col overflow-hidden relative">
-        {/* Clean Single-Row Modal Header */}
-        <div className="shrink-0 z-30 flex items-center justify-between gap-2 px-3.5 sm:px-5 py-3 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-              <Compass className="w-5 h-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono font-bold text-stone-300 whitespace-normal break-words leading-tight">
-                <span className="text-emerald-400 uppercase">TRAIL SAFETY</span>
-                <span>•</span>
-                <span className="inline-flex items-center gap-1">
-                  {telemetry.isOnline ? (
-                    <Wifi className="w-3 h-3 text-emerald-400 shrink-0" />
-                  ) : (
-                    <WifiOff className="w-3 h-3 text-amber-400 shrink-0" />
-                  )}
-                  <span>{telemetry.isOnline ? telemetry.effectiveType.toUpperCase() : 'OFFLINE'}</span>
-                </span>
-                {telemetry.batteryPercent !== null && (
-                  <>
-                    <span>•</span>
-                    <span className="inline-flex items-center gap-1">
-                      {telemetry.isCharging ? (
-                        <BatteryCharging className="w-3 h-3 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Battery className="w-3 h-3 text-amber-300 shrink-0" />
-                      )}
-                      <span>{telemetry.batteryPercent}%</span>
-                    </span>
-                  </>
+        {/* Clean Full-Width Top Status Strip + Single-Line Title & Action Row */}
+        <div className="shrink-0 z-30 flex flex-col gap-2 px-3.5 sm:px-5 pt-[max(0.65rem,env(safe-area-inset-top))] pb-2.5 border-b border-white/10 bg-stone-900/95 backdrop-blur-md">
+          {/* Row 1: Stretches edge-to-edge from top-left to top-right */}
+          <div className="w-full flex items-center justify-between gap-2 text-[10px] font-mono font-bold text-stone-300 leading-none">
+            <span className="text-emerald-400 uppercase tracking-wider whitespace-nowrap">
+              {language === 'bm' ? 'JARINGAN KESELAMATAN PERCUMA' : 'FREE SAFETY NET'}
+            </span>
+            <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+              <span className="text-stone-500">•</span>
+              <span className="inline-flex items-center gap-1">
+                {telemetry.isOnline ? (
+                  <Wifi className="w-3 h-3 text-emerald-400 shrink-0" />
+                ) : (
+                  <WifiOff className="w-3 h-3 text-amber-400 shrink-0" />
                 )}
-              </div>
-              <h2 className="text-sm sm:text-lg font-heading font-black text-stone-100 tracking-tight whitespace-normal break-words leading-tight mt-0.5">
-                {language === 'bm' ? 'Highland Trails — Keselamatan & Peta GPS' : 'Highland Trail Safety & Map'}
-              </h2>
+                <span>
+                  {telemetry.isOnline
+                    ? telemetry.effectiveType.toUpperCase()
+                    : language === 'bm'
+                    ? 'LUAR TALIAN'
+                    : 'OFFLINE'}
+                </span>
+              </span>
+              {telemetry.batteryPercent !== null && (
+                <>
+                  <span className="text-stone-500">•</span>
+                  <span className="inline-flex items-center gap-1">
+                    {telemetry.isCharging ? (
+                      <BatteryCharging className="w-3 h-3 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Battery className="w-3 h-3 text-amber-300 shrink-0" />
+                    )}
+                    <span>{telemetry.batteryPercent}%</span>
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {!passportUnlocked && (
+          {/* Row 2: Single-Line Title + Controls (no duplicate download icon) */}
+          <div className="w-full flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                <Compass className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <h2 className="no-mobile-clamp text-[15px] sm:text-lg font-heading font-black text-stone-100 tracking-tight whitespace-nowrap leading-none">
+                {language === 'bm' ? 'Daftar Jejak Pantas' : 'Quick Trail Check-In'}
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <ModulePwaControls
+                moduleName="trails"
+                language={language}
+                onNavigateMainPage={onNavigateMainPage}
+              />
               <button
                 type="button"
-                onClick={handlePreDownloadOfflineCache}
-                disabled={isPreDownloading}
-                className="min-h-[40px] min-w-[40px] px-2.5 sm:px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center justify-center gap-1.5 border border-white/10 cursor-pointer shadow-sm"
-                aria-label="Cache offline trail map"
+                onClick={onClose}
+                className="min-h-[36px] min-w-[36px] sm:min-h-[40px] sm:min-w-[40px] rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 hover:border-emerald-500/50 transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <Download
-                  className={`w-4 h-4 text-emerald-400 ${isPreDownloading ? 'animate-bounce' : ''}`}
-                />
-                <span className="hidden sm:inline">
-                  {isPreDownloading ? `${downloadProgress}%` : cacheVerified ? 'Map Cached' : 'Cache Map'}
-                </span>
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
-            )}
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-[40px] min-w-[40px] rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 hover:border-emerald-500/50 transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            </div>
           </div>
         </div>
 
-        {/* Stage 1 & Stage 2 Motion Stillness Dead-Man Banners */}
-        {inactivityStage1Active && !inactivityStage2Active && (
-          <div className="mx-3.5 sm:mx-5 mt-3 p-3.5 rounded-2xl bg-amber-950/90 border-2 border-amber-400 text-amber-100 space-y-2 shrink-0">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-amber-200">
-                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 animate-bounce" />
-                <span>ARE YOU OK? 15 MINUTES OF NO MOVEMENT DETECTED</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleDismissStillnessWarning}
-                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg cursor-pointer"
-              >
-                I&apos;m OK — Reset Timer
-              </button>
-            </div>
-            <p className="text-xs text-amber-100/90 leading-relaxed">
-              Zero phone motion or GPS displacement detected for 15 minutes. Your Emergency Contact ({emergencyContact}) was alerted. Critical escalation runs at 30 minutes if not dismissed.
-            </p>
-          </div>
-        )}
-
-        {inactivityStage2Active && (
-          <div className="mx-3.5 sm:mx-5 mt-3 p-3.5 rounded-2xl bg-rose-950/95 border-2 border-rose-500 text-rose-100 space-y-2 shrink-0 animate-pulse">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-white">
-                <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
-                <span>CRITICAL 30-MIN IMMOBILITY ESCALATION SENT</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleDismissStillnessWarning}
-                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer"
-              >
-                I&apos;m Safe — Cancel Alarm
-              </button>
-            </div>
-            <p className="text-xs text-rose-200 leading-relaxed">
-              30 minutes of zero movement detected. Exact last GPS, battery ({telemetry.batteryPercent ?? 'N/A'}%), and telemetry were escalated to ICE ({emergencyContact}) &amp; CamGo Admin.
-            </p>
-          </div>
-        )}
-
-        {/* Overdue Automated Alert Banner */}
+        {/* Overdue Check-Out Automated Alert Banner */}
         {isOverdue && (
           <div className="mx-3.5 sm:mx-5 mt-3 p-3.5 rounded-2xl bg-rose-950/90 border-2 border-rose-500 text-rose-100 space-y-2 shrink-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1927,20 +1814,22 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
                 <span>
                   {language === 'bm'
-                    ? 'AMARAN TAMAT MASA AUTOMATIK DIHANTAR!'
-                    : 'OVERDUE ALERT TRIGGERED TO ICE CONTACT & CAMGO ADMIN!'}
+                    ? 'AMARAN DAFTAR KELUAR LEWAT DIHANTAR KE KENALAN KECEMASAN!'
+                    : 'OVERDUE CHECK-OUT ALERT SENT TO EMERGENCY CONTACT!'}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={handleCheckOutSafely}
-                className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer"
               >
-                I Am Safe — Check Out
+                {language === 'bm' ? 'Daftar Keluar / Saya Selamat' : "Check-Out / I'm Safely Out"}
               </button>
             </div>
             <p className="text-xs text-rose-200/90 leading-relaxed">
-              Expected return duration expired. Last GPS coordinates &amp; telemetry dispatched to Rescue Admin and Emergency Contact ({activeSession?.emergencyContact}).
+              {language === 'bm'
+                ? `Tempoh jangkaan pulang telah tamat. Lokasi terakhir anda telah dihantar kepada ${activeSession?.emergencyContact}.`
+                : `Expected return duration expired without check-out. Your last known GPS location has been prepared for your Emergency Contact (${activeSession?.emergencyContact}).`}
             </p>
             {overdueAlertReceipt && (
               <div className="flex flex-wrap gap-2 pt-1">
@@ -1949,7 +1838,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Send Overdue SMS</span>
+                  <span>{language === 'bm' ? 'Hantar SMS Kecemasan' : 'Send Overdue SMS'}</span>
                 </a>
                 <a
                   href={overdueAlertReceipt.whatsappUrl}
@@ -1958,7 +1847,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>WhatsApp ICE</span>
+                  <span>{language === 'bm' ? 'WhatsApp Kenalan' : 'WhatsApp Contact'}</span>
                 </a>
               </div>
             )}
@@ -2028,44 +1917,61 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-white/10 pb-3">
-                <div className="flex items-start sm:items-center gap-2.5 min-w-0">
-                  <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30 shrink-0">
-                    <ShieldAlert className="w-5 h-5" />
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-white/10 pb-3.5">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0 mt-0.5">
+                    <Compass className="w-5 h-5" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 whitespace-normal break-words">
-                      {language === 'bm' ? 'Protokol Keselamatan Utama' : 'Safety First Protocol'}
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/35 text-[10px] font-mono font-bold text-emerald-300">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>
+                          {currentGps.hasRealFix
+                            ? `${language === 'bm' ? 'GPS Sedia' : 'GPS Ready'} (±${currentGps.accuracy}m)`
+                            : language === 'bm'
+                            ? 'GPS Sedia'
+                            : 'GPS Ready'}
+                        </span>
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-stone-400">
+                        {language === 'bm' ? 'Mod Tetamu Segera' : 'Instant Guest Mode'}
+                      </span>
                     </div>
-                    <h3 className="text-base sm:text-lg font-heading font-black text-white leading-tight whitespace-normal break-words">
+                    <h3 className="text-base sm:text-xl font-heading font-black text-white leading-tight whitespace-normal break-words">
                       {language === 'bm'
-                        ? 'Pasport Keselamatan & Tetapan SOS Wajib'
-                        : 'Mandatory Safety Passport & SOS Setup'}
+                        ? 'Daftar Jejak Pantas (Jaringan Keselamatan Percuma)'
+                        : 'Quick Trail Check-In (Free Safety Net)'}
                     </h3>
+                    <p className="text-xs sm:text-sm text-stone-300 leading-relaxed">
+                      {language === 'bm'
+                        ? 'Mahu mendaki? Tiada isyarat di hadapan. Tetapkan Jaringan Keselamatan Percuma 30-Saat untuk keluarga anda.'
+                        : 'Going for a hike? No signal ahead. Set a Free 30-Second Safety Net for your family.'}
+                    </p>
                   </div>
                 </div>
 
-                {!currentUser ? (
-                  <button
-                    type="button"
-                    onClick={onOpenAuth}
-                    className="self-start sm:self-auto min-h-[40px] px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-white/10 text-xs font-bold text-emerald-300 flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-normal"
-                  >
-                    <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                    <span>Sign In (Optional Sync)</span>
-                  </button>
-                ) : (
-                  <div className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs text-emerald-300 font-bold max-w-full">
+                {currentUser ? (
+                  <div className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs text-emerald-300 font-bold max-w-full shrink-0">
                     <UserCheck className="w-3.5 h-3.5 shrink-0" />
                     <span className="break-all whitespace-normal">{currentUser.email}</span>
                   </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onOpenAuth}
+                    className="self-start sm:self-auto min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 border border-white/10 text-[11px] font-semibold text-stone-300 flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>{language === 'bm' ? 'Log Masuk (Pilihan)' : 'Sign In (Optional)'}</span>
+                  </button>
                 )}
               </div>
 
               <p className="text-xs text-stone-300 leading-relaxed">
                 {language === 'bm'
-                  ? 'Lengkapkan maklumat kecemasan anda terlebih dahulu sebelum membuka peta laluan. Kenalan Kecemasan anda juga akan menerima pautan Peta Jejak Langsung.'
-                  : 'Complete your Safety Passport to unlock trail selection and open the live GPS trail map. CamGo tracks breadcrumbs, motion stillness alerts, battery, and creates a Live Footprint Tracker link for your Emergency Contact.'}
+                  ? 'Tiada pendaftaran diperlukan. Rekod daftar masuk, koordinat Quick Ping, dan pemasa jangkaan pulang anda disimpan di telefon walaupun tiada isyarat, dan disegerak automatik apabila rangkaian kembali.'
+                  : 'No registration or email required. Your check-in record, Quick Ping locations, and overdue return timer save locally even with zero signal and auto-sync when cellular data reconnects, giving your Emergency Contact a live tracking link.'}
               </p>
 
               {/* Collapsible Forestry Permit (HSK) & Malim Gunung (MGP) Rules Capsule (Collapsed by default) */}
@@ -2152,11 +2058,63 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 </div>
               )}
 
-              {/* Required Fields — Clean Single-Column Stack on Mobile, 2-Column on Desktop */}
+              {/* Step 1: Unlocked Trail Selector at Top of Form (Auto-fills Expected Return Duration) */}
+              <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-emerald-500/35 space-y-2">
+                <label
+                  htmlFor="camgo-select-your-trail"
+                  className="block text-[11px] font-bold uppercase text-emerald-300"
+                >
+                  {language === 'bm' ? 'Pilih Laluan Anda *' : 'Select Your Trail *'}
+                </label>
+                <select
+                  id="camgo-select-your-trail"
+                  required
+                  value={selectedTrailId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedTrailId(val);
+                    const t = CAMERON_TRAILS.find((x) => x.id === val);
+                    if (t) {
+                      setSelectedTrail(t);
+                      setExpectedHours(computeRecommendedReturnHours(t.estDurationHrs));
+                    }
+                  }}
+                  className="w-full max-w-full min-h-[48px] px-3 py-2.5 rounded-xl border bg-stone-950 border-emerald-500/45 text-white font-semibold text-xs sm:text-sm focus:outline-none focus:border-emerald-400 cursor-pointer transition-colors"
+                >
+                  <option value="">
+                    {language === 'bm' ? '-- Pilih laluan anda --' : '-- Choose your hiking trail --'}
+                  </option>
+                  {CAMERON_TRAILS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} — {t.difficulty} ({t.distanceKm}km • {t.estDurationHrs})
+                    </option>
+                  ))}
+                </select>
+                {selectedTrailId && (
+                  <div className="text-[11px] text-stone-300 whitespace-normal break-words leading-snug space-y-0.5 pt-0.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {selectedTrail.isAdminTest && (
+                        <span className="px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-sky-300 font-mono font-bold text-[10px]">
+                          [Admin Test]
+                        </span>
+                      )}
+                      <span className="font-bold text-emerald-300">{selectedTrail.name}</span>
+                      <span>
+                        • {selectedTrail.difficulty} ({selectedTrail.distanceKm}km • {selectedTrail.estDurationHrs})
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-stone-400">
+                      {selectedTrail.trailheadName} → {selectedTrail.peakName || 'Finish'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Required Check-In Fields — Clean Single-Column Stack on Mobile, 2-Column on Desktop */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    {language === 'bm' ? 'Nama Pendaki / Ketua *' : 'Hiker / Lead Name *'}
+                    {language === 'bm' ? 'Nama Pendaki *' : 'Hiker Name *'}
                   </label>
                   <input
                     type="text"
@@ -2170,35 +2128,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    {language === 'bm' ? 'Nama Kenalan Kecemasan (ICE) *' : 'Emergency Contact Name (ICE) *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={emergencyContactName}
-                    onChange={(e) => setEmergencyContactName(e.target.value)}
-                    placeholder={language === 'bm' ? 'Cth: Siti (Pasangan / Waris)' : 'e.g., Siti (Spouse / Next of Kin)'}
-                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    {language === 'bm' ? 'No. Telefon Kecemasan (ICE) *' : 'Emergency Contact Phone (ICE) *'}
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={emergencyContact}
-                    onChange={(e) => setEmergencyContact(e.target.value)}
-                    placeholder={language === 'bm' ? 'Cth: +60123456789' : 'e.g., +60123456789'}
-                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
-                    {language === 'bm' ? 'Bilangan Ahli (Pendaki) *' : 'Group Size (Hikers) *'}
+                    {language === 'bm' ? 'Bilangan Ahli *' : 'Party Size *'}
                   </label>
                   <input
                     type="number"
@@ -2208,6 +2138,34 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     placeholder={language === 'bm' ? 'Cth: 2' : 'e.g., 2'}
                     value={groupSize}
                     onChange={(e) => setGroupSize(e.target.value)}
+                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
+                    {language === 'bm' ? 'Nama Kenalan Kecemasan *' : 'Emergency Contact Name *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={emergencyContactName}
+                    onChange={(e) => setEmergencyContactName(e.target.value)}
+                    placeholder={language === 'bm' ? 'Cth: Siti (Pasangan / Waris)' : 'e.g., Siti (Spouse / Family)'}
+                    className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-stone-300 mb-1">
+                    {language === 'bm' ? 'No. Telefon Kenalan Kecemasan *' : 'Emergency Contact Phone *'}
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={emergencyContact}
+                    onChange={(e) => setEmergencyContact(e.target.value)}
+                    placeholder={language === 'bm' ? 'Cth: +60123456789' : 'e.g., +60123456789'}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
                   />
                 </div>
@@ -2222,163 +2180,24 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     min={0.5}
                     max={48}
                     required
-                    placeholder={language === 'bm' ? 'Cth: 3' : 'e.g., 3'}
+                    placeholder={language === 'bm' ? 'Cth: 3.0' : 'e.g., 3.0'}
                     value={expectedHours}
                     onChange={(e) => setExpectedHours(e.target.value)}
                     className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl bg-stone-900 border border-white/15 text-white font-semibold text-sm focus:outline-none focus:border-emerald-400"
                   />
-                </div>
-              </div>
-
-              {/* Live Telemetry Sensor Readiness Strip */}
-              <div className="p-3 rounded-2xl bg-stone-900 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 text-stone-200">
-                  <Activity className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="font-bold">{language === 'bm' ? 'Sensor Langsung Sedia' : 'Live Sensors Ready'}</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-stone-300">
-                  <span>
-                    GPS:{' '}
-                    <strong className="text-emerald-400">
-                      {currentGps.hasRealFix ? `${language === 'bm' ? 'Terkunci' : 'Locked'} (±${currentGps.accuracy}m)` : (language === 'bm' ? 'Mengesan...' : 'Acquiring...')}
-                    </strong>
-                  </span>
-                  <span>
-                    {language === 'bm' ? 'Bateri:' : 'Battery:'}{' '}
-                    <strong className="text-amber-300">
-                      {telemetry.batteryPercent !== null ? `${telemetry.batteryPercent}%` : (language === 'bm' ? 'Sedia' : 'Ready')}
-                    </strong>
-                  </span>
-                  <span>
-                    {language === 'bm' ? 'Isyarat:' : 'Signal:'} <strong className="text-sky-300">{telemetry.signalLabel}</strong>
-                  </span>
-                </div>
-              </div>
-
-              {/* Gated Initial Planned Trail Toggle (OFF by default) & Selector */}
-              <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-white/15 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <label
-                    htmlFor="camgo-initial-planned-trail"
-                    className="text-[11px] font-bold uppercase text-stone-200 flex items-center gap-1.5"
-                  >
-                    {isPassportFieldsValid && isPlannedTrailEnabled ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    ) : (
-                      <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    )}
-                    <span>{language === 'bm' ? 'Laluan Awal Dirancang' : 'Initial Planned Trail'}</span>
-                  </label>
-
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-[10px] font-mono font-bold ${
-                        !isPassportFieldsValid
-                          ? 'text-amber-300'
-                          : isPlannedTrailEnabled
-                          ? 'text-emerald-400'
-                          : 'text-stone-400'
-                      }`}
-                    >
-                      {!isPassportFieldsValid
-                        ? (language === 'bm' ? 'Isi ruangan * dahulu' : 'Fill * fields first')
-                        : isPlannedTrailEnabled
-                        ? 'ON'
-                        : 'OFF'}
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isPlannedTrailEnabled}
-                      aria-label="Toggle Initial Planned Trail"
-                      disabled={!isPassportFieldsValid}
-                      onClick={() => {
-                        if (!isPassportFieldsValid) return;
-                        setIsPlannedTrailEnabled((prev) => {
-                          const next = !prev;
-                          if (!next) {
-                            setSelectedTrailId('');
-                            setSelectedTrail(CAMERON_TRAILS[0]);
-                          }
-                          return next;
-                        });
-                      }}
-                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
-                        !isPassportFieldsValid
-                          ? 'bg-stone-800 border-white/10 opacity-50 cursor-not-allowed'
-                          : isPlannedTrailEnabled
-                          ? 'bg-emerald-500 border-emerald-300 cursor-pointer'
-                          : 'bg-stone-800 border-white/20 cursor-pointer'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                          isPlannedTrailEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {isPlannedTrailEnabled && isPassportFieldsValid ? (
-                  <>
-                    <select
-                      id="camgo-initial-planned-trail"
-                      value={selectedTrailId}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSelectedTrailId(val);
-                        const t = CAMERON_TRAILS.find((x) => x.id === val);
-                        if (t) {
-                          setSelectedTrail(t);
-                        }
-                      }}
-                      className="w-full max-w-full min-h-[48px] px-3 py-2.5 rounded-xl border bg-stone-950 border-emerald-500/45 text-white font-semibold text-xs sm:text-sm focus:outline-none focus:border-emerald-400 cursor-pointer transition-colors"
-                    >
-                      <option value="">
-                        {language === 'bm'
-                          ? '-- Pilih laluan yang dirancang --'
-                          : '-- Select planned trail --'}
-                      </option>
-                      {CAMERON_TRAILS.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} — {t.difficulty} ({t.distanceKm}km • {t.estDurationHrs})
-                        </option>
-                      ))}
-                    </select>
-                    {selectedTrailId && (
-                      <div className="text-[11px] text-stone-300 whitespace-normal break-words leading-snug space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {selectedTrail.isAdminTest && (
-                            <span className="px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-sky-300 font-mono font-bold text-[10px]">
-                              [Admin Test]
-                            </span>
-                          )}
-                          <span className="font-bold text-emerald-300">{selectedTrail.name}</span>
-                          <span>
-                            • {selectedTrail.difficulty} ({selectedTrail.distanceKm}km • {selectedTrail.estDurationHrs})
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-stone-400">
-                          {selectedTrail.trailheadName} → {selectedTrail.peakName || 'Finish'}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-[11px] text-stone-400 leading-snug">
+                  <p className="mt-1 text-[11px] text-stone-400">
                     {language === 'bm'
-                      ? 'Pilihan laluan awal dimatikan secara lalai. Lengkapkan butiran wajib di atas untuk mengaktifkannya.'
-                      : 'Initial Planned Trail is OFF by default. Complete the mandatory fields above and toggle ON to choose a specific trail.'}
+                      ? 'Diisi automatik dengan penimbal +1 jam apabila laluan dipilih (boleh diubah).'
+                      : 'Auto-filled with trail duration + 1 hr safety buffer when you select a trail (editable).'}
                   </p>
-                )}
+                </div>
               </div>
 
               <div className="flex items-center gap-1.5 sm:gap-2.5 w-full min-w-0">
                 <button
                   type="button"
                   onClick={handleResetToSafetyPassport}
-                  className="no-mobile-clamp min-h-[42px] sm:min-h-[52px] px-2.5 sm:px-4 py-2 sm:py-3.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/40 font-heading font-bold text-[10px] sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
+                  className="no-mobile-clamp min-h-[46px] sm:min-h-[52px] px-3 sm:px-4 py-2 sm:py-3.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/40 font-heading font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
                 >
                   <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                   <span>{language === 'bm' ? 'Set Semula' : 'Reset'}</span>
@@ -2387,17 +2206,19 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 <button
                   type="submit"
                   disabled={isSubmittingPassport || !canSubmitPassport}
-                  className="no-mobile-clamp flex-1 min-w-0 min-h-[42px] sm:min-h-[52px] py-2 sm:py-3.5 px-2.5 sm:px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-heading font-black text-[10.5px] min-[380px]:text-[11px] sm:text-base shadow-xl shadow-emerald-950 flex items-center justify-center gap-1 sm:gap-2 cursor-pointer transition-all active:scale-[0.99]"
+                  className="no-mobile-clamp flex-1 min-w-0 min-h-[46px] sm:min-h-[52px] py-2 sm:py-3.5 px-3 sm:px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-heading font-black text-xs sm:text-base shadow-xl shadow-emerald-950 flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer transition-all active:scale-[0.99]"
                 >
-                  <ShieldAlert className="w-3.5 h-3.5 sm:w-5 sm:h-5 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
                   <span className="truncate whitespace-nowrap">
                     {isSubmittingPassport
-                      ? 'Opening...'
+                      ? language === 'bm'
+                        ? 'Membuka...'
+                        : 'Checking In...'
                       : language === 'bm'
-                      ? 'Hantar Pasport Keselamatan'
-                      : 'Submit Safety Passport'}
+                      ? 'Mulakan Daftar Jejak'
+                      : 'Start Safe Check-In'}
                   </span>
-                  <ChevronRight className="w-3.5 h-3.5 sm:w-5 sm:h-5 shrink-0" />
+                  <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
                 </button>
               </div>
             </form>
@@ -2406,7 +2227,21 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
           {/* ==================== CLEANED-UP INTERACTIVE TRAIL MAP & LIVE TELEMETRY VIEW ==================== */}
           {passportUnlocked && (
             <div className="space-y-3 animate-in fade-in duration-200">
-              {/* Trail Check-In Notification & ICE Alert Card (Mobile Capsule -> Full-Page Modal | Desktop Inline) */}
+              {(isRecording || sosActive || trailGpsErrorCode !== null) && (
+                <MobileTrackingHelperBanner
+                  language={language}
+                  gpsStatus={trailGpsStatus}
+                  errorCode={trailGpsErrorCode}
+                  errorMessage={trailGpsErrorMessage}
+                  lastFixAt={trailLastFixAt}
+                  wakeLockSupported={trailWakeLockSupported}
+                  wakeLockActive={trailWakeLockActive}
+                  keepAwakeEnabled={trailKeepAwakeEnabled}
+                  onToggleKeepAwake={setTrailKeepAwakeEnabled}
+                  onRetryGps={forceRefreshTrailGps}
+                />
+              )}
+              {/* Trail Check-In Notification & Emergency Contact Card (Mobile Capsule -> Full-Page Modal | Desktop Inline) */}
               {initialAlertResult && (
                 <>
                   {/* Mobile Capsule Trigger */}
@@ -2422,12 +2257,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shrink-0">
-                          <Send className="w-3.5 h-3.5 animate-pulse" />
+                          <Send className="w-3.5 h-3.5" />
                         </span>
                         <span className="text-[11px] font-bold text-white truncate">
                           {language === 'bm'
-                            ? `Notifikasi ICE • ${activeSession?.emergencyContactName || emergencyContactName || 'Kenalan'} (Ketik Buka)`
-                            : `ICE Alert Capsule • ${activeSession?.emergencyContactName || emergencyContactName || 'Contact'} (Tap)`}
+                            ? `Kongsi Pautan • ${activeSession?.emergencyContactName || emergencyContactName || 'Kenalan'} (Ketik Buka)`
+                            : `Share Safety Link • ${activeSession?.emergencyContactName || emergencyContactName || 'Emergency Contact'} (Tap)`}
                         </span>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -2441,7 +2276,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                             setInitialAlertResult(null);
                           }}
                           className="p-1 rounded-full hover:bg-white/10 text-stone-400 hover:text-white cursor-pointer"
-                          title="Dismiss alert capsule"
+                          title="Dismiss notification banner"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -2454,16 +2289,16 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
                       <div className="flex items-center gap-2">
                         <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                          <Send className="w-4 h-4 animate-pulse" />
+                          <Send className="w-4 h-4" />
                         </span>
                         <div>
                           <span className="text-[10px] font-mono font-black uppercase text-emerald-400 tracking-wider">
-                            {language === 'bm' ? 'Pemberitahuan Kecemasan ICE' : 'ICE Emergency Notification'}
+                            {language === 'bm' ? 'Pemberitahuan Kenalan Kecemasan' : 'Emergency Notification'}
                           </span>
                           <h4 className="text-xs font-bold text-white">
                             {language === 'bm'
-                              ? `Amaran Daftar Jejak Sedia Untuk: ${activeSession?.emergencyContactName || emergencyContactName} (${activeSession?.emergencyContact || emergencyContact})`
-                              : `Trail Check-In Alert Ready For: ${activeSession?.emergencyContactName || emergencyContactName} (${activeSession?.emergencyContact || emergencyContact})`}
+                              ? `Daftar Jejak Sedia Untuk: ${activeSession?.emergencyContactName || emergencyContactName} (${activeSession?.emergencyContact || emergencyContact})`
+                              : `Check-In Safety Link Ready For: ${activeSession?.emergencyContactName || emergencyContactName} (${activeSession?.emergencyContact || emergencyContact})`}
                           </h4>
                         </div>
                       </div>
@@ -2471,7 +2306,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         type="button"
                         onClick={() => setInitialAlertResult(null)}
                         className="p-1 rounded-lg hover:bg-white/10 text-stone-400 hover:text-white cursor-pointer"
-                        title="Dismiss alert card"
+                        title="Dismiss notification card"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -2479,8 +2314,8 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
                     <p className="text-[11px] text-stone-300 leading-snug">
                       {language === 'bm'
-                        ? 'Pautan jejak langsung dan koordinat mula telah dijana. Tekan WhatsApp atau SMS di bawah untuk menghantar amaran segera kepada kenalan kecemasan anda:'
-                        : 'Live footprint tracker link and trailhead coordinates generated. Tap WhatsApp or SMS below to dispatch your departure alert to your emergency contact:'}
+                        ? 'Pautan jejak langsung dan koordinat mula telah dijana. Tekan WhatsApp atau SMS di bawah untuk menghantar kepada kenalan kecemasan anda:'
+                        : 'Live tracking link and trailhead coordinates generated. Tap WhatsApp or SMS below to notify your Emergency Contact:'}
                     </p>
 
                     <div className="flex flex-wrap items-center gap-2 pt-0.5">
@@ -2492,7 +2327,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
                       >
                         <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                        <span>{language === 'bm' ? 'Hantar WhatsApp ke ICE' : 'Send WhatsApp to ICE'}</span>
+                        <span>{language === 'bm' ? 'WhatsApp Kenalan' : 'WhatsApp Contact'}</span>
                       </a>
                       <a
                         href={initialAlertResult.smsUrl}
@@ -2500,7 +2335,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
                       >
                         <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                        <span>{language === 'bm' ? 'Hantar SMS ke ICE' : 'Send SMS to ICE'}</span>
+                        <span>{language === 'bm' ? 'SMS Kenalan' : 'SMS Contact'}</span>
                       </a>
                       <button
                         type="button"
@@ -2508,17 +2343,24 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="min-h-[40px] px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-500/40 font-bold text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer active:scale-95 transition-all shrink-0"
                       >
                         <Share2 className="w-3.5 h-3.5 shrink-0" />
-                        <span>{copiedTrackLink ? (language === 'bm' ? 'Disalin!' : 'Copied!') : (language === 'bm' ? 'Salin Pautan' : 'Copy Link')}</span>
+                        <span>
+                          {copiedTrackLink
+                            ? language === 'bm'
+                              ? 'Disalin!'
+                              : 'Copied!'
+                            : language === 'bm'
+                            ? 'Salin Pautan'
+                            : 'Copy Tracking Link'}
+                        </span>
                       </button>
                     </div>
                   </div>
                 </>
               )}
 
-              {/* 5-Minute Record Trail Start Alert Card / Failsafe (Mobile Capsule -> Full-Page Modal | Desktop Inline) */}
+              {/* 5-Minute Record Trail Start Alert Card / Failsafe */}
               {showStartPromptModal && activeSession && (
                 <>
-                  {/* Mobile Capsule Trigger */}
                   <div className="sm:hidden">
                     <div
                       role="button"
@@ -2531,12 +2373,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="p-1 rounded-full bg-teal-500/20 text-teal-400 border border-teal-500/40 shrink-0">
-                          <Footprints className="w-3.5 h-3.5 animate-bounce" />
+                          <Footprints className="w-3.5 h-3.5" />
                         </span>
                         <span className="text-[11px] font-bold text-white truncate">
                           {language === 'bm'
-                            ? `Failsafe ICE • Beritahu ${activeSession.emergencyContactName || emergencyContactName}`
-                            : `5-Min ICE Alert • Notify ${activeSession.emergencyContactName || emergencyContactName}`}
+                            ? `Beritahu ${activeSession.emergencyContactName || emergencyContactName}`
+                            : `5-Min Alert • Notify ${activeSession.emergencyContactName || emergencyContactName}`}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -2550,16 +2392,15 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     </div>
                   </div>
 
-                  {/* Desktop Inline Card */}
                   <div className="hidden sm:block p-4 rounded-2xl bg-gradient-to-r from-teal-950 via-stone-900 to-stone-950 border-2 border-teal-400 text-stone-100 shadow-2xl space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
                       <div className="flex items-center gap-2">
                         <span className="p-1.5 rounded-lg bg-teal-500/20 text-teal-400 border border-teal-500/40">
-                          <Footprints className="w-4 h-4 animate-bounce" />
+                          <Footprints className="w-4 h-4" />
                         </span>
                         <div>
                           <span className="text-[10px] font-mono font-black uppercase text-teal-400 tracking-wider">
-                            {language === 'bm' ? 'Amaran Mula Jejak (Failsafe 5-Minit)' : 'Trail Start Alert (5-Min Failsafe)'}
+                            {language === 'bm' ? 'Amaran Mula Jejak (5-Minit)' : 'Trail Start Alert (5-Min Failsafe)'}
                           </span>
                           <h4 className="text-xs font-bold text-white">
                             {language === 'bm'
@@ -2575,15 +2416,15 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
                     <p className="text-[11px] text-stone-300 leading-snug">
                       {language === 'bm'
-                        ? `Hantar pautan jejak langsung anda kepada ${activeSession.emergencyContactName} (${activeSession.emergencyContact}). Failsafe akan menghantar amaran automatik sekiranya tidak dihantar.`
-                        : `Send your live footprint tracking link to ${activeSession.emergencyContactName} (${activeSession.emergencyContact}). Automated failsafe will alert ICE if not sent within 5 minutes.`}
+                        ? `Hantar pautan jejak langsung anda kepada ${activeSession.emergencyContactName} (${activeSession.emergencyContact}).`
+                        : `Send your live tracking link to ${activeSession.emergencyContactName} (${activeSession.emergencyContact}). Automated failsafe notifies your Emergency Contact if not sent within 5 minutes.`}
                     </p>
 
                     <div className="flex flex-wrap items-center gap-2 pt-0.5">
                       <a
                         href={buildWhatsAppLink(
                           activeSession.emergencyContact,
-                          `CAMGO TRAIL START: ${activeSession.hikerName} started recording ${activeSession.trailName}. Live Footprint: ${buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)} | GPS: https://www.google.com/maps?q=${activeSession.lastKnownLat},${activeSession.lastKnownLng}`
+                          `CAMGO TRAIL START: ${activeSession.hikerName} started recording ${activeSession.trailName}. Live Tracking Link: ${buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)} | GPS: https://www.google.com/maps?q=${activeSession.lastKnownLat},${activeSession.lastKnownLng}`
                         )}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -2591,18 +2432,18 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
                       >
                         <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                        <span>WhatsApp ICE</span>
+                        <span>{language === 'bm' ? 'WhatsApp Kenalan' : 'WhatsApp Contact'}</span>
                       </a>
                       <a
                         href={buildSmsLink(
                           activeSession.emergencyContact,
-                          `CAMGO TRAIL START: ${activeSession.hikerName} started recording ${activeSession.trailName}. Live Footprint: ${buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)} | GPS: https://www.google.com/maps?q=${activeSession.lastKnownLat},${activeSession.lastKnownLng}`
+                          `CAMGO TRAIL START: ${activeSession.hikerName} started recording ${activeSession.trailName}. Live Tracking Link: ${buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)} | GPS: https://www.google.com/maps?q=${activeSession.lastKnownLat},${activeSession.lastKnownLng}`
                         )}
                         onClick={handleMarkManualStartAlertSent}
                         className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all"
                       >
                         <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                        <span>SMS ICE</span>
+                        <span>{language === 'bm' ? 'SMS Kenalan' : 'SMS Contact'}</span>
                       </a>
                       <button
                         type="button"
@@ -2625,7 +2466,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       <span>
                         {language === 'bm'
                           ? '5-MINIT FAILSAFE: AMARAN MULA JEJAK TELAH DIHANTAR'
-                          : '5-MINUTE FAILSAFE: START ALERT DISPATCHED TO ICE'}
+                          : '5-MINUTE FAILSAFE: START ALERT DISPATCHED TO EMERGENCY CONTACT'}
                       </span>
                     </div>
                     <button
@@ -2648,7 +2489,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span>WhatsApp ICE</span>
+                        <span>{language === 'bm' ? 'WhatsApp Kenalan' : 'WhatsApp Contact'}</span>
                       </a>
                     )}
                     {autoStartTriggeredBanner.smsUrl && (
@@ -2657,7 +2498,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
-                        <span>SMS ICE</span>
+                        <span>{language === 'bm' ? 'SMS Kenalan' : 'SMS Contact'}</span>
                       </a>
                     )}
                   </div>
@@ -2812,7 +2653,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer"
                     >
                       <UserCheck className="w-4 h-4 text-teal-300 shrink-0" />
-                      <span className="truncate">{language === 'bm' ? 'Kenalan ICE' : 'ICE Contact'}</span>
+                      <span className="truncate">{language === 'bm' ? 'Kenalan Kecemasan' : 'Emergency Contact'}</span>
                     </button>
 
                     <button
@@ -2826,20 +2667,6 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       <Activity className="w-4 h-4 text-sky-300 shrink-0" />
                       <span className="truncate">{language === 'bm' ? 'Ringkasan Keselamatan' : 'Safety Brief'}</span>
                     </button>
-
-                    {displayedElevationPts.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsElevationExpanded((prev) => !prev);
-                          setIsToolsMenuOpen(false);
-                        }}
-                        className="min-h-[40px] px-2.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 border border-white/10 text-stone-200 text-xs font-semibold flex items-center gap-2 cursor-pointer"
-                      >
-                        <Mountain className="w-4 h-4 text-amber-300 shrink-0" />
-                        <span className="truncate">{language === 'bm' ? 'Ketinggian' : 'Elevation'}</span>
-                      </button>
-                    )}
 
                     <button
                       type="button"
@@ -3217,7 +3044,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     </div>
                   )}
 
-                  {/* Full-Screen Floating ICE Start Alert Prompt */}
+                  {/* Full-Screen Floating Contact Share Prompt */}
                   {isFullScreenMap && initialAlertResult && !isToolsMenuOpen && (
                     <div className="absolute top-16 left-3 z-20 max-w-[66%]">
                       <div
@@ -3229,9 +3056,10 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         }}
                         className="px-2.5 py-1.5 rounded-full bg-stone-950/85 border border-emerald-400/70 text-white shadow-xl backdrop-blur-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
                       >
-                        <Send className="w-3 h-3 text-emerald-400 shrink-0 animate-pulse" />
+                        <Send className="w-3 h-3 text-emerald-400 shrink-0" />
                         <span className="no-mobile-clamp text-[10px] font-bold text-emerald-200 truncate">
-                          ICE: {activeSession?.emergencyContactName || emergencyContactName || 'Alert'}
+                          {language === 'bm' ? 'Kenalan:' : 'Contact:'}{' '}
+                          {activeSession?.emergencyContactName || emergencyContactName || 'Alert'}
                         </span>
                         <button
                           type="button"
@@ -3247,7 +3075,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     </div>
                   )}
 
-                  {/* Merged Compact Frosted Terrain Scale & Safety Info Pill (Bottom-Left) */}
+                  {/* Compact Frosted Trail & Peak Elevation Pill (Bottom-Left) */}
                   <div
                     className={`absolute left-3 z-30 pointer-events-auto ${
                       isFullScreenMap ? 'bottom-[78px]' : 'bottom-3'
@@ -3262,24 +3090,25 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                     >
                       <Info className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                       <span className="no-mobile-clamp text-[10px] font-mono font-bold text-stone-900 tabular-nums">
-                        {selectedTrail.distanceKm} {language === 'bm' ? 'KM' : 'km'} ·{' '}
-                        {(() => {
-                          const endPt =
-                            selectedTrail.peakCoordinates ||
-                            selectedTrail.coordinates[selectedTrail.coordinates.length - 1];
-                          if (!endPt) return `${selectedTrail.maxElevationM}m`;
-                          const refLat = currentGps.hasRealFix
-                            ? currentGps.lat
-                            : selectedTrail.coordinates[0][0];
-                          const refLng = currentGps.hasRealFix
-                            ? currentGps.lng
-                            : selectedTrail.coordinates[0][1];
-                          const km =
-                            haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000;
-                          return language === 'bm'
-                            ? `${km.toFixed(1)} KM ke tamat · ${selectedTrail.maxElevationM}m`
-                            : `${km.toFixed(1)} km to finish · ${selectedTrail.maxElevationM}m`;
-                        })()}
+                        {selectedTrail.hasVerifiedGpx
+                          ? (() => {
+                              const endPt =
+                                selectedTrail.peakCoordinates ||
+                                selectedTrail.coordinates[selectedTrail.coordinates.length - 1];
+                              if (!endPt) return `${selectedTrail.distanceKm} km · ${selectedTrail.maxElevationM}m`;
+                              const refLat = currentGps.hasRealFix
+                                ? currentGps.lat
+                                : selectedTrail.coordinates[0][0];
+                              const refLng = currentGps.hasRealFix
+                                ? currentGps.lng
+                                : selectedTrail.coordinates[0][1];
+                              const km =
+                                haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000;
+                              return language === 'bm'
+                                ? `${km.toFixed(1)} KM ke tamat · ${selectedTrail.maxElevationM}m`
+                                : `${km.toFixed(1)} km to finish · ${selectedTrail.maxElevationM}m`;
+                            })()
+                          : `${selectedTrail.trailheadName} → ${selectedTrail.peakName || 'End'} · ${selectedTrail.maxElevationM}m`}
                       </span>
                     </button>
                   </div>
@@ -3314,23 +3143,19 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       <div className="rounded-full bg-white/90 backdrop-blur-2xl border border-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.22)] p-1.5 grid grid-cols-4 gap-1 no-mobile-clamp">
                         <button
                           type="button"
-                          onClick={handleToggleTorch}
-                          disabled={torchBusy}
-                          className={`min-h-[46px] rounded-full px-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all active:scale-95 ${
-                            torchMode !== 'off'
-                              ? 'bg-amber-500 text-stone-950 shadow-md'
-                              : 'hover:bg-stone-100 text-stone-800'
-                          }`}
+                          onClick={handleQuickPingNow}
+                          disabled={isQuickPinging}
+                          className="min-h-[46px] rounded-full px-1 py-1 bg-sky-50 hover:bg-sky-100 text-sky-800 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all active:scale-95"
                         >
-                          <Flashlight className="w-4 h-4 shrink-0" />
+                          <MapPin className="w-4 h-4 shrink-0" />
                           <span className="no-mobile-clamp text-[9px] font-bold leading-none whitespace-nowrap">
-                            {torchMode !== 'off'
+                            {isQuickPinging
                               ? language === 'bm'
-                                ? 'Lampu AKTIF'
-                                : 'Torch ON'
+                                ? 'Menyimpan'
+                                : 'Pinging...'
                               : language === 'bm'
-                              ? 'Lampu Suluh'
-                              : 'Phone Torch'}
+                              ? 'Quick Ping'
+                              : 'Quick Ping'}
                           </span>
                         </button>
 
@@ -3341,7 +3166,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                         >
                           <UserCheck className="w-4 h-4 shrink-0 text-emerald-700" />
                           <span className="no-mobile-clamp text-[9px] font-bold leading-none whitespace-nowrap">
-                            ICE
+                            {language === 'bm' ? 'Kenalan' : 'Contact'}
                           </span>
                         </button>
 
@@ -3374,22 +3199,12 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
                         <button
                           type="button"
-                          onClick={handleToggleRecording}
-                          className={`min-h-[46px] rounded-full px-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all active:scale-95 shadow-md ${
-                            isRecording
-                              ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse'
-                              : 'bg-[#0B663A] hover:bg-[#0d7a45] text-white'
-                          }`}
+                          onClick={handleCheckOutSafely}
+                          className="min-h-[46px] rounded-full px-1 py-1 bg-emerald-600 hover:bg-emerald-500 text-white flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all active:scale-95 shadow-md"
                         >
-                          <Footprints className="w-4 h-4 shrink-0" />
-                          <span className="no-mobile-clamp text-[9px] font-bold leading-none whitespace-nowrap">
-                            {isRecording
-                              ? `${language === 'bm' ? 'Jeda' : 'Pause'} (${breadcrumbs.length})`
-                              : breadcrumbs.length > 0
-                              ? `${language === 'bm' ? 'Rakam' : 'Rec'} (${breadcrumbs.length})`
-                              : language === 'bm'
-                              ? 'Rakam Denai'
-                              : 'Record Trail'}
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span className="no-mobile-clamp text-[9px] font-extrabold leading-none whitespace-nowrap">
+                            {language === 'bm' ? 'Selamat Keluar' : 'Check-Out'}
                           </span>
                         </button>
                       </div>
@@ -3398,10 +3213,68 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 </div>
               </div>
 
+              {/* Offline-First Quick Ping & Auto-Sync Bar */}
+              <div className="p-3 rounded-2xl bg-stone-900/85 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-white">
+                    <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span>
+                      {language === 'bm'
+                        ? 'Kongsi Lokasi Pantas (Quick Ping)'
+                        : 'Quick Ping Location Checkpoint'}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                        pendingSyncCount > 0 || !telemetry.isOnline
+                          ? 'bg-amber-950/70 text-amber-300 border-amber-500/40'
+                          : 'bg-emerald-950/70 text-emerald-300 border-emerald-500/35'
+                      }`}
+                    >
+                      {pendingSyncCount > 0 || !telemetry.isOnline
+                        ? language === 'bm'
+                          ? `Disimpan Luar Talian (${pendingSyncCount})`
+                          : `Saved Offline · Auto-syncs on signal`
+                        : language === 'bm'
+                        ? 'Segerak Awan Aktif'
+                        : 'Cloud Synced'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-stone-400 leading-snug">
+                    {quickPingFeedback
+                      ? quickPingFeedback.message
+                      : language === 'bm'
+                      ? 'Simpan lokasi GPS semasa di simpang atau puncak walaupun tanpa isyarat.'
+                      : 'Pin your current GPS at junctions or summits — saves offline and auto-syncs on signal.'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleQuickPingNow}
+                  disabled={isQuickPinging}
+                  className="min-h-[44px] px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0 active:scale-95 transition-all"
+                >
+                  <Crosshair className="w-4 h-4 shrink-0" />
+                  <span>
+                    {isQuickPinging
+                      ? language === 'bm'
+                        ? 'Menyimpan...'
+                        : 'Saving Ping...'
+                      : language === 'bm'
+                      ? 'Quick Ping Lokasi'
+                      : 'Quick Ping Now'}
+                  </span>
+                </button>
+              </div>
+
               {manualSosReceipt && (
                 <div className="p-3 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-xs space-y-2">
                   <div className="flex items-center justify-between text-emerald-300 font-bold text-[11px] sm:text-xs">
-                    <span>Smart SOS Automatically Dispatched to ICE &amp; Admin</span>
+                    <span>
+                      {language === 'bm'
+                        ? 'SOS Dihantar kepada Kenalan Kecemasan & Admin'
+                        : 'Smart SOS Prepared for Emergency Contact & Admin'}
+                    </span>
                     <button
                       type="button"
                       onClick={() => setManualSosReceipt(null)}
@@ -3417,13 +3290,13 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       rel="noopener noreferrer"
                       className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-[10.5px] sm:text-xs whitespace-nowrap"
                     >
-                      WhatsApp ICE
+                      {language === 'bm' ? 'WhatsApp Kenalan' : 'WhatsApp Contact'}
                     </a>
                     <a
                       href={manualSosReceipt.smsUrl}
                       className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold text-[10.5px] sm:text-xs whitespace-nowrap"
                     >
-                      Native SMS
+                      {language === 'bm' ? 'SMS Kenalan' : 'SMS Contact'}
                     </a>
                     <button
                       type="button"
@@ -3436,43 +3309,16 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 </div>
               )}
 
-              {/* Compact Translucent Weather & Elevation Card */}
+              {/* Compact Translucent Weather & Trail Condition Card (Elevation Profile Chart Hidden) */}
               {safetyStatus && (
                 <div className="p-3.5 rounded-2xl bg-stone-900/75 backdrop-blur-xl border border-white/10 text-stone-100 flex flex-col gap-2.5 shadow-lg">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-[10px] font-mono uppercase font-bold text-emerald-300">
-                          {selectedTrail.conditionBadge} · {safetyStatus.severity} risk
-                        </div>
-                        {displayedElevationPts.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setIsElevationExpanded((prev) => !prev)}
-                            className="min-h-[30px] px-2.5 py-1 rounded-xl bg-stone-800/80 hover:bg-stone-700/80 text-amber-300 border border-white/10 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                          >
-                            <Mountain className="w-3 h-3 text-amber-300 shrink-0" />
-                            <span>
-                              {isElevationExpanded
-                                ? language === 'bm'
-                                  ? 'Tutup Ketinggian'
-                                  : 'Hide Elevation'
-                                : language === 'bm'
-                                ? 'Ketinggian'
-                                : 'Elevation'}
-                            </span>
-                            <ChevronDown
-                              className={`w-3 h-3 transition-transform ${
-                                isElevationExpanded ? 'rotate-180' : ''
-                              }`}
-                            />
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-xs font-semibold text-stone-200 whitespace-normal break-words leading-snug">
-                        {language === 'bm' ? safetyStatus.reasonBm : safetyStatus.reason}
-                      </p>
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono uppercase font-bold text-emerald-300">
+                      {selectedTrail.conditionBadge} · {safetyStatus.severity} risk
                     </div>
+                    <p className="text-xs font-semibold text-stone-200 whitespace-normal break-words leading-snug">
+                      {language === 'bm' ? safetyStatus.reasonBm : safetyStatus.reason}
+                    </p>
                   </div>
 
                   {safetyStatus.currentWeather && (
@@ -3497,45 +3343,24 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                       </span>
                     </div>
                   )}
-
-                  {isElevationExpanded && displayedElevationPts.length > 0 && (
-                    <div className="pt-2.5 border-t border-white/10 space-y-2 animate-in fade-in duration-150">
-                      <div className="flex items-center justify-between text-[11px] font-mono">
-                        <span className="font-bold text-amber-300 uppercase flex items-center gap-1.5">
-                          <Mountain className="w-3.5 h-3.5 shrink-0" />
-                          <span>{language === 'bm' ? 'Profil Ketinggian' : 'Elevation Profile'}</span>
-                        </span>
-                        <span className="text-stone-200 font-bold tabular-nums">
-                          {language === 'bm' ? 'Puncak' : 'Peak'} {selectedTrail.maxElevationM}m ASL
-                        </span>
-                      </div>
-                      <div className="flex items-end justify-between h-16 gap-1.5 pt-1">
-                        {displayedElevationPts.map((ep, idx) => {
-                          const pct = Math.max(
-                            18,
-                            Math.round(((ep.altitude - minAlt) / altSpan) * 100)
-                          );
-                          return (
-                            <div
-                              key={idx}
-                              className="flex-1 flex flex-col items-center justify-end h-full gap-1"
-                            >
-                              <div
-                                className="w-full rounded-t bg-gradient-to-t from-amber-600 via-yellow-500 to-amber-300"
-                                style={{ height: `${pct}%` }}
-                                title={`${ep.altitude}m at ${ep.distance}km`}
-                              />
-                              <span className="text-[9px] font-mono text-stone-400 leading-none tabular-nums">
-                                {ep.distance}k
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
+
+              {/* Prominent One-Tap Check-Out Action at Bottom of Active Trail Map */}
+              <div className="pt-1 pb-2">
+                <button
+                  type="button"
+                  onClick={handleCheckOutSafely}
+                  className="w-full min-h-[54px] px-5 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-sm sm:text-base shadow-xl shadow-emerald-950/70 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] transition-all border border-emerald-400/40"
+                >
+                  <CheckCircle2 className="w-5 h-5 shrink-0" />
+                  <span>
+                    {language === 'bm'
+                      ? 'Daftar Keluar / Saya Selamat'
+                      : "Check-Out / I'm Safely Out"}
+                  </span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -3587,22 +3412,30 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 </div>
                 <div className="flex justify-between font-mono gap-2">
                   <span className="text-stone-400">
-                    {language === 'bm' ? 'Jarak ke Tamat:' : 'Distance to Finish:'}
+                    {selectedTrail.hasVerifiedGpx
+                      ? language === 'bm'
+                        ? 'Jarak ke Tamat:'
+                        : 'Distance to Finish:'
+                      : language === 'bm'
+                      ? 'Puncak / Laluan:'
+                      : 'Route & Peak:'}
                   </span>
-                  <span className="text-sky-300 font-bold tabular-nums">
-                    {(() => {
-                      const endPt =
-                        selectedTrail.peakCoordinates ||
-                        selectedTrail.coordinates[selectedTrail.coordinates.length - 1];
-                      if (!endPt) return `${selectedTrail.distanceKm} ${language === 'bm' ? 'KM' : 'km'}`;
-                      const refLat = currentGps.hasRealFix
-                        ? currentGps.lat
-                        : selectedTrail.coordinates[0][0];
-                      const refLng = currentGps.hasRealFix
-                        ? currentGps.lng
-                        : selectedTrail.coordinates[0][1];
-                      return `${(haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000).toFixed(2)} ${language === 'bm' ? 'KM' : 'km'}`;
-                    })()}
+                  <span className="text-sky-300 font-bold tabular-nums text-right">
+                    {selectedTrail.hasVerifiedGpx
+                      ? (() => {
+                          const endPt =
+                            selectedTrail.peakCoordinates ||
+                            selectedTrail.coordinates[selectedTrail.coordinates.length - 1];
+                          if (!endPt) return `${selectedTrail.distanceKm} ${language === 'bm' ? 'KM' : 'km'}`;
+                          const refLat = currentGps.hasRealFix
+                            ? currentGps.lat
+                            : selectedTrail.coordinates[0][0];
+                          const refLng = currentGps.hasRealFix
+                            ? currentGps.lng
+                            : selectedTrail.coordinates[0][1];
+                          return `${(haversineDistanceMeters(refLat, refLng, endPt[0], endPt[1]) / 1000).toFixed(2)} ${language === 'bm' ? 'KM' : 'km'}`;
+                        })()
+                      : `${selectedTrail.distanceKm} km (Est.) · ${selectedTrail.maxElevationM}m`}
                   </span>
                 </div>
                 <div className="flex justify-between font-mono">
@@ -3647,13 +3480,13 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 <div className="font-bold text-emerald-300 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   <span>
-                    {language === 'bm' ? 'Protokol Keselamatan Luar Talian Aktif' : 'Offline Safety Protocol Active'}
+                    {language === 'bm' ? 'Jaringan Keselamatan Luar Talian Aktif' : 'Offline Safety Net Active'}
                   </span>
                 </div>
                 <p className="text-[11px] text-stone-300 leading-relaxed">
                   {language === 'bm'
-                    ? 'Jejak GPS direkod secara setempat. Pemantau ketidakaktifan mengesan pergerakan terhenti dan amaran automatik 5 minit melindungi perjalanan anda.'
-                    : 'Breadcrumbs are recording locally. Dead-Man switch monitors stillness and 5-min auto-alert safeguards your descent.'}
+                    ? 'Rekod daftar masuk dan lokasi Quick Ping anda disimpan secara setempat tanpa isyarat, dan disegerakkan automatik apabila talian kembali. Kenalan Kecemasan menerima amaran jika anda lewat daftar keluar.'
+                    : 'Check-In records and Quick Ping coordinates save locally with zero signal and auto-sync when data reconnects. Your Emergency Contact receives an Overdue Check-Out alert if your timer expires.'}
                 </p>
               </div>
             </div>
@@ -3975,21 +3808,21 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
         </div>
       )}
 
-      {/* Full-Page Mobile ICE Emergency Notification Modal (opened by tapping ICE dock button or capsule) */}
+      {/* Full-Page Mobile Emergency Notification Modal */}
       {isIceCardExpandedMobile && passportUnlocked && (
         <div className="fixed inset-0 z-[240] bg-stone-950/98 backdrop-blur-xl flex flex-col justify-between p-5 text-stone-100 animate-in fade-in duration-200 overflow-y-auto">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                  <Send className="w-5 h-5 animate-pulse" />
+                  <Send className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="text-[10px] font-mono font-black uppercase text-emerald-400 tracking-wider">
-                    {language === 'bm' ? 'Pemberitahuan Kecemasan ICE' : 'ICE Emergency Notification'}
+                    {language === 'bm' ? 'Pemberitahuan Kenalan Kecemasan' : 'Emergency Notification'}
                   </div>
                   <h3 className="text-base font-heading font-black text-white">
-                    {activeSession?.emergencyContactName || emergencyContactName || 'ICE Contact'}
+                    {activeSession?.emergencyContactName || emergencyContactName || 'Emergency Contact'}
                   </h3>
                 </div>
               </div>
@@ -3997,7 +3830,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 type="button"
                 onClick={() => setIsIceCardExpandedMobile(false)}
                 className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
-                aria-label="Close ICE Notification"
+                aria-label="Close Emergency Notification"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4005,7 +3838,9 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
 
             <div className="p-4 rounded-2xl bg-stone-900 border border-emerald-500/35 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-stone-400">{language === 'bm' ? 'Kenalan ICE' : 'ICE Contact'}</span>
+                <span className="text-stone-400">
+                  {language === 'bm' ? 'Kenalan Kecemasan' : 'Emergency Contact'}
+                </span>
                 <span className="font-bold text-white">
                   {activeSession?.emergencyContactName || emergencyContactName} ({activeSession?.emergencyContact || emergencyContact})
                 </span>
@@ -4033,7 +3868,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
             <p className="text-xs text-stone-300 leading-relaxed">
               {language === 'bm'
                 ? 'Pautan jejak langsung dan koordinat GPS anda sedia dihantar. Pilih WhatsApp atau SMS di bawah untuk memaklumkan kenalan kecemasan anda:'
-                : 'Your live footprint tracking link and current GPS coordinates are ready. Tap WhatsApp or SMS below to notify your emergency contact immediately:'}
+                : 'Your live tracking link and current GPS coordinates are ready. Tap WhatsApp or SMS below to notify your Emergency Contact immediately:'}
             </p>
           </div>
 
@@ -4043,7 +3878,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 initialAlertResult?.whatsappUrl ||
                 buildWhatsAppLink(
                   activeSession?.emergencyContact || emergencyContact,
-                  `CAMGO TRAIL START: ${activeSession?.hikerName || hikerName} on ${selectedTrail.name}. Live Footprint: ${
+                  `CAMGO TRAIL CHECK-IN: ${activeSession?.hikerName || hikerName} on ${selectedTrail.name}. Live Tracking Link: ${
                     activeSession
                       ? buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)
                       : ''
@@ -4059,7 +3894,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
               className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xl active:scale-95 transition-all"
             >
               <ExternalLink className="w-4 h-4 shrink-0" />
-              <span>{language === 'bm' ? 'Hantar WhatsApp ke ICE' : 'Send WhatsApp to ICE'}</span>
+              <span>{language === 'bm' ? 'Hantar WhatsApp' : 'Send WhatsApp'}</span>
             </a>
 
             <a
@@ -4067,7 +3902,7 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
                 initialAlertResult?.smsUrl ||
                 buildSmsLink(
                   activeSession?.emergencyContact || emergencyContact,
-                  `CAMGO TRAIL START: ${activeSession?.hikerName || hikerName} on ${selectedTrail.name}. Live Footprint: ${
+                  `CAMGO TRAIL CHECK-IN: ${activeSession?.hikerName || hikerName} on ${selectedTrail.name}. Live Tracking Link: ${
                     activeSession
                       ? buildTrailTrackingUrl(activeSession.id, activeSession.trackingToken)
                       : ''
@@ -4081,13 +3916,13 @@ export const OfflineTrailEngineModal: React.FC<OfflineTrailEngineModalProps> = (
               className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xl active:scale-95 transition-all"
             >
               <MessageSquare className="w-4 h-4 shrink-0" />
-              <span>{language === 'bm' ? 'Hantar SMS ke ICE' : 'Send SMS to ICE'}</span>
+              <span>{language === 'bm' ? 'Hantar SMS' : 'Send SMS'}</span>
             </a>
 
-            {initialAlertResult?.trackingUrl && (
+            {(initialAlertResult?.trackingUrl || liveTrackingUrl) && (
               <button
                 type="button"
-                onClick={() => handleCopyTrackingLink(initialAlertResult.trackingUrl)}
+                onClick={() => handleCopyTrackingLink(initialAlertResult?.trackingUrl || liveTrackingUrl)}
                 className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-500/40 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Share2 className="w-4 h-4 shrink-0" />

@@ -20,6 +20,26 @@ export interface TrailRoute {
   peakCoordinates?: [number, number]; // [lat, lng]
   elevationProfile: { distance: number; altitude: number }[];
   isAdminTest?: boolean;
+  hasVerifiedGpx?: boolean;
+}
+
+/**
+ * Parses a trail's estimated duration string (e.g. "2.0 hrs", "0.5 hr", "15 mins drive")
+ * and returns a recommended Return Duration in hours including a realistic +1.0 hr rest/break buffer,
+ * snapped cleanly to 0.5 hr increments (e.g. "3.0").
+ */
+export function computeRecommendedReturnHours(estDurationHrs: string): string {
+  const lower = (estDurationHrs || '').toLowerCase();
+  const numMatch = lower.match(/(\d+(?:\.\d+)?)/);
+  let baseHrs = 2.0;
+  if (numMatch) {
+    const val = parseFloat(numMatch[1]);
+    if (Number.isFinite(val)) {
+      baseHrs = lower.includes('min') ? Math.max(0.5, val / 60) : val;
+    }
+  }
+  const buffered = Math.max(1.0, Math.round((baseHrs + 1.0) * 2) / 2);
+  return buffered.toFixed(1);
 }
 
 export interface TrailFeatureProperties {

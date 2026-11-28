@@ -1,6 +1,13 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  doc,
+  getDocFromServer,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -11,22 +18,33 @@ console.log('[Firebase] Single source of truth initialized for project:', fireba
 
 export const auth = getAuth(app);
 
-// Force long-polling so proxy/iframe environments do not buffer WebChannel streams and stall for 10s
+// Force long-polling + enable IndexedDB offline persistence so Quick Pings & check-ins queue offline and sync cleanly
 const firestoreSettings = {
+  experimentalForceLongPolling: true,
+  ignoreUndefinedProperties: true,
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+};
+
+const fallbackFirestoreSettings = {
   experimentalForceLongPolling: true,
   ignoreUndefinedProperties: true,
 };
 
 export const db = (() => {
+  const dbId = (firebaseConfig as any).firestoreDatabaseId;
   try {
-    return (firebaseConfig as any).firestoreDatabaseId
-      ? initializeFirestore(app, firestoreSettings, (firebaseConfig as any).firestoreDatabaseId)
+    return dbId
+      ? initializeFirestore(app, firestoreSettings, dbId)
       : initializeFirestore(app, firestoreSettings);
   } catch (e) {
-    console.warn('[Firebase] initializeFirestore already called, falling back to getFirestore:', e);
-    return (firebaseConfig as any).firestoreDatabaseId
-      ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
-      : getFirestore(app);
+    try {
+      return dbId
+        ? initializeFirestore(app, fallbackFirestoreSettings, dbId)
+        : initializeFirestore(app, fallbackFirestoreSettings);
+    } catch (innerErr) {
+      console.warn('[Firebase] initializeFirestore already called, falling back to getFirestore:', innerErr || e);
+      return dbId ? getFirestore(app, dbId) : getFirestore(app);
+    }
   }
 })();
 

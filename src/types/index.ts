@@ -127,14 +127,15 @@ export type SubCategory =
   | 'tourism_agritourism_farm';
 
 export type Township =
+  | 'Ringlet'
+  | 'Bertam Valley'
+  | 'Habu'
   | 'Tanah Rata'
   | 'Brinchang'
   | 'Kea Farm'
-  | 'Ringlet'
-  | 'Kampung Raja'
   | 'Tringkap'
   | 'Kuala Terla'
-  | 'Bertam Valley'
+  | 'Kampung Raja'
   | 'Blue Valley';
 
 export interface PrayerTimes {

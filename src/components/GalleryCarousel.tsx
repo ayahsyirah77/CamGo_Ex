@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, MapPin, Mountain, Sparkles, Compass, Camera } from 'lucide-react';
-import { GalleryItem, Place, Township } from '../types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronLeft, ChevronRight, MapPin, Mountain, Compass, Camera } from 'lucide-react';
+import { GalleryItem, Language, Place } from '../types';
 import { safeSrc, DEFAULT_PLACE_IMAGE } from '../utils/safeMedia';
 
 interface GalleryCarouselProps {
   items: GalleryItem[];
+  language?: Language;
   onSelectPlace?: (place: Place) => void;
 }
 
@@ -19,99 +20,106 @@ const TOWNSHIP_COORDS: Record<string, { lat: number; lng: number }> = {
   'Bertam Valley': { lat: 4.4188, lng: 101.3982 },
 };
 
-export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelectPlace }) => {
+export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({
+  items,
+  language = 'en',
+  onSelectPlace,
+}) => {
+  const isBm = language === 'bm';
   const [currentIndex, setCurrentIndex] = useState(0);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const dragStartXRef = useRef(0);
+  const scrollStartLeftRef = useRef(0);
+  const hasDraggedRef = useRef(false);
 
-  // Touch and drag swipe state
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
-  const [touchStartY, setTouchStartY] = useState<number | null>(null);
-  const [swipeOffset, setSwipeOffset] = useState<number>(0);
-  const [isSwiping, setIsSwiping] = useState<boolean>(false);
-  const [mouseStartX, setMouseStartX] = useState<number | null>(null);
-  const [isMouseDown, setIsMouseDown] = useState<boolean>(false);
-
-  const minSwipeThreshold = 40; // minimum pixels to trigger next/prev slide
+  const scrollToIndex = useCallback(
+    (idx: number) => {
+      const track = trackRef.current;
+      if (!track || items.length === 0) return;
+      const clamped = Math.max(0, Math.min(items.length - 1, idx));
+      const cardEl = track.children[clamped] as HTMLElement | undefined;
+      if (cardEl) {
+        track.scrollTo({
+          left: cardEl.offsetLeft - track.offsetLeft,
+          behavior: 'smooth',
+        });
+      }
+      setCurrentIndex(clamped);
+    },
+    [items.length]
+  );
 
   const nextSlide = useCallback(() => {
     if (items.length === 0) return;
-    setCurrentIndex((prev) => (prev === items.length - 1 ? 0 : prev + 1));
-  }, [items.length]);
+    const next = currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
+    scrollToIndex(next);
+  }, [currentIndex, items.length, scrollToIndex]);
 
   const prevSlide = useCallback(() => {
     if (items.length === 0) return;
-    setCurrentIndex((prev) => (prev === 0 ? items.length - 1 : prev - 1));
+    const prev = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    scrollToIndex(prev);
+  }, [currentIndex, items.length, scrollToIndex]);
+
+  // Track active dot as user natively swipes or scrolls horizontally
+  const handleTrackScroll = useCallback(() => {
+    const track = trackRef.current;
+    if (!track || items.length === 0) return;
+    const children = Array.from(track.children) as HTMLElement[];
+    if (children.length === 0) return;
+
+    const scrollCenter = track.scrollLeft + track.clientWidth * 0.35;
+    let closestIdx = 0;
+    let minDist = Infinity;
+
+    children.forEach((child, idx) => {
+      const childStart = child.offsetLeft - track.offsetLeft;
+      const dist = Math.abs(childStart - scrollCenter + track.clientWidth * 0.25);
+      if (dist < minDist) {
+        minDist = dist;
+        closestIdx = idx;
+      }
+    });
+
+    setCurrentIndex(closestIdx);
   }, [items.length]);
 
-  // Touch handlers for mobile swiping
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStartX(e.targetTouches[0].clientX);
-    setTouchStartY(e.targetTouches[0].clientY);
-    setSwipeOffset(0);
-    setIsSwiping(true);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartX === null || touchStartY === null) return;
-    const currentX = e.targetTouches[0].clientX;
-    const currentY = e.targetTouches[0].clientY;
-    const diffX = currentX - touchStartX;
-    const diffY = currentY - touchStartY;
-
-    // Disambiguate: only capture if horizontal intent is greater than vertical scroll
-    if (Math.abs(diffX) > Math.abs(diffY)) {
-      setSwipeOffset(diffX);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (touchStartX === null) return;
-    if (swipeOffset > minSwipeThreshold) {
-      prevSlide();
-    } else if (swipeOffset < -minSwipeThreshold) {
-      nextSlide();
-    }
-    setTouchStartX(null);
-    setTouchStartY(null);
-    setSwipeOffset(0);
-    setIsSwiping(false);
-  };
-
-  // Mouse handlers for desktop/trackpad drag emulation
+  // Desktop mouse drag-to-slide support
   const handleMouseDown = (e: React.MouseEvent) => {
-    setMouseStartX(e.clientX);
-    setIsMouseDown(true);
-    setSwipeOffset(0);
+    const track = trackRef.current;
+    if (!track) return;
+    isDraggingRef.current = true;
+    hasDraggedRef.current = false;
+    dragStartXRef.current = e.pageX;
+    scrollStartLeftRef.current = track.scrollLeft;
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isMouseDown || mouseStartX === null) return;
-    setSwipeOffset(e.clientX - mouseStartX);
+    const track = trackRef.current;
+    if (!isDraggingRef.current || !track) return;
+    const delta = e.pageX - dragStartXRef.current;
+    if (Math.abs(delta) > 5) {
+      hasDraggedRef.current = true;
+    }
+    track.scrollLeft = scrollStartLeftRef.current - delta;
   };
 
   const handleMouseUp = () => {
-    if (!isMouseDown || mouseStartX === null) return;
-    if (swipeOffset > minSwipeThreshold) {
-      prevSlide();
-    } else if (swipeOffset < -minSwipeThreshold) {
-      nextSlide();
-    }
-    setMouseStartX(null);
-    setIsMouseDown(false);
-    setSwipeOffset(0);
+    isDraggingRef.current = false;
+    setTimeout(() => {
+      hasDraggedRef.current = false;
+    }, 60);
   };
 
-  // Keyboard navigation
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') prevSlide();
-      if (e.key === 'ArrowRight') nextSlide();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nextSlide, prevSlide]);
+    if (currentIndex >= items.length && items.length > 0) {
+      setCurrentIndex(0);
+    }
+  }, [items.length, currentIndex]);
 
   const handleViewDetails = (item: GalleryItem) => {
-    // Replicate GsapLoopGallery modal behavior
+    if (hasDraggedRef.current) return;
     const coords = TOWNSHIP_COORDS[item.township] || { lat: 4.475, lng: 101.385 };
     const galleryPlace: Place = {
       id: `gal-place-${item.id}`,
@@ -138,135 +146,140 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
 
   if (items.length === 0) {
     return (
-      <div className="w-full max-w-7xl mx-auto rounded-3xl p-8 sm:p-12 text-center bg-stone-900/60 border border-white/5 space-y-4">
+      <div className="w-full max-w-7xl mx-auto rounded-3xl p-8 sm:p-12 text-center bg-stone-900/60 border border-white/10 space-y-4">
         <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mx-auto">
           <Camera className="w-7 h-7" />
         </div>
         <div className="max-w-md mx-auto space-y-2">
           <h3 className="text-xl font-heading font-bold text-stone-100">
-            Interactive Highland Spotlight Gallery
+            {isBm ? 'Galeri Foto & Acara Tanah Tinggi' : 'Highland Events / Photo Gallery'}
           </h3>
           <p className="text-xs sm:text-sm text-stone-400">
-            No gallery spotlights have been published yet. Curators and admins can add high-elevation photography, locations, and descriptions via the Admin Control Room.
+            {isBm
+              ? 'Tiada sorotan galeri diterbitkan lagi.'
+              : 'No gallery spotlights have been published yet.'}
           </p>
         </div>
       </div>
     );
   }
 
-  const currentItem = items[currentIndex];
-
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-3 sm:space-y-5">
+    <div className="w-full max-w-7xl mx-auto space-y-3 sm:space-y-4">
       {/* Section Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase mb-1">
             <Camera className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            <span>Highland Horizons</span>
+            <span>{isBm ? 'Sorotan Tanah Tinggi' : 'Highland Horizons'}</span>
           </div>
           <h2 className="text-lg sm:text-2xl md:text-3xl font-heading font-extrabold text-stone-100 leading-tight">
-            Visual Highlights &amp; Highland Horizons
+            {isBm ? 'Acara & Galeri Foto Tanah Tinggi' : 'Highland Events / Photo Gallery'}
           </h2>
         </div>
+
         <div className="flex items-center gap-2 shrink-0">
-          {/* Mobile touch swipe hint badge */}
-          <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-1 rounded-full sm:hidden">
+          <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 rounded-full">
             <span className="animate-pulse">↔</span>
-            <span>Swipe</span>
+            <span>{isBm ? 'Leret' : 'Slide'}</span>
           </div>
-          <div className="text-xs text-stone-400 font-mono hidden sm:block">
-            {currentIndex + 1} / {items.length} Spotlights
+          <div className="text-xs text-stone-400 font-mono hidden sm:block tabular-nums">
+            {currentIndex + 1} / {items.length}
           </div>
         </div>
       </div>
 
-      {/* Adaptive Card: Expands naturally to description length on mobile & desktop */}
-      <div
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        style={{
-          transform: isSwiping || isMouseDown ? `translateX(${swipeOffset * 0.45}px)` : 'translateX(0px)',
-          transition: isSwiping || isMouseDown ? 'none' : 'transform 280ms cubic-bezier(0.16, 1, 0.3, 1)',
-        }}
-        className="bg-stone-900/95 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col md:flex-row w-full md:min-h-[380px] select-none touch-pan-y cursor-grab active:cursor-grabbing transition-colors relative"
-      >
-        {/* Responsive Image Box */}
-        <div className="w-full md:w-1/2 h-44 sm:h-60 md:h-auto md:min-h-[380px] relative overflow-hidden bg-stone-950 shrink-0">
-          <img
-            src={safeSrc(currentItem.imageUrl, DEFAULT_PLACE_IMAGE)}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-30 pointer-events-none"
-          />
-
-          <img
-            src={safeSrc(currentItem.imageUrl, DEFAULT_PLACE_IMAGE)}
-            alt={currentItem.title}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
-            }}
-            className="relative z-10 w-full h-full object-cover object-center transition-transform duration-700 hover:scale-105"
-          />
-          <div className="absolute inset-0 z-10 bg-gradient-to-t from-stone-950/75 via-transparent to-transparent md:hidden" />
-          {currentItem.elevation && (
-            <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[10px] sm:text-[11px] font-mono text-emerald-400 border border-white/10 shadow-lg">
-              <Mountain className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>{currentItem.elevation} ASL</span>
-            </div>
-          )}
-        </div>
-
-        {/* Adaptive Text Content Panel */}
-        <div className="w-full md:w-1/2 p-4 sm:p-6 md:p-8 flex flex-col justify-between gap-3 sm:gap-4">
-          <div className="space-y-2 sm:space-y-3">
-            <div className="flex items-center flex-wrap gap-2">
-              <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] sm:text-xs font-bold uppercase tracking-wider">
-                {currentItem.category || 'Highlands'}
-              </span>
-              <span className="text-[11px] sm:text-xs text-stone-400 flex items-center gap-1">
-                <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-stone-400 shrink-0" />
-                <span>{currentItem.township}</span>
-              </span>
-            </div>
-
-            <h3 className="text-lg sm:text-2xl md:text-3xl font-heading font-bold text-stone-100 leading-snug break-words">
-              {currentItem.title}
-            </h3>
-
-            <p className="text-stone-300 text-xs sm:text-sm leading-relaxed whitespace-pre-line break-words">
-              {currentItem.description}
-            </p>
-          </div>
-
-          {/* Pinned Bottom Metadata & Action Bar */}
-          <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2 shrink-0">
-            <span className="text-[11px] font-mono text-stone-400">
-              {currentIndex + 1} of {items.length} Spotlights
-            </span>
-            {onSelectPlace && (
-              <button
-                onClick={() => handleViewDetails(currentItem)}
-                className="px-3 py-1.5 sm:px-3.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+      {/* Direct Horizontal Carousel Track (Immediately Slide Left/Right Without Clicking) */}
+      <div className="relative group/carousel">
+        <div
+          ref={trackRef}
+          onScroll={handleTrackScroll}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          className="flex gap-3.5 sm:gap-5 overflow-x-auto snap-x snap-mandatory pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x cursor-grab active:cursor-grabbing select-none"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
+          {items.map((item) => {
+            const title = isBm ? item.titleBm || item.title : item.title;
+            const desc = isBm ? item.descriptionBm || item.description : item.description;
+            return (
+              <article
+                key={item.id}
+                className="w-[86%] sm:w-[76%] md:w-[48%] lg:w-[46%] shrink-0 snap-start bg-stone-900/95 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10 hover:border-emerald-500/40 flex flex-col transition-colors"
               >
-                <Compass className="w-3.5 h-3.5" />
-                <span>Explore on Map</span>
-              </button>
-            )}
-          </div>
+                {/* Image Header */}
+                <div className="w-full h-44 sm:h-56 relative overflow-hidden bg-stone-950 shrink-0">
+                  <img
+                    src={safeSrc(item.imageUrl, DEFAULT_PLACE_IMAGE)}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-30 pointer-events-none"
+                  />
+                  <img
+                    src={safeSrc(item.imageUrl, DEFAULT_PLACE_IMAGE)}
+                    alt={title}
+                    draggable={false}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = DEFAULT_PLACE_IMAGE;
+                    }}
+                    className="relative z-10 w-full h-full object-cover object-center transition-transform duration-700 hover:scale-105"
+                  />
+                  <div className="absolute inset-0 z-10 bg-gradient-to-t from-stone-950/85 via-transparent to-transparent" />
+                  {item.elevation && (
+                    <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[10px] sm:text-[11px] font-mono text-emerald-400 border border-white/10 shadow-lg">
+                      <Mountain className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span>{item.elevation} ASL</span>
+                    </div>
+                  )}
+                  <div className="absolute bottom-2.5 left-3 right-3 z-20 flex items-center justify-between gap-2">
+                    <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm">
+                      {item.category || 'Highlands'}
+                    </span>
+                    <span className="text-[11px] text-stone-200 flex items-center gap-1 font-medium drop-shadow">
+                      <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <span className="truncate">{item.township}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card Copy & Action */}
+                <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <h3 className="text-base sm:text-lg font-heading font-bold text-stone-100 leading-snug line-clamp-1">
+                      {title}
+                    </h3>
+                    <p className="text-stone-300 text-xs sm:text-sm leading-relaxed line-clamp-2">
+                      {desc}
+                    </p>
+                  </div>
+
+                  {onSelectPlace && (
+                    <div className="pt-2.5 border-t border-white/10 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleViewDetails(item)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-300 hover:text-white border border-emerald-500/35 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <Compass className="w-3.5 h-3.5" />
+                        <span>{isBm ? 'Teroka di Peta' : 'Explore on Map'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
       </div>
 
-      {/* Pagination Controls */}
-      <div className="flex items-center justify-center gap-3 sm:gap-4 pt-1">
+      {/* Pagination & Prev/Next Controls */}
+      <div className="flex items-center justify-center gap-3 sm:gap-4 pt-0.5">
         <button
+          type="button"
           onClick={prevSlide}
-          className="p-2 sm:p-2.5 rounded-full bg-stone-800 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
+          className="p-2 sm:p-2.5 rounded-full bg-stone-800 text-stone-300 hover:text-white hover:bg-stone-700 border border-white/10 transition-colors cursor-pointer"
           aria-label="Previous Spotlight"
         >
           <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -276,18 +289,22 @@ export const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ items, onSelec
           {items.map((_, idx) => (
             <button
               key={idx}
-              onClick={() => setCurrentIndex(idx)}
+              type="button"
+              onClick={() => scrollToIndex(idx)}
               aria-label={`Go to slide ${idx + 1}`}
               className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                idx === currentIndex ? 'w-8 sm:w-10 bg-emerald-500' : 'w-2 bg-stone-700 hover:bg-stone-600'
+                idx === currentIndex
+                  ? 'w-7 sm:w-9 bg-emerald-500'
+                  : 'w-2 bg-stone-700 hover:bg-stone-600'
               }`}
             />
           ))}
         </div>
 
         <button
+          type="button"
           onClick={nextSlide}
-          className="p-2 sm:p-2.5 rounded-full bg-stone-800 text-stone-400 hover:text-white hover:bg-stone-700 transition-colors cursor-pointer"
+          className="p-2 sm:p-2.5 rounded-full bg-stone-800 text-stone-300 hover:text-white hover:bg-stone-700 border border-white/10 transition-colors cursor-pointer"
           aria-label="Next Spotlight"
         >
           <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />

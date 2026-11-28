@@ -26,6 +26,7 @@ import {
   Wind,
   ArrowUpRight,
   Layers,
+  Hospital,
 } from 'lucide-react';
 import {
   MobileHomeCard,
@@ -59,6 +60,7 @@ interface MobileHomeCardsProps {
   onOpenMasjid?: () => void;
   onOpenParkingEv?: () => void;
   onOpenCurrency?: () => void;
+  onOpenHospitalFee?: () => void;
   onOpenClassifieds?: () => void;
   onOpenDirectories?: () => void;
   onOpenPortals?: () => void;
@@ -85,6 +87,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
   onOpenMasjid,
   onOpenParkingEv,
   onOpenCurrency,
+  onOpenHospitalFee,
   onOpenClassifieds,
   onOpenDirectories,
   onOpenPortals,
@@ -281,6 +284,15 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
       onClick: () => onOpenCurrency && onOpenCurrency(),
     },
     {
+      id: 'hospital-fee',
+      label: language === 'bm' ? 'Fi Hospital' : 'Hospital Fee',
+      icon: <Hospital className="w-5 h-5 text-rose-400" />,
+      onClick: () =>
+        onOpenHospitalFee
+          ? onOpenHospitalFee()
+          : window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges')),
+    },
+    {
       id: 'jobs',
       label: language === 'bm' ? 'Kerja' : 'Classifieds',
       icon: <Briefcase className="w-5 h-5 text-rose-400" />,
@@ -341,18 +353,18 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
           MOBILE VIEW (< 640px): Redesigned Image-2 Layout on Dark Theme
          ===================================================================== */}
       <div className="block sm:hidden mt-3.5 mb-8 space-y-5">
-        {/* 1. 5-Capsule Strip Fitting Cleanly Inside Mobile Viewport: Traffic, Masjid, Hub, Currency, Classifieds */}
+        {/* 1. 5-Capsule Strip Fitting Cleanly Inside Mobile Viewport: Traffic, Masjid, Currency, Hospital Fee, Classifieds */}
         <div className="grid grid-cols-5 gap-1.5 w-full no-mobile-clamp">
           {/* 1. Traffic */}
           <button
             type="button"
             onClick={() => (onOpenTraffic ? onOpenTraffic() : onOpenHazard())}
-            className="min-h-[54px] px-1 py-1.5 rounded-2xl bg-[#102e20] border border-emerald-400/65 text-white shadow-[0_4px_14px_rgba(16,185,129,0.22)] flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
+            className="min-h-[54px] px-0.5 py-1.5 rounded-2xl bg-[#102e20] border border-emerald-400/65 text-white shadow-[0_4px_14px_rgba(16,185,129,0.22)] flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
           >
             <span className="w-6 h-6 rounded-full bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center shrink-0">
               <Car className="w-3.5 h-3.5 text-emerald-300" />
             </span>
-            <span className="no-mobile-clamp text-[9px] min-[375px]:text-[9.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
+            <span className="no-mobile-clamp text-[8.5px] min-[375px]:text-[9.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
               Traffic
             </span>
           </button>
@@ -365,31 +377,17 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 ? onOpenMasjid()
                 : window.dispatchEvent(new CustomEvent('open-masjid-modal'))
             }
-            className="min-h-[54px] px-1 py-1.5 rounded-2xl bg-stone-900/95 border border-white/15 hover:border-teal-400/50 text-stone-100 shadow-md flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
+            className="min-h-[54px] px-0.5 py-1.5 rounded-2xl bg-stone-900/95 border border-white/15 hover:border-teal-400/50 text-stone-100 shadow-md flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
           >
             <span className="w-6 h-6 rounded-full bg-stone-800 border border-white/10 flex items-center justify-center shrink-0">
               <MasjidIcon className="w-3.5 h-3.5 text-teal-400" />
             </span>
-            <span className="no-mobile-clamp text-[9px] min-[375px]:text-[9.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
+            <span className="no-mobile-clamp text-[8.5px] min-[375px]:text-[9.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
               Masjid
             </span>
           </button>
 
-          {/* 3. Hub */}
-          <button
-            type="button"
-            onClick={() => onOpenPortals && onOpenPortals()}
-            className="min-h-[54px] px-1 py-1.5 rounded-2xl bg-stone-900/95 border border-white/15 hover:border-indigo-400/50 text-stone-100 shadow-md flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
-          >
-            <span className="w-6 h-6 rounded-full bg-stone-800 border border-white/10 flex items-center justify-center shrink-0">
-              <Layers className="w-3.5 h-3.5 text-indigo-400" />
-            </span>
-            <span className="no-mobile-clamp text-[9px] min-[375px]:text-[9.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
-              Hub
-            </span>
-          </button>
-
-          {/* 4. Currency */}
+          {/* 3. Currency */}
           <button
             type="button"
             onClick={() =>
@@ -397,13 +395,31 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
                 ? onOpenCurrency()
                 : window.dispatchEvent(new CustomEvent('open-currency-converter'))
             }
-            className="min-h-[54px] px-1 py-1.5 rounded-2xl bg-stone-900/95 border border-white/15 hover:border-amber-400/50 text-stone-100 shadow-md flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
+            className="min-h-[54px] px-0.5 py-1.5 rounded-2xl bg-stone-900/95 border border-white/15 hover:border-amber-400/50 text-stone-100 shadow-md flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
           >
             <span className="w-6 h-6 rounded-full bg-stone-800 border border-white/10 flex items-center justify-center shrink-0">
               <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" />
             </span>
-            <span className="no-mobile-clamp text-[9px] min-[375px]:text-[9.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
-              Currency
+            <span className="no-mobile-clamp text-[8px] min-[375px]:text-[9px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
+              {language === 'bm' ? 'Mata Wang' : 'Currency'}
+            </span>
+          </button>
+
+          {/* 4. Non-Citizen Hospital Fee (before Classifieds) */}
+          <button
+            type="button"
+            onClick={() =>
+              onOpenHospitalFee
+                ? onOpenHospitalFee()
+                : window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'))
+            }
+            className="min-h-[54px] px-0.5 py-1.5 rounded-2xl bg-stone-900/95 border border-white/15 hover:border-rose-400/50 text-stone-100 shadow-md flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer overflow-hidden"
+          >
+            <span className="w-6 h-6 rounded-full bg-rose-500/15 border border-rose-400/35 flex items-center justify-center shrink-0">
+              <Hospital className="w-3.5 h-3.5 text-rose-400" />
+            </span>
+            <span className="no-mobile-clamp text-[7.5px] min-[375px]:text-[8.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
+              {language === 'bm' ? 'Fi Hospital' : 'Hospital Fee'}
             </span>
           </button>
 
@@ -416,8 +432,8 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
             <span className="w-6 h-6 rounded-full bg-stone-800 border border-white/10 flex items-center justify-center shrink-0">
               <Briefcase className="w-3.5 h-3.5 text-rose-400" />
             </span>
-            <span className="no-mobile-clamp text-[8.5px] min-[375px]:text-[9px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
-              Classifieds
+            <span className="no-mobile-clamp text-[7.5px] min-[375px]:text-[8.5px] font-bold tracking-tight leading-none whitespace-nowrap text-center">
+              {language === 'bm' ? 'Iklan' : 'Classifieds'}
             </span>
           </button>
         </div>
@@ -920,7 +936,7 @@ export const MobileHomeCards: React.FC<MobileHomeCardsProps> = ({
          ===================================================================== */}
       <div className="hidden sm:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 space-y-6">
         {/* PC Quick-Launch Utility Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+        <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2.5">
           {quickDockItems.map((item) => (
             <button
               key={item.id}

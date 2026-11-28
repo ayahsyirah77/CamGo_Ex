@@ -24,6 +24,7 @@ import { firebaseService, UserProfile } from './services/firebase';
 import { hazardFeedService } from './services/hazardFeedService';
 import { fetchLiveWebHazards } from './services/webHazardFetcher';
 import { pushNotificationService } from './services/pushNotificationService';
+import { flushPendingTrailSessions } from './services/trailSafetyService';
 import { getTranslation } from './services/i18n';
 
 import { LoadingScreen } from './components/LoadingScreen';
@@ -54,8 +55,12 @@ import { CommunityTicker } from './components/CommunityTicker';
 import { CommunityReportModal } from './components/CommunityReportModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { ClassifiedsModal } from './components/ClassifiedsModal';
-import { DirectorySection } from './components/DirectorySection';
-import { PortalsSection } from './components/PortalsSection';
+import {
+  ExploreDirectoryView,
+  ExploreInitialState,
+  mapMainCategoryToExploreKey,
+  mapSubCategoryToFilterId,
+} from './components/ExploreDirectoryView';
 import { FindMyPartyModal } from './components/FindMyPartyModal';
 import { VendorDashboard } from './components/VendorDashboard';
 import { AccommodationListModal } from './components/AccommodationListModal';
@@ -63,6 +68,7 @@ import { FarmTicketMatrixModal } from './components/FarmTicketMatrixModal';
 import { SmartParkingEvModal } from './components/SmartParkingEvModal';
 import { CurrencyConverterModal } from './components/CurrencyConverterModal';
 import { ForeignerMedicalChargesModal } from './components/ForeignerMedicalChargesModal';
+import { MenuTranslatorModal } from './components/MenuTranslatorModal';
 import { VendorBookingAlertModal } from './components/VendorBookingAlertModal';
 import { WeatherWidget } from './components/WeatherWidget';
 import { TrafficWidget } from './components/TrafficWidget';
@@ -154,6 +160,32 @@ function checkIsBeaconInvite(): boolean {
   );
 }
 
+function checkIsTrailsRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+  const pathname = window.location.pathname.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  return (
+    pathname.startsWith('/trails') ||
+    search.includes('trails=true') ||
+    search.includes('mode=trails') ||
+    hash === '#trails'
+  );
+}
+
+function checkIsPartyAppRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+  const pathname = window.location.pathname.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  return (
+    pathname.startsWith('/party') ||
+    search.includes('partyapp=true') ||
+    search.includes('mode=party') ||
+    hash === '#party'
+  );
+}
+
 function checkIsMapRoute(): boolean {
   if (typeof window === 'undefined') return false;
 
@@ -227,16 +259,19 @@ export default function App() {
   const [chatInitialChannelId, setChatInitialChannelId] = useState<string | null>(null);
   const [isDirectoriesModalOpen, setIsDirectoriesModalOpen] = useState(false);
   const [isPortalsModalOpen, setIsPortalsModalOpen] = useState(false);
+  const [exploreInitialState, setExploreInitialState] = useState<ExploreInitialState>({ mode: 'main' });
   const [isClassifiedsModalOpen, setIsClassifiedsModalOpen] = useState(false);
   const [isItineraryOpen, setIsItineraryOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState<boolean>(checkIsMapRoute);
   const [isMasjidModalOpen, setIsMasjidModalOpen] = useState(false);
-  const [isTrailEngineOpen, setIsTrailEngineOpen] = useState(false);
+  const [isTrailEngineOpen, setIsTrailEngineOpen] = useState<boolean>(checkIsTrailsRoute);
   const [trailTrackParams, setTrailTrackParams] = useState<{
     sessionId: string;
     token: string | null;
   } | null>(getInitialTrailTrackParams);
-  const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState<boolean>(checkIsBeaconInvite);
+  const [isFindMyPartyOpen, setIsFindMyPartyOpen] = useState<boolean>(
+    () => checkIsBeaconInvite() || checkIsPartyAppRoute()
+  );
   const [isMotorbikeRentalOpen, setIsMotorbikeRentalOpen] = useState(false);
   const [isAccommodationModalOpen, setIsAccommodationModalOpen] = useState(false);
   const [activeCapsuleModal, setActiveCapsuleModal] = useState<
@@ -252,6 +287,7 @@ export default function App() {
   const [isFarmMatrixOpen, setIsFarmMatrixOpen] = useState(false);
   const [isParkingEvOpen, setIsParkingEvOpen] = useState(false);
   const [isForeignerMedicalOpen, setIsForeignerMedicalOpen] = useState(false);
+  const [isTranslatorOpen, setIsTranslatorOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('food');
   const [selectedSubCategory, setSelectedSubCategory] = useState<SubCategory | undefined>(undefined);
 
@@ -283,7 +319,7 @@ export default function App() {
 
   // Lock body scroll when capsule modal is open
   useEffect(() => {
-    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isAccommodationModalOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen || isVendorPortalOpen || isVendorAlertsModalOpen || isGalleryOpen;
+    const isAnyModalOpen = activeCapsuleModal || isDirectoriesModalOpen || isPortalsModalOpen || isMapModalOpen || isMasjidModalOpen || isTrailEngineOpen || isFindMyPartyOpen || isAccommodationModalOpen || isUserDashboardOpen || isAdminOpen || isAdminLoginOpen || isVendorPortalOpen || isVendorAlertsModalOpen || isGalleryOpen || isTranslatorOpen || isForeignerMedicalOpen;
     if (isAnyModalOpen) {
       const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
       document.body.style.overflow = 'hidden';
@@ -296,9 +332,9 @@ export default function App() {
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
     };
-  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen, isVendorPortalOpen, isVendorAlertsModalOpen, isGalleryOpen]);
+  }, [activeCapsuleModal, isDirectoriesModalOpen, isPortalsModalOpen, isMapModalOpen, isMasjidModalOpen, isTrailEngineOpen, isFindMyPartyOpen, isAccommodationModalOpen, isUserDashboardOpen, isAdminOpen, isAdminLoginOpen, isVendorPortalOpen, isVendorAlertsModalOpen, isGalleryOpen, isTranslatorOpen, isForeignerMedicalOpen]);
 
-  // Sync PWA manifest (/manifest-vendor.json), Apple web-app title, and /vendor URL when Vendor Portal is active
+  // Sync PWA manifests & clean URLs for Vendor (/vendor), Highland Trails (/trails), Find My Party (/party), and main app (/)
   useEffect(() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') return;
 
@@ -308,27 +344,37 @@ export default function App() {
     const appleTitle =
       document.getElementById('camgo-apple-title') ||
       document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    const pathname = window.location.pathname.toLowerCase();
 
     if (isVendorPortalOpen) {
       if (manifestLink) manifestLink.setAttribute('href', '/manifest-vendor.json');
       if (appleTitle) appleTitle.setAttribute('content', 'CamGo Vendor');
-      if (
-        window.history?.replaceState &&
-        !window.location.pathname.toLowerCase().startsWith('/vendor')
-      ) {
+      if (window.history?.replaceState && !pathname.startsWith('/vendor')) {
         window.history.replaceState({}, document.title, '/vendor');
+      }
+    } else if (isTrailEngineOpen) {
+      if (manifestLink) manifestLink.setAttribute('href', '/manifest-trails.json');
+      if (appleTitle) appleTitle.setAttribute('content', 'CamGo Trails');
+      if (window.history?.replaceState && !pathname.startsWith('/trails')) {
+        window.history.replaceState({}, document.title, '/trails');
+      }
+    } else if (isFindMyPartyOpen) {
+      if (manifestLink) manifestLink.setAttribute('href', '/manifest-party.json');
+      if (appleTitle) appleTitle.setAttribute('content', 'Find Party');
+      if (window.history?.replaceState && !pathname.startsWith('/party') && !checkIsBeaconInvite()) {
+        window.history.replaceState({}, document.title, '/party');
       }
     } else {
       if (manifestLink) manifestLink.setAttribute('href', '/manifest.json');
       if (appleTitle) appleTitle.setAttribute('content', 'CamGo');
       if (
         window.history?.replaceState &&
-        window.location.pathname.toLowerCase().startsWith('/vendor')
+        (pathname.startsWith('/vendor') || pathname.startsWith('/trails') || pathname.startsWith('/party'))
       ) {
         window.history.replaceState({}, document.title, '/');
       }
     }
-  }, [isVendorPortalOpen]);
+  }, [isVendorPortalOpen, isTrailEngineOpen, isFindMyPartyOpen]);
 
   // Strict RBAC guard: Standard travelers ('user') cannot access Vendor Dashboard under any circumstances
   const handleOpenVendorPortal = useCallback(() => {
@@ -435,6 +481,14 @@ export default function App() {
       if (res.length > 0) setWeatherList(res);
     });
 
+    if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+      flushPendingTrailSessions().catch(() => {});
+    }
+    const handleOnlineFlushTrails = () => {
+      flushPendingTrailSessions().catch(() => {});
+    };
+    window.addEventListener('online', handleOnlineFlushTrails);
+
     const handleHazardsUpdated = (e: any) => {
       if (Array.isArray(e?.detail)) {
         setHazards(e.detail);
@@ -487,6 +541,20 @@ export default function App() {
     const handleOpenForeignerMedical = () => setIsForeignerMedicalOpen(true);
     window.addEventListener('open-foreigner-medical-charges', handleOpenForeignerMedical);
 
+    const handleOpenTranslator = () => setIsTranslatorOpen(true);
+    window.addEventListener('open-menu-translator', handleOpenTranslator);
+
+    const handleOpenTownshipDirectory = (e: Event) => {
+      const town = (e as CustomEvent<Township | string>)?.detail as Township | undefined;
+      if (town) {
+        setExploreInitialState({ mode: 'township_detail', township: town });
+      } else {
+        setExploreInitialState({ mode: 'main' });
+      }
+      setIsDirectoriesModalOpen(true);
+    };
+    window.addEventListener('open-township-directory', handleOpenTownshipDirectory);
+
     const handleLocationChange = () => {
       if (checkIsVendorRoute()) {
         setIsStandaloneChatView(false);
@@ -495,16 +563,20 @@ export default function App() {
         return;
       }
 
+      if (checkIsTrailsRoute()) {
+        setIsTrailEngineOpen(true);
+      }
+
+      if (checkIsPartyAppRoute() || checkIsBeaconInvite()) {
+        setIsFindMyPartyOpen(true);
+      }
+
       const isChatRoute = checkIsStandaloneChat();
       setIsStandaloneChatView(isChatRoute);
       if (isChatRoute) {
         setIsChatOpen(true);
       } else {
         setIsChatOpen(false);
-      }
-
-      if (checkIsBeaconInvite()) {
-        setIsFindMyPartyOpen(true);
       }
 
       if (checkIsMapRoute()) {
@@ -526,7 +598,11 @@ export default function App() {
       setIsChatOpen(false);
     }
 
-    if (checkIsBeaconInvite()) {
+    if (checkIsTrailsRoute()) {
+      setIsTrailEngineOpen(true);
+    }
+
+    if (checkIsBeaconInvite() || checkIsPartyAppRoute()) {
       setIsFindMyPartyOpen(true);
     }
 
@@ -548,9 +624,13 @@ export default function App() {
       window.removeEventListener('open-map', handleOpenMap);
       window.removeEventListener('open-interactive-map', handleOpenMap);
       window.removeEventListener('open-community-report', handleOpenCommunityReport);
+      window.removeEventListener('open-foreigner-medical-charges', handleOpenForeignerMedical);
+      window.removeEventListener('open-menu-translator', handleOpenTranslator);
+      window.removeEventListener('open-township-directory', handleOpenTownshipDirectory);
       window.removeEventListener('popstate', handleLocationChange);
       window.removeEventListener('hashchange', handleLocationChange);
       window.removeEventListener('hazard-alerts-updated', handleHazardsUpdated);
+      window.removeEventListener('online', handleOnlineFlushTrails);
       unsubUser();
     };
   }, []);
@@ -561,10 +641,12 @@ export default function App() {
       return;
     }
     if (sectionId === 'directories-section') {
+      setExploreInitialState({ mode: 'main' });
       setIsDirectoriesModalOpen(true);
       return;
     }
     if (sectionId === 'portals-section') {
+      setExploreInitialState({ mode: 'official' });
       setIsPortalsModalOpen(true);
       return;
     }
@@ -573,12 +655,17 @@ export default function App() {
   };
 
   const handleSelectCategory = (cat: MainCategory, sub?: SubCategory) => {
-    if (cat === 'accommodation') {
+    if (cat === 'accommodation' && !sub) {
       setIsAccommodationModalOpen(true);
       return;
     }
     setSelectedCategory(cat);
     setSelectedSubCategory(sub);
+    setExploreInitialState({
+      mode: 'category_detail',
+      categoryKey: mapMainCategoryToExploreKey(cat),
+      subFilterId: mapSubCategoryToFilterId(sub),
+    });
     setIsDirectoriesModalOpen(true);
   };
 
@@ -673,6 +760,14 @@ export default function App() {
       setIsParkingEvOpen(false);
       return true;
     }
+    if (isTranslatorOpen) {
+      setIsTranslatorOpen(false);
+      return true;
+    }
+    if (isForeignerMedicalOpen) {
+      setIsForeignerMedicalOpen(false);
+      return true;
+    }
     if (isUserDashboardOpen) {
       setIsUserDashboardOpen(false);
       return true;
@@ -703,12 +798,15 @@ export default function App() {
     isTrailEngineOpen,
     isFindMyPartyOpen,
     isMotorbikeRentalOpen,
+    isAccommodationModalOpen,
     isGalleryOpen,
     isCurrencyOpen,
     isVendorAlertsModalOpen,
     isVendorPortalOpen,
     isFarmMatrixOpen,
     isParkingEvOpen,
+    isTranslatorOpen,
+    isForeignerMedicalOpen,
     isUserDashboardOpen,
     isAdminOpen,
     isAdminLoginOpen,
@@ -795,8 +893,14 @@ export default function App() {
         onOpenUserDashboard={() => setIsUserDashboardOpen(true)}
         onSelectCategory={handleSelectCategory}
         onNavigateSection={navigateToSection}
-        onOpenDirectoriesModal={() => setIsDirectoriesModalOpen(true)}
-        onOpenPortalsModal={() => setIsPortalsModalOpen(true)}
+        onOpenDirectoriesModal={() => {
+          setExploreInitialState({ mode: 'main' });
+          setIsDirectoriesModalOpen(true);
+        }}
+        onOpenPortalsModal={() => {
+          setExploreInitialState({ mode: 'official' });
+          setIsPortalsModalOpen(true);
+        }}
         onOpenClassifiedsModal={() => setIsClassifiedsModalOpen(true)}
         onOpenItinerary={() => setIsItineraryOpen(true)}
         onOpenMap={() => setIsMapModalOpen(true)}
@@ -939,8 +1043,14 @@ export default function App() {
         onOpenMap={() => setIsMapModalOpen(true)}
         onOpenTraffic={() => setActiveCapsuleModal('traffic')}
         onOpenChat={() => setIsChatOpen(true)}
-        onOpenDirectories={() => setIsDirectoriesModalOpen(true)}
-        onOpenPortals={() => setIsPortalsModalOpen(true)}
+        onOpenDirectories={() => {
+          setExploreInitialState({ mode: 'main' });
+          setIsDirectoriesModalOpen(true);
+        }}
+        onOpenPortals={() => {
+          setExploreInitialState({ mode: 'main' });
+          setIsPortalsModalOpen(true);
+        }}
         onOpenSos={() => window.dispatchEvent(new CustomEvent('open-emergency-sos'))}
         onOpenVendorPortal={handleOpenVendorPortal}
         onOpenVendorAlerts={() => setIsVendorAlertsModalOpen(true)}
@@ -951,9 +1061,8 @@ export default function App() {
           else setIsMapModalOpen(true);
         }}
         onSelectTownship={(town) => {
-          const match = places.find((p) => p.township === town);
-          if (match) handleSelectPlaceForMap(match);
-          else setIsPortalsModalOpen(true);
+          setExploreInitialState({ mode: 'township_detail', township: town });
+          setIsDirectoriesModalOpen(true);
         }}
       />
 
@@ -1026,9 +1135,16 @@ export default function App() {
           onOpenMasjid={() => setIsMasjidModalOpen(true)}
           onOpenParkingEv={() => setIsParkingEvOpen(true)}
           onOpenCurrency={() => setIsCurrencyOpen(true)}
+          onOpenHospitalFee={() => setIsForeignerMedicalOpen(true)}
           onOpenClassifieds={() => setIsClassifiedsModalOpen(true)}
-          onOpenDirectories={() => setIsDirectoriesModalOpen(true)}
-          onOpenPortals={() => setIsPortalsModalOpen(true)}
+          onOpenDirectories={() => {
+            setExploreInitialState({ mode: 'main' });
+            setIsDirectoriesModalOpen(true);
+          }}
+          onOpenPortals={() => {
+            setExploreInitialState({ mode: 'main' });
+            setIsPortalsModalOpen(true);
+          }}
           onSelectTownshipOnMap={(town) => {
             const match = places.find((p) => p.township === town);
             if (match) setSelectedPlaceForMap(match);
@@ -1039,39 +1155,13 @@ export default function App() {
           hazards={hazards}
         />
 
-        {/* Highland Photo Gallery Smart Transparent Capsule */}
+        {/* Direct Horizontal Highland Events / Photo Gallery Carousel (Swipe / Slide Ready) */}
         <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mb-12">
-          <div
-            onClick={() => setIsGalleryOpen(true)}
-            className="group rounded-3xl bg-stone-900/80 backdrop-blur-xl border border-emerald-500/30 hover:border-emerald-400 p-5 sm:p-6 shadow-2xl transition-all cursor-pointer flex flex-wrap items-center justify-between gap-4 relative overflow-hidden text-left"
-          >
-            {/* Subtle ambient glow */}
-            <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none group-hover:bg-emerald-500/20 transition-all duration-500" />
-            
-            <div className="flex items-center gap-3.5 relative z-10">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-inner group-hover:scale-110 transition-transform">
-                <Camera className="w-6 h-6 text-emerald-300" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base sm:text-lg font-heading font-black text-white group-hover:text-emerald-300 transition-colors">
-                    Highland Events/Photo Gallery
-                  </h3>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tabular-nums">
-                    {galleryItems.length} Photos
-                  </span>
-                </div>
-                <p className="text-xs text-stone-400 mt-0.5">
-                  Tap to open visual lightbox with high-elevation photography &amp; scenic horizons.
-                </p>
-              </div>
-            </div>
-
-            <div className="relative z-10 flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all shadow-md group-hover:translate-x-0.5">
-              <span>View Gallery</span>
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </div>
+          <GalleryCarousel
+            items={galleryItems}
+            language={language}
+            onSelectPlace={(place) => handleSelectPlaceForMap(place)}
+          />
         </section>
       </main>
 
@@ -1275,6 +1365,12 @@ export default function App() {
           language={language}
           currentUser={currentUser}
           onOpenAuth={() => setIsAuthOpen(true)}
+          onNavigateMainPage={() => {
+            setIsTrailEngineOpen(false);
+            if (typeof window !== 'undefined' && window.history?.replaceState) {
+              window.history.replaceState({}, document.title, '/');
+            }
+          }}
         />
       )}
 
@@ -1296,7 +1392,7 @@ export default function App() {
         onClose={() => setIsCommunityReportOpen(false)}
       />
 
-      {/* Bottom Sticky Footer for Mobile: Home, Directories, Chat, CamGo AI, SOS */}
+      {/* Bottom Sticky Footer for Mobile: Home, Chat, Translator, CamGo AI, SOS */}
       <MobileStickyFooter
         language={language}
         activeModal={
@@ -1304,6 +1400,8 @@ export default function App() {
             ? 'directories'
             : isChatOpen
             ? 'chat'
+            : isTranslatorOpen
+            ? 'translator'
             : isAiOpen
             ? 'ai'
             : null
@@ -1316,24 +1414,35 @@ export default function App() {
           setIsTrailEngineOpen(false);
           setIsDirectoriesModalOpen(false);
           setIsPortalsModalOpen(false);
+          setIsTranslatorOpen(false);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenDirectories={() => {
           setIsChatOpen(false);
           setIsAiOpen(false);
           setIsTrailEngineOpen(false);
+          setIsTranslatorOpen(false);
           setIsDirectoriesModalOpen(true);
         }}
         onOpenChat={() => {
           setIsTrailEngineOpen(false);
           setIsAiOpen(false);
           setIsDirectoriesModalOpen(false);
+          setIsTranslatorOpen(false);
           setIsChatOpen(true);
+        }}
+        onOpenTranslator={() => {
+          setIsTrailEngineOpen(false);
+          setIsChatOpen(false);
+          setIsAiOpen(false);
+          setIsDirectoriesModalOpen(false);
+          setIsTranslatorOpen(true);
         }}
         onOpenAi={() => {
           setIsTrailEngineOpen(false);
           setIsChatOpen(false);
           setIsDirectoriesModalOpen(false);
+          setIsTranslatorOpen(false);
           setIsAiOpen(true);
         }}
         onOpenSos={() => {
@@ -1391,118 +1500,47 @@ export default function App() {
         </div>
       )}
 
-      {/* Directories Full-Page View */}
-      {isDirectoriesModalOpen && (
-        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
-          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <button
-                type="button"
-                onClick={() => setIsDirectoriesModalOpen(false)}
-                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
-                aria-label="Back"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                <Compass className="w-5 h-5" />
-              </div>
-              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
-                {language === 'bm' ? 'Direktori Cameron Highlands' : 'Cameron Highlands Directory'}
-              </h3>
-            </div>
-            <button
-              onClick={() => setIsDirectoriesModalOpen(false)}
-              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-24"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            <div className="max-w-6xl mx-auto">
-              <DirectorySection
-                places={places}
-                language={language}
-                selectedCategory={selectedCategory}
-                selectedSubCategory={selectedSubCategory}
-                onSelectCategory={(cat, sub) => {
-                  setSelectedCategory(cat);
-                  setSelectedSubCategory(sub);
-                }}
-                onSelectPlaceForMap={(place) => {
-                  setIsDirectoriesModalOpen(false);
-                  handleSelectPlaceForMap(place);
-                }}
-                bookmarkedIds={currentUser?.bookmarks || []}
-                onToggleBookmark={(placeId) => {
-                  if (currentUser) {
-                    firebaseService.toggleBookmark(placeId);
-                    setCurrentUser(firebaseService.getCurrentUser());
-                  } else {
-                    setIsAuthOpen(true);
-                  }
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Portals / Hub Full-Page View */}
-      {isPortalsModalOpen && (
-        <div className="fixed inset-0 z-[130] bg-stone-950 flex flex-col overflow-hidden text-stone-100 animate-in fade-in duration-200">
-          <div className="shrink-0 z-20 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/10 bg-stone-950/95 backdrop-blur-md">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <button
-                type="button"
-                onClick={() => setIsPortalsModalOpen(false)}
-                className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 cursor-pointer shrink-0"
-                aria-label="Back"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-              <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shrink-0">
-                <Layers className="w-5 h-5" />
-              </div>
-              <h3 className="no-mobile-clamp text-sm sm:text-lg font-heading font-black text-white truncate">
-                {language === 'bm' ? 'Hab Portal Tanah Tinggi' : 'Cameron Highlands Hub & Portals'}
-              </h3>
-            </div>
-            <button
-              onClick={() => setIsPortalsModalOpen(false)}
-              className="p-2 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-white border border-white/10 shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 pb-24"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            <div className="max-w-6xl mx-auto">
-              <PortalsSection
-                language={language}
-                onExploreTownOnMap={() => {
-                  setIsPortalsModalOpen(false);
-                  setIsMapModalOpen(true);
-                }}
-                onOpenFarmMatrix={() => {
-                  setIsPortalsModalOpen(false);
-                  setIsFarmMatrixOpen(true);
-                }}
-                onOpenVendorPortal={handleOpenVendorPortal}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unified Explore & Directory View (Merged Hub + Directories) */}
+      <ExploreDirectoryView
+        isOpen={isDirectoriesModalOpen || isPortalsModalOpen}
+        onClose={() => {
+          setIsDirectoriesModalOpen(false);
+          setIsPortalsModalOpen(false);
+        }}
+        places={places}
+        language={language}
+        displayName={currentUser?.displayName || currentUser?.fullName || undefined}
+        bookmarkedIds={currentUser?.bookmarks || []}
+        onToggleBookmark={(placeId) => {
+          if (currentUser) {
+            firebaseService.toggleBookmark(placeId);
+            setCurrentUser(firebaseService.getCurrentUser());
+          } else {
+            setIsAuthOpen(true);
+          }
+        }}
+        onSelectPlaceForMap={(place) => {
+          setIsDirectoriesModalOpen(false);
+          setIsPortalsModalOpen(false);
+          handleSelectPlaceForMap(place);
+        }}
+        onOpenAccommodation={() => {
+          setIsDirectoriesModalOpen(false);
+          setIsPortalsModalOpen(false);
+          setIsAccommodationModalOpen(true);
+        }}
+        onOpenMotorbike={() => {
+          setIsDirectoriesModalOpen(false);
+          setIsPortalsModalOpen(false);
+          setIsMotorbikeRentalOpen(true);
+        }}
+        onOpenFarmMatrix={() => {
+          setIsDirectoriesModalOpen(false);
+          setIsPortalsModalOpen(false);
+          setIsFarmMatrixOpen(true);
+        }}
+        initialState={exploreInitialState}
+      />
 
       {isClassifiedsModalOpen && (
         <ClassifiedsModal
@@ -1526,6 +1564,12 @@ export default function App() {
           isOpen={isFindMyPartyOpen}
           onClose={() => setIsFindMyPartyOpen(false)}
           language={language}
+          onNavigateMainPage={() => {
+            setIsFindMyPartyOpen(false);
+            if (typeof window !== 'undefined' && window.history?.replaceState) {
+              window.history.replaceState({}, document.title, '/');
+            }
+          }}
         />
       )}
       {isAccommodationModalOpen && (
@@ -1540,6 +1584,12 @@ export default function App() {
       <ForeignerMedicalChargesModal
         isOpen={isForeignerMedicalOpen}
         onClose={() => setIsForeignerMedicalOpen(false)}
+        language={language}
+      />
+
+      <MenuTranslatorModal
+        isOpen={isTranslatorOpen}
+        onClose={() => setIsTranslatorOpen(false)}
         language={language}
       />
 

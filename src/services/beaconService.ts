@@ -349,6 +349,99 @@ class BeaconService {
       localStorage.removeItem(LOCAL_STORAGE_KEY_CACHED_SESSION);
     } catch {}
   }
+
+  /**
+   * Immediately persists the latest GPS coordinates for a party member to localStorage + IndexedDB
+   * so no last-known beacon location is lost if the mobile browser suspends the tab.
+   */
+  async savePartyLastKnownCoords(snapshot: {
+    sessionCode?: string;
+    memberId?: string;
+    lat: number;
+    lng: number;
+    accuracy?: number | null;
+    timestamp: number;
+  }): Promise<void> {
+    const lsKey = 'camgo_party_last_known_coords_v1';
+    try {
+      localStorage.setItem(lsKey, JSON.stringify(snapshot));
+    } catch {}
+
+    if (typeof window === 'undefined' || !('indexedDB' in window)) return;
+    try {
+      const req = indexedDB.open('camgo_party_beacon_db', 1);
+      req.onupgradeneeded = () => {
+        const dbInst = req.result;
+        if (!dbInst.objectStoreNames.contains('coords')) {
+          dbInst.createObjectStore('coords', { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = () => {
+        try {
+          const dbInst = req.result;
+          const tx = dbInst.transaction('coords', 'readwrite');
+          tx.objectStore('coords').put({ id: 'latest', ...snapshot });
+          tx.oncomplete = () => dbInst.close();
+          tx.onerror = () => dbInst.close();
+        } catch {}
+      };
+    } catch {}
+  }
+
+  async getPartyLastKnownCoords(): Promise<{
+    sessionCode?: string;
+    memberId?: string;
+    lat: number;
+    lng: number;
+    accuracy?: number | null;
+    timestamp: number;
+  } | null> {
+    const lsKey = 'camgo_party_last_known_coords_v1';
+    try {
+      const raw = localStorage.getItem(lsKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+          return parsed;
+        }
+      }
+    } catch {}
+
+    if (typeof window === 'undefined' || !('indexedDB' in window)) return null;
+    return new Promise((resolve) => {
+      try {
+        const req = indexedDB.open('camgo_party_beacon_db', 1);
+        req.onupgradeneeded = () => {
+          const dbInst = req.result;
+          if (!dbInst.objectStoreNames.contains('coords')) {
+            dbInst.createObjectStore('coords', { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = () => {
+          try {
+            const dbInst = req.result;
+            const tx = dbInst.transaction('coords', 'readonly');
+            const getReq = tx.objectStore('coords').get('latest');
+            getReq.onsuccess = () => {
+              const res = getReq.result;
+              dbInst.close();
+              resolve(res && typeof res.lat === 'number' ? res : null);
+            };
+            getReq.onerror = () => {
+              dbInst.close();
+              resolve(null);
+            };
+          } catch {
+            resolve(null);
+          }
+        };
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
 }
 
 export const beaconService = new BeaconService();
+

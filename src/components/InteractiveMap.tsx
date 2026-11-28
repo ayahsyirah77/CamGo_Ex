@@ -2706,16 +2706,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (filterTownship) setActiveTownship(filterTownship);
   }, [filterTownship]);
 
-  // Township Hub Coordinates for all 9 townships
+  // Township Hub Coordinates for all townships
   const TOWNSHIP_HUBS_DATA: Record<Township, { lat: number; lng: number }> = {
+    'Ringlet': { lat: 4.4147, lng: 101.3820 },
+    'Bertam Valley': { lat: 4.4178, lng: 101.3985 },
+    'Habu': { lat: 4.4518, lng: 101.3852 },
     'Tanah Rata': { lat: 4.4715, lng: 101.3805 },
     'Brinchang': { lat: 4.4905, lng: 101.3892 },
     'Kea Farm': { lat: 4.5028, lng: 101.4072 },
-    'Ringlet': { lat: 4.4147, lng: 101.3820 },
-    'Kampung Raja': { lat: 4.5683, lng: 101.4087 },
     'Tringkap': { lat: 4.5126, lng: 101.4258 },
     'Kuala Terla': { lat: 4.5458, lng: 101.4172 },
-    'Bertam Valley': { lat: 4.4178, lng: 101.3985 },
+    'Kampung Raja': { lat: 4.5683, lng: 101.4087 },
     'Blue Valley': { lat: 4.5888, lng: 101.4215 },
   };
 
@@ -4669,7 +4670,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         if (subCat === 'public_toilets_restrooms') return { pinColor: '#0d9488', iconEmoji: 'üöª', label: 'Public Restroom' };
         if (subCat === 'clinic_hospital') return { pinColor: '#e11d48', iconEmoji: 'üè•', label: 'Clinic / Hospital' };
         if (subCat === 'health_wellness') return { pinColor: '#e11d48', iconEmoji: 'üè•', label: 'Clinic & Hospital' };
-        if (subCat === 'banking_financial') return { pinColor: '#0d9488', iconEmoji: 'üè¶', label: 'ATM & Banking' };
+        if (subCat === 'banking_financial') return { pinColor: '#0d9488', iconEmoji: 'Ì†ºÌø¶', label: 'ATM & Banking' };
         return { pinColor: '#0f766e', iconEmoji: 'üè¢', label: 'Local Services' };
 
       case 'shopping':

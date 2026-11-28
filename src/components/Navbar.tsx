@@ -288,15 +288,15 @@ export const Navbar: React.FC<NavbarProps> = ({
     : [];
 
   const ALL_TOWNSHIPS: Township[] = [
+    'Ringlet',
+    'Bertam Valley',
+    'Habu',
     'Tanah Rata',
     'Brinchang',
     'Kea Farm',
-    'Ringlet',
-    'Kampung Raja',
     'Tringkap',
     'Kuala Terla',
-    'Bertam Valley',
-    'Blue Valley',
+    'Kampung Raja',
   ];
 
   const matchingTownships = q
@@ -566,7 +566,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
               >
                 <Compass className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>{getTranslation(language, 'nav_directories')}</span>
+                <span>{getTranslation(language, 'nav_explore')}</span>
               </button>
 
               {/* Directories Dropdown Menu */}
@@ -819,10 +819,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/10 text-stone-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
               >
                 <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Hub</span>
+                <span>{language === 'bm' ? 'Portal Rasmi' : 'Portals'}</span>
               </button>
               
-              {/* Hub Dropdown */}
+              {/* Portals Dropdown */}
               {portalsOpen && (
                 <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-64 transition-all z-50">
                   <div className="glass-panel rounded-2xl p-2 shadow-2xl border border-emerald-500/20 bg-stone-900/95 backdrop-blur-2xl space-y-1">
@@ -836,7 +836,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-black transition-colors">
                         <Layers className="w-3.5 h-3.5" />
                       </div>
-                      <span>{language === 'bm' ? 'Pusat Portal & Info' : 'Portal & Info Hub'}</span>
+                      <span>{language === 'bm' ? 'Portal Rasmi & Pekan' : 'Official Portals & Towns'}</span>
                     </button>
 
 
@@ -1362,7 +1362,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Mobile View Row 3: 5 Transparent Glassmorphism Cards matching attached image */}
+        {/* Mobile View Row 3: 5 Transparent Glassmorphism Cards */}
         <div className="block sm:hidden px-4 pt-1.5 pb-2 max-w-7xl mx-auto">
           <div className="grid grid-cols-5 gap-1.5 w-full">
             {/* 1. Traffic (Active emerald glow as in image) */}
@@ -1384,7 +1384,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </button>
 
-            {/* 2. Masjid & Surau (Using authentic Masjid silhouette icon) */}
+            {/* 2. Masjid & Surau */}
             <button
               onClick={() => {
                 if (onOpenMasjidModal) {
@@ -1403,24 +1403,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </button>
 
-            {/* 3. Hub */}
-            <button
-              onClick={() => {
-                if (onOpenPortalsModal) {
-                  onOpenPortalsModal();
-                }
-              }}
-              className="flex flex-col items-center justify-center p-1.5 rounded-2xl bg-stone-900/60 backdrop-blur-md border border-white/10 hover:border-emerald-500/40 active:scale-95 transition-all text-stone-300 hover:text-white cursor-pointer min-h-[62px]"
-            >
-              <div className="p-0.5">
-                <Layers className="w-5 h-5 text-indigo-400" />
-              </div>
-              <span className="text-[8.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tight truncate w-full px-0.5">
-                Hub
-              </span>
-            </button>
-
-            {/* 4. Currency (Real-Time Currency Converter - fits perfectly) */}
+            {/* 3. Currency */}
             <button
               onClick={() => {
                 if (onOpenCurrencyConverter) {
@@ -1436,6 +1419,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <span className="text-[8.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tight truncate w-full px-0.5">
                 Currency
+              </span>
+            </button>
+
+            {/* 4. Non-Citizen Hospital Fee (before Classifieds) */}
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'));
+              }}
+              className="flex flex-col items-center justify-center p-1.5 rounded-2xl bg-stone-900/60 backdrop-blur-md border border-white/10 hover:border-rose-500/40 active:scale-95 transition-all text-stone-300 hover:text-white cursor-pointer min-h-[62px]"
+            >
+              <div className="p-0.5">
+                <FileText className="w-5 h-5 text-rose-400" />
+              </div>
+              <span className="text-[7.5px] font-semibold text-center leading-none mt-1 text-stone-200 tracking-tighter truncate w-full px-0">
+                {language === 'bm' ? 'Fi Hospital' : 'Hospital Fee'}
               </span>
             </button>
 
@@ -1630,30 +1628,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* Non-Citizen Hospital Fee */}
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      window.dispatchEvent(new CustomEvent('open-foreigner-medical-charges'));
-                    }}
-                    className="w-full p-2.5 rounded-2xl flex items-center gap-3 bg-stone-900/60 hover:bg-stone-800/90 text-stone-200 hover:text-white border border-white/5 hover:border-rose-500/40 transition-all cursor-pointer text-left group shadow-md"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <FileText className="w-4 h-4 text-rose-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-rose-400 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">
-                          FEES ACT 1951
-                        </span>
-                      </div>
-                      <span className="text-xs font-bold text-stone-100 block group-hover:text-rose-300 transition-colors leading-tight">
-                        {language === 'bm' ? 'Fi Hospital Bukan Warganegara' : 'Non-Citizen Hospital Fee'}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-rose-400 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
                   {/* Business Vendor Portal (Only visible to admin and registered vendors) */}

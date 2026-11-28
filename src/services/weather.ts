@@ -1,14 +1,15 @@
 import { WeatherData, WeatherForecastDay, Township } from '../types';
 
 const TOWNSHIP_COORDS: Record<Township, { lat: number; lng: number; elevation: string }> = {
+  'Ringlet': { lat: 4.4125, lng: 101.3847, elevation: '1,135m' },
+  'Bertam Valley': { lat: 4.4167, lng: 101.4000, elevation: '1,080m' },
+  'Habu': { lat: 4.4518, lng: 101.3852, elevation: '1,210m' },
   'Tanah Rata': { lat: 4.4692, lng: 101.3761, elevation: '1,440m' },
   'Brinchang': { lat: 4.4914, lng: 101.3889, elevation: '1,540m' },
   'Kea Farm': { lat: 4.5085, lng: 101.4095, elevation: '1,610m' },
-  'Ringlet': { lat: 4.4125, lng: 101.3847, elevation: '1,135m' },
-  'Kampung Raja': { lat: 4.5369, lng: 101.4053, elevation: '1,280m' },
   'Tringkap': { lat: 4.5122, lng: 101.4239, elevation: '1,490m' },
   'Kuala Terla': { lat: 4.5306, lng: 101.4111, elevation: '1,320m' },
-  'Bertam Valley': { lat: 4.4167, lng: 101.4000, elevation: '1,080m' },
+  'Kampung Raja': { lat: 4.5369, lng: 101.4053, elevation: '1,280m' },
   'Blue Valley': { lat: 4.5667, lng: 101.4000, elevation: '1,350m' },
 };
 

@@ -95,7 +95,7 @@ class GeminiHighlandService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dayPlan }),
       });
-      if (response.ok) {
+      if (response.ok && (response.headers.get('content-type') || '').includes('application/json')) {
         const data = await response.json();
         return data.prediction || 'Traffic condition normal.';
       }
@@ -168,7 +168,7 @@ class GeminiHighlandService {
           },
         }),
       });
-      if (response.ok) {
+      if (response.ok && (response.headers.get('content-type') || '').includes('application/json')) {
         const data = await response.json();
         const text = String(data?.prediction || '').trim();
         if (
@@ -195,7 +195,7 @@ class GeminiHighlandService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan, weather }),
       });
-      if (response.ok) {
+      if (response.ok && (response.headers.get('content-type') || '').includes('application/json')) {
         const data = await response.json();
         if (data && (data.traffic || data.budget)) {
           return data;
@@ -222,7 +222,7 @@ class GeminiHighlandService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan, budget }),
       });
-      if (response.ok) {
+      if (response.ok && (response.headers.get('content-type') || '').includes('application/json')) {
         const data = await response.json();
         return data.analysis || 'Budget analysis within normal parameters.';
       }
@@ -324,7 +324,7 @@ class GeminiHighlandService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userInput }),
       });
-      if (response.ok) {
+      if (response.ok && (response.headers.get('content-type') || '').includes('application/json')) {
         return await response.json();
       }
     } catch (err) {

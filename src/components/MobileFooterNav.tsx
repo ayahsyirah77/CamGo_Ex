@@ -40,12 +40,8 @@ export const MobileFooterNav: React.FC<MobileFooterNavProps> = ({
         <span className="text-[10px] font-medium">Home</span>
       </button>
       <button onClick={onOpenDirectoriesModal} className="flex flex-col items-center justify-center gap-0.5 p-1 text-emerald-400 min-h-[44px] min-w-[44px] cursor-pointer active:scale-95">
-        <Compass className="w-4 h-4" />
-        <span className="text-[10px] font-medium">Dir</span>
-      </button>
-      <button onClick={onOpenPortalsModal} className="flex flex-col items-center justify-center gap-0.5 p-1 text-teal-400 min-h-[44px] min-w-[44px] cursor-pointer active:scale-95">
         <Layers className="w-4 h-4" />
-        <span className="text-[10px] font-medium">Hub</span>
+        <span className="text-[10px] font-medium">{language === 'bm' ? 'Teroka' : 'Explore'}</span>
       </button>
       <button onClick={() => onNavigateSection('interactive-map')} className="flex flex-col items-center justify-center gap-0.5 p-1 text-stone-300 min-h-[44px] min-w-[44px] cursor-pointer active:scale-95">
         <MapPin className="w-4 h-4" />

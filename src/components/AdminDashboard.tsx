@@ -119,27 +119,28 @@ interface AdminDashboardProps {
 }
 
 export const TOWNSHIP_DEFAULTS: Record<string, { lat: number; lng: number; elevation: string }> = {
+  'Ringlet': { lat: 4.4147, lng: 101.3820, elevation: '1,135 m' },
+  'Bertam Valley': { lat: 4.4178, lng: 101.3985, elevation: '1,080 m' },
+  'Habu': { lat: 4.4518, lng: 101.3852, elevation: '1,210 m' },
   'Tanah Rata': { lat: 4.4715, lng: 101.3805, elevation: '1,440 m' },
   'Brinchang': { lat: 4.4905, lng: 101.3892, elevation: '1,540 m' },
   'Kea Farm': { lat: 4.5028, lng: 101.4072, elevation: '1,610 m' },
-  'Ringlet': { lat: 4.4147, lng: 101.3820, elevation: '1,135 m' },
-  'Kampung Raja': { lat: 4.5683, lng: 101.4087, elevation: '1,280 m' },
   'Tringkap': { lat: 4.5126, lng: 101.4258, elevation: '1,490 m' },
   'Kuala Terla': { lat: 4.5458, lng: 101.4172, elevation: '1,320 m' },
-  'Bertam Valley': { lat: 4.4178, lng: 101.3985, elevation: '1,080 m' },
+  'Kampung Raja': { lat: 4.5683, lng: 101.4087, elevation: '1,280 m' },
   'Blue Valley': { lat: 4.5888, lng: 101.4215, elevation: '1,350 m' },
 };
 
 export const ALL_9_TOWNSHIPS: Township[] = [
+  'Ringlet',
+  'Bertam Valley',
+  'Habu',
   'Tanah Rata',
   'Brinchang',
   'Kea Farm',
-  'Ringlet',
-  'Kampung Raja',
   'Tringkap',
   'Kuala Terla',
-  'Bertam Valley',
-  'Blue Valley',
+  'Kampung Raja',
 ];
 
 const FALLBACK_IMAGE =
@@ -4465,7 +4466,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {trailSafetySessions.map((sess) => {
-                  const isOverdueSess = sess.status === 'overdue' || Boolean(sess.inactivityAlert2Sent);
+                  const isOverdueSess = sess.status === 'overdue';
                   const mapsUrl = `https://www.google.com/maps?q=${sess.lastKnownLat},${sess.lastKnownLng}`;
                   const footprintUrl = `/?trailTrack=${encodeURIComponent(sess.id)}${
                     sess.trackingToken ? `&token=${encodeURIComponent(sess.trackingToken)}` : ''
@@ -4476,8 +4477,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className={`p-3.5 rounded-2xl border space-y-2 ${
                         isOverdueSess
                           ? 'bg-rose-950/60 border-rose-500 text-rose-100'
-                          : sess.inactivityAlert1Sent
-                          ? 'bg-amber-950/50 border-amber-500/70 text-amber-100'
                           : 'bg-stone-950/80 border-white/10 text-stone-200'
                       }`}
                     >
@@ -4487,20 +4486,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </span>
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
-                            sess.inactivityAlert2Sent
-                              ? 'bg-rose-600 text-white animate-pulse'
-                              : isOverdueSess
-                              ? 'bg-rose-600 text-white animate-pulse'
-                              : sess.inactivityAlert1Sent
-                              ? 'bg-amber-600 text-white animate-pulse'
+                            isOverdueSess
+                              ? 'bg-rose-600 text-white'
                               : 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
                           }`}
                         >
-                          {sess.inactivityAlert2Sent
-                            ? '30M IMMOBILE'
-                            : sess.inactivityAlert1Sent
-                            ? '15M STILLNESS'
-                            : sess.status}
+                          {isOverdueSess ? 'OVERDUE CHECK-OUT' : sess.status}
                         </span>
                       </div>
 
@@ -4516,7 +4507,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Bat: {sess.telemetry?.batteryPercent ?? 'N/A'}% • Signal:{' '}
                           {sess.telemetry?.signalLabel || 'Unknown'}
                         </div>
-                        <div>ICE: {sess.emergencyContact}</div>
+                        <div>
+                          Emergency Contact: {sess.emergencyContactName ? `${sess.emergencyContactName} (${sess.emergencyContact})` : sess.emergencyContact}
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
